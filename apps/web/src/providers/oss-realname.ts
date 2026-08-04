@@ -46,6 +46,9 @@ export class AliOssRealnameProvider implements RealnameObjectProvider {
   }
 
   async upload(input: { body: Uint8Array; key: string; traceId: string }) {
+    if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
+      return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
+    }
     try {
       const result = await this.client.put(input.key, Buffer.from(input.body))
       const headers = result.res.headers as Record<string, unknown>
@@ -56,6 +59,9 @@ export class AliOssRealnameProvider implements RealnameObjectProvider {
   }
 
   async read(input: { key: string; traceId: string }) {
+    if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
+      return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
+    }
     try {
       const result = await this.client.get(input.key)
       const body = new Uint8Array(result.content)
@@ -73,6 +79,9 @@ export class AliOssRealnameProvider implements RealnameObjectProvider {
   }
 
   async signRead(input: { expiresSeconds: number; key: string; traceId: string }) {
+    if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
+      return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
+    }
     try {
       return mockSuccess({
         url: this.client.signatureUrl(input.key, { expires: input.expiresSeconds }),
@@ -83,6 +92,9 @@ export class AliOssRealnameProvider implements RealnameObjectProvider {
   }
 
   async deleteObject(input: { key: string; traceId: string }) {
+    if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
+      return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
+    }
     try {
       await this.client.delete(input.key)
       return mockSuccess({ deleted: true as const })

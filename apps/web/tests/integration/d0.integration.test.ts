@@ -178,6 +178,30 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
     ).rejects.toThrow(/无效或已过期/)
   })
 
+  it('pins realnameTemplates.customer to the authenticated customer regardless of submitted data', async () => {
+    const owner = await payload.create({
+      collection: 'customers',
+      data: { phone: `fixture-${randomUUID()}`, phoneMasked: 'fixture-only', status: 'active' },
+      overrideAccess: true,
+    })
+    const other = await payload.create({
+      collection: 'customers',
+      data: { phone: `fixture-${randomUUID()}`, phoneMasked: 'fixture-only', status: 'active' },
+      overrideAccess: true,
+    })
+
+    const template = await payload.create({
+      collection: 'realnameTemplates',
+      data: { customer: other.id, displayName: 'attempted-takeover', type: 'individual' },
+      overrideAccess: false,
+      user: { ...owner, collection: 'customers' },
+    })
+
+    expect(
+      typeof template.customer === 'object' ? template.customer.id : template.customer,
+    ).toBe(owner.id)
+  })
+
   it('runs duplicate commerce jobs safely with one provider operation and append-only events', async () => {
     const { domainAscii, order, suffix } = await createPaidOrderFixture()
     const operationKey = `register:${order.id}:${domainAscii}`

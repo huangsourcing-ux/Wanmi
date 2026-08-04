@@ -126,7 +126,7 @@ export const PaymentNotifications: CollectionConfig = {
       required: true,
       unique: true,
     },
-    { name: 'merchantOrderNumber', type: 'text', index: true, required: true },
+    { name: 'merchantOrderNumber', type: 'text', index: true, required: true, unique: true },
     { name: 'signatureVerified', type: 'checkbox', required: true },
     { ...integerMoney },
     { name: 'receivedAt', type: 'date', required: true },
