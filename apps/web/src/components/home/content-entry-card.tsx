@@ -4,6 +4,7 @@ import { ArrowRightIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { ResultState } from '@/components/results/result-state'
 import type { PublicContentSection } from '@/lib/public-site-data'
 
 const fallbackCopy: Record<PublicContentSection['href'], string> = {
@@ -44,10 +45,16 @@ export function ContentEntryCard({ section }: { section: PublicContentSection })
             ))}
           </ul>
         ) : (
-          <div className="space-y-3 text-sm leading-6 text-muted-foreground">
-            <p>{fallbackCopy[section.href]}</p>
-            {isUnavailable ? <p>最新条目暂时无法加载，主要查询入口仍可正常使用。</p> : null}
-          </div>
+          <ResultState
+            compact
+            description={fallbackCopy[section.href]}
+            retryable={isUnavailable ? true : undefined}
+            state={isUnavailable ? 'degraded' : 'empty'}
+            suggestedAction={
+              isUnavailable ? '最新条目暂时无法加载，主要查询入口仍可正常使用。' : undefined
+            }
+            title={isUnavailable ? '最新条目暂时不可用' : '内容持续更新中'}
+          />
         )}
       </CardContent>
       <CardFooter>

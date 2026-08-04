@@ -331,8 +331,8 @@ D0 的架构、权限、认证、迁移、Jobs 幂等、真实 OSS、隔离 RDS�
 
 - [x] 建立 Wanmi.net 主站布局、响应式导航、页脚、帮助和合规入口；
 - [x] 建立首页主查询、工具导航、内容入口和数据来源说明；
-- [ ] 建立通用表单、加载、空状态、部分成功、失败、限流和降级组件；
-- [ ] 建立统一 Result、Problem Details 和请求 ID 展示；
+- [x] 建立通用表单、加载、空状态、部分成功、失败、限流和降级组件；
+- [x] 建立统一 Result、Problem Details 和请求 ID 展示；
 - [ ] 建立 canonical、robots、sitemap、Open Graph 和 noindex 基础能力；
 - [ ] 配置 `@payloadcms/plugin-seo` 的共享字段与预览规则，并验证只读取已发布内容；
 - [ ] 配置 `@payloadcms/plugin-redirects`，重定向写入受 RBAC 和审计保护，目标拒绝开放跳转；
@@ -343,6 +343,8 @@ D0 的架构、权限、认证、迁移、Jobs 幂等、真实 OSS、隔离 RDS�
 - [ ] 建立第一方事件入口，默认不采集完整查询域名。
 
 D1-01 验证记录（2026-08-04）：已建立响应式主站外壳、六类工具与内容入口、`GET /tools/domain-search?q=` 查询骨架、帮助和四类合规说明入口；公共 Payload Local API 读取固定 `overrideAccess: false`，草稿隔离、栏目独立降级、桌面/移动端与未知路由均有自动化测试。本切片未调用 provider、未新增 API、未修改 Payload schema 或迁移。
+
+D1-02 验证记录（2026-08-04）：已建立共享 Zod `Result<T>` 六状态契约、兼容 RFC 9457 的 Problem Details、集中请求 ID 校验和安全 provider 映射；现有 API 错误保留 `code/message/traceId`，增加标准字段、重试信息和建议动作，成功响应保持不变。公共站已接入可访问查询表单、空态/部分成功/失败/限流/降级面板、栏目级加载 Skeleton、错误边界和保留真实 404 的品牌化未找到页；请求 ID 上下文按导航更新。41 个单元测试、9 个 PostgreSQL/MinIO 集成测试、6 个 Playwright 场景、生产构建、linux/amd64 同镜像构建、安全扫描及桌面/390px 视觉检查通过。本切片未调用真实 provider，未修改 Payload schema、迁移或生成类型。
 
 ### 5.3 退出条件
 

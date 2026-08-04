@@ -2,7 +2,7 @@
 
 Wanmi.AI P1 的 D0 条件通过工程基线与 D1 公共站基础：Next.js 16.2.11、Payload 3.86.0、PostgreSQL 16.14、Payload Jobs、Who-Dat 2.0.0，以及彼此隔离的公共和私有对象存储原型。
 
-当前代码已实现 D1-01 的 Wanmi.net 响应式站点外壳、首页查询入口、工具/内容导航、帮助和合规入口；域名查询仍是明确标记的功能骨架，不调用真实 provider。项目负责人已批准进入 D1；共享 ECS 的运行环境门槛转入 D7。所有外部写能力默认使用 mock；`ALLOW_REAL_PROVIDER_WRITES=false` 是本地和 CI 默认值。
+当前代码已实现 D1-01 的 Wanmi.net 响应式站点外壳，以及 D1-02 的通用表单、加载/空态/部分成功/失败/限流/降级组件、统一 Result 和 Problem Details 错误展示；域名查询仍是明确标记的功能骨架，不调用真实 provider。项目负责人已批准进入 D1；共享 ECS 的运行环境门槛转入 D7。所有外部写能力默认使用 mock；`ALLOW_REAL_PROVIDER_WRITES=false` 是本地和 CI 默认值。
 
 ## 本地要求
 
@@ -31,6 +31,8 @@ curl -fsS http://127.0.0.1:3100/readyz
 公共站首页位于 `/`。D1-01 还提供 `/tools`、`/pricing`、`/articles`、`/topics`、`/help` 和 `/legal` 等可达入口；首页查询使用 `GET /tools/domain-search?q=<完整域名或关键词>`，带查询参数的页面默认 `noindex, nofollow`，且当前不会保存输入或请求真实查询服务。
 
 首页导航和内容栏目通过 Payload Local API 读取，所有公开读取显式启用 access control。只有已发布的文章、TLD 页面和专题可见；空库或任一栏目失败时页面使用安全回退，主查询入口保持可用。
+
+自定义 API 错误使用兼容 RFC 9457 的 `application/problem+json`，保留 `code`、`message` 和 `traceId`，并提供稳定标题、HTTP 状态、可重试标记和建议动作；成功响应 body 不变。公共页面的错误与降级状态显示同一请求 ID，不显示原始异常、堆栈或 provider 响应。文章、专题和价格栏目使用局部 Loading 边界，避免动态未找到页面因根级流式响应丢失真实 404 状态。
 
 另开终端启动同一代码和镜像的独立 Worker：
 
