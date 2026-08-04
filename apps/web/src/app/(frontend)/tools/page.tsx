@@ -1,4 +1,3 @@
-import type { Metadata } from 'next'
 import Link from 'next/link'
 import {
   ArrowRightIcon,
@@ -13,12 +12,10 @@ import {
 import { PageIntro } from '@/components/site/page-intro'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { createStaticPageMetadata } from '@/lib/seo'
 import { PRICING_TOOL, TOOL_DEFINITIONS } from '@/lib/site-config'
 
-export const metadata: Metadata = {
-  description: '浏览 Wanmi.net 的域名可注册、WHOIS、DNS、价格、IDN 和 SSL/CAA 工具入口。',
-  title: '域名工具中心',
-}
+export const metadata = createStaticPageMetadata('/tools')
 
 const toolIcons = {
   dns: NetworkIcon,

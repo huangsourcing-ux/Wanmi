@@ -17,7 +17,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { getPublicSiteData } from '@/lib/public-site-data'
+import { createStaticPageMetadata } from '@/lib/seo'
 import { PRICING_TOOL, TOOL_DEFINITIONS } from '@/lib/site-config'
+
+export const metadata = createStaticPageMetadata('/')
 
 const toolIcons = {
   dns: NetworkIcon,

@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { DomainQueryForm } from '@/components/forms/domain-query-form'
 import { ConstructionNotice } from '@/components/site/construction-notice'
 import { PageIntro } from '@/components/site/page-intro'
+import { createPageMetadata } from '@/lib/seo'
 import { TOOL_DEFINITIONS, getToolDefinition, normalizeQueryParam } from '@/lib/site-config'
 
 type ToolPageProps = {
@@ -19,13 +20,14 @@ export async function generateMetadata({ params, searchParams }: ToolPageProps):
   const [{ tool: slug }, queryParams] = await Promise.all([params, searchParams])
   const tool = getToolDefinition(slug)
   if (!tool) return {}
-  const query = slug === 'domain-search' ? normalizeQueryParam(queryParams.q) : ''
+  const query = normalizeQueryParam(queryParams.q)
 
-  return {
+  return createPageMetadata({
     description: tool.description,
-    robots: query ? { follow: false, index: false } : undefined,
+    noIndex: Boolean(query),
+    path: tool.href,
     title: tool.title,
-  }
+  })
 }
 
 export default async function ToolPage({ params, searchParams }: ToolPageProps) {

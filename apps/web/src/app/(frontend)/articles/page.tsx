@@ -1,13 +1,9 @@
-import type { Metadata } from 'next'
-
 import { ContentLanding } from '@/components/site/content-landing'
 import { PageIntro } from '@/components/site/page-intro'
 import { getPublicSiteData } from '@/lib/public-site-data'
+import { createStaticPageMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = {
-  description: '域名选择、注册规则、DNS、WHOIS、SSL 与建站相关的中文实用内容入口。',
-  title: '实用内容',
-}
+export const metadata = createStaticPageMetadata('/articles')
 
 export default async function ArticlesPage() {
   const data = await getPublicSiteData()

@@ -1,13 +1,9 @@
-import type { Metadata } from 'next'
-
 import { ContentLanding } from '@/components/site/content-landing'
 import { PageIntro } from '@/components/site/page-intro'
 import { getPublicSiteData } from '@/lib/public-site-data'
+import { createStaticPageMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = {
-  description: '串联 Wanmi.net 域名工具、TLD 页面与实用内容的专题和指南入口。',
-  title: '专题与指南',
-}
+export const metadata = createStaticPageMetadata('/topics')
 
 export default async function TopicsPage() {
   const data = await getPublicSiteData()

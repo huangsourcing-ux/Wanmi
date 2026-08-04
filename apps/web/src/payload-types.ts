@@ -313,17 +313,30 @@ export interface Article {
   };
   publishedAt?: string | null;
   source?: string | null;
-  meta?: {
-    title?: string | null;
-    description?: string | null;
-    /**
-     * Maximum upload file size: 12MB. Recommended file size for images is <500KB.
-     */
-    image?: (number | null) | Media;
-  };
+  meta?: WanmiSeoMeta;
   updatedAt: string;
   createdAt: string;
   _status?: ('draft' | 'published') | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WanmiSeoMeta".
+ */
+export interface WanmiSeoMeta {
+  title?: string | null;
+  description?: string | null;
+  /**
+   * Maximum upload file size: 12MB. Recommended file size for images is <500KB.
+   */
+  image?: (number | null) | Media;
+  /**
+   * 留空时按内容类型与 slug 自动生成；只允许 Wanmi 主域内的路径或完整 URL。
+   */
+  canonical?: string | null;
+  /**
+   * 启用后，已发布页面也不会进入搜索引擎索引或 sitemap。
+   */
+  noIndex?: boolean | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -373,14 +386,7 @@ export interface Topic {
   };
   publishedAt?: string | null;
   source?: string | null;
-  meta?: {
-    title?: string | null;
-    description?: string | null;
-    /**
-     * Maximum upload file size: 12MB. Recommended file size for images is <500KB.
-     */
-    image?: (number | null) | Media;
-  };
+  meta?: WanmiSeoMeta;
   updatedAt: string;
   createdAt: string;
   _status?: ('draft' | 'published') | null;
@@ -411,14 +417,7 @@ export interface TldPage {
   };
   publishedAt?: string | null;
   source?: string | null;
-  meta?: {
-    title?: string | null;
-    description?: string | null;
-    /**
-     * Maximum upload file size: 12MB. Recommended file size for images is <500KB.
-     */
-    image?: (number | null) | Media;
-  };
+  meta?: WanmiSeoMeta;
   updatedAt: string;
   createdAt: string;
   _status?: ('draft' | 'published') | null;
@@ -1470,16 +1469,21 @@ export interface ArticlesSelect<T extends boolean = true> {
   content?: T;
   publishedAt?: T;
   source?: T;
-  meta?:
-    | T
-    | {
-        title?: T;
-        description?: T;
-        image?: T;
-      };
+  meta?: T | WanmiSeoMetaSelect<T>;
   updatedAt?: T;
   createdAt?: T;
   _status?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WanmiSeoMeta_select".
+ */
+export interface WanmiSeoMetaSelect<T extends boolean = true> {
+  title?: T;
+  description?: T;
+  image?: T;
+  canonical?: T;
+  noIndex?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1492,13 +1496,7 @@ export interface TopicsSelect<T extends boolean = true> {
   content?: T;
   publishedAt?: T;
   source?: T;
-  meta?:
-    | T
-    | {
-        title?: T;
-        description?: T;
-        image?: T;
-      };
+  meta?: T | WanmiSeoMetaSelect<T>;
   updatedAt?: T;
   createdAt?: T;
   _status?: T;
@@ -1514,13 +1512,7 @@ export interface TldPagesSelect<T extends boolean = true> {
   content?: T;
   publishedAt?: T;
   source?: T;
-  meta?:
-    | T
-    | {
-        title?: T;
-        description?: T;
-        image?: T;
-      };
+  meta?: T | WanmiSeoMetaSelect<T>;
   updatedAt?: T;
   createdAt?: T;
   _status?: T;
