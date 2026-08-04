@@ -1,0 +1,1 @@
+apps/web/migrations/*.ts whitespace=-trailing-space,-space-before-tab

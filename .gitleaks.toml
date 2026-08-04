@@ -1,0 +1,14 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Generated/local-only files excluded from repository secret evidence"
+paths = [
+  '''(^|/)\.git/''',
+  '''(^|/)\.next/''',
+  '''(^|/)node_modules/''',
+  '''^apps/web/\.env\.local$''',
+  '''^apps/web/coverage/''',
+  '''^apps/web/playwright-report/''',
+  '''^apps/web/test-results/''',
+]

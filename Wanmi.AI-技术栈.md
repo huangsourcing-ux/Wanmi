@@ -1,14 +1,14 @@
 # Wanmi.AI 技术栈与工程规范
 
-> 文档版本：v5.2（P1 冻结与状态机基线）
+> 文档版本：v5.4（D0 条件通过基线）
 >
-> 更新日期：2026-08-03
+> 更新日期：2026-08-04
 >
 > 状态：P1 开发已批准；生产上线附条件批准
 >
 > 适用范围：Wanmi.AI P1 Web 域名工具与代理注册平台
 >
-> 冻结基线：`P1-BASELINE-2026-08-03`；对应 Git 标签 `p1-docs-approved-2026-08-03`
+> 冻结基线：`P1-BASELINE-2026-08-04.1`；批准标签 `p1-docs-approved-2026-08-04-1` 待本次批准变更提交后建立
 
 ## 1. 技术结论
 
@@ -17,7 +17,7 @@ P1 使用单一 TypeScript 代码库：
 | 层级 | 固定方案 |
 |---|---|
 | Runtime | Node.js 24 LTS |
-| Web | Next.js 16.2.6、React、TypeScript strict、App Router |
+| Web | Next.js 16.2.11、React、TypeScript strict、App Router |
 | 应用平台 | Payload 3.86.0；全部 `payload` 与 `@payloadcms/*` 包锁定相同精确版本 |
 | Payload 官方插件 | `@payloadcms/plugin-seo`、`@payloadcms/plugin-redirects`、`@payloadcms/plugin-form-builder` |
 | UI | Tailwind CSS、shadcn/ui |
@@ -379,9 +379,9 @@ OTP 必须具备手机号、IP、设备和全局限频，防枚举响应，短�
 
 ## 12. D0 架构验证（建议 3～5 天）
 
-D0 的 3～5 天是架构决策时间盒，不是强制截止日期。D0 在进入完整 M01～M16 开发前完成；任一退出条件未满足时延长 D0、记录证据并修正假设，禁止为赶进度跳过验证：
+D0 的 3～5 天是架构决策时间盒，不是强制截止日期。通常 D0 在进入完整 M01～M16 开发前完成；任一退出条件未满足时延长 D0、记录证据并修正假设：
 
-- [ ] Next.js 16.2.6 + Payload 3.86.0 + PostgreSQL 启动；
+- [ ] Next.js 16.2.11 + Payload 3.86.0 + PostgreSQL 启动；
 - [ ] `@payloadcms/plugin-seo`、`@payloadcms/plugin-redirects`、`@payloadcms/plugin-form-builder` 与全部 Payload 包以 `3.86.0` 同版本启动、迁移和生成类型；
 - [ ] 内容草稿、版本、定时发布和管理员角色权限；
 - [ ] 管理员密码 + TOTP 原型；
@@ -393,7 +393,7 @@ D0 的 3～5 天是架构决策时间盒，不是强制截止日期。D0 在进�
 - [ ] 单 ECS 内存与 Web/Worker 重启恢复测试；
 - [ ] Payload Local API `overrideAccess: false` 回归测试。
 
-D0 失败时先修正架构假设，不在业务模块中引入第二套后端作为临时补丁。D0 通过后才根据实测效率调整内部排期；对外工期仍为 12～16 周。
+D0 失败时先修正架构假设，不在业务模块中引入第二套后端作为临时补丁。项目负责人于 2026-08-04 批准 D0 条件通过并进入 D1：仅将共享 ECS 无法安全执行的 2 vCPU/4 GiB 内存、Web/Worker 独立重启、同 VPC Jobs 恢复、空节点重建和两小时 RTO 验证转入 D7，并继续作为开发整体验收和生产上线硬门槛。该例外不覆盖其他 D0 条件；D1 中出现架构假设失败时返回 D0。对外工期仍为 12～16 周。
 
 ## 13. 生产上线门槛
 
@@ -441,6 +441,8 @@ D0 失败时先修正架构假设，不在业务模块中引入第二套后端�
 
 | 版本 | 日期 | 结论 |
 |---|---|---|
+| v5.4 | 2026-08-04 | 项目负责人批准 D0 条件通过并进入 D1；仅将共享 ECS 的资源、重启、同 VPC Jobs 恢复、重建和 RTO 验证转入 D7，其他架构和生产门槛不变 |
+| v5.3 | 2026-08-03 | 项目负责人批准将 Next.js 从 16.2.6 更新至修复 4 个 high 安全公告的 16.2.11；Payload 与全部官方插件继续精确锁定 3.86.0，产品范围、交易规则、工期与上线门槛不变 |
 | v5.2 | 2026-08-03 | 冻结 P1 技术基线；补全订单合法迁移矩阵、迟到支付与人工复核出口，并将 D0 明确为可延长的退出条件时间盒 |
 | v5.1 | 2026-08-03 | 固定采用 Payload SEO、Redirects、Form Builder 官方插件；公共媒体继续使用 storage-s3，私有实名对象使用 ali-oss，短信与 KMS 使用阿里云 TypeScript SDK |
 | v5.0 | 2026-08-02 | Payload 成为 P1 主架构；统一 TypeScript、迁移、认证集合、后台和 Jobs；保留交易与安全自定义 service |

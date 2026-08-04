@@ -1,10 +1,10 @@
 # Wanmi.AI App 候选技术规划
 
-> 文档版本：v2.2（Payload Web 主架构同步版）
+> 文档版本：v2.4（D0 条件通过基线同步版）
 >
-> 更新日期：2026-08-02
+> 更新日期：2026-08-04
 >
-> 冻结基线：`P1-BASELINE-2026-08-03`；对应 Git 标签 `p1-docs-approved-2026-08-03`
+> 冻结基线：`P1-BASELINE-2026-08-04.1`；批准标签 `p1-docs-approved-2026-08-04-1` 待本次批准变更提交后建立
 >
 > 当前结论：App 不进入 P0、P1 或默认 P2；只有 Web 数据证明必要时进入 P3 候选
 >
@@ -156,7 +156,15 @@ Wanmi P1 的核心是通过 Web 工具和内容获得搜索流量，并在 Web �
 
 本文件不能单独作为 App 开工依据。
 
-## 10. 官方资料
+## 10. 版本记录
+
+| 版本 | 日期 | 结论 |
+| --- | --- | --- |
+| v2.4 | 2026-08-04 | App 仍不进入 P1；同步 Web D0 条件通过和共享 ECS 验证转入 D7 的批准决定 |
+| v2.3 | 2026-08-03 | App 仍不进入 P1；仅同步 Web 的 Next.js 16.2.11 安全补丁基线及 D0 云资源受控验证边界 |
+| v2.2 | 2026-08-02 | 同步 Payload Web 主架构，保留未来 App 候选边界 |
+
+## 11. 官方资料
 
 - [Expo SDK](https://docs.expo.dev/versions/latest/)
 - [Expo Development Builds](https://docs.expo.dev/develop/development-builds/introduction/)
