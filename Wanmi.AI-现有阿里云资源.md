@@ -1,10 +1,10 @@
 # Wanmi.AI 现有阿里云资源清单
 
-> 文档版本：v4.2（P1 冻结与上线核验版）
+> 文档版本：v4.5（D0 条件通过资源边界版）
 >
-> 更新日期：2026-08-03
+> 更新日期：2026-08-04
 >
-> 冻结基线：`P1-BASELINE-2026-08-03`；对应 Git 标签 `p1-docs-approved-2026-08-03`
+> 冻结基线：`P1-BASELINE-2026-08-04.1`；批准标签 `p1-docs-approved-2026-08-04-1` 待本次批准变更提交后建立
 >
 > 适用范围：Wanmi.net 域名工具、内容与代理注册主站；Wanmi.ai 品牌跳转
 >
@@ -18,9 +18,9 @@
 
 | 资源 | 已知配置 | 当前状态 | P0/P1 用途 |
 | --- | --- | --- | --- |
-| ECS | 上海，2 vCPU、4 GiB、5 Mbps，1 台 | 已拥有 | Nginx、Next.js/Payload Web、Payload Jobs Worker、Who-Dat |
-| RDS PostgreSQL | 2 vCPU、4 GiB、100 GB，系列待确认 | 已拥有 | Payload 业务结构、用户、内容、订单、支付、域名资产、Session、Jobs 和审计 |
-| OSS | 按量，Bucket 信息待确认 | 已拥有 | 公共媒体经 Payload S3 Adapter；实名私有对象经 `ali-oss`；另含静态产物、快照和导出 |
+| ECS | 上海，2 vCPU、4 GiB、5 Mbps，1 台 | 已拥有；仍承载其他项目 | Nginx、Next.js/Payload Web、Payload Jobs Worker、Who-Dat |
+| RDS PostgreSQL | PostgreSQL 16.10（实连确认），2 vCPU、4 GiB、100 GB，系列待确认 | 已拥有 | Payload 业务结构、用户、内容、订单、支付、域名资产、Session、Jobs 和审计 |
+| OSS | 上海 D0 私有测试 Bucket 已创建；名称不入仓库 | 已拥有并完成 D0 兼容性验证 | 公共媒体经 Payload S3 Adapter；实名私有对象经 `ali-oss`；另含静态产物、快照和导出 |
 | 短信服务 | 签名和模板待确认 | 已拥有 | 通过 Alibaba Cloud TypeScript SDK 提供手机验证码、订单通知和到期提醒 |
 | 微信支付 | 公司商户号 | 已开通、可联调 | API v3 Native/H5 支付和原路退款 |
 | 西部数码代理账号 | 账号已拥有，写接口权限待核验 | 部分可用 | 查询、价格、实名、注册、续费和 NS |
@@ -106,13 +106,15 @@ P1 不在 RDS 存储：
 
 ### 3.2 可用性结论
 
-100 GB 对 P1 足够。需要确认 PostgreSQL 大版本、实例系列、存储类型和备份能力。
+100 GB 对 P1 足够。实连确认为 PostgreSQL 16.10；仍需确认实例系列、存储类型和备份能力。
 
 开发和联调可以使用当前实例。由于 P1 承接资金、实名、订单和域名资产，真实收款前必须确认或升级为满足高可用、自动备份、PITR 和恢复演练要求的生产实例。
 
+D0 只在新建隔离数据库执行 Payload 初始 migration，首次应用成功、第二次执行无变更；现有业务数据库只读核对且未迁移、未改表。当前 RDS 未启用 SSL 且存在公网连接入口，生产使用前必须启用 SSL，并收敛为 VPC 内网访问和最小白名单；本次为避免影响现有项目未修改实例网络或 SSL 配置。
+
 ### 3.3 待核对
 
-- [ ] PostgreSQL 大版本和小版本；
+- [x] PostgreSQL 大版本和小版本（16.10）；
 - [ ] 基础、高可用或集群系列；
 - [ ] 实例规格代码和存储类型；
 - [ ] 地域、可用区和 VPC；
@@ -125,7 +127,8 @@ P1 不在 RDS 存储：
 - [ ] 慢 SQL、CPU、连接、IOPS 和存储告警；
 - [ ] 实例到期、自动续费和欠费提醒；
 - [ ] Payload Web 与 Jobs Worker 连接池总量不超过 RDS 安全连接预算；
-- [ ] Payload PostgreSQL Adapter 正式迁移、事务和 `push: false` 验证通过。
+- [x] Payload PostgreSQL Adapter 在 D0 隔离数据库完成 migration、事务路径和 `push: false` 验证；
+- [ ] 生产数据库升级快照、连接池预算和正式迁移演练通过。
 
 ## 4. OSS 与 CDN
 
@@ -153,9 +156,9 @@ P1 不在 RDS 存储：
 
 ### 4.3 待核对
 
-- [ ] Bucket 名称、地域和数量；
-- [ ] 是否与 ECS/RDS 同为上海；
-- [ ] 公共访问阻止；
+- [x] D0 Bucket 地域为上海且名称不写入仓库；
+- [x] 是否与 ECS/RDS 同为上海；
+- [x] D0 Bucket 公共访问阻止；
 - [ ] 服务端加密；
 - [ ] 版本控制和生命周期；
 - [ ] CORS、Referer 和 CDN 回源；
@@ -172,6 +175,8 @@ P1 不在 RDS 存储：
 Payload 公共 Upload Collection 通过 `@payloadcms/storage-s3` 接入阿里云 OSS。由于 OSS 只兼容部分 S3 API且要求 virtual-hosted style，D0 必须在目标 Bucket 实测上传、读取、删除、短时签名地址和 ETag；不得仅以 AWS S3 本地 mock 结果判定可用。
 
 实名证件不复用公共 Media Collection，也不经过公共 `@payloadcms/storage-s3` 配置。它使用独立私有 Collection、`private/realname` 前缀和单独 RAM 权限，通过 `ali-oss` 完成对象上传、读取、短时签名和删除，通过 Alibaba Cloud TypeScript SDK 调用 KMS 完成信封加密。项目不得自行实现 OSS、短信或 KMS 的阿里云请求签名。
+
+2026-08-04 D0 实测已在专用私有 Bucket 完成：Payload `storage-s3` 公共 Media 路径和独立 `ali-oss` 私有路径均通过上传、读取、ETag、60 秒签名地址、删除及删除后不存在验证，测试对象已清理。RAM 最小权限、KMS 真实密钥、版本控制、生命周期与误删恢复仍是生产前待办。
 
 ## 5. 短信服务
 
@@ -335,3 +340,6 @@ P1 默认不采购以下资源；触发第 10 节扩容条件时重新评估：
 | 2026-08-02 | 主进程调整为 Next.js/Payload Web + 独立 Payload Jobs Worker；增加 OSS S3 兼容和单 ECS 资源验证 |
 | 2026-08-03 | 公共媒体继续使用 Payload S3 Adapter；实名私有对象固定使用 ali-oss；短信与 KMS 固定使用 Alibaba Cloud TypeScript SDK，不新增云资源 |
 | 2026-08-03 | v4.2 冻结 P1 资源与上线核验基线；增加域名代理资质、责任边界和页面披露专业复核门槛 |
+| 2026-08-03 | v4.3 批准现有 OSS/RDS/ECS 的 D0 受控验证；ECS 仍运行其他项目，迁出前仅允许不影响现有服务的只读盘点，禁止在共享节点执行 Wanmi 压测、现有服务重启、空节点重建或 RTO 演练 |
+| 2026-08-04 | v4.4 完成真实 OSS 两条 adapter 路径与隔离 RDS migration 验证；现有业务数据库未改动，ECS 只做盘点和临时加密端口转发；记录 RDS SSL/公网风险并延期同 VPC Worker、ECS 压测、重启、重建与 RTO 验证 |
+| 2026-08-04 | v4.5 项目负责人批准 D0 条件通过；共享 ECS 的资源、独立重启、同 VPC Jobs 恢复、节点重建和 RTO 验证转入 D7，现有项目迁出前禁止在该节点部署或压测 Wanmi |

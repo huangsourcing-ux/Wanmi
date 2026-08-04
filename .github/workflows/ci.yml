@@ -1,0 +1,45 @@
+name: ci
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'codex/**']
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.14-bookworm
+        env:
+          POSTGRES_DB: wanmi
+          POSTGRES_PASSWORD: wanmi_local_only
+          POSTGRES_USER: wanmi
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wanmi -d wanmi"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://wanmi:wanmi_local_only@127.0.0.1:5432/wanmi
+      NEXT_PUBLIC_SERVER_URL: http://127.0.0.1:3000
+      PAYLOAD_SECRET: ci-payload-secret-ci-payload-secret
+      SESSION_PEPPER: ci-session-pepper-ci-session-pepper
+      TOTP_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      PUBLIC_STORAGE_MODE: local
+      ALIYUN_SMS_MODE: mock
+      ALIYUN_KMS_MODE: mock
+      ALIYUN_OSS_REALNAME_MODE: mock
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: corepack enable && corepack prepare pnpm@11.7.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @wanmi/web payload migrate
+      - run: make check

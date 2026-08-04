@@ -1,10 +1,10 @@
 # Wanmi.AI P1 开发计划
 
-> 文档版本：v2.2（P1 冻结执行版）
+> 文档版本：v2.5（D0 条件通过执行版）
 >
-> 更新日期：2026-08-03
+> 更新日期：2026-08-04
 >
-> 冻结基线：`P1-BASELINE-2026-08-03`；对应 Git 标签 `p1-docs-approved-2026-08-03`
+> 冻结基线：`P1-BASELINE-2026-08-04.1`；批准标签 `p1-docs-approved-2026-08-04-1` 待本次批准变更提交后建立
 >
 > 状态：已批准作为 P1 开发执行计划；生产上线仍需通过独立门槛
 >
@@ -52,7 +52,7 @@ Codex 必须：
 
 - 运行与修改风险相匹配的格式化、静态检查、单元、集成或 E2E 测试；
 - 说明完成内容、验证结果、未完成项和外部阻塞；
-- 更新本文件第 12 节的进度，但只有满足里程碑退出条件后才能勾选整个里程碑；
+- 更新本文件第 12 节的进度；只有满足退出条件，或项目负责人明确批准条件通过并完整转移剩余门槛后，才能勾选整个里程碑；
 - 新增架构决策时写入 `docs/adr/`，不得仅存在于聊天记录；
 - 新增运行操作时同步更新 `infra/runbooks/`；
 - 不因为测试环境缺少真实凭据而删除安全校验或绕过服务端确认。
@@ -71,7 +71,7 @@ Codex 必须：
 
 ### 0.5 冻结与变更控制
 
-`P1-BASELINE-2026-08-03` 冻结 P1 产品范围、固定架构、订单状态与合法迁移、退款规则、实名归属、12～16 周工期口径和生产上线门槛。开发过程中可以更新本计划的任务勾选、验证证据、阻塞、ADR 和 Runbook；不得借进度更新改变冻结基线。
+`P1-BASELINE-2026-08-04.1` 冻结 P1 产品范围、固定架构、订单状态与合法迁移、退款规则、实名归属、12～16 周工期口径和生产上线门槛。开发过程中可以更新本计划的任务勾选、验证证据、阻塞、ADR 和 Runbook；不得借进度更新改变冻结基线。
 
 需要改变冻结内容时，必须取得项目负责人明确指令，更新受影响文档版本与变更记录，完成跨文档一致性检查，并建立新的批准标签。D0 验证失败只触发延长、修正假设或重新提交架构决策，不自动解除冻结。
 
@@ -152,7 +152,7 @@ flowchart LR
 
 | 里程碑 | 参考周期 | 主要范围 | 完成标志 |
 | --- | ---: | --- | --- |
-| D0 Payload 架构验证 | 第 1 周（建议 3～5 天，可延长） | Payload、认证、Jobs、OSS 和单 ECS 验证 | D0 全部退出条件通过 |
+| D0 Payload 架构验证 | 第 1 周（建议 3～5 天，可延长） | Payload、认证、Jobs、OSS 和单 ECS 验证 | 核心退出条件通过；ECS 门槛经负责人批准转入 D7 |
 | D1 公共站基础 | 第 2～3 周 | Web 外壳、通用状态、管理基础 | 首页与后台骨架可运行 |
 | D2 六类域名工具 | 第 3～5 周 | M02～M07、M09 | 工具正常/失败/降级测试通过 |
 | D3 内容、广告与后台 | 第 5～7 周 | M08、M10～M12、M11 相关能力 | 内容与商业组件不影响工具 |
@@ -169,7 +169,7 @@ flowchart LR
 ### 3.1 固定技术栈
 
 - 单一 TypeScript 代码库，Node.js 24 LTS；
-- Next.js 16.2.6、React、TypeScript strict、Tailwind CSS、shadcn/ui；
+- Next.js 16.2.11、React、TypeScript strict、Tailwind CSS、shadcn/ui；
 - Payload 3.86.0；全部 `payload` 与 `@payloadcms/*` 包锁定同一精确版本；
 - Payload 官方插件：`@payloadcms/plugin-seo`、`@payloadcms/plugin-redirects`、`@payloadcms/plugin-form-builder`，全部锁定 `3.86.0`；
 - PostgreSQL Adapter、Payload migrations、`push: false`；
@@ -271,34 +271,34 @@ D0 必须建立并维护以下命令；后续里程碑不得绕过：
 
 ### 4.1 目标
 
-验证单一 Next.js + Payload 主架构可以承担 CMS、认证、权限、业务数据和后台任务，再进入 M01～M16。3～5 天是架构决策时间盒；任一退出条件未满足时延长 D0 并记录原因，禁止为赶进度跳过验证。D0 节省的时间投入交易正确性、安全和恢复测试，不提前缩短 12～16 周对外承诺。
+验证单一 Next.js + Payload 主架构可以承担 CMS、认证、权限、业务数据和后台任务，再进入 M01～M16。3～5 天是架构决策时间盒；任一退出条件未满足时通常延长 D0 并记录原因。项目负责人于 2026-08-04 明确批准 D0 条件通过：只将共享 ECS 上无法安全执行的资源、重启、Jobs 恢复、重建和 RTO 验证转入 D7，其他 D0 门槛不得跳过。该决定不提前缩短 12～16 周对外承诺。
 
 ### 4.2 任务
 
-- [ ] 建立或核对第 3.2 节仓库结构；
-- [ ] 锁定 Node.js 24 LTS、Next.js 16.2.6、Payload 3.86.0 和全部 Payload 包精确版本；
-- [ ] 安装并锁定 `@payloadcms/plugin-seo`、`@payloadcms/plugin-redirects`、`@payloadcms/plugin-form-builder` 为 `3.86.0`，验证启动、迁移和类型生成；
-- [ ] 创建 Next.js/Payload Web、Admin、API 和独立 Jobs Worker 基线；
-- [ ] 建立本地 Docker Compose：PostgreSQL、Who-Dat；
-- [ ] 建立 `/healthz`、`/readyz`、请求 ID、结构化日志和统一错误格式；
-- [ ] 建立 PostgreSQL Adapter、Payload migrations、`push: false` 和 `payload-types.ts` 漂移检查；
-- [ ] 验证内容草稿、版本、定时发布和管理员角色权限；
-- [ ] 验证管理员密码 + TOTP 原型；
-- [ ] 验证普通用户短信 OTP mock、opaque Session 和全部会话撤销；
-- [ ] 建立 `publishing`、`background`、`commerce` 队列，验证 commerce concurrency key、事务和订单事件；
-- [ ] 验证代表用户的 Local API 全部使用 `overrideAccess: false`；
-- [ ] 定义内容、广告、身份、实名、报价、订单、支付、退款、provider 操作、域名资产和审计 Collections；
-- [ ] 通过 `@payloadcms/storage-s3` 验证公共媒体的 OSS 上传、读取、删除、签名地址和 ETag；
-- [ ] 验证私有实名文件与公共 Media Collection 分离，并用 `ali-oss` 完成私有对象上传、读取、短时签名和删除原型；
-- [ ] 使用 Alibaba Cloud TypeScript SDK 建立短信与 KMS adapters 的 mock、错误映射和最小权限配置边界；
-- [ ] 建立 provider 接口、mock 和脱敏 fixture 目录；
-- [ ] 建立 `.env.example`，只写变量名、用途和安全说明；
-- [ ] 建立 Makefile 稳定命令和 CI；
-- [ ] 建立测试框架：Vitest、React Testing Library、MSW、Playwright 和 PostgreSQL 集成测试；
-- [ ] 建立 Gitleaks 和依赖扫描；
+- [x] 建立或核对第 3.2 节仓库结构；
+- [x] 锁定 Node.js 24 LTS、Next.js 16.2.11、Payload 3.86.0 和全部 Payload 包精确版本；
+- [x] 安装并锁定 `@payloadcms/plugin-seo`、`@payloadcms/plugin-redirects`、`@payloadcms/plugin-form-builder` 为 `3.86.0`，验证启动、迁移和类型生成；
+- [x] 创建 Next.js/Payload Web、Admin、API 和独立 Jobs Worker 基线；
+- [x] 建立本地 Docker Compose：PostgreSQL、Who-Dat；
+- [x] 建立 `/healthz`、`/readyz`、请求 ID、结构化日志和统一错误格式；
+- [x] 建立 PostgreSQL Adapter、Payload migrations、`push: false` 和 `payload-types.ts` 漂移检查；
+- [x] 验证内容草稿、版本、定时发布和管理员角色权限；
+- [x] 验证管理员密码 + TOTP 原型；
+- [x] 验证普通用户短信 OTP mock、opaque Session 和全部会话撤销；
+- [x] 建立 `publishing`、`background`、`commerce` 队列，验证 commerce concurrency key、事务和订单事件；
+- [x] 验证代表用户的 Local API 全部使用 `overrideAccess: false`；
+- [x] 定义内容、广告、身份、实名、报价、订单、支付、退款、provider 操作、域名资产和审计 Collections；
+- [x] 通过 `@payloadcms/storage-s3` 验证公共媒体的 OSS 上传、读取、删除、签名地址和 ETag；
+- [x] 验证私有实名文件与公共 Media Collection 分离，并用 `ali-oss` 完成私有对象上传、读取、短时签名和删除原型；
+- [x] 使用 Alibaba Cloud TypeScript SDK 建立短信与 KMS adapters 的 mock、错误映射和最小权限配置边界；
+- [x] 建立 provider 接口、mock 和脱敏 fixture 目录；
+- [x] 建立 `.env.example`，只写变量名、用途和安全说明；
+- [x] 建立 Makefile 稳定命令和 CI；
+- [x] 建立测试框架：Vitest、React Testing Library、MSW、Playwright 和 PostgreSQL 集成测试；
+- [x] 建立 Gitleaks 和依赖扫描；
 - [ ] 在单 ECS 规格下验证 Web/Worker 内存、独立重启、Jobs 恢复和节点重建；
-- [ ] 编写首批 ADR：Payload 主架构、Local API 权限、opaque Session、commerce 幂等、OSS/KMS、单 ECS 可重建策略。
-- [ ] 在 commerce ADR 中固化《技术栈与工程规范》第 6.1 节合法迁移矩阵，并测试全部 `manual_review` 出口。
+- [x] 编写首批 ADR：Payload 主架构、Local API 权限、opaque Session、commerce 幂等、OSS/KMS、单 ECS 可重建策略。
+- [x] 在 commerce ADR 中固化《技术栈与工程规范》第 6.1 节合法迁移矩阵，并测试全部 `manual_review` 出口。
 
 ### 4.3 退出条件
 
@@ -310,6 +310,16 @@ D0 必须建立并维护以下命令；后续里程碑不得绕过：
 - OSS S3 兼容性和单 ECS 资源验证有记录；
 - `make check` 通过；
 - 仓库中不存在真实密钥、手机号、证件或支付数据。
+
+### 4.4 条件通过决定（2026-08-04）
+
+D0 的架构、权限、认证、迁移、Jobs 幂等、真实 OSS、隔离 RDS、安全扫描与同镜像本地验证已经通过。由于目标 ECS 仍承载其他项目，项目负责人批准进入 D1，并将以下未完成项原样转入 D7：
+
+- 2 vCPU/4 GiB 生产 Linux 环境下的 Web、Worker、Who-Dat 内存测量；
+- Web/Worker 独立重启及 ECS 与 RDS 同 VPC 的 `commerce` Job 中断恢复；
+- 空节点重建与两小时 RTO。
+
+这些任务仍是开发整体验收和生产上线硬门槛。现有项目迁出前不得在共享 ECS 部署 Wanmi、压测、重启现有服务或执行节点重建；D1 若暴露主架构、权限、迁移或 Jobs 假设失败，立即返回 D0 修正。
 
 ## 5. D1：公共站与管理基础（第 2～3 周）
 
@@ -516,7 +526,8 @@ D0 必须建立并维护以下命令；后续里程碑不得绕过：
 - [ ] 建立异常订单、退款失败、余额不足、实名泄露、provider 故障和紧急停售 Runbook；
 - [ ] 完成静态资源先上传后发布、镜像 digest、数据库兼容迁移和回滚流程；
 - [ ] 验证支付通知重放、ECS 重建、RDS 恢复、OSS 误删恢复和密钥轮换；
-- [ ] 验证单 ECS 资源限制、日志轮转和 2 小时重建目标；
+- [ ] 在 2 vCPU/4 GiB 生产 Linux 环境验证 Web、Worker、Who-Dat 内存、日志轮转和 2 小时重建目标；
+- [ ] 验证 Web/Worker 独立重启，以及 ECS 与 RDS 同 VPC 的 `commerce` Job 强制中断恢复；
 - [ ] 验证广告关闭、分析失败或 CMS 故障时工具仍完整可用；
 - [ ] 完成微信、西部数码和内部订单三方对账演练。
 
@@ -528,6 +539,7 @@ D0 必须建立并维护以下命令；后续里程碑不得绕过：
 - [ ] 六类工具、内容、广告、后台、账号、实名、支付、注册、续费和资产可在 staging 完成闭环；
 - [ ] 所有关键状态都有用户展示、后台处理和审计；
 - [ ] `make check`、`make test-integration`、`make test-e2e`、`make security`、`make build`、`make smoke` 通过；
+- [ ] D0 条件通过转入 D7 的全部 ECS 运行环境门槛有完整证据；
 - [ ] Zod schemas、Payload 生成类型、数据库迁移、配置示例、ADR 和 Runbook 同步；
 - [ ] 不存在 P1.5/P2/P3 空模块、未使用基础设施或越界功能；
 - [ ] 项目负责人完成产品、交易、安全和运营走查。
@@ -556,7 +568,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 ### 12.1 总体里程碑
 
 - [x] 文档与 P1 范围批准
-- [ ] D0 Payload 架构验证
+- [x] D0 Payload 架构验证（条件通过；ECS 门槛转入 D7）
 - [ ] D1 公共站与管理基础
 - [ ] D2 六类域名工具
 - [ ] D3 内容、广告、分析与运营后台
@@ -575,6 +587,10 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-02 | Payload 架构批准 | 七份文档统一为 Next.js + Payload + PostgreSQL + Payload Jobs；补充 D0 3～5 天验证 | 术语、版本、范围、状态和链接一致性检查 | 仅更新文档，D0 代码尚未开始 |
 | 2026-08-03 | 通用能力选型批准 | 固定 Payload SEO/Redirects/Form Builder、ali-oss 和 Alibaba Cloud TypeScript SDK；同步技术、计划、PRD、资源与代理规范 | Markdown 结构、术语和本地链接一致性检查 | 仅更新方案文档，开发尚未开始 |
 | 2026-08-03 | P1 文档基线冻结 | 修正 PRD 版本/广告表述和收入公式；补全订单迁移矩阵；明确 D0 可延长及代理合规上线门槛 | 跨文档、Markdown、本地链接与 Git 基线检查 | 文档审核通过；D0 尚未开始；生产上线仍附条件 |
+| 2026-08-03 | D0 本地架构切片 | 建立 Next.js/Payload/PostgreSQL/Who-Dat/MinIO 基线、全部最小 Collections 与 RBAC、TOTP/OTP/opaque Session、三队列与 commerce 幂等、provider mocks、迁移/类型漂移门禁、CI、六份 ADR 与 Runbook | lint、typecheck、25 个单元测试、5 个 PostgreSQL/MinIO 集成测试、2 个 Playwright 场景、Gitleaks 和生产/同镜像构建通过；本地 Worker 可独立启动 | D0 保持未完成：真实 OSS 与 2 vCPU/4 GiB ECS 验证待完成；ECS 仍承载其他项目，不执行会影响现有服务的压测、重启或重建 |
+| 2026-08-03 | D0 安全基线更新 | 项目负责人批准 Next.js 16.2.11，并批准受控使用现有 OSS/RDS/ECS；Payload 与官方插件保持 3.86.0 | `make check`、2 个 Playwright E2E、Next.js 16.2.11 本地生产构建及 linux/amd64 同镜像构建通过；高危依赖审计清零，剩余 2 low、2 moderate | 当前 Aliyun CLI 身份看不到文档所列 ECS/RDS；3 个可见 OSS Bucket 均无法明确识别为 D0 测试目标；真实云验证仍未完成，批准标签须在获提交授权后建立 |
+| 2026-08-04 | D0 阿里云隔离验证 | 核对正确云资源；创建上海私有 D0 Bucket；在隔离 RDS 数据库执行 migration；未修改现有业务库和 ECS 工作负载 | 公共 `storage-s3` 与私有 `ali-oss` 均通过真实 OSS 上传、读取、ETag、60 秒签名和删除；PostgreSQL 16.10 初始 migration 成功且二次执行无变更；隧道中断后的 processing lock 已恢复，最终无可运行测试 Job | commerce 长任务经 SSH 隧道超时/断连，必须在同 VPC ECS Worker 复测；ECS 压测、重启、重建延期到部署阶段；RDS SSL 未启用；本轮披露的云凭据必须轮换；批准标签仍待提交授权 |
+| 2026-08-04 | D0 条件通过 | 项目负责人批准进入 D1；仅将共享 ECS 无法安全执行的内存、独立重启、同 VPC Jobs 恢复、节点重建和 RTO 原样转入 D7 | D0 其他任务、真实 OSS/隔离 RDS 证据、`make check`、2 个 Playwright 场景和秘密扫描均通过 | D7/生产上线前必须补齐 ECS 门槛；现有项目迁出前不得在共享 ECS 部署或压测 Wanmi；云凭据必须轮换；新批准标签待提交授权 |
 
 ## 13. 范围追踪矩阵
 
@@ -654,5 +670,5 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 
 开发前检查现有代码和 Git 状态；开发后运行计划要求的验证，
 更新开发计划第 12 节进度，并报告完成项、测试结果、剩余项和外部阻塞。
-满足里程碑退出条件前不要将整个里程碑标记完成。
+满足里程碑退出条件前不要将整个里程碑标记完成；唯一例外是项目负责人明确批准条件通过，并将每个剩余门槛转入后续里程碑且保留上线阻塞状态。本基线仅对 D0 的 ECS 运行环境门槛使用该例外。
 ```

@@ -1,0 +1,30 @@
+{
+  "name": "wanmi",
+  "private": true,
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": "24.18.0",
+    "pnpm": "11.7.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter @wanmi/web build",
+    "dev": "pnpm --filter @wanmi/web dev",
+    "format": "prettier --write '.github/**/*.{yml,yaml}' 'apps/web/**/*.{ts,tsx,js,mjs,json,css,scss}' 'scripts/**/*.{js,mjs}' 'docs/adr/**/*.md' 'docs/operations/**/*.md' README.md package.json pnpm-workspace.yaml docker-compose.yml",
+    "format:check": "prettier --check '.github/**/*.{yml,yaml}' 'apps/web/**/*.{ts,tsx,js,mjs,json,css,scss}' 'scripts/**/*.{js,mjs}' 'docs/adr/**/*.md' 'docs/operations/**/*.md' README.md package.json pnpm-workspace.yaml docker-compose.yml",
+    "generate": "pnpm --filter @wanmi/web generate",
+    "lint": "pnpm --filter @wanmi/web lint",
+    "payload": "pnpm --filter @wanmi/web payload",
+    "security": "node scripts/security.mjs",
+    "start": "pnpm --filter @wanmi/web start",
+    "test": "pnpm --filter @wanmi/web test",
+    "test:e2e": "pnpm --filter @wanmi/web test:e2e",
+    "test:integration": "pnpm --filter @wanmi/web test:integration",
+    "typecheck": "pnpm --filter @wanmi/web typecheck",
+    "verify-generated": "pnpm --filter @wanmi/web verify-generated",
+    "verify:cloud:oss": "pnpm --filter @wanmi/web verify:cloud:oss",
+    "worker": "pnpm --filter @wanmi/web worker"
+  },
+  "devDependencies": {
+    "prettier": "3.6.2"
+  }
+}

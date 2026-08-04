@@ -1,0 +1,53 @@
+/* Payload Admin customizations are intentionally minimal during D0. */
+
+.wanmi-mfa-login {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 2rem;
+
+  &__card {
+    background: var(--theme-elevation-50);
+    border: 1px solid var(--theme-elevation-150);
+    border-radius: 0.75rem;
+    display: grid;
+    gap: 1rem;
+    max-width: 28rem;
+    padding: 2rem;
+    width: 100%;
+
+    label {
+      display: grid;
+      gap: 0.4rem;
+    }
+
+    input {
+      background: var(--theme-input-bg);
+      border: 1px solid var(--theme-elevation-250);
+      border-radius: 0.25rem;
+      color: var(--theme-text);
+      font: inherit;
+      padding: 0.7rem;
+    }
+
+    button {
+      background: var(--theme-text);
+      border: 0;
+      border-radius: 0.25rem;
+      color: var(--theme-bg);
+      cursor: pointer;
+      font: inherit;
+      padding: 0.75rem;
+    }
+  }
+
+  &__eyebrow {
+    color: var(--theme-elevation-600);
+    margin: 0;
+  }
+
+  &__error {
+    color: var(--theme-error-500);
+  }
+}

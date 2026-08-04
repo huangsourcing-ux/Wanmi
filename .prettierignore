@@ -1,0 +1,7 @@
+.next
+coverage
+node_modules
+pnpm-lock.yaml
+apps/web/next-env.d.ts
+apps/web/src/payload-types.ts
+apps/web/src/app/(payload)/admin/importMap.js
