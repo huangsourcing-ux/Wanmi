@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 
+import { DomainQueryForm } from '@/components/forms/domain-query-form'
 import { ConstructionNotice } from '@/components/site/construction-notice'
 import { PageIntro } from '@/components/site/page-intro'
 import { TOOL_DEFINITIONS, getToolDefinition, normalizeQueryParam } from '@/lib/site-config'
@@ -36,6 +37,13 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
   return (
     <>
       <PageIntro badge="工具入口" description={tool.description} title={tool.title} />
+      {slug === 'domain-search' ? (
+        <DomainQueryForm
+          className="mx-auto mb-6 w-[calc(100%-2rem)] max-w-7xl sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]"
+          defaultValue={query}
+          description="可继续修改完整域名或关键词。本阶段不会调用 provider，也不会保存输入。"
+        />
+      ) : null}
       <ConstructionNotice
         description={`${tool.title}的服务端查询与结果状态将在后续工具开发中接入。`}
         query={query}

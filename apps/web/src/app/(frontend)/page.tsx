@@ -6,17 +6,16 @@ import {
   BracesIcon,
   CheckCircle2Icon,
   FileSearchIcon,
-  Globe2Icon,
   NetworkIcon,
   SearchIcon,
   ShieldCheckIcon,
 } from 'lucide-react'
 
+import { DomainQueryForm } from '@/components/forms/domain-query-form'
 import { ContentEntryCard } from '@/components/home/content-entry-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { getPublicSiteData } from '@/lib/public-site-data'
 import { PRICING_TOOL, TOOL_DEFINITIONS } from '@/lib/site-config'
 
@@ -55,39 +54,7 @@ export default async function HomePage() {
               与证书检查，并了解价格和注册规则。
             </p>
 
-            <form action="/tools/domain-search" className="mt-8" method="get">
-              <label className="sr-only" htmlFor="home-domain-query">
-                输入完整域名或关键词
-              </label>
-              <div className="flex flex-col gap-3 rounded-xl border bg-background p-2 shadow-sm sm:flex-row sm:items-center">
-                <div className="flex min-w-0 flex-1 items-center gap-2 px-2">
-                  <Globe2Icon
-                    aria-hidden="true"
-                    className="size-5 shrink-0 text-muted-foreground"
-                  />
-                  <Input
-                    aria-describedby="home-query-help"
-                    autoCapitalize="none"
-                    autoComplete="off"
-                    className="h-11 border-0 bg-transparent px-0 text-base shadow-none focus-visible:ring-0 md:text-base"
-                    id="home-domain-query"
-                    maxLength={253}
-                    name="q"
-                    placeholder="例如 wanmi.net 或品牌关键词"
-                    required
-                    spellCheck={false}
-                    type="text"
-                  />
-                </div>
-                <Button className="h-11 px-5" size="lg" type="submit">
-                  查询域名
-                  <ArrowRightIcon aria-hidden="true" data-icon="inline-end" />
-                </Button>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground" id="home-query-help">
-                支持完整域名与关键词。本阶段只建立安全入口，不调用查询服务，也不保存输入。
-              </p>
-            </form>
+            <DomainQueryForm className="mt-8" />
           </div>
 
           <aside

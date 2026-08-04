@@ -1,5 +1,6 @@
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ResultState } from '@/components/results/result-state'
 import type { PublicContentSection } from '@/lib/public-site-data'
 
 export function ContentLanding({
@@ -39,12 +40,18 @@ export function ContentLanding({
               ))}
             </ul>
           ) : (
-            <div className="max-w-3xl space-y-2 text-sm leading-6 text-muted-foreground">
-              <p>{emptyDescription}</p>
-              {section.status === 'unavailable' ? (
-                <p>请稍后重试。工具与帮助入口不依赖这组内容，仍可继续使用。</p>
-              ) : null}
-            </div>
+            <ResultState
+              compact
+              description={emptyDescription}
+              retryable={section.status === 'unavailable' ? true : undefined}
+              state={section.status === 'unavailable' ? 'degraded' : 'empty'}
+              suggestedAction={
+                section.status === 'unavailable'
+                  ? '请稍后重试。工具与帮助入口不依赖这组内容，仍可继续使用。'
+                  : '可以先使用工具或帮助入口，稍后再查看已发布内容。'
+              }
+              title={section.status === 'unavailable' ? '内容数据暂时不可用' : '暂无已发布内容'}
+            />
           )}
         </CardContent>
       </Card>
