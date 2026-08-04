@@ -192,9 +192,14 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
 
     const template = await payload.create({
       collection: 'realnameTemplates',
-      data: { customer: other.id, displayName: 'attempted-takeover', type: 'individual' },
+      data: {
+        customer: other.id,
+        displayName: 'attempted-takeover',
+        status: 'draft',
+        type: 'individual',
+      },
       overrideAccess: false,
-      user: { ...owner, collection: 'customers' },
+      user: { ...owner, collection: 'customers' as const },
     })
 
     expect(
