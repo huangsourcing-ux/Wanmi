@@ -892,7 +892,7 @@ export interface Redirect {
         } | null);
     url?: string | null;
   };
-  type: '301' | '302';
+  type: '301';
   updatedAt: string;
   createdAt: string;
 }

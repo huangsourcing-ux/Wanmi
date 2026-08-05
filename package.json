@@ -22,6 +22,8 @@
     "typecheck": "pnpm --filter @wanmi/web typecheck",
     "verify-generated": "pnpm --filter @wanmi/web verify-generated",
     "verify:cloud:oss": "pnpm --filter @wanmi/web verify:cloud:oss",
+    "verify:migrations": "node scripts/verify-redirect-migration.mjs",
+    "verify:nginx": "node scripts/verify-nginx-redirects.mjs",
     "worker": "pnpm --filter @wanmi/web worker"
   },
   "devDependencies": {

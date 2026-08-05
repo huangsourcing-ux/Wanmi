@@ -1,5 +1,23 @@
 import { expect, test } from '@playwright/test'
 
+import { redirectFixtureFrom } from './redirect-fixture'
+
+const canonicalOrigin = 'http://127.0.0.1:3100'
+
+test('database redirect returns a canonical 301 with query parameters and a request ID', async ({
+  request,
+}) => {
+  const response = await request.get(`${redirectFixtureFrom}?q=wanmi.net&utm_source=e2e`, {
+    maxRedirects: 0,
+  })
+  expect(response.status()).toBe(301)
+  expect(new URL(response.headers().location, canonicalOrigin).toString()).toBe(
+    `${canonicalOrigin}/help?q=wanmi.net&utm_source=e2e`,
+  )
+  expect(response.headers()['x-request-id']).toMatch(/^[0-9a-f-]{36}$/)
+  expect((await request.get('/d1-redirect-e2e-unknown')).status()).toBe(404)
+})
+
 test('homepage works on desktop and submits a noindex domain query without provider access', async ({
   page,
 }) => {
@@ -11,16 +29,15 @@ test('homepage works on desktop and submits a noindex domain query without provi
   await page.getByRole('button', { name: '查询域名' }).click()
 
   await expect(page).toHaveURL(/\/tools\/domain-search\?q=.*wanmi\.net/)
-  const origin = new URL(page.url()).origin
   await expect(page.getByText('已收到查询：')).toContainText('wanmi.net')
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/)
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     'href',
-    `${origin}/tools/domain-search`,
+    `${canonicalOrigin}/tools/domain-search`,
   )
   await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
     'content',
-    `${origin}/tools/domain-search`,
+    `${canonicalOrigin}/tools/domain-search`,
   )
   await expect(page.getByText(/不会调用查询 provider/)).toBeVisible()
   await expect(page.getByLabel('输入完整域名或关键词')).toHaveValue('wanmi.net')
@@ -64,7 +81,7 @@ test('planned public skeleton routes are available and unknown slugs return 404'
     const response = await request.get(path)
     expect(response.status(), path).toBe(200)
     expect(await response.text(), path).toContain(
-      `<link rel="canonical" href="${new URL(response.url()).origin}${path}"`,
+      `<link rel="canonical" href="${canonicalOrigin}${path}"`,
     )
   }
 
@@ -81,13 +98,13 @@ test('robots, sitemap and the branded Open Graph image expose only stable public
   expect(robotsText).toContain('Disallow: /admin/')
   expect(robotsText).toContain('Disallow: /api/')
   expect(robotsText).toContain('Disallow: /healthz')
-  expect(robotsText).toContain('Sitemap: http://127.0.0.1:3100/sitemap.xml')
+  expect(robotsText).toContain(`Sitemap: ${canonicalOrigin}/sitemap.xml`)
 
   const sitemap = await request.get('/sitemap.xml')
   expect(sitemap.ok()).toBe(true)
   const sitemapText = await sitemap.text()
-  expect(sitemapText).toContain('<loc>http://127.0.0.1:3100/tools/domain-search</loc>')
-  expect(sitemapText).toContain('<loc>http://127.0.0.1:3100/legal/privacy</loc>')
+  expect(sitemapText).toContain(`<loc>${canonicalOrigin}/tools/domain-search</loc>`)
+  expect(sitemapText).toContain(`<loc>${canonicalOrigin}/legal/privacy</loc>`)
   expect(sitemapText).not.toContain('/admin')
   expect(sitemapText).not.toContain('/api/')
   expect(sitemapText).not.toContain('?q=')
@@ -106,7 +123,7 @@ test('all query-capable tool pages keep clean canonicals and noindex parameter r
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/)
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     'href',
-    'http://127.0.0.1:3100/tools/whois',
+    `${canonicalOrigin}/tools/whois`,
   )
 
   await page.goto('/tools/whois')

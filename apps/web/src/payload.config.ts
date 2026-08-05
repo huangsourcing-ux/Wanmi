@@ -102,7 +102,7 @@ export default buildConfig({
     redirectsPlugin({
       collections: ['articles', 'topics', 'tldPages'],
       overrides: redirectsOverrides,
-      redirectTypes: ['301', '302'],
+      redirectTypes: ['301'],
     }),
     formBuilderPlugin({
       fields: {
