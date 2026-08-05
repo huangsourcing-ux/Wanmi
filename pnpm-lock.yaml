@@ -109,9 +109,15 @@ importers:
       tailwind-merge:
         specifier: 3.6.0
         version: 3.6.0
+      tr46:
+        specifier: 6.0.0
+        version: 6.0.0
       tw-animate-css:
         specifier: 1.4.0
         version: 1.4.0
+      unicode-script:
+        specifier: 1.2.0
+        version: 1.2.0
       yjs:
         specifier: 13.6.31
         version: 13.6.31
@@ -152,6 +158,9 @@ importers:
       '@types/react-dom':
         specifier: 19.2.3
         version: 19.2.3(@types/react@19.2.14)
+      '@types/tr46':
+        specifier: 5.0.1
+        version: 5.0.1
       '@vitejs/plugin-react':
         specifier: 4.5.2
         version: 4.5.2(vite@7.3.6(@types/node@22.19.9)(jiti@2.7.0)(lightningcss@1.32.0)(sass@1.77.4)(tsx@4.22.4))
@@ -2699,6 +2708,9 @@ packages:
 
   '@types/statuses@2.0.6':
     resolution: {integrity: sha512-xMAgYwceFhRA2zY+XbEA7mxYbA093wdiW8Vu6gZPGWy9cmOyU9XesH1tNcEWsKFd5Vzrqx5T3D38PWx1FIIXkA==}
+
+  '@types/tr46@5.0.1':
+    resolution: {integrity: sha512-/nNLTzy884WMMjksAFsrazXpwKcipQn1FltlXu4PycQFD8t6a4aq/z+F7mw05UI7p5O8MUvXLTPbISOoQtaugg==}
 
   '@types/trusted-types@2.0.7':
     resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
@@ -5649,6 +5661,10 @@ packages:
   unescape@1.0.1:
     resolution: {integrity: sha512-O0+af1Gs50lyH1nUu3ZyYS1cRh01Q/kUKatTOkSs7jukXE6/NebucDVxyiDsA9AQ4JC1V1jUH9EO8JX2nMDgGQ==}
     engines: {node: '>=0.10.0'}
+
+  unicode-script@1.2.0:
+    resolution: {integrity: sha512-1Dz/Fs8uWK3EEnrvCXFmR2oQz+oxTe7H8AGwRiaUZ9SWdyF37L4s+a2AZx31+YpRdrKajlUPDDVjWLP8WIQUVw==}
+    engines: {node: '>=18.20'}
 
   unist-util-is@6.0.1:
     resolution: {integrity: sha512-LsiILbtBETkDz8I9p1dQ0uyRUWuaQzd/cuEeS1hoRSyW5E5XGmTzlwY1OrNzzakGowI9Dr/I8HVaw4hTtnxy8g==}
@@ -8729,6 +8745,8 @@ snapshots:
       '@types/node': 22.19.9
 
   '@types/statuses@2.0.6': {}
+
+  '@types/tr46@5.0.1': {}
 
   '@types/trusted-types@2.0.7':
     optional: true
@@ -12131,6 +12149,8 @@ snapshots:
   unescape@1.0.1:
     dependencies:
       extend-shallow: 2.0.1
+
+  unicode-script@1.2.0: {}
 
   unist-util-is@6.0.1:
     dependencies:
