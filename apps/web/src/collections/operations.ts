@@ -12,11 +12,12 @@ import {
   systemAdminHidden,
   systemAdminOnly,
 } from '@/access/roles'
+import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 
 export const ManualReviews: CollectionConfig = {
   slug: 'manualReviews',
   access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
-  admin: { hidden: systemAdminHidden },
+  admin: { group: ADMIN_GROUPS.operations, hidden: systemAdminHidden },
   fields: [
     { name: 'order', type: 'relationship', relationTo: 'orders', index: true },
     { name: 'reasonCode', type: 'text', index: true, required: true },
@@ -37,7 +38,7 @@ export const ManualReviews: CollectionConfig = {
 export const Reconciliations: CollectionConfig = {
   slug: 'reconciliations',
   access: { create: deny, delete: deny, read: operationalReaders, update: deny },
-  admin: { hidden: operationsAdminHidden },
+  admin: { group: ADMIN_GROUPS.operations, hidden: operationsAdminHidden },
   fields: [
     {
       name: 'kind',
@@ -60,7 +61,16 @@ export const Reconciliations: CollectionConfig = {
 export const AuditLogs: CollectionConfig = {
   slug: 'auditLogs',
   access: { create: deny, delete: deny, read: auditReaders, update: deny },
-  admin: { hidden: auditAdminHidden },
+  admin: {
+    defaultColumns: ['action', 'actorType', 'targetType', 'targetId', 'traceId', 'createdAt'],
+    group: ADMIN_GROUPS.operations,
+    hidden: auditAdminHidden,
+    listSearchableFields: ['action', 'actorId', 'targetType', 'targetId', 'traceId'],
+    useAsTitle: 'action',
+  },
+  defaultSort: '-createdAt',
+  indexes: [{ fields: ['actorType', 'actorId', 'createdAt'] }],
+  labels: { plural: '审计日志', singular: '审计事件' },
   fields: [
     { name: 'action', type: 'text', index: true, required: true },
     {
@@ -80,7 +90,7 @@ export const AuditLogs: CollectionConfig = {
 export const UserFeedback: CollectionConfig = {
   slug: 'userFeedback',
   access: { create: deny, delete: deny, read: operationalReaders, update: systemAdminOnly },
-  admin: { hidden: operationsAdminHidden },
+  admin: { group: ADMIN_GROUPS.operations, hidden: operationsAdminHidden },
   fields: [
     {
       name: 'customer',
@@ -114,7 +124,7 @@ export const UserFeedback: CollectionConfig = {
 export const CustomerSecurityEvents: CollectionConfig = {
   slug: 'customerSecurityEvents',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
-  admin: { hidden: systemAdminHidden },
+  admin: { group: ADMIN_GROUPS.operations, hidden: systemAdminHidden },
   fields: [
     {
       name: 'customer',

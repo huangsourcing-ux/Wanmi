@@ -6,6 +6,8 @@ import { createLocalReq } from 'payload'
 import { encryptSecret } from '../../src/lib/crypto'
 import type { AdminRole } from '../../src/lib/domain'
 import { getEnv } from '../../src/lib/env'
+import type { Admin } from '../../src/payload-types'
+import { recordAuditEvent } from '../../src/services/audit/record-audit-event'
 import { createTotpSecret, hashRecoveryCodes } from '../../src/services/auth/totp'
 import { getFixturePayload } from './redirect-fixture'
 
@@ -16,6 +18,8 @@ const systemRecoveryCode = 'e2e-system-recovery-code'
 const disabledEmail = 'e2e-disabled-admin@example.test'
 const disabledPassword = 'E2E-disabled-admin-password-2026'
 const disabledRecoveryCode = 'e2e-disabled-recovery-code'
+export const ownAuditTargetId = 'e2e-own-audit-marker'
+export const otherAuditTargetId = 'e2e-other-audit-marker'
 const roleAccounts = {
   ad_operator: {
     email: 'e2e-ad-operator@example.test',
@@ -140,12 +144,42 @@ export async function createAdminAuthFixture() {
     'disabled',
   )
   await replaceCredential(disabledAdmin.id, disabledRecoveryCode)
+  let adOperator: Admin | undefined
+  let contentEditor: Admin | undefined
   for (const [role, account] of Object.entries(roleAccounts) as [
     'ad_operator' | 'analyst' | 'content_editor',
     RoleAccount,
   ][]) {
     const roleAdmin = await findOrCreateAdmin(account.email, account.password, [role], 'active')
     await replaceCredential(roleAdmin.id, account.recoveryCode)
+    if (role === 'ad_operator') adOperator = roleAdmin
+    if (role === 'content_editor') contentEditor = roleAdmin
+  }
+  if (!adOperator || !contentEditor) throw new Error('E2E role audit fixtures are incomplete')
+
+  const staleAudits = await payload.find({
+    collection: 'auditLogs',
+    limit: 100,
+    overrideAccess: true,
+    where: { targetId: { in: [ownAuditTargetId, otherAuditTargetId] } },
+  })
+  for (const audit of staleAudits.docs) {
+    await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
+  }
+  for (const [actor, targetId] of [
+    [adOperator, ownAuditTargetId],
+    [contentEditor, otherAuditTargetId],
+  ] as const) {
+    const auditReq = await createLocalReq(
+      { req: { headers: new Headers({ 'x-request-id': `${targetId}-trace` }) } },
+      payload,
+    )
+    auditReq.user = { ...actor, collection: 'admins' }
+    await recordAuditEvent(auditReq, {
+      action: 'admin.account.changed',
+      metadata: { changedFields: ['status'] },
+      targetId,
+    })
   }
 
   const staleInvitations = await payload.find({
@@ -200,6 +234,17 @@ export async function removeAdminAuthFixture() {
   } catch {
     return
   }
+  const cleanupTraceId = 'e2e-admin-fixture-cleanup'
+  const cleanupReq = await createLocalReq(
+    { req: { headers: new Headers({ 'x-request-id': cleanupTraceId }) } },
+    payload,
+  )
+  cleanupReq.user = {
+    collection: 'admins',
+    id: 'e2e-admin-fixture-cleanup',
+    roles: ['system_admin'],
+    status: 'active',
+  } as never
   const invitations = await payload.find({
     collection: 'adminInvitations',
     limit: 100,
@@ -212,6 +257,15 @@ export async function removeAdminAuthFixture() {
       id: invitation.id,
       overrideAccess: true,
     })
+  }
+  const audits = await payload.find({
+    collection: 'auditLogs',
+    limit: 100,
+    overrideAccess: true,
+    where: { targetId: { in: [ownAuditTargetId, otherAuditTargetId] } },
+  })
+  for (const audit of audits.docs) {
+    await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
   }
   const invited = await payload.find({
     collection: 'admins',
@@ -232,7 +286,21 @@ export async function removeAdminAuthFixture() {
         overrideAccess: true,
       })
     }
-    await payload.delete({ collection: 'admins', id: admin.id, overrideAccess: true })
+    await payload.delete({
+      collection: 'admins',
+      id: admin.id,
+      overrideAccess: true,
+      req: cleanupReq,
+    })
+  }
+  const cleanupAudits = await payload.find({
+    collection: 'auditLogs',
+    limit: 100,
+    overrideAccess: true,
+    where: { traceId: { equals: cleanupTraceId } },
+  })
+  for (const audit of cleanupAudits.docs) {
+    await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
   }
   await unlink(statePath).catch(() => undefined)
 }

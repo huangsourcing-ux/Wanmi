@@ -1,6 +1,6 @@
 import type { Payload, PayloadRequest, SelectType, Where } from 'payload'
 
-import { getTraceId } from '@/lib/errors'
+import { recordAuditEvent } from '@/services/audit/record-audit-event'
 
 type UserFindArgs = {
   collection: string
@@ -28,17 +28,11 @@ export async function systemFindForJob(
   auditReason: string,
 ) {
   if (!auditReason.trim()) throw new Error('System access requires an audit reason')
-  await payload.create({
-    collection: 'auditLogs',
-    data: {
-      action: 'system.local_api.read',
-      actorType: 'system',
-      metadata: { collection: args.collection, reason: auditReason },
-      targetType: args.collection,
-      traceId: getTraceId(args.req.headers),
-    },
-    overrideAccess: true,
-    req: args.req,
+  await recordAuditEvent(args.req, {
+    action: 'system.local_api.read',
+    actor: { type: 'system' },
+    metadata: { collection: args.collection, reason: auditReason },
+    targetId: args.collection,
   })
   return payload.find({
     ...args,

@@ -17,7 +17,7 @@ describe('Payload Local API guardrails', () => {
     const find = vi.fn().mockResolvedValue({ docs: [] })
     const create = vi.fn().mockResolvedValue({ id: 1 })
     const payload = { create, find }
-    const req = { headers: new Headers({ 'x-request-id': 'test-trace-0001' }) }
+    const req = { headers: new Headers({ 'x-request-id': 'test-trace-0001' }), payload }
     await expect(
       systemFindForJob(payload as never, { collection: 'orders', req: req as never }, ''),
     ).rejects.toThrow(/audit reason/)
@@ -29,8 +29,14 @@ describe('Payload Local API guardrails', () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         collection: 'auditLogs',
-        data: expect.objectContaining({ traceId: 'test-trace-0001' }),
+        data: expect.objectContaining({
+          actorType: 'system',
+          targetId: 'orders',
+          targetType: 'payload-collection',
+          traceId: 'test-trace-0001',
+        }),
         overrideAccess: true,
+        req,
       }),
     )
   })

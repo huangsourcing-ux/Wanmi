@@ -11,7 +11,7 @@ import {
 import { decryptSecret, hmac, safeEqualHex } from '@/lib/crypto'
 import { getEnv } from '@/lib/env'
 import { AppError } from '@/lib/errors'
-import { getTraceId } from '@/lib/request-id'
+import { recordAuditEvent, type AuditAction } from '@/services/audit/record-audit-event'
 
 const TOTP_ALGORITHM = 'SHA1'
 const TOTP_DIGITS = 6
@@ -60,25 +60,16 @@ function isLocked(credential: Credential, now = Date.now()): boolean {
 }
 
 async function writeMfaAudit(
-  payload: Payload,
   req: PayloadRequest,
-  action: string,
+  action: AuditAction,
   targetId: number | string,
   metadata?: Record<string, unknown>,
 ) {
-  await payload.create({
-    collection: 'auditLogs',
-    data: {
-      action,
-      actorId: String(targetId),
-      actorType: 'admin',
-      metadata,
-      targetId: String(targetId),
-      targetType: 'admin',
-      traceId: getTraceId(req.headers),
-    },
-    overrideAccess: true,
-    req,
+  await recordAuditEvent(req, {
+    action,
+    actor: { id: targetId, type: 'admin' },
+    metadata,
+    targetId,
   })
 }
 
@@ -113,11 +104,11 @@ async function registerFailedFactor(
     })
     if (claimed.docs.length) {
       const targetId = adminId(credential)
-      await writeMfaAudit(payload, failureReq, 'admin.auth.mfa_failed', targetId, {
+      await writeMfaAudit(failureReq, 'admin.auth.mfa_failed', targetId, {
         failedAttempts,
       })
       if (lockedUntil) {
-        await writeMfaAudit(payload, failureReq, 'admin.auth.mfa_locked', targetId, {
+        await writeMfaAudit(failureReq, 'admin.auth.mfa_locked', targetId, {
           lockedMinutes: MFA_LOCK_MILLISECONDS / 60_000,
         })
       }
@@ -191,7 +182,7 @@ export const verifyAdminTotpBeforeLogin: CollectionBeforeLoginHook = async ({ re
   }
   if (isLocked(credential)) {
     const auditReq = await createLocalReq({ req: { headers: req.headers } }, req.payload)
-    await writeMfaAudit(req.payload, auditReq, 'admin.auth.mfa_locked_rejected', user.id)
+    await writeMfaAudit(auditReq, 'admin.auth.mfa_locked_rejected', user.id)
     throw new AppError('ADMIN_AUTH_INVALID', '邮箱、密码或第二因素无效', 401)
   }
 
@@ -241,7 +232,7 @@ export const verifyAdminTotpBeforeLogin: CollectionBeforeLoginHook = async ({ re
     throw new AppError('ADMIN_AUTH_INVALID', '邮箱、密码或第二因素无效', 401)
   }
   if (context.adminMfaMethod === 'recovery_code') {
-    await writeMfaAudit(req.payload, req, 'admin.auth.recovery_code_used', user.id)
+    await writeMfaAudit(req, 'admin.auth.recovery_code_used', user.id)
   }
   return user
 }
@@ -251,7 +242,7 @@ export const auditAdminLoginSuccess = async (
   userId: number | string,
   method: 'recovery_code' | 'totp',
 ) => {
-  await writeMfaAudit(req.payload, req, 'admin.auth.login_succeeded', userId, {
+  await writeMfaAudit(req, 'admin.auth.login_succeeded', userId, {
     factor: method,
   })
 }

@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Admin, Article, Customer } from '@/payload-types'
 
 let payload: Payload
+let cleanupAdmin: Admin
 const fixturePrefix = `d1-redirect-${randomUUID()}`
 const createdAdmins: number[] = []
 const createdArticles: number[] = []
@@ -79,8 +80,10 @@ beforeAll(async () => {
     overrideAccess: true,
     where: { email: { equals: bootstrapEmail } },
   })
-  if (!existing.docs[0]) {
-    await payload.create({
+  if (existing.docs[0]) {
+    cleanupAdmin = existing.docs[0]
+  } else {
+    cleanupAdmin = await payload.create({
       collection: 'admins',
       context: { adminAccountOperation: 'bootstrap' },
       data: {
@@ -95,6 +98,8 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
+  const cleanupTraceId = `${fixturePrefix}-cleanup`
+  const cleanupReq = await requestFor(cleanupAdmin, cleanupTraceId)
   const redirects = await payload.find({
     collection: 'redirects',
     limit: 100,
@@ -106,7 +111,12 @@ afterAll(async () => {
     ...redirects.docs.map((document) => String(document.id)),
   ]
   for (const redirect of redirects.docs) {
-    await payload.delete({ collection: 'redirects', id: redirect.id, overrideAccess: true })
+    await payload.delete({
+      collection: 'redirects',
+      id: redirect.id,
+      overrideAccess: true,
+      req: cleanupReq,
+    })
   }
   if (redirectIds.length) {
     const audits = await payload.find({
@@ -128,7 +138,16 @@ afterAll(async () => {
     await payload.delete({ collection: 'customers', id, overrideAccess: true })
   }
   for (const id of createdAdmins) {
-    await payload.delete({ collection: 'admins', id, overrideAccess: true })
+    await payload.delete({ collection: 'admins', id, overrideAccess: true, req: cleanupReq })
+  }
+  const cleanupAudits = await payload.find({
+    collection: 'auditLogs',
+    limit: 1_000,
+    overrideAccess: true,
+    where: { traceId: { equals: cleanupTraceId } },
+  })
+  for (const audit of cleanupAudits.docs) {
+    await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
   }
   await payload.db.destroy?.()
 })

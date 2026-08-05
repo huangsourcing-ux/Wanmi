@@ -12,8 +12,8 @@ import { hasRole, isActiveAdminUser } from '@/access/roles'
 import { hmac } from '@/lib/crypto'
 import { getEnv } from '@/lib/env'
 import { AppError } from '@/lib/errors'
-import { getTraceId } from '@/lib/request-id'
 import type { AdminLoginInput } from '@/schemas/auth'
+import { recordAuditEvent } from '@/services/audit/record-audit-event'
 
 import { auditAdminLoginSuccess } from './totp'
 
@@ -52,17 +52,10 @@ export function safeAdminSummary(user: AdminUser) {
 
 async function auditLoginFailure(payload: Payload, request: Request, email: string): Promise<void> {
   const req = await createLocalReq({ req: { headers: request.headers } }, payload)
-  await payload.create({
-    collection: 'auditLogs',
-    data: {
-      action: 'admin.auth.login_failed',
-      actorType: 'anonymous',
-      metadata: { emailHash: hmac(email, getEnv().SESSION_PEPPER) },
-      targetType: 'admin-auth',
-      traceId: getTraceId(request.headers),
-    },
-    overrideAccess: true,
-    req,
+  await recordAuditEvent(req, {
+    action: 'admin.auth.login_failed',
+    actor: { type: 'anonymous' },
+    metadata: { emailHash: hmac(email, getEnv().SESSION_PEPPER) },
   })
 }
 
@@ -168,19 +161,13 @@ export async function revokeAdminSessions(
     overrideAccess: true,
     req,
   })
-  await req.payload.create({
-    collection: 'auditLogs',
-    data: {
-      action: sessionId ? 'admin.session.revoked' : 'admin.sessions.revoked_all',
-      actorId: String(actor.id),
-      actorType: 'admin',
-      metadata: { sessionId: sessionId ? hmac(sessionId, getEnv().SESSION_PEPPER) : undefined },
-      targetId: String(target.id),
-      targetType: 'admin-session',
-      traceId: getTraceId(req.headers),
+  await recordAuditEvent(req, {
+    action: sessionId ? 'admin.session.revoked' : 'admin.sessions.revoked_all',
+    actor: { id: actor.id, type: 'admin' },
+    metadata: {
+      sessionIdHash: sessionId ? hmac(sessionId, getEnv().SESSION_PEPPER) : undefined,
     },
-    overrideAccess: true,
-    req,
+    targetId: target.id,
   })
   return {
     clearCookie:

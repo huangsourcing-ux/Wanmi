@@ -159,7 +159,6 @@ export async function createAdminInvitation(
     action: 'admin.invitation.created',
     metadata: { purpose: invitation.purpose },
     targetId: invitation.id,
-    targetType: 'admin-invitation',
   })
   const invitationUrl = new URL('/admin/enroll', getEnv().NEXT_PUBLIC_SERVER_URL)
   invitationUrl.hash = `token=${token}`
@@ -186,7 +185,6 @@ export async function revokeAdminInvitation(req: PayloadRequest, id: number | st
   await recordAuditEvent(req, {
     action: 'admin.invitation.revoked',
     targetId: id,
-    targetType: 'admin-invitation',
   })
   return safeInvitationSummary(revoked.docs[0] as Invitation)
 }
@@ -309,7 +307,6 @@ export async function acceptAdminInvitation(
           : 'admin.invitation.accepted',
       metadata: { purpose: invitation.purpose },
       targetId: admin.id,
-      targetType: 'admin',
     })
 
     if (startedTransaction) await commitTransaction(req)

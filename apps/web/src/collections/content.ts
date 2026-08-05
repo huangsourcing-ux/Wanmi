@@ -8,6 +8,7 @@ import {
   systemAdminHidden,
   systemAdminOnly,
 } from '@/access/roles'
+import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 
 const slugFields: Field[] = [
   { name: 'title', type: 'text', required: true },
@@ -24,7 +25,7 @@ const versionedContent = (slug: 'articles' | 'tldPages' | 'topics'): CollectionC
     readVersions: contentManagers,
     update: contentManagers,
   },
-  admin: { hidden: contentAdminHidden, useAsTitle: 'title' },
+  admin: { group: ADMIN_GROUPS.content, hidden: contentAdminHidden, useAsTitle: 'title' },
   fields: [
     ...slugFields,
     { name: 'content', type: 'richText', required: true },
@@ -49,7 +50,7 @@ export const Media: CollectionConfig = {
     read: publicRead,
     update: contentManagers,
   },
-  admin: { hidden: contentAdminHidden, useAsTitle: 'alt' },
+  admin: { group: ADMIN_GROUPS.content, hidden: contentAdminHidden, useAsTitle: 'alt' },
   fields: [
     { name: 'alt', type: 'text', required: true },
     { name: 'source', type: 'text' },
@@ -68,7 +69,7 @@ export const Navigation: CollectionConfig = {
     read: publicRead,
     update: contentManagers,
   },
-  admin: { hidden: contentAdminHidden, useAsTitle: 'label' },
+  admin: { group: ADMIN_GROUPS.content, hidden: contentAdminHidden, useAsTitle: 'label' },
   fields: [
     { name: 'label', type: 'text', required: true },
     { name: 'href', type: 'text', required: true },
@@ -85,7 +86,7 @@ export const SiteSettings: CollectionConfig = {
     read: publicRead,
     update: systemAdminOnly,
   },
-  admin: { hidden: systemAdminHidden, useAsTitle: 'key' },
+  admin: { group: ADMIN_GROUPS.content, hidden: systemAdminHidden, useAsTitle: 'key' },
   fields: [
     { name: 'key', type: 'text', index: true, required: true, unique: true },
     { name: 'value', type: 'json', required: true },

@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
 
 import config from '@payload-config'
-import { getPayload, type Payload } from 'payload'
+import { createLocalReq, getPayload, type Payload } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { AdminRole } from '@/lib/domain'
 import type { Article } from '@/payload-types'
+import { recordAuditEvent } from '@/services/audit/record-audit-event'
 
 type FixtureCollection =
   | 'advertisers'
@@ -437,6 +438,73 @@ describe('D1 Payload role boundaries', () => {
     })
     expect(systemLogs.docs).toHaveLength(2)
     expect(systemLogs.docs.every((document) => document.metadata)).toBe(true)
+  })
+
+  it('stores common audit events with normalized attribution and redacted metadata', async () => {
+    const adOperator = admin('ad_operator', 1451)
+    const analyst = admin('analyst', 1452)
+    const systemAdmin = admin('system_admin', 1453)
+    const traceId = `${fixturePrefix}-shared-audit`
+    const req = await createLocalReq(
+      { req: { headers: new Headers({ 'x-request-id': traceId }) } },
+      payload,
+    )
+    req.user = adOperator as never
+    await recordAuditEvent(req, {
+      action: 'admin.account.changed',
+      metadata: {
+        identityNumber: '11010519491231002X',
+        phone: '13812345678',
+        phoneMasked: '138****5678',
+        tokenHash: 'safe-token-hash',
+      },
+      targetId: adOperator.id,
+    })
+
+    const stored = await payload.find({
+      collection: 'auditLogs',
+      overrideAccess: true,
+      where: { traceId: { equals: traceId } },
+    })
+    expect(stored.docs).toHaveLength(1)
+    created.push({ collection: 'auditLogs', id: stored.docs[0]!.id })
+    expect(stored.docs[0]).toMatchObject({
+      action: 'admin.account.changed',
+      actorId: String(adOperator.id),
+      actorType: 'admin',
+      metadata: {
+        identityNumber: '[REDACTED]',
+        phone: '[REDACTED]',
+        phoneMasked: '138****5678',
+        tokenHash: 'safe-token-hash',
+      },
+      targetId: String(adOperator.id),
+      targetType: 'admin',
+    })
+
+    const ownView = await payload.find({
+      collection: 'auditLogs',
+      overrideAccess: false,
+      user: adOperator as never,
+      where: { traceId: { equals: traceId } },
+    })
+    expect(ownView.docs).toHaveLength(1)
+    expect(ownView.docs[0]).not.toHaveProperty('metadata')
+    await expect(
+      payload.find({
+        collection: 'auditLogs',
+        overrideAccess: false,
+        user: analyst as never,
+        where: { traceId: { equals: traceId } },
+      }),
+    ).rejects.toThrow()
+    const systemView = await payload.find({
+      collection: 'auditLogs',
+      overrideAccess: false,
+      user: systemAdmin as never,
+      where: { traceId: { equals: traceId } },
+    })
+    expect(systemView.docs[0]?.metadata).toEqual(stored.docs[0]?.metadata)
   })
 
   it('rejects generic sensitive mutations while trusted system operations remain available', async () => {

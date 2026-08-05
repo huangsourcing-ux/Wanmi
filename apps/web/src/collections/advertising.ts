@@ -8,6 +8,7 @@ import {
   publicRead,
   systemAdminOnly,
 } from '@/access/roles'
+import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 
 export const Advertisers: CollectionConfig = {
   slug: 'advertisers',
@@ -17,7 +18,7 @@ export const Advertisers: CollectionConfig = {
     read: operationalReaders,
     update: adManagers,
   },
-  admin: { hidden: advertisingAdminHidden, useAsTitle: 'name' },
+  admin: { group: ADMIN_GROUPS.advertising, hidden: advertisingAdminHidden, useAsTitle: 'name' },
   fields: [
     { name: 'name', type: 'text', required: true },
     {
@@ -39,7 +40,7 @@ export const AdCreatives: CollectionConfig = {
     read: operationalReaders,
     update: adManagers,
   },
-  admin: { hidden: advertisingAdminHidden, useAsTitle: 'name' },
+  admin: { group: ADMIN_GROUPS.advertising, hidden: advertisingAdminHidden, useAsTitle: 'name' },
   fields: [
     { name: 'name', type: 'text', required: true },
     { name: 'advertiser', type: 'relationship', relationTo: 'advertisers', required: true },
@@ -67,7 +68,7 @@ export const AdCreatives: CollectionConfig = {
 export const AdPlacements: CollectionConfig = {
   slug: 'adPlacements',
   access: { create: adManagers, delete: systemAdminOnly, read: publicRead, update: adManagers },
-  admin: { hidden: advertisingAdminHidden, useAsTitle: 'code' },
+  admin: { group: ADMIN_GROUPS.advertising, hidden: advertisingAdminHidden, useAsTitle: 'code' },
   fields: [
     { name: 'code', type: 'text', index: true, required: true, unique: true },
     { name: 'description', type: 'textarea', required: true },
@@ -83,7 +84,7 @@ export const AdSchedules: CollectionConfig = {
     read: operationalReaders,
     update: adManagers,
   },
-  admin: { hidden: advertisingAdminHidden },
+  admin: { group: ADMIN_GROUPS.advertising, hidden: advertisingAdminHidden },
   fields: [
     { name: 'creative', type: 'relationship', relationTo: 'adCreatives', required: true },
     { name: 'placement', type: 'relationship', relationTo: 'adPlacements', required: true },

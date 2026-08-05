@@ -1,6 +1,7 @@
 import type { CollectionConfig } from 'payload'
 
 import { ADMIN_ROLES } from '@/lib/domain'
+import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 import {
   adminSelfOrSystem,
   deny,
@@ -31,7 +32,7 @@ export const Admins: CollectionConfig = {
     read: adminSelfOrSystem,
     update: adminSelfOrSystem,
   },
-  admin: { hidden: systemAdminHidden, useAsTitle: 'email' },
+  admin: { group: ADMIN_GROUPS.identity, hidden: systemAdminHidden, useAsTitle: 'email' },
   auth: {
     cookies: { sameSite: 'Lax', secure: true },
     lockTime: 10 * 60 * 1000,
@@ -74,7 +75,7 @@ export const Admins: CollectionConfig = {
 export const AdminMfaCredentials: CollectionConfig = {
   slug: 'adminMfaCredentials',
   access: { create: deny, delete: deny, read: deny, update: deny },
-  admin: { hidden: true },
+  admin: { group: ADMIN_GROUPS.identity, hidden: true },
   fields: [
     {
       name: 'admin',
@@ -97,7 +98,7 @@ export const AdminMfaCredentials: CollectionConfig = {
 export const AdminInvitations: CollectionConfig = {
   slug: 'adminInvitations',
   access: { create: deny, delete: deny, read: deny, update: deny },
-  admin: { hidden: true },
+  admin: { group: ADMIN_GROUPS.identity, hidden: true },
   fields: [
     { name: 'purpose', type: 'select', options: ['new_admin', 'mfa_reset'], required: true },
     { name: 'email', type: 'email', index: true, required: true },
@@ -131,7 +132,7 @@ export const Customers: CollectionConfig = {
     read: ownOrSystem('id'),
     update: deny,
   },
-  admin: { hidden: systemAdminHidden },
+  admin: { group: ADMIN_GROUPS.identity, hidden: systemAdminHidden },
   auth: {
     disableLocalStrategy: true,
     loginWithUsername: { allowEmailLogin: false, requireEmail: false },
@@ -161,7 +162,7 @@ export const Customers: CollectionConfig = {
 export const SmsChallenges: CollectionConfig = {
   slug: 'smsChallenges',
   access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
-  admin: { hidden: true },
+  admin: { group: ADMIN_GROUPS.identity, hidden: true },
   fields: [
     { name: 'challengeId', type: 'text', index: true, required: true, unique: true },
     { name: 'phone', type: 'text', access: { read: sensitiveFieldRead }, required: true },
@@ -178,7 +179,7 @@ export const SmsChallenges: CollectionConfig = {
 export const CustomerSessions: CollectionConfig = {
   slug: 'customerSessions',
   access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
-  admin: { hidden: true },
+  admin: { group: ADMIN_GROUPS.identity, hidden: true },
   fields: [
     {
       name: 'customer',
