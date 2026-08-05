@@ -38,4 +38,19 @@ describe('public redirect proxy', () => {
     expect(postResponse.headers.get('x-middleware-next')).toBe('1')
     expect(resolvePublicRedirect).not.toHaveBeenCalled()
   })
+
+  it.each([
+    '/api/admins/login',
+    '/api/admins/first-register',
+    '/api/admins/forgot-password',
+    '/api/admins/reset-password',
+    '/api/admins/unlock',
+    '/api/admins/refresh-token',
+    '/api/graphql',
+    '/api/graphql-playground',
+  ])('blocks the default Payload administrator auth endpoint %s', async (path) => {
+    const response = await proxy(new NextRequest(`http://example.invalid${path}`))
+    expect(response.status).toBe(404)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+  })
 })

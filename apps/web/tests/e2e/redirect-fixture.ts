@@ -1,4 +1,4 @@
-import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { config as loadDotenv } from 'dotenv'
 import type { Payload } from 'payload'
@@ -6,9 +6,9 @@ import type { Payload } from 'payload'
 export const redirectFixtureFrom = '/d1-redirect-e2e-legacy'
 let fixturePayload: Payload | undefined
 
-async function getFixturePayload() {
+export async function getFixturePayload() {
   if (fixturePayload) return fixturePayload
-  loadDotenv({ path: resolve(process.cwd(), '.env.local') })
+  loadDotenv({ path: fileURLToPath(new URL('../../.env.local', import.meta.url)) })
   const [{ default: config }, { getPayload }] = await Promise.all([
     import('../../src/payload.config'),
     import('payload'),

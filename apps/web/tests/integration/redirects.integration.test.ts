@@ -48,11 +48,12 @@ const content: Article['content'] = {
 async function createAdmin(role: Admin['roles'][number]) {
   const admin = await payload.create({
     collection: 'admins',
+    context: { adminAccountOperation: 'bootstrap' },
     data: {
       email: `${fixturePrefix}-${role}-${randomUUID()}@example.test`,
       password: `D1-${randomUUID()}-test-password`,
       roles: [role],
-      totpEnabled: false,
+      status: 'active',
     },
     overrideAccess: true,
   })
@@ -71,6 +72,26 @@ async function requestFor(user: Admin | Customer | undefined, traceId: string = 
 
 beforeAll(async () => {
   payload = await getPayload({ config })
+  const bootstrapEmail = 'integration-system-admin-anchor@example.test'
+  const existing = await payload.find({
+    collection: 'admins',
+    limit: 1,
+    overrideAccess: true,
+    where: { email: { equals: bootstrapEmail } },
+  })
+  if (!existing.docs[0]) {
+    await payload.create({
+      collection: 'admins',
+      context: { adminAccountOperation: 'bootstrap' },
+      data: {
+        email: bootstrapEmail,
+        password: 'Integration-anchor-password-2026',
+        roles: ['system_admin'],
+        status: 'active',
+      },
+      overrideAccess: true,
+    })
+  }
 })
 
 afterAll(async () => {
@@ -216,7 +237,12 @@ describe('D1 controlled redirects', () => {
       collection: 'auditLogs',
       overrideAccess: true,
       sort: 'createdAt',
-      where: { targetId: { equals: String(redirect.id) } },
+      where: {
+        and: [
+          { targetId: { equals: String(redirect.id) } },
+          { targetType: { equals: 'redirect' } },
+        ],
+      },
     })
     expect(audits.docs.map((audit) => audit.action)).toEqual(['redirect.create', 'redirect.update'])
     expect(audits.docs[0]).toMatchObject({

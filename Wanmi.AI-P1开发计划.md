@@ -337,7 +337,7 @@ D0 的架构、权限、认证、迁移、Jobs 幂等、真实 OSS、隔离 RDS�
 - [x] 配置 `@payloadcms/plugin-seo` 的共享字段与预览规则，并验证只读取已发布内容；
 - [x] 配置 `@payloadcms/plugin-redirects`，重定向写入受 RBAC 和审计保护，目标拒绝开放跳转；
 - [x] 建立 Wanmi.ai/www 只跳转的 Nginx 配置，不创建第二套页面；
-- [ ] 完善管理员独立 Auth Collection、Payload Session、密码 + TOTP MFA 和 RBAC；
+- [x] 完善管理员独立 Auth Collection、Payload Session、密码 + TOTP MFA 和 RBAC；
 - [ ] 建立内容编辑、广告运营、分析、系统管理员角色边界；
 - [ ] 建立审计事件公共组件和后台导航骨架；
 - [ ] 建立第一方事件入口，默认不采集完整查询域名。
@@ -349,6 +349,8 @@ D1-02 验证记录（2026-08-04）：已建立共享 Zod `Result<T>` 六状态�
 D1-03 验证记录（2026-08-04）：已建立以配置 origin 为唯一主机的公共 canonical、路由级 Open Graph/Twitter、查询参数结果 `noindex, nofollow`、`robots.txt`、仅包含现有稳定页面的静态 sitemap 和 1200×630 品牌分享图；Payload 官方 SEO 插件共享 `WanmiSeoMeta`，新增同源 canonical 与默认关闭的 `noIndex`，搜索预览 URL 固定映射到批准的信息架构。新增 migration 与生成类型，空库和现有两迁移基线升级均得到预期 12 个 SEO 列；46 个单元测试、9 个 PostgreSQL/MinIO 集成测试、8 个 Playwright 场景、生产构建、linux/amd64 同镜像构建和安全扫描通过。动态内容详情、动态 sitemap、草稿实时预览、Redirects 与 Nginx 主机跳转仍按计划留在后续切片。
 
 D1-04 验证记录（2026-08-04）：Payload Redirects 已收敛为永久 301；自定义目标只接受规范化站内路径，文章、专题和 TLD 引用必须已发布，并拒绝保留路径、开放跳转、直接/多跳循环和超过 10 跳的链路。`content_editor`/`system_admin` 可创建更新，只有 `system_admin` 可删除；创建、更新、删除通过同一 `req` 写入脱敏审计。公共 GET/HEAD 以 `overrideAccess: false` 分页读取并使用 30 秒进程缓存、并发刷新去重、stale-on-error 与冷启动失败放行，命中后折叠最终目标并保留查询参数与请求 ID。迁移在收窄 enum 前将遗留 302 规范化为 301；空库和 D1-03 遗留 302 升级路径均通过。固定 digest Nginx 镜像通过 `nginx -t`，4 个 HTTP 和 3 个 HTTPS 别名入口均保留路径/查询并跳至 `https://wanmi.net`；配置不含别名 `proxy_pass`。65 个单元测试、12 个 PostgreSQL 集成测试和 9 个 Playwright 场景通过；生产构建、linux/amd64 镜像和安全扫描结果随本切片最终门禁记录。本切片未部署、未修改共享 ECS、未申请证书或切换流量。
+
+D1-05 验证记录（2026-08-04）：独立 `admins` Auth Collection 已生产化为固定 12 小时且不自动刷新的 Payload Session，并以 `active/disabled`、14～128 字符密码、SHA-1/6 位/30 秒/±1 窗口 TOTP、一次性恢复码和 5 次失败锁定 10 分钟形成管理员身份边界。MFA 密文与恢复码哈希迁入拒绝通用 API 的隐藏 Collection；角色、状态、密码或 MFA 变化撤销全部 Session，数据库约束和服务层共同阻止删除、停用或降级最后一个 active `system_admin`。后续管理员和 MFA 重置通过 24 小时、256-bit、仅存 HMAC 的一次性 fragment 邀请完成，原始 token、秘密与恢复码不落库；最小安全设置页支持邀请和 Session 管理。统一 `/api/v1/admin/auth` 登录不返回 JWT，默认 Payload 登录、首用户注册、忘记/重置密码、解锁、refresh-token 与 GraphQL 均关闭。81 个单元测试、17 个 PostgreSQL 集成测试和 12 个 Playwright 场景通过；空库、D1-03 Redirect、D1-05 遗留管理员 MFA 升级及最后系统管理员并发约束验证通过；生产构建、linux/amd64 镜像、依赖 high 门禁和 Gitleaks 通过。依赖审计保留既有 2 个低危和 2 个中危，无 high/critical。本切片只完成管理员身份层 RBAC，业务 Collection 完整角色矩阵、通用审计后台和第一方事件仍属于 D1-06/D1-07；未部署或修改共享 ECS。
 
 ### 5.3 退出条件
 

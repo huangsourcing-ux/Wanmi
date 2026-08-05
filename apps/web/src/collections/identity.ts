@@ -2,23 +2,32 @@ import type { CollectionConfig } from 'payload'
 
 import { ADMIN_ROLES } from '@/lib/domain'
 import {
+  adminSelfOrSystem,
   deny,
+  hasRole,
   ownOrSystem,
   sensitiveFieldRead,
-  systemAdminField,
   systemAdminOnly,
 } from '@/access/roles'
+import {
+  auditAdminDelete,
+  guardAdminAccountChange,
+  guardAdminDelete,
+  revokeSessionsAfterAdminChange,
+  validateAdminPassword,
+} from '@/services/auth/admin-account'
 import { customerSessionStrategy } from '@/services/auth/customer-strategy'
 import { verifyAdminTotpBeforeLogin } from '@/services/auth/totp'
 
 export const Admins: CollectionConfig = {
   slug: 'admins',
   access: {
-    admin: ({ req }) => Boolean(req.user?.collection === 'admins'),
-    create: systemAdminOnly,
+    admin: ({ req }) =>
+      req.user?.collection === 'admins' && (req.user as { status?: string }).status === 'active',
+    create: deny,
     delete: systemAdminOnly,
-    read: systemAdminOnly,
-    update: systemAdminOnly,
+    read: adminSelfOrSystem,
+    update: adminSelfOrSystem,
   },
   admin: { useAsTitle: 'email' },
   auth: {
@@ -26,7 +35,7 @@ export const Admins: CollectionConfig = {
     lockTime: 10 * 60 * 1000,
     maxLoginAttempts: 5,
     removeTokenFromResponses: true,
-    tokenExpiration: Number(process.env.ADMIN_SESSION_SECONDS ?? 43_200),
+    tokenExpiration: 43_200,
     useSessions: true,
   },
   fields: [
@@ -37,26 +46,77 @@ export const Admins: CollectionConfig = {
       options: [...ADMIN_ROLES],
       required: true,
       saveToJWT: true,
+      access: { update: ({ req }) => hasRole(req.user, ['system_admin']) },
     },
     {
-      name: 'totpSecretEncrypted',
-      type: 'text',
-      access: { read: sensitiveFieldRead, update: systemAdminField },
-    },
-    {
-      name: 'recoveryCodeHashes',
-      type: 'text',
-      hasMany: true,
-      access: { read: sensitiveFieldRead, update: systemAdminField },
-    },
-    { name: 'totpEnabled', type: 'checkbox', defaultValue: false, required: true, saveToJWT: true },
-    {
-      name: 'totpLastUsedStep',
-      type: 'number',
-      access: { read: sensitiveFieldRead, update: systemAdminField },
+      name: 'status',
+      type: 'select',
+      access: { update: ({ req }) => hasRole(req.user, ['system_admin']) },
+      defaultValue: 'active',
+      options: ['active', 'disabled'],
+      required: true,
+      saveToJWT: true,
     },
   ],
-  hooks: { beforeLogin: [verifyAdminTotpBeforeLogin] },
+  hooks: {
+    afterChange: [revokeSessionsAfterAdminChange],
+    afterDelete: [auditAdminDelete],
+    beforeChange: [guardAdminAccountChange],
+    beforeDelete: [guardAdminDelete],
+    beforeLogin: [verifyAdminTotpBeforeLogin],
+    beforeValidate: [validateAdminPassword],
+  },
+}
+
+export const AdminMfaCredentials: CollectionConfig = {
+  slug: 'adminMfaCredentials',
+  access: { create: deny, delete: deny, read: deny, update: deny },
+  admin: { hidden: true },
+  fields: [
+    {
+      name: 'admin',
+      type: 'relationship',
+      relationTo: 'admins',
+      index: true,
+      required: true,
+      unique: true,
+    },
+    { name: 'secretEncrypted', type: 'text', required: true },
+    { name: 'recoveryCodeHashes', type: 'text', hasMany: true },
+    { name: 'lastUsedStep', type: 'number' },
+    { name: 'failedAttempts', type: 'number', defaultValue: 0, min: 0, required: true },
+    { name: 'lockedUntil', type: 'date', index: true },
+    { name: 'version', type: 'number', defaultValue: 0, min: 0, required: true },
+    { name: 'configuredAt', type: 'date', required: true },
+  ],
+}
+
+export const AdminInvitations: CollectionConfig = {
+  slug: 'adminInvitations',
+  access: { create: deny, delete: deny, read: deny, update: deny },
+  admin: { hidden: true },
+  fields: [
+    { name: 'purpose', type: 'select', options: ['new_admin', 'mfa_reset'], required: true },
+    { name: 'email', type: 'email', index: true, required: true },
+    { name: 'roles', type: 'select', hasMany: true, options: [...ADMIN_ROLES], required: true },
+    {
+      name: 'targetAdmin',
+      type: 'relationship',
+      relationTo: 'admins',
+      index: true,
+    },
+    { name: 'tokenHash', type: 'text', index: true, required: true, unique: true },
+    { name: 'totpSecretEncrypted', type: 'text', required: true },
+    { name: 'expiresAt', type: 'date', index: true, required: true },
+    { name: 'consumedAt', type: 'date', index: true },
+    { name: 'revokedAt', type: 'date', index: true },
+    {
+      name: 'createdBy',
+      type: 'relationship',
+      relationTo: 'admins',
+      required: true,
+    },
+  ],
 }
 
 export const Customers: CollectionConfig = {

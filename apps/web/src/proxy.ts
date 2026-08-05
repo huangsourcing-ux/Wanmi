@@ -6,10 +6,38 @@ import { isRedirectEligiblePath, normalizeRedirectPath } from '@/lib/redirects'
 import { getTraceId } from '@/lib/request-id'
 import { resolvePublicRedirect } from '@/services/redirects/runtime'
 
+const BLOCKED_ADMIN_AUTH_PATHS = new Set([
+  '/api/admins/first-register',
+  '/api/admins/forgot-password',
+  '/api/admins/login',
+  '/api/admins/refresh-token',
+  '/api/admins/reset-password',
+  '/api/admins/unlock',
+  '/api/graphql',
+  '/api/graphql-playground',
+])
+
+const BLOCKED_ADMIN_UI_PATHS = new Set([
+  '/admin/create-first-user',
+  '/admin/forgot',
+  '/admin/reset',
+  '/admin/unlock',
+])
+
 export async function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers)
   const traceId = getTraceId(request.headers)
   requestHeaders.set('x-request-id', traceId)
+
+  if (
+    BLOCKED_ADMIN_AUTH_PATHS.has(request.nextUrl.pathname) ||
+    BLOCKED_ADMIN_UI_PATHS.has(request.nextUrl.pathname)
+  ) {
+    return new NextResponse(null, {
+      headers: { 'cache-control': 'no-store', 'x-request-id': traceId },
+      status: 404,
+    })
+  }
 
   if (
     (request.method === 'GET' || request.method === 'HEAD') &&

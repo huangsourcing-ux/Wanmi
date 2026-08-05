@@ -6,7 +6,6 @@ const booleanFromString = z
   .transform((value) => value === 'true')
 
 const schema = z.object({
-  ADMIN_SESSION_SECONDS: z.coerce.number().int().positive().default(43_200),
   ALLOW_REAL_PROVIDER_WRITES: booleanFromString,
   ALIYUN_KMS_MODE: z.enum(['mock', 'live']).default('mock'),
   ALIYUN_OSS_REALNAME_MODE: z.enum(['mock', 'live']).default('mock'),

@@ -1,3 +1,7 @@
 import { createRedirectFixture } from './redirect-fixture'
+import { createAdminAuthFixture } from './admin-auth-fixture'
 
-export default createRedirectFixture
+export default async function globalSetup() {
+  await createRedirectFixture()
+  await createAdminAuthFixture()
+}

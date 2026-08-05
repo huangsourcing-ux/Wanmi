@@ -11,7 +11,11 @@ import {
 import type { AdminRole } from '@/lib/domain'
 
 function accessUser(collection: 'admins' | 'customers', id: number, roles?: AdminRole[]) {
-  return { req: { user: { collection, id, roles } } } as never
+  return {
+    req: {
+      user: { collection, id, roles, status: collection === 'admins' ? 'active' : undefined },
+    },
+  } as never
 }
 
 describe('D0 role matrix', () => {

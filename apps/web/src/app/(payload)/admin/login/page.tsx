@@ -23,13 +23,14 @@ export default function AdminMfaLoginPage() {
       return
     }
     try {
-      const response = await fetch('/api/admins/login', {
-        body: JSON.stringify({ email: form.get('email'), password: form.get('password') }),
+      const response = await fetch('/api/v1/admin/auth/login', {
+        body: JSON.stringify({
+          email: form.get('email'),
+          password: form.get('password'),
+          ...(recoveryCode ? { recoveryCode } : { totp }),
+        }),
         credentials: 'same-origin',
-        headers: {
-          'content-type': 'application/json',
-          ...(recoveryCode ? { 'x-wanmi-recovery-code': recoveryCode } : { 'x-wanmi-totp': totp }),
-        },
+        headers: { 'content-type': 'application/json' },
         method: 'POST',
       })
       if (!response.ok) {
@@ -59,7 +60,8 @@ export default function AdminMfaLoginPage() {
           密码
           <input
             autoComplete="current-password"
-            minLength={8}
+            maxLength={128}
+            minLength={14}
             name="password"
             required
             type="password"
@@ -82,7 +84,7 @@ export default function AdminMfaLoginPage() {
         </label>
         {error ? (
           <p className="wanmi-mfa-login__error" role="alert">
-            {error}
+            邮箱、密码或第二因素无效
           </p>
         ) : null}
         <button disabled={submitting} type="submit">

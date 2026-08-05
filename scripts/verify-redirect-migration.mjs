@@ -68,7 +68,98 @@ try {
   if (result !== '301:301') {
     throw new Error(`Legacy redirect migration produced an unexpected result: ${result}`)
   }
-  process.stdout.write('Verified empty-database migrations and D1-03 legacy 302 upgrade.\n')
+
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 3 WHERE name = '20260805_040152'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `DO $$
+     DECLARE legacy_admin_id integer;
+     BEGIN
+       INSERT INTO admins (
+         email, totp_secret_encrypted, totp_enabled, totp_last_used_step,
+         updated_at, created_at, login_attempts
+       ) VALUES (
+         'legacy-admin@example.test', 'legacy-encrypted-secret', true, 4242,
+         NOW(), NOW(), 0
+       ) RETURNING id INTO legacy_admin_id;
+       INSERT INTO admins_roles ("order", parent_id, value)
+       VALUES (1, legacy_admin_id, 'system_admin');
+       INSERT INTO admins_texts ("order", parent_id, path, text)
+       VALUES (1, legacy_admin_id, 'recoveryCodeHashes', 'legacy-recovery-hash');
+     END $$;`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  const adminMigration = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         admin_account.status || ':' || credentials.secret_encrypted || ':' ||
+         credentials.last_used_step || ':' || recovery.text
+       FROM admins admin_account
+       JOIN admin_mfa_credentials credentials ON credentials.admin_id = admin_account.id
+       JOIN admin_mfa_credentials_texts recovery ON recovery.parent_id = credentials.id
+       WHERE admin_account.email = 'legacy-admin@example.test'
+         AND recovery.path = 'recoveryCodeHashes'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (adminMigration !== 'active:legacy-encrypted-secret:4242:legacy-recovery-hash') {
+    throw new Error(
+      `Legacy administrator migration produced an unexpected result: ${adminMigration}`,
+    )
+  }
+
+  let lastSystemAdminProtected = false
+  try {
+    postgres(
+      [
+        'psql',
+        '--username',
+        'wanmi',
+        '--dbname',
+        databaseName,
+        '--set',
+        'ON_ERROR_STOP=1',
+        '--command',
+        `UPDATE admins SET status = 'disabled' WHERE email = 'legacy-admin@example.test'`,
+      ],
+      { capture: true },
+    )
+  } catch {
+    lastSystemAdminProtected = true
+  }
+  if (!lastSystemAdminProtected) {
+    throw new Error('Database allowed the last active system administrator to be disabled')
+  }
+
+  process.stdout.write(
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, and the last-system-admin constraint.\n',
+  )
 } finally {
   if (created) {
     postgres(['dropdb', '--force', '--username', 'wanmi', databaseName])
