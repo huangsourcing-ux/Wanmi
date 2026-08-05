@@ -7,6 +7,7 @@ import {
   hasRole,
   ownOrSystem,
   sensitiveFieldRead,
+  systemAdminHidden,
   systemAdminOnly,
 } from '@/access/roles'
 import {
@@ -30,7 +31,7 @@ export const Admins: CollectionConfig = {
     read: adminSelfOrSystem,
     update: adminSelfOrSystem,
   },
-  admin: { useAsTitle: 'email' },
+  admin: { hidden: systemAdminHidden, useAsTitle: 'email' },
   auth: {
     cookies: { sameSite: 'Lax', secure: true },
     lockTime: 10 * 60 * 1000,
@@ -128,8 +129,9 @@ export const Customers: CollectionConfig = {
     create: deny,
     delete: deny,
     read: ownOrSystem('id'),
-    update: ownOrSystem('id'),
+    update: deny,
   },
+  admin: { hidden: systemAdminHidden },
   auth: {
     disableLocalStrategy: true,
     loginWithUsername: { allowEmailLogin: false, requireEmail: false },

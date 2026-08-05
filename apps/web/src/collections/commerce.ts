@@ -1,6 +1,12 @@
 import type { CollectionConfig, Field } from 'payload'
 
-import { deny, ownOrSystem, sensitiveFieldRead, systemAdminOnly } from '@/access/roles'
+import {
+  deny,
+  ownOrSystem,
+  sensitiveFieldRead,
+  systemAdminHidden,
+  systemAdminOnly,
+} from '@/access/roles'
 import { ORDER_STATUSES } from '@/lib/domain'
 
 const integerMoney: Field = {
@@ -15,12 +21,12 @@ const integerMoney: Field = {
 export const PriceRules: CollectionConfig = {
   slug: 'priceRules',
   access: {
-    create: systemAdminOnly,
-    delete: systemAdminOnly,
+    create: deny,
+    delete: deny,
     read: systemAdminOnly,
-    update: systemAdminOnly,
+    update: deny,
   },
-  admin: { useAsTitle: 'tld' },
+  admin: { hidden: systemAdminHidden, useAsTitle: 'tld' },
   fields: [
     { name: 'tld', type: 'text', index: true, required: true, unique: true },
     { name: 'mode', type: 'select', options: ['fixed', 'percentage'], required: true },
@@ -33,6 +39,7 @@ export const PriceRules: CollectionConfig = {
 export const Quotes: CollectionConfig = {
   slug: 'quotes',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
+  admin: { hidden: systemAdminHidden },
   fields: [
     {
       name: 'customer',
@@ -43,10 +50,15 @@ export const Quotes: CollectionConfig = {
     },
     { name: 'domainAscii', type: 'text', index: true, required: true },
     { name: 'years', type: 'number', min: 1, max: 10, required: true },
-    { ...integerMoney, name: 'upstreamCostMinor' },
+    { ...integerMoney, name: 'upstreamCostMinor', access: { read: sensitiveFieldRead } },
     { ...integerMoney, name: 'userPriceMinor' },
     { name: 'currency', type: 'select', defaultValue: 'CNY', options: ['CNY'], required: true },
-    { name: 'ruleSnapshot', type: 'json', required: true },
+    {
+      name: 'ruleSnapshot',
+      type: 'json',
+      access: { read: sensitiveFieldRead },
+      required: true,
+    },
     { name: 'expiresAt', type: 'date', index: true, required: true },
   ],
 }
@@ -54,7 +66,7 @@ export const Quotes: CollectionConfig = {
 export const Orders: CollectionConfig = {
   slug: 'orders',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
-  admin: { useAsTitle: 'orderNumber' },
+  admin: { hidden: systemAdminHidden, useAsTitle: 'orderNumber' },
   fields: [
     { name: 'orderNumber', type: 'text', index: true, required: true, unique: true },
     {
@@ -82,7 +94,12 @@ export const Orders: CollectionConfig = {
     },
     { ...integerMoney },
     { name: 'currency', type: 'select', defaultValue: 'CNY', options: ['CNY'], required: true },
-    { name: 'quoteSnapshot', type: 'json', required: true },
+    {
+      name: 'quoteSnapshot',
+      type: 'json',
+      access: { read: sensitiveFieldRead },
+      required: true,
+    },
     { name: 'paidAt', type: 'date' },
   ],
 }
@@ -90,6 +107,7 @@ export const Orders: CollectionConfig = {
 export const OrderEvents: CollectionConfig = {
   slug: 'orderEvents',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
+  admin: { hidden: systemAdminHidden },
   fields: [
     { name: 'order', type: 'relationship', relationTo: 'orders', index: true, required: true },
     {
@@ -102,21 +120,22 @@ export const OrderEvents: CollectionConfig = {
     { name: 'fromStatus', type: 'select', options: [...ORDER_STATUSES] },
     { name: 'toStatus', type: 'select', options: [...ORDER_STATUSES], required: true },
     { name: 'reasonCode', type: 'text', required: true },
-    { name: 'note', type: 'textarea' },
-    { name: 'evidence', type: 'json' },
+    { name: 'note', type: 'textarea', access: { read: sensitiveFieldRead } },
+    { name: 'evidence', type: 'json', access: { read: sensitiveFieldRead } },
     {
       name: 'actorType',
       type: 'select',
       options: ['system', 'customer', 'admin', 'provider'],
       required: true,
     },
-    { name: 'actorId', type: 'text' },
+    { name: 'actorId', type: 'text', access: { read: sensitiveFieldRead } },
   ],
 }
 
 export const PaymentNotifications: CollectionConfig = {
   slug: 'paymentNotifications',
   access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
+  admin: { hidden: systemAdminHidden },
   fields: [
     {
       name: 'wechatTransactionId',
@@ -137,7 +156,7 @@ export const PaymentNotifications: CollectionConfig = {
 export const Refunds: CollectionConfig = {
   slug: 'refunds',
   access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
-  admin: { useAsTitle: 'refundNumber' },
+  admin: { hidden: systemAdminHidden, useAsTitle: 'refundNumber' },
   fields: [
     { name: 'refundNumber', type: 'text', index: true, required: true, unique: true },
     { name: 'order', type: 'relationship', relationTo: 'orders', index: true, required: true },

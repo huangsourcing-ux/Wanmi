@@ -178,7 +178,7 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
     ).rejects.toThrow(/无效或已过期/)
   })
 
-  it('pins realnameTemplates.customer to the authenticated customer regardless of submitted data', async () => {
+  it('closes generic realname writes and keeps owner pinning on trusted service writes', async () => {
     const owner = await payload.create({
       collection: 'customers',
       data: { phone: `fixture-${randomUUID()}`, phoneMasked: 'fixture-only', status: 'active' },
@@ -190,21 +190,33 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
       overrideAccess: true,
     })
 
+    const data = {
+      customer: other.id,
+      displayName: 'attempted-takeover',
+      status: 'draft' as const,
+      type: 'individual' as const,
+    }
+    const user = { ...owner, collection: 'customers' as const }
+
+    await expect(
+      payload.create({
+        collection: 'realnameTemplates',
+        data,
+        overrideAccess: false,
+        user,
+      }),
+    ).rejects.toThrow()
+
     const template = await payload.create({
       collection: 'realnameTemplates',
-      data: {
-        customer: other.id,
-        displayName: 'attempted-takeover',
-        status: 'draft',
-        type: 'individual',
-      },
-      overrideAccess: false,
-      user: { ...owner, collection: 'customers' as const },
+      data,
+      overrideAccess: true,
+      user,
     })
 
-    expect(
-      typeof template.customer === 'object' ? template.customer.id : template.customer,
-    ).toBe(owner.id)
+    expect(typeof template.customer === 'object' ? template.customer.id : template.customer).toBe(
+      owner.id,
+    )
   })
 
   it('runs duplicate commerce jobs safely with one provider operation and append-only events', async () => {

@@ -1,4 +1,4 @@
-import type { Access, FieldAccess } from 'payload'
+import type { Access, FieldAccess, Where } from 'payload'
 
 import type { AdminRole } from '@/lib/domain'
 
@@ -28,6 +28,8 @@ export const contentManagers: Access = ({ req }) =>
   hasRole(req.user, ['content_editor', 'system_admin'])
 export const adManagers: Access = ({ req }) => hasRole(req.user, ['ad_operator', 'system_admin'])
 export const analysts: Access = ({ req }) => hasRole(req.user, ['analyst', 'system_admin'])
+export const operationalReaders: Access = ({ req }) =>
+  hasRole(req.user, ['ad_operator', 'analyst', 'system_admin'])
 export const deny: Access = () => false
 
 export const adminSelfOrSystem: Access = ({ req }) => {
@@ -38,6 +40,28 @@ export const adminSelfOrSystem: Access = ({ req }) => {
 
 export const sensitiveFieldRead: FieldAccess = ({ req }) => hasRole(req.user, ['system_admin'])
 export const systemAdminField: FieldAccess = ({ req }) => hasRole(req.user, ['system_admin'])
+export const adManagerFieldRead: FieldAccess = ({ req }) =>
+  hasRole(req.user, ['ad_operator', 'system_admin'])
+
+export const auditReaders: Access = ({ req }) => {
+  if (hasRole(req.user, ['system_admin'])) return true
+  if (!hasRole(req.user, ['ad_operator']) || !isActiveAdminUser(req.user)) return false
+  const where: Where = {
+    and: [{ actorType: { equals: 'admin' } }, { actorId: { equals: String(req.user.id) } }],
+  }
+  return where
+}
+
+export const hiddenUnlessRoles =
+  (roles: AdminRole[]) =>
+  ({ user }: { user: unknown }): boolean =>
+    !hasRole(user, [...roles, 'system_admin'])
+
+export const contentAdminHidden = hiddenUnlessRoles(['content_editor'])
+export const advertisingAdminHidden = hiddenUnlessRoles(['ad_operator', 'analyst'])
+export const operationsAdminHidden = hiddenUnlessRoles(['ad_operator', 'analyst'])
+export const auditAdminHidden = hiddenUnlessRoles(['ad_operator'])
+export const systemAdminHidden = hiddenUnlessRoles([])
 
 export function ownOrSystem(ownerField: string): Access {
   return ({ req }) => {

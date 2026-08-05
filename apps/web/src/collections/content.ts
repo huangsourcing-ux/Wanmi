@@ -1,9 +1,11 @@
 import type { CollectionConfig, Field } from 'payload'
 
 import {
+  contentAdminHidden,
   contentManagers,
   publishedOrContentManager,
   publicRead,
+  systemAdminHidden,
   systemAdminOnly,
 } from '@/access/roles'
 
@@ -19,9 +21,10 @@ const versionedContent = (slug: 'articles' | 'tldPages' | 'topics'): CollectionC
     create: contentManagers,
     delete: systemAdminOnly,
     read: publishedOrContentManager,
+    readVersions: contentManagers,
     update: contentManagers,
   },
-  admin: { useAsTitle: 'title' },
+  admin: { hidden: contentAdminHidden, useAsTitle: 'title' },
   fields: [
     ...slugFields,
     { name: 'content', type: 'richText', required: true },
@@ -46,7 +49,7 @@ export const Media: CollectionConfig = {
     read: publicRead,
     update: contentManagers,
   },
-  admin: { useAsTitle: 'alt' },
+  admin: { hidden: contentAdminHidden, useAsTitle: 'alt' },
   fields: [
     { name: 'alt', type: 'text', required: true },
     { name: 'source', type: 'text' },
@@ -65,7 +68,7 @@ export const Navigation: CollectionConfig = {
     read: publicRead,
     update: contentManagers,
   },
-  admin: { useAsTitle: 'label' },
+  admin: { hidden: contentAdminHidden, useAsTitle: 'label' },
   fields: [
     { name: 'label', type: 'text', required: true },
     { name: 'href', type: 'text', required: true },
@@ -82,7 +85,7 @@ export const SiteSettings: CollectionConfig = {
     read: publicRead,
     update: systemAdminOnly,
   },
-  admin: { useAsTitle: 'key' },
+  admin: { hidden: systemAdminHidden, useAsTitle: 'key' },
   fields: [
     { name: 'key', type: 'text', index: true, required: true, unique: true },
     { name: 'value', type: 'json', required: true },

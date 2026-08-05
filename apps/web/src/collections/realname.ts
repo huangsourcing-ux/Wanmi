@@ -1,11 +1,17 @@
 import type { CollectionBeforeValidateHook, CollectionConfig } from 'payload'
 
-import { deny, ownOrSystem, sensitiveFieldRead, systemAdminOnly } from '@/access/roles'
+import {
+  deny,
+  ownOrSystem,
+  sensitiveFieldRead,
+  systemAdminHidden,
+  systemAdminOnly,
+} from '@/access/roles'
 import { REALNAME_STATUSES } from '@/lib/domain'
 
-// `create` access only gates whether a customer may call the endpoint at all; it
-// cannot restrict which `customer` id they submit. Without pinning it here, a
-// customer could POST a template attributing it to a different customer's id.
+// D1 closes generic writes to private real-name data. Keep ownership pinning as a
+// second layer for the future /api/v1 service, which will invoke Payload with an
+// authenticated customer and explicit access semantics.
 const pinCustomerOwner: CollectionBeforeValidateHook = ({ data, operation, req }) => {
   if (!data || operation !== 'create') return data
   if (req.user?.collection === 'customers') data.customer = req.user.id
@@ -15,12 +21,12 @@ const pinCustomerOwner: CollectionBeforeValidateHook = ({ data, operation, req }
 export const RealnameTemplates: CollectionConfig = {
   slug: 'realnameTemplates',
   access: {
-    create: ({ req }) => req.user?.collection === 'customers',
+    create: deny,
     delete: deny,
     read: ownOrSystem('customer'),
-    update: ownOrSystem('customer'),
+    update: deny,
   },
-  admin: { useAsTitle: 'displayName' },
+  admin: { hidden: systemAdminHidden, useAsTitle: 'displayName' },
   hooks: { beforeValidate: [pinCustomerOwner] },
   fields: [
     {

@@ -1,10 +1,17 @@
 import type { CollectionConfig } from 'payload'
 
-import { deny, ownOrSystem, sensitiveFieldRead, systemAdminOnly } from '@/access/roles'
+import {
+  deny,
+  ownOrSystem,
+  sensitiveFieldRead,
+  systemAdminHidden,
+  systemAdminOnly,
+} from '@/access/roles'
 
 export const ProviderOperations: CollectionConfig = {
   slug: 'providerOperations',
   access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
+  admin: { hidden: systemAdminHidden },
   fields: [
     { name: 'operationKey', type: 'text', index: true, required: true, unique: true },
     { name: 'order', type: 'relationship', relationTo: 'orders', index: true, required: true },
@@ -31,7 +38,7 @@ export const ProviderOperations: CollectionConfig = {
 export const DomainAssets: CollectionConfig = {
   slug: 'domainAssets',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
-  admin: { useAsTitle: 'domainAscii' },
+  admin: { hidden: systemAdminHidden, useAsTitle: 'domainAscii' },
   fields: [
     {
       name: 'customer',
@@ -64,6 +71,7 @@ export const DomainAssets: CollectionConfig = {
 export const Renewals: CollectionConfig = {
   slug: 'renewals',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
+  admin: { hidden: systemAdminHidden },
   fields: [
     {
       name: 'customer',
@@ -93,6 +101,7 @@ export const Renewals: CollectionConfig = {
 export const NameserverChanges: CollectionConfig = {
   slug: 'nameserverChanges',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
+  admin: { hidden: systemAdminHidden },
   fields: [
     {
       name: 'customer',
