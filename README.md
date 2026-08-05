@@ -2,7 +2,7 @@
 
 Wanmi.AI P1 的 D0 条件通过工程基线与 D1 公共站基础：Next.js 16.2.11、Payload 3.86.0、PostgreSQL 16.14、Payload Jobs、Who-Dat 2.0.0，以及彼此隔离的公共和私有对象存储原型。
 
-当前代码已实现 D1-01 的 Wanmi.net 响应式站点外壳、D1-02 的通用状态与错误契约，以及 D1-03 的 canonical、robots、静态 sitemap、Open Graph 和 Payload SEO 共享字段；域名查询仍是明确标记的功能骨架，不调用真实 provider。项目负责人已批准进入 D1；共享 ECS 的运行环境门槛转入 D7。所有外部写能力默认使用 mock；`ALLOW_REAL_PROVIDER_WRITES=false` 是本地和 CI 默认值。
+当前代码已实现 D1-01 的 Wanmi.net 响应式站点外壳、D1-02 的通用状态与错误契约、D1-03 的 canonical/robots/sitemap/SEO 基础，以及 D1-04 的受控站内 301 与 Wanmi.ai/www 主机跳转配置；域名查询仍是明确标记的功能骨架，不调用真实 provider。项目负责人已批准进入 D1；共享 ECS 的运行环境门槛转入 D7。所有外部写能力默认使用 mock；`ALLOW_REAL_PROVIDER_WRITES=false` 是本地和 CI 默认值。
 
 ## 本地要求
 
@@ -36,6 +36,10 @@ curl -fsS http://127.0.0.1:3100/readyz
 
 Payload 官方 SEO 插件为文章、专题和 TLD 页面提供共享 `WanmiSeoMeta`：标题、描述、图片、同源 canonical 与 `noIndex`。自定义 canonical 只接受站内路径或当前 Wanmi 主域 URL；草稿 SEO 数据继续受发布态 access control 隔离。
 
+Payload 官方 Redirects 插件只保存站内永久 301 规则。规则起点和自定义目标会规范化为无查询、无片段的站内路径；后台、API、健康检查、外部 URL、草稿引用、循环和超过 10 跳的链路均被拒绝。只有内容编辑和系统管理员可创建或更新，只有系统管理员可删除；每次变更都在同一 Payload 请求/事务中写入脱敏审计。公共 GET/HEAD 通过 `proxy.ts` 读取规则并折叠到最终目标，保留原查询参数和请求 ID；每进程缓存 30 秒，刷新失败使用最后一次合法缓存，冷启动失败则安全放行。
+
+`deploy/nginx/wanmi-host-redirects.conf` 将 Wanmi.ai 与 www 别名的 HTTP/HTTPS、以及 `wanmi.net` 的 HTTP 请求保留 `$request_uri` 跳转到 `https://wanmi.net`。别名虚拟主机没有 `proxy_pass`。生产证书必须同时覆盖 `wanmi.ai`、`www.wanmi.ai` 和 `www.wanmi.net`；配置验证与部署步骤见 [启动 Runbook](docs/operations/startup.md)。
+
 自定义 API 错误使用兼容 RFC 9457 的 `application/problem+json`，保留 `code`、`message` 和 `traceId`，并提供稳定标题、HTTP 状态、可重试标记和建议动作；成功响应 body 不变。公共页面的错误与降级状态显示同一请求 ID，不显示原始异常、堆栈或 provider 响应。文章、专题和价格栏目使用局部 Loading 边界，避免动态未找到页面因根级流式响应丢失真实 404 状态。
 
 另开终端启动同一代码和镜像的独立 Worker：
@@ -56,22 +60,24 @@ pnpm --filter @wanmi/web admin:bootstrap
 
 ## 稳定命令
 
-| 命令                    | 说明                                   |
-| ----------------------- | -------------------------------------- |
-| `make bootstrap`        | 安装锁定依赖并创建本地配置             |
-| `make dev`              | 启动 PostgreSQL、Who-Dat、MinIO 和 Web |
-| `make worker`           | 启动独立 Payload Jobs Worker           |
-| `make generate`         | 生成 Payload 类型和 Admin import map   |
-| `make verify-generated` | 阻断类型、import map 与迁移漂移        |
-| `make lint`             | ESLint 与 TypeScript strict 检查       |
-| `make test`             | Vitest 单元测试                        |
-| `make test-integration` | PostgreSQL、Jobs、OTP 和存储集成测试   |
-| `make test-e2e`         | Playwright 核心冒烟                    |
-| `make security`         | 依赖和秘密扫描                         |
-| `make build`            | Next.js 生产构建及同镜像容器构建       |
-| `make smoke`            | 对已启动 Web 执行健康冒烟              |
-| `make verify-oss-real`  | 受控验证真实 OSS 的两条存储路径        |
-| `make check`            | 本地合并门槛                           |
+| 命令                     | 说明                                   |
+| ------------------------ | -------------------------------------- |
+| `make bootstrap`         | 安装锁定依赖并创建本地配置             |
+| `make dev`               | 启动 PostgreSQL、Who-Dat、MinIO 和 Web |
+| `make worker`            | 启动独立 Payload Jobs Worker           |
+| `make generate`          | 生成 Payload 类型和 Admin import map   |
+| `make verify-generated`  | 阻断类型、import map 与迁移漂移        |
+| `make verify-migrations` | 验证空库迁移和遗留 302 升级路径        |
+| `make verify-nginx`      | 验证固定镜像中的主机 301 配置          |
+| `make lint`              | ESLint 与 TypeScript strict 检查       |
+| `make test`              | Vitest 单元测试                        |
+| `make test-integration`  | PostgreSQL、Jobs、OTP 和存储集成测试   |
+| `make test-e2e`          | Playwright 核心冒烟                    |
+| `make security`          | 依赖和秘密扫描                         |
+| `make build`             | Next.js 生产构建及同镜像容器构建       |
+| `make smoke`             | 对已启动 Web 执行健康冒烟              |
+| `make verify-oss-real`   | 受控验证真实 OSS 的两条存储路径        |
+| `make check`             | 本地合并门槛                           |
 
 ## 数据库变更
 
@@ -85,6 +91,12 @@ pnpm --filter @wanmi/web migrate
 ```
 
 迁移和 `src/payload-types.ts` 必须一起提交，不得手改生成类型。升级路径和空库路径见 [验证 Runbook](docs/operations/d0-verification.md)。
+
+D1-04 可重复迁移验证使用一次性本地数据库，确认空库完整迁移，并模拟 D1-03 schema 中遗留 `302` 规则升级为 `301` 后再收窄 enum：
+
+```bash
+make verify-migrations
+```
 
 ## 真实云验证
 

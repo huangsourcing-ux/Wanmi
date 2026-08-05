@@ -1,4 +1,4 @@
-.PHONY: bootstrap dev worker generate verify-generated verify-oss-real fmt lint test test-integration test-e2e security build smoke check down
+.PHONY: bootstrap dev worker generate verify-generated verify-oss-real verify-migrations verify-nginx fmt lint test test-integration test-e2e security build smoke check down
 
 bootstrap:
 	corepack enable
@@ -21,6 +21,13 @@ verify-generated:
 
 verify-oss-real:
 	pnpm verify:cloud:oss
+
+verify-migrations:
+	docker compose up -d postgres
+	pnpm verify:migrations
+
+verify-nginx:
+	pnpm verify:nginx
 
 fmt:
 	pnpm format
@@ -52,7 +59,7 @@ build:
 smoke:
 	node scripts/smoke.mjs
 
-check: verify-generated lint test test-integration security build
+check: verify-generated verify-migrations verify-nginx lint test test-integration security build
 
 down:
 	docker compose down

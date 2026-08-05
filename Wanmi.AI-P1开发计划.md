@@ -335,8 +335,8 @@ D0 的架构、权限、认证、迁移、Jobs 幂等、真实 OSS、隔离 RDS�
 - [x] 建立统一 Result、Problem Details 和请求 ID 展示；
 - [x] 建立 canonical、robots、sitemap、Open Graph 和 noindex 基础能力；
 - [x] 配置 `@payloadcms/plugin-seo` 的共享字段与预览规则，并验证只读取已发布内容；
-- [ ] 配置 `@payloadcms/plugin-redirects`，重定向写入受 RBAC 和审计保护，目标拒绝开放跳转；
-- [ ] 建立 Wanmi.ai/www 只跳转的 Nginx 配置，不创建第二套页面；
+- [x] 配置 `@payloadcms/plugin-redirects`，重定向写入受 RBAC 和审计保护，目标拒绝开放跳转；
+- [x] 建立 Wanmi.ai/www 只跳转的 Nginx 配置，不创建第二套页面；
 - [ ] 完善管理员独立 Auth Collection、Payload Session、密码 + TOTP MFA 和 RBAC；
 - [ ] 建立内容编辑、广告运营、分析、系统管理员角色边界；
 - [ ] 建立审计事件公共组件和后台导航骨架；
@@ -347,6 +347,8 @@ D1-01 验证记录（2026-08-04）：已建立响应式主站外壳、六类工�
 D1-02 验证记录（2026-08-04）：已建立共享 Zod `Result<T>` 六状态契约、兼容 RFC 9457 的 Problem Details、集中请求 ID 校验和安全 provider 映射；现有 API 错误保留 `code/message/traceId`，增加标准字段、重试信息和建议动作，成功响应保持不变。公共站已接入可访问查询表单、空态/部分成功/失败/限流/降级面板、栏目级加载 Skeleton、错误边界和保留真实 404 的品牌化未找到页；请求 ID 上下文按导航更新。41 个单元测试、9 个 PostgreSQL/MinIO 集成测试、6 个 Playwright 场景、生产构建、linux/amd64 同镜像构建、安全扫描及桌面/390px 视觉检查通过。本切片未调用真实 provider，未修改 Payload schema、迁移或生成类型。
 
 D1-03 验证记录（2026-08-04）：已建立以配置 origin 为唯一主机的公共 canonical、路由级 Open Graph/Twitter、查询参数结果 `noindex, nofollow`、`robots.txt`、仅包含现有稳定页面的静态 sitemap 和 1200×630 品牌分享图；Payload 官方 SEO 插件共享 `WanmiSeoMeta`，新增同源 canonical 与默认关闭的 `noIndex`，搜索预览 URL 固定映射到批准的信息架构。新增 migration 与生成类型，空库和现有两迁移基线升级均得到预期 12 个 SEO 列；46 个单元测试、9 个 PostgreSQL/MinIO 集成测试、8 个 Playwright 场景、生产构建、linux/amd64 同镜像构建和安全扫描通过。动态内容详情、动态 sitemap、草稿实时预览、Redirects 与 Nginx 主机跳转仍按计划留在后续切片。
+
+D1-04 验证记录（2026-08-04）：Payload Redirects 已收敛为永久 301；自定义目标只接受规范化站内路径，文章、专题和 TLD 引用必须已发布，并拒绝保留路径、开放跳转、直接/多跳循环和超过 10 跳的链路。`content_editor`/`system_admin` 可创建更新，只有 `system_admin` 可删除；创建、更新、删除通过同一 `req` 写入脱敏审计。公共 GET/HEAD 以 `overrideAccess: false` 分页读取并使用 30 秒进程缓存、并发刷新去重、stale-on-error 与冷启动失败放行，命中后折叠最终目标并保留查询参数与请求 ID。迁移在收窄 enum 前将遗留 302 规范化为 301；空库和 D1-03 遗留 302 升级路径均通过。固定 digest Nginx 镜像通过 `nginx -t`，4 个 HTTP 和 3 个 HTTPS 别名入口均保留路径/查询并跳至 `https://wanmi.net`；配置不含别名 `proxy_pass`。65 个单元测试、12 个 PostgreSQL 集成测试和 9 个 Playwright 场景通过；生产构建、linux/amd64 镜像和安全扫描结果随本切片最终门禁记录。本切片未部署、未修改共享 ECS、未申请证书或切换流量。
 
 ### 5.3 退出条件
 
