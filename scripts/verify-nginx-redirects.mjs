@@ -65,6 +65,25 @@ const verifyRedirect = ({ host, port, secure }) =>
     request.end()
   })
 
+const wait = (milliseconds) =>
+  new Promise((resolveWait) => {
+    setTimeout(resolveWait, milliseconds)
+  })
+
+const verifyRedirectWhenReady = async (options) => {
+  let lastError
+  for (let attempt = 1; attempt <= 50; attempt += 1) {
+    try {
+      await verifyRedirect(options)
+      return
+    } catch (error) {
+      lastError = error
+      if (attempt < 50) await wait(100)
+    }
+  }
+  throw lastError
+}
+
 try {
   mkdirSync(certificateDirectory)
   execFileSync(
@@ -114,10 +133,10 @@ try {
   const httpPort = mappedPort(80)
   const httpsPort = mappedPort(443)
   for (const host of ['wanmi.net', 'wanmi.ai', 'www.wanmi.ai', 'www.wanmi.net']) {
-    await verifyRedirect({ host, port: httpPort, secure: false })
+    await verifyRedirectWhenReady({ host, port: httpPort, secure: false })
   }
   for (const host of ['wanmi.ai', 'www.wanmi.ai', 'www.wanmi.net']) {
-    await verifyRedirect({ host, port: httpsPort, secure: true })
+    await verifyRedirectWhenReady({ host, port: httpsPort, secure: true })
   }
   process.stdout.write('Verified Nginx syntax and 7 canonical host redirect cases.\n')
 } finally {
