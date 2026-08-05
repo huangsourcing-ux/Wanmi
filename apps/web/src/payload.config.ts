@@ -21,6 +21,7 @@ import {
   formSubmissionOverrides,
   redirectsOverrides,
 } from '@/plugins/guards'
+import { appendSeoFields, generateSeoPreviewUrl } from '@/plugins/seo'
 
 const env = getEnv()
 const configDir = dirname(fileURLToPath(import.meta.url))
@@ -89,10 +90,12 @@ export default buildConfig({
   plugins: [
     seoPlugin({
       collections: ['articles', 'topics', 'tldPages'],
+      fields: appendSeoFields,
       generateDescription: ({ doc }) => doc.summary ?? '',
       generateTitle: ({ doc }) => doc.title ?? '',
       generateURL: ({ collectionConfig, doc }) =>
-        `${serverOrigin}/${collectionConfig?.slug ?? 'content'}/${doc.slug ?? ''}`,
+        generateSeoPreviewUrl(collectionConfig?.slug, doc.slug),
+      interfaceName: 'WanmiSeoMeta',
       tabbedUI: true,
       uploadsCollection: 'media',
     }),

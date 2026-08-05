@@ -1,4 +1,3 @@
-import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArrowRightIcon } from 'lucide-react'
 
@@ -6,11 +5,9 @@ import { PageIntro } from '@/components/site/page-intro'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { LEGAL_DOCUMENTS } from '@/lib/legal-config'
+import { createStaticPageMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = {
-  description: 'Wanmi.net 隐私、使用条款、Cookie 和广告说明的开发期入口。',
-  title: '帮助与合规',
-}
+export const metadata = createStaticPageMetadata('/legal')
 
 export default function LegalPage() {
   return (

@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { SiteFooter } from '@/components/site/site-footer'
 import { SiteHeader } from '@/components/site/site-header'
 import { getPublicSiteData } from '@/lib/public-site-data'
+import { getSiteOrigin, SITE_DESCRIPTION, SITE_TITLE } from '@/lib/seo'
 
 import './styles.css'
 
@@ -11,9 +12,10 @@ export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   applicationName: 'Wanmi.net',
-  description: '面向中文用户的域名查询、WHOIS、DNS、SSL、IDN 与 TLD 价格工具入口。',
+  description: SITE_DESCRIPTION,
+  metadataBase: getSiteOrigin(),
   title: {
-    default: 'Wanmi.net｜中文域名工具与服务入口',
+    default: SITE_TITLE,
     template: '%s｜Wanmi.net',
   },
 }

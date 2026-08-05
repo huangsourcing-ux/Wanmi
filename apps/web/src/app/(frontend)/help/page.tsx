@@ -1,15 +1,12 @@
-import type { Metadata } from 'next'
 import Link from 'next/link'
 import { AlertTriangleIcon, Clock3Icon, DatabaseIcon, ShieldCheckIcon } from 'lucide-react'
 
 import { PageIntro } from '@/components/site/page-intro'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { createStaticPageMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = {
-  description: '了解 Wanmi.net 域名工具的数据来源、更新时间、结果限制和当前服务边界。',
-  title: '帮助与数据来源',
-}
+export const metadata = createStaticPageMetadata('/help')
 
 const helpItems = [
   {

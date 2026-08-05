@@ -11,8 +11,17 @@ test('homepage works on desktop and submits a noindex domain query without provi
   await page.getByRole('button', { name: '查询域名' }).click()
 
   await expect(page).toHaveURL(/\/tools\/domain-search\?q=.*wanmi\.net/)
+  const origin = new URL(page.url()).origin
   await expect(page.getByText('已收到查询：')).toContainText('wanmi.net')
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/)
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    'href',
+    `${origin}/tools/domain-search`,
+  )
+  await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
+    'content',
+    `${origin}/tools/domain-search`,
+  )
   await expect(page.getByText(/不会调用查询 provider/)).toBeVisible()
   await expect(page.getByLabel('输入完整域名或关键词')).toHaveValue('wanmi.net')
 })
@@ -52,11 +61,56 @@ test('planned public skeleton routes are available and unknown slugs return 404'
     '/legal/cookies',
     '/legal/advertising',
   ]) {
-    expect((await request.get(path)).status(), path).toBe(200)
+    const response = await request.get(path)
+    expect(response.status(), path).toBe(200)
+    expect(await response.text(), path).toContain(
+      `<link rel="canonical" href="${new URL(response.url()).origin}${path}"`,
+    )
   }
 
   expect((await request.get('/tools/not-a-tool')).status()).toBe(404)
   expect((await request.get('/legal/not-a-document')).status()).toBe(404)
+})
+
+test('robots, sitemap and the branded Open Graph image expose only stable public URLs', async ({
+  request,
+}) => {
+  const robots = await request.get('/robots.txt')
+  expect(robots.ok()).toBe(true)
+  const robotsText = await robots.text()
+  expect(robotsText).toContain('Disallow: /admin/')
+  expect(robotsText).toContain('Disallow: /api/')
+  expect(robotsText).toContain('Disallow: /healthz')
+  expect(robotsText).toContain('Sitemap: http://127.0.0.1:3100/sitemap.xml')
+
+  const sitemap = await request.get('/sitemap.xml')
+  expect(sitemap.ok()).toBe(true)
+  const sitemapText = await sitemap.text()
+  expect(sitemapText).toContain('<loc>http://127.0.0.1:3100/tools/domain-search</loc>')
+  expect(sitemapText).toContain('<loc>http://127.0.0.1:3100/legal/privacy</loc>')
+  expect(sitemapText).not.toContain('/admin')
+  expect(sitemapText).not.toContain('/api/')
+  expect(sitemapText).not.toContain('?q=')
+  expect(sitemapText).not.toMatch(/<loc>[^<]*\/articles\/.+<\/loc>/)
+
+  const image = await request.get('/opengraph-image')
+  expect(image.ok()).toBe(true)
+  expect(image.headers()['content-type']).toContain('image/png')
+  expect((await image.body()).byteLength).toBeGreaterThan(1_000)
+})
+
+test('all query-capable tool pages keep clean canonicals and noindex parameter results', async ({
+  page,
+}) => {
+  await page.goto('/tools/whois?q=wanmi.net')
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/)
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    'href',
+    'http://127.0.0.1:3100/tools/whois',
+  )
+
+  await page.goto('/tools/whois')
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /index, follow/)
 })
 
 test('content fallback and branded not-found states work on mobile', async ({ page }) => {

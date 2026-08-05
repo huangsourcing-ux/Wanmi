@@ -333,8 +333,8 @@ D0 的架构、权限、认证、迁移、Jobs 幂等、真实 OSS、隔离 RDS�
 - [x] 建立首页主查询、工具导航、内容入口和数据来源说明；
 - [x] 建立通用表单、加载、空状态、部分成功、失败、限流和降级组件；
 - [x] 建立统一 Result、Problem Details 和请求 ID 展示；
-- [ ] 建立 canonical、robots、sitemap、Open Graph 和 noindex 基础能力；
-- [ ] 配置 `@payloadcms/plugin-seo` 的共享字段与预览规则，并验证只读取已发布内容；
+- [x] 建立 canonical、robots、sitemap、Open Graph 和 noindex 基础能力；
+- [x] 配置 `@payloadcms/plugin-seo` 的共享字段与预览规则，并验证只读取已发布内容；
 - [ ] 配置 `@payloadcms/plugin-redirects`，重定向写入受 RBAC 和审计保护，目标拒绝开放跳转；
 - [ ] 建立 Wanmi.ai/www 只跳转的 Nginx 配置，不创建第二套页面；
 - [ ] 完善管理员独立 Auth Collection、Payload Session、密码 + TOTP MFA 和 RBAC；
@@ -345,6 +345,8 @@ D0 的架构、权限、认证、迁移、Jobs 幂等、真实 OSS、隔离 RDS�
 D1-01 验证记录（2026-08-04）：已建立响应式主站外壳、六类工具与内容入口、`GET /tools/domain-search?q=` 查询骨架、帮助和四类合规说明入口；公共 Payload Local API 读取固定 `overrideAccess: false`，草稿隔离、栏目独立降级、桌面/移动端与未知路由均有自动化测试。本切片未调用 provider、未新增 API、未修改 Payload schema 或迁移。
 
 D1-02 验证记录（2026-08-04）：已建立共享 Zod `Result<T>` 六状态契约、兼容 RFC 9457 的 Problem Details、集中请求 ID 校验和安全 provider 映射；现有 API 错误保留 `code/message/traceId`，增加标准字段、重试信息和建议动作，成功响应保持不变。公共站已接入可访问查询表单、空态/部分成功/失败/限流/降级面板、栏目级加载 Skeleton、错误边界和保留真实 404 的品牌化未找到页；请求 ID 上下文按导航更新。41 个单元测试、9 个 PostgreSQL/MinIO 集成测试、6 个 Playwright 场景、生产构建、linux/amd64 同镜像构建、安全扫描及桌面/390px 视觉检查通过。本切片未调用真实 provider，未修改 Payload schema、迁移或生成类型。
+
+D1-03 验证记录（2026-08-04）：已建立以配置 origin 为唯一主机的公共 canonical、路由级 Open Graph/Twitter、查询参数结果 `noindex, nofollow`、`robots.txt`、仅包含现有稳定页面的静态 sitemap 和 1200×630 品牌分享图；Payload 官方 SEO 插件共享 `WanmiSeoMeta`，新增同源 canonical 与默认关闭的 `noIndex`，搜索预览 URL 固定映射到批准的信息架构。新增 migration 与生成类型，空库和现有两迁移基线升级均得到预期 12 个 SEO 列；46 个单元测试、9 个 PostgreSQL/MinIO 集成测试、8 个 Playwright 场景、生产构建、linux/amd64 同镜像构建和安全扫描通过。动态内容详情、动态 sitemap、草稿实时预览、Redirects 与 Nginx 主机跳转仍按计划留在后续切片。
 
 ### 5.3 退出条件
 

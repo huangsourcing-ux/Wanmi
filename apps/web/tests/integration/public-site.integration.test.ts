@@ -65,6 +65,7 @@ describe('D1 public content access', () => {
       data: {
         _status: 'draft',
         content,
+        meta: { canonical: `/articles/${fixturePrefix}-draft`, noIndex: false },
         publishedAt: '2099-01-02T00:00:00.000Z',
         slug: `${fixturePrefix}-draft`,
         summary: '不应公开',
@@ -85,6 +86,13 @@ describe('D1 public content access', () => {
         data: {
           _status: 'published',
           content,
+          meta: {
+            canonical:
+              fixture.collection === 'tldPages'
+                ? `/tld/${fixturePrefix}-${fixture.suffix}`
+                : `/${fixture.collection}/${fixturePrefix}-${fixture.suffix}`,
+            noIndex: false,
+          },
           publishedAt: '2099-01-01T00:00:00.000Z',
           slug: `${fixturePrefix}-${fixture.suffix}`,
           summary: '公开摘要',
@@ -102,6 +110,26 @@ describe('D1 public content access', () => {
     expect(data.articles.items.map((item) => item.title)).not.toContain(`${fixturePrefix} draft`)
     expect(data.tldPages.items.map((item) => item.title)).toContain(`${fixturePrefix} 公开 TLD`)
     expect(data.topics.items.map((item) => item.title)).toContain(`${fixturePrefix} 公开专题`)
+
+    const anonymousArticles = await payload.find({
+      collection: 'articles',
+      depth: 0,
+      limit: 10,
+      overrideAccess: false,
+      where: { slug: { contains: fixturePrefix } },
+    })
+    expect(anonymousArticles.docs.map((document) => document.title)).not.toContain(
+      `${fixturePrefix} draft`,
+    )
+    expect(anonymousArticles.docs).toContainEqual(
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          canonical: `/articles/${fixturePrefix}-article`,
+          noIndex: false,
+        }),
+        title: `${fixturePrefix} 公开文章`,
+      }),
+    )
   })
 
   it('keeps healthy database-backed sections visible when one collection read fails', async () => {

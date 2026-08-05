@@ -1,13 +1,9 @@
-import type { Metadata } from 'next'
-
 import { ContentLanding } from '@/components/site/content-landing'
 import { PageIntro } from '@/components/site/page-intro'
 import { getPublicSiteData } from '@/lib/public-site-data'
+import { createStaticPageMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = {
-  description: '查看 Wanmi.net 计划提供的 TLD 注册、续费和多年成本入口。',
-  title: 'TLD 价格与成本',
-}
+export const metadata = createStaticPageMetadata('/pricing')
 
 export default async function PricingPage() {
   const data = await getPublicSiteData()

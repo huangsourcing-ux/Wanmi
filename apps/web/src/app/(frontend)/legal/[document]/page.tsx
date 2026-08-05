@@ -7,6 +7,7 @@ import { PageIntro } from '@/components/site/page-intro'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { LEGAL_DOCUMENTS, getLegalDocument } from '@/lib/legal-config'
+import { createPageMetadata } from '@/lib/seo'
 
 type LegalPageProps = {
   params: Promise<{ document: string }>
@@ -20,7 +21,11 @@ export async function generateMetadata({ params }: LegalPageProps): Promise<Meta
   const { document: slug } = await params
   const document = getLegalDocument(slug)
   if (!document) return {}
-  return { description: document.description, title: document.title }
+  return createPageMetadata({
+    description: document.description,
+    path: `/legal/${document.slug}`,
+    title: document.title,
+  })
 }
 
 export default async function LegalDocumentPage({ params }: LegalPageProps) {
