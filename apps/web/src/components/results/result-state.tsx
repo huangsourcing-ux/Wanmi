@@ -49,6 +49,7 @@ function Action({ action, variant }: { action: ResultAction; variant: 'default' 
 }
 
 export function ResultState({
+  cacheStatus,
   compact = false,
   dataSource,
   description,
@@ -64,6 +65,7 @@ export function ResultState({
   title,
   traceId,
 }: {
+  cacheStatus?: 'hit' | 'miss' | 'mixed' | 'not_used'
   compact?: boolean
   dataSource?: string
   description: string
@@ -85,7 +87,12 @@ export function ResultState({
   const Icon = stateIcons[state]
   const Heading: ElementType = headingLevel === 1 ? 'h1' : headingLevel === 3 ? 'h3' : 'h2'
   const hasMetadata = Boolean(
-    dataSource || observedAt || lastSuccessfulAt || requestId || retryable !== undefined,
+    cacheStatus ||
+      dataSource ||
+      observedAt ||
+      lastSuccessfulAt ||
+      requestId ||
+      retryable !== undefined,
   )
 
   return (
@@ -118,6 +125,21 @@ export function ResultState({
               <div>
                 <dt className="text-muted-foreground">数据源</dt>
                 <dd className="mt-1 font-medium text-foreground">{dataSource}</dd>
+              </div>
+            ) : null}
+            {cacheStatus ? (
+              <div>
+                <dt className="text-muted-foreground">缓存状态</dt>
+                <dd className="mt-1 font-medium text-foreground">
+                  {
+                    {
+                      hit: '缓存命中',
+                      miss: '最新查询',
+                      mixed: '部分缓存命中',
+                      not_used: '未使用缓存',
+                    }[cacheStatus]
+                  }
+                </dd>
               </div>
             ) : null}
             {observedAt ? (

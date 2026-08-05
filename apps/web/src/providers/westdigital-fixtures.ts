@@ -37,12 +37,40 @@ export class FixtureWestDigitalTransport implements WestDigitalReadTransport {
 }
 
 function defaultHandler(request: WestDigitalTransportRequest): WestDigitalTransportResponse {
-  if (
-    request.operation === 'availability' &&
-    request.body.domain === 'ceo' &&
-    request.body.suffix === '.top'
-  )
-    return { body: WESTDIGITAL_AVAILABILITY_FIXTURE, status: 200 }
+  if (request.operation === 'availability') {
+    const domain = request.body.domain
+    const suffix = request.body.suffix
+    const name = `${domain}${suffix}`
+
+    if (domain === 'ratelimited') {
+      return { body: { result: 429 }, headers: { 'retry-after': '12' }, status: 429 }
+    }
+    if (domain === 'failed' || (domain === 'partial' && suffix === '.xyz')) {
+      return { body: { result: 500 }, status: 200 }
+    }
+    if (name === 'ceo.top') return { body: WESTDIGITAL_AVAILABILITY_FIXTURE, status: 200 }
+    if (name === 'premium.top') {
+      return {
+        body: {
+          clientid: 'fixture-premium-request',
+          data: [{ avail: 1, name, price: 3181, type: 'premium' }],
+          result: 200,
+        },
+        status: 200,
+      }
+    }
+    if (name === 'taken.cn' || name === 'reserved.net' || name === 'ambiguous.com') {
+      return {
+        body: { clientid: 'fixture-unavailable-request', data: [{ avail: 0, name }], result: 200 },
+        status: 200,
+      }
+    }
+
+    return {
+      body: { clientid: 'fixture-available-request', data: [{ avail: 1, name }], result: 200 },
+      status: 200,
+    }
+  }
 
   if (
     request.operation === 'price' &&

@@ -32,7 +32,10 @@ export const problemDetailsSchema = z
 
 export type ProblemDetails = z.infer<typeof problemDetailsSchema>
 
+export const resultCacheStatusSchema = z.enum(['hit', 'miss', 'mixed', 'not_used'])
+
 export const resultMetaSchema = z.object({
+  cacheStatus: resultCacheStatusSchema.optional(),
   dataSource: z.string().min(1).optional(),
   lastSuccessfulAt: z.iso.datetime().optional(),
   observedAt: z.iso.datetime().optional(),

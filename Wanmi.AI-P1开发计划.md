@@ -378,7 +378,7 @@ D1-08 验证记录（2026-08-05）：已建立严格 Zod 判别联合保护的 `
 
 - [x] 实现域名标准化、Unicode/Punycode、长度和字符校验；
 - [x] 实现西部数码查询/价格适配器、限频、请求合并和有界缓存；
-- [ ] 实现域名可注册查询，默认最多 10 个 TLD，支持部分成功和六种标准状态；
+- [x] 实现域名可注册查询，默认最多 10 个 TLD，支持部分成功和六种标准状态；
 - [ ] 实现 Who-Dat/RDAP/WHOIS 查询与降级，和可售状态严格分离；
 - [ ] 实现 A、AAAA、CNAME、MX、TXT、NS、SOA、CAA 只读查询；
 - [ ] 实现 TLS/SSL/CAA 检查，固定 443 端口并阻断私有、保留和本地地址；
@@ -392,6 +392,8 @@ D1-08 验证记录（2026-08-05）：已建立严格 Zod 判别联合保护的 `
 D2-01 验证记录（2026-08-05）：新增浏览器/服务端可复用的纯函数域名标准化模块，固定使用 Unicode 17、UTS-46 非过渡处理和 IDNA2008 允许/上下文规则；统一处理大小写、首尾空白、全角字符、等价点和单个根尾点，输出 ASCII/Punycode、显式 Unicode 转换值及固定为 ASCII 的公开展示值。标签 63 字节、总长 253 字节、字符、连字符、空标签、纯数字 TLD、无效/双重 `xn--` 均有稳定错误码并适配 D1-02 `Result`/Problem Details；UTS-39 按标签检测混合书写系统并返回非阻断风险提示。`make check` 的 178 个单元测试、26 个 PostgreSQL/MinIO 集成测试、迁移/类型漂移、生产构建、linux/amd64 同镜像和安全门禁通过；`make test-e2e` 冷启动首次因 Next 开发服务器仍在编译导致 2 个既有管理员场景超时、其余 14 个通过，未改代码直接完整复跑后 16 个场景全部通过。未新增公开 API、工具页、Payload schema、迁移或 provider 调用；后续 IDN 工具页任务保持未完成。
 
 D2-02 验证记录（2026-08-05）：新增通过接口注入的 `WestDigitalReadProvider`、fixture transport 和本地文档查询/普通价格样例，两个入口复用 D2-01 `normalizeDomain`，Unicode/Punycode、大小写和等价点输入共享同一缓存及 in-flight key。适配器使用每秒 2 次、突发 4 的进程内 token bucket，最多排队 32 个不同请求、最长等待 5 秒、单次 transport 超时 5 秒；相同进行中请求只消耗一个限流槽。可注册性成功结果使用 45 秒/5,000 项 LRU，普通价格使用 1 小时/512 项 LRU，失败不缓存且不返回 stale；上游整数人民币严格换算为整数分。429、队列满、排队超时、上游超时、连接失败、畸形数据和业务拒绝均返回稳定错误码、中文信息、重试属性与可审计请求标识，结构化日志不记录完整域名、请求表单、响应正文或上游错误详情。最终 `make check` 通过生成类型/import map/schema 漂移、空库及遗留 migration、Nginx、lint、TypeScript strict、190 个单元测试、26 个 PostgreSQL/MinIO 集成测试、Next.js 生产构建、linux/amd64 同镜像、依赖 high 门禁和 Gitleaks；`make test-e2e` 的 16 个 Playwright 场景一次通过。未新增公开 API、Payload schema、migration、真实鉴权、凭据或网络 transport；包含 Who-Dat/DNS/TLS 的综合降级任务继续保持未完成。
+
+D2-03 验证记录（2026-08-05）：新增严格 Zod 保护的 `POST /api/v1/tools/domain-search`、服务端多 TLD 编排和公开结果页；完整域名只查询自身后缀，关键词默认按 `com`、`cn`、`net`、`org`、`top`、`xyz`、`vip`、`cc`、`tv`、`com.cn` 十项 fixture 目录查询，显式输入超过 10 项返回稳定 `DOMAIN_SEARCH_TLD_LIMIT_EXCEEDED`，规范化重复项明确拒绝。每项使用 `available`、`premium`、`registered`、`restricted`、`unsupported`、`query_failed` 六种 PRD 状态并显示来源、查询时间和缓存状态；`Promise.allSettled` 保证单项失败不拖垮其他 TLD，聚合结果使用 D1-02 `ready`、`empty`、`partial`、`degraded`、`error`、`rate_limited` 契约。`avail=0` 只有 fixture 目录存在明确证据时才区分已注册或保留/限制，否则返回状态不明确，未调用或推断 WHOIS。浏览器查询请求固定 `no-store`、`credentials: omit` 和 origin-only referrer，完成/失败事件只发送聚合维度；结果参数页保持干净 canonical 与 `noindex, nofollow`，未新增 Payload Collection、migration、长期查询存储、真实 provider 网络调用或购买入口。`make check` 通过生成类型/import map/schema 漂移、空库及遗留 migration 往返、Nginx、lint、TypeScript strict、200 个单元测试、26 个 PostgreSQL/MinIO 集成测试、Next.js 生产构建、linux/amd64 同镜像、依赖 high 门禁和 Gitleaks；依赖审计仍为既有 2 个 low 和 2 个 moderate，无 high/critical。`make test-e2e` 的 17 个 Playwright 场景通过，覆盖默认 10 TLD、部分成功、超限拒绝、缓存命中、来源/时间/缓存展示、查询页 noindex/canonical 及 Cookie/referrer/分析事件最小化。普通/续费价格、经批准购买入口、真实西部数码联调、Who-Dat、DNS 和 TLS/CAA 继续留在后续切片。
 
 ### 6.3 退出条件
 

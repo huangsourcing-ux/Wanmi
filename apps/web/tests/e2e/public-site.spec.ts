@@ -18,10 +18,14 @@ test('database redirect returns a canonical 301 with query parameters and a requ
   expect((await request.get('/d1-redirect-e2e-unknown')).status()).toBe(404)
 })
 
-test('homepage works on desktop and submits a noindex domain query without provider access', async ({
+test('homepage submits a noindex fixture domain query without leaking cookies or full referrers', async ({
   page,
 }) => {
   const analyticsRequests: Array<{
+    body: Record<string, unknown>
+    headers: Record<string, string>
+  }> = []
+  const domainSearchRequests: Array<{
     body: Record<string, unknown>
     headers: Record<string, string>
   }> = []
@@ -35,6 +39,13 @@ test('homepage works on desktop and submits a noindex domain query without provi
     })
     await route.fulfill({ body: 'analytics unavailable', status: 503 })
   })
+  await page.route('**/api/v1/tools/domain-search', async (route) => {
+    domainSearchRequests.push({
+      body: route.request().postDataJSON() as Record<string, unknown>,
+      headers: await route.request().allHeaders(),
+    })
+    await route.continue()
+  })
   await page.goto('/')
 
   await expect(page.getByRole('heading', { level: 1, name: /查清域名状态/ })).toBeVisible()
@@ -43,7 +54,10 @@ test('homepage works on desktop and submits a noindex domain query without provi
   await page.getByRole('button', { name: '查询域名' }).click()
 
   await expect(page).toHaveURL(/\/tools\/domain-search\?q=.*wanmi\.net/)
-  await expect(page.getByText('已收到查询：')).toContainText('wanmi.net')
+  await expect(page.getByRole('heading', { level: 2, name: '可注册查询结果' })).toBeVisible()
+  await expect(page.locator('[data-domain-status="available"]')).toContainText('wanmi.net')
+  await expect(page.getByText('西部数码 fixture（非实时）').first()).toBeVisible()
+  await expect(page.getByText('最新查询').first()).toBeVisible()
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/)
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     'href',
@@ -53,7 +67,7 @@ test('homepage works on desktop and submits a noindex domain query without provi
     'content',
     `${canonicalOrigin}/tools/domain-search`,
   )
-  await expect(page.getByText(/不会调用查询 provider/)).toBeVisible()
+  await expect(page.getByText(/与 WHOIS\/RDAP 注册信息严格分离/)).toBeVisible()
   await expect(page.getByLabel('输入完整域名或关键词')).toHaveValue('wanmi.net')
 
   await expect
@@ -69,6 +83,9 @@ test('homepage works on desktop and submits a noindex domain query without provi
     tool: 'domain-search',
   })
   expect(analyticsRequests.some(({ body }) => body.event === 'page_viewed')).toBe(true)
+  await expect
+    .poll(() => analyticsRequests.some(({ body }) => body.event === 'tool_completed'))
+    .toBe(true)
   for (const event of analyticsRequests) {
     expect(JSON.stringify(event.body)).not.toContain('wanmi.net')
     expect(event.body).not.toHaveProperty('domain')
@@ -77,6 +94,49 @@ test('homepage works on desktop and submits a noindex domain query without provi
     expect(event.headers.cookie).toBeUndefined()
     expect(event.headers.referer ?? '').not.toContain('?q=')
   }
+  expect(domainSearchRequests).toHaveLength(1)
+  expect(domainSearchRequests[0].body).toEqual({ query: 'wanmi.net' })
+  expect(domainSearchRequests[0].headers.cookie).toBeUndefined()
+  expect(domainSearchRequests[0].headers.referer ?? '').not.toContain('?q=')
+})
+
+test('keyword queries return 10 ordered TLD results with partial success and bounded cache metadata', async ({
+  page,
+  request,
+}) => {
+  await page.goto('/tools/domain-search?q=partial')
+  await expect(page.getByRole('heading', { level: 2, name: '可注册查询结果' })).toBeVisible()
+  await expect(page.locator('[data-domain-status]')).toHaveCount(10)
+  await expect(page.locator('[data-domain-status="query_failed"]')).toContainText('partial.xyz')
+  await expect(page.getByRole('heading', { level: 2, name: /部分域名状态无法确认/ })).toBeVisible()
+  await expect(page.getByText('数据源').first()).toBeVisible()
+  await expect(page.getByText('查询时间').first()).toBeVisible()
+  await expect(page.getByText('缓存状态').first()).toBeVisible()
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/)
+
+  const first = await request.post('/api/v1/tools/domain-search', {
+    data: { query: 'premium.top' },
+    headers: { 'x-request-id': 'e2e-domain-cache-first' },
+  })
+  const second = await request.post('/api/v1/tools/domain-search', {
+    data: { query: 'premium.top' },
+    headers: { 'x-request-id': 'e2e-domain-cache-second' },
+  })
+  expect(first.status()).toBe(200)
+  expect(second.status()).toBe(200)
+  expect((await second.json()).data.items[0].cache.status).toBe('hit')
+
+  const overLimit = await request.post('/api/v1/tools/domain-search', {
+    data: {
+      query: 'wanmi',
+      tlds: ['com', 'cn', 'net', 'org', 'top', 'xyz', 'vip', 'cc', 'tv', 'com.cn', 'io'],
+    },
+  })
+  expect(overLimit.status()).toBe(400)
+  expect(await overLimit.json()).toMatchObject({
+    code: 'DOMAIN_SEARCH_TLD_LIMIT_EXCEEDED',
+    detail: '单次最多查询 10 个域名后缀，当前提交了 11 个',
+  })
 })
 
 test('the first-party endpoint and client honor DNT/GPC without blocking tools', async ({

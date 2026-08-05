@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  bucketDuration,
   classifyDevice,
   classifyPageType,
   classifySource,
@@ -62,6 +63,23 @@ describe('D1 first-party analytics contract', () => {
         }).success,
       ).toBe(true)
     }
+  })
+
+  it('buckets tool durations without exposing raw timings', () => {
+    expect(
+      [99, 100, 299, 300, 999, 1_000, 2_999, 3_000, 9_999, 10_000].map(bucketDuration),
+    ).toEqual([
+      'lt_100ms',
+      '100_299ms',
+      '100_299ms',
+      '300_999ms',
+      '300_999ms',
+      '1000_2999ms',
+      '1000_2999ms',
+      '3000_9999ms',
+      '3000_9999ms',
+      'gte_10000ms',
+    ])
   })
 
   it('rejects complete domains, raw locations, arbitrary metadata and sensitive fields', () => {
