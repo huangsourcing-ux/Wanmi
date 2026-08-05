@@ -23,7 +23,7 @@ verify-oss-real:
 	pnpm verify:cloud:oss
 
 verify-migrations:
-	docker compose up -d postgres
+	docker compose up -d --wait --wait-timeout 60 postgres
 	pnpm verify:migrations
 
 verify-nginx:
