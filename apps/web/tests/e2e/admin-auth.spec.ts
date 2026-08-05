@@ -85,4 +85,17 @@ test('disabled accounts and default Payload auth surfaces stay unavailable', asy
     expect((await request.post(path, { data: {} })).status(), path).toBe(404)
   }
   expect((await request.get('/api/graphql-playground')).status()).toBe(404)
+
+  for (const path of [
+    '/api/admins/%6Cogin',
+    '/api/%61dmins/forgot-password',
+    '/api/admins/forgot-passwor%64',
+    '/api/admins/%256Cogin',
+    '/api/%67raphql',
+  ]) {
+    expect(
+      (await request.post(path, { data: { email: fixture.systemEmail } })).status(),
+      path,
+    ).toBe(404)
+  }
 })

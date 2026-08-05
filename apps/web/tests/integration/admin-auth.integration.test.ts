@@ -258,6 +258,32 @@ describe('D1-05 administrator authentication', () => {
     ).rejects.toThrow()
   })
 
+  it('blocks forgot-password inside Payload before any reset token mutation', async () => {
+    const before = await payload.findByID({
+      collection: 'admins',
+      id: anchor.id,
+      overrideAccess: true,
+      showHiddenFields: true,
+    })
+    await expect(
+      payload.forgotPassword({
+        collection: 'admins',
+        data: { email: anchorEmail },
+        disableEmail: true,
+        overrideAccess: true,
+        req: { headers: requestHeaders() },
+      }),
+    ).rejects.toThrow()
+    const after = await payload.findByID({
+      collection: 'admins',
+      id: anchor.id,
+      overrideAccess: true,
+      showHiddenFields: true,
+    })
+    expect(after.resetPasswordToken ?? null).toBe(before.resetPasswordToken ?? null)
+    expect(after.resetPasswordExpiration ?? null).toBe(before.resetPasswordExpiration ?? null)
+  })
+
   it('deletes a non-final administrator with its hidden credentials and linked invitations', async () => {
     const target = await createAdminFixture('analyst', 'deletable')
     await payload.create({

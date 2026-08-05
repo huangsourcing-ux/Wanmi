@@ -14,7 +14,10 @@ vi.mock('payload', async (importOriginal) => {
 })
 
 import { isActiveAdminUser } from '@/access/roles'
-import { guardAdminAccountChange } from '@/services/auth/admin-account'
+import {
+  blockAdminDefaultAuthOperations,
+  guardAdminAccountChange,
+} from '@/services/auth/admin-account'
 import {
   createTotpSecret,
   hashRecoveryCodes,
@@ -133,6 +136,25 @@ describe('administrator authentication contracts', () => {
         status: 'disabled',
       }),
     ).toBe(false)
+  })
+
+  it('blocks default Payload auth operations below the proxy layer', () => {
+    for (const operation of ['forgotPassword', 'refresh', 'resetPassword', 'unlock', 'login']) {
+      expect(() =>
+        blockAdminDefaultAuthOperations({
+          args: {},
+          operation,
+          req: { context: {}, t: vi.fn() },
+        } as never),
+      ).toThrow()
+    }
+    expect(
+      blockAdminDefaultAuthOperations({
+        args: { marker: true },
+        operation: 'login',
+        req: { context: { adminMfa: { totp: '123456' } }, t: vi.fn() },
+      } as never),
+    ).toEqual({ marker: true })
   })
 
   it('locks the second factor for ten minutes on the fifth CAS-protected failure', async () => {

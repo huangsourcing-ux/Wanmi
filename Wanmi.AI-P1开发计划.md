@@ -352,6 +352,8 @@ D1-04 验证记录（2026-08-04）：Payload Redirects 已收敛为永久 301；
 
 D1-05 验证记录（2026-08-04）：独立 `admins` Auth Collection 已生产化为固定 12 小时且不自动刷新的 Payload Session，并以 `active/disabled`、14～128 字符密码、SHA-1/6 位/30 秒/±1 窗口 TOTP、一次性恢复码和 5 次失败锁定 10 分钟形成管理员身份边界。MFA 密文与恢复码哈希迁入拒绝通用 API 的隐藏 Collection；角色、状态、密码或 MFA 变化撤销全部 Session，数据库约束和服务层共同阻止删除、停用或降级最后一个 active `system_admin`。后续管理员和 MFA 重置通过 24 小时、256-bit、仅存 HMAC 的一次性 fragment 邀请完成，原始 token、秘密与恢复码不落库；最小安全设置页支持邀请和 Session 管理。统一 `/api/v1/admin/auth` 登录不返回 JWT，默认 Payload 登录、首用户注册、忘记/重置密码、解锁、refresh-token 与 GraphQL 均关闭。81 个单元测试、17 个 PostgreSQL 集成测试和 12 个 Playwright 场景通过；空库、D1-03 Redirect、D1-05 遗留管理员 MFA 升级及最后系统管理员并发约束验证通过；生产构建、linux/amd64 镜像、依赖 high 门禁和 Gitleaks 通过。依赖审计保留既有 2 个低危和 2 个中危，无 high/critical。本切片只完成管理员身份层 RBAC，业务 Collection 完整角色矩阵、通用审计后台和第一方事件仍属于 D1-06/D1-07；未部署或修改共享 ECS。
 
+D1-05 审核修正记录（2026-08-05）：确认 Next.js Proxy 中对 Payload 默认认证路径的原始精确字符串匹配可被 percent-encoding 绕过，其中 `forgot-password` 会抵达 Payload 并写入重置 token。入口现对 pathname 做有界重复解码、分隔符规范化和畸形路径拒绝，再匹配禁用表面；`admins` Collection 同时新增 `beforeOperation` 后备保护，在 Payload 写入前拒绝默认 login、forgot/reset-password、unlock 和 refresh，仅允许携带服务端 MFA 上下文的统一登录服务调用。单元测试覆盖单层/双层编码、编码斜杠、替代分隔符、畸形转义、编码 GraphQL 及必要 REST 放行；PostgreSQL 集成测试确认 `forgotPassword` 被拒绝且管理员 reset token/expiration 不变；真实 HTTP 测试确认编码变体均为 404。最终 `make check` 的 92 个单元测试、18 个 PostgreSQL 集成测试、完整 migration、生产构建、linux/amd64 镜像、依赖 high 门禁和 Gitleaks，以及 `make test-e2e` 的 12 个 Playwright 场景全部通过；未修改 Nginx、未部署或修改共享 ECS。
+
 ### 5.3 退出条件
 
 - 首页和后台骨架在桌面、移动端可用；

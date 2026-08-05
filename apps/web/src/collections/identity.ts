@@ -11,6 +11,7 @@ import {
 } from '@/access/roles'
 import {
   auditAdminDelete,
+  blockAdminDefaultAuthOperations,
   guardAdminAccountChange,
   guardAdminDelete,
   revokeSessionsAfterAdminChange,
@@ -64,6 +65,7 @@ export const Admins: CollectionConfig = {
     beforeChange: [guardAdminAccountChange],
     beforeDelete: [guardAdminDelete],
     beforeLogin: [verifyAdminTotpBeforeLogin],
+    beforeOperation: [blockAdminDefaultAuthOperations],
     beforeValidate: [validateAdminPassword],
   },
 }

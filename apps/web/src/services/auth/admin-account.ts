@@ -1,8 +1,10 @@
+import { Forbidden } from 'payload'
 import type {
   CollectionAfterChangeHook,
   CollectionAfterDeleteHook,
   CollectionBeforeChangeHook,
   CollectionBeforeDeleteHook,
+  CollectionBeforeOperationHook,
   CollectionBeforeValidateHook,
   PayloadRequest,
 } from 'payload'
@@ -22,9 +24,17 @@ type AdminShape = {
 
 type SecurityContext = {
   adminAccountOperation?: 'bootstrap' | 'invitation' | 'mfa-reset' | 'security-hook'
+  adminMfa?: { recoveryCode?: string; totp?: string }
   adminSecurityChanges?: string[]
   suppressAdminAccountAudit?: boolean
 }
+
+const DISABLED_ADMIN_AUTH_OPERATIONS = new Set([
+  'forgotPassword',
+  'refresh',
+  'resetPassword',
+  'unlock',
+])
 
 function securityContext(req: PayloadRequest): SecurityContext {
   return req.context as SecurityContext
@@ -62,6 +72,18 @@ async function assertAnotherActiveSystemAdmin(req: PayloadRequest, admin: AdminS
 export const validateAdminPassword: CollectionBeforeValidateHook = ({ data }) => {
   if (data && typeof data.password === 'string') adminPasswordSchema.parse(data.password)
   return data
+}
+
+export const blockAdminDefaultAuthOperations: CollectionBeforeOperationHook = ({
+  args,
+  operation,
+  req,
+}) => {
+  const customMfaLogin = operation === 'login' && Boolean(securityContext(req).adminMfa)
+  if (DISABLED_ADMIN_AUTH_OPERATIONS.has(operation) || (operation === 'login' && !customMfaLogin)) {
+    throw new Forbidden(req.t)
+  }
+  return args
 }
 
 export const guardAdminAccountChange: CollectionBeforeChangeHook = async ({

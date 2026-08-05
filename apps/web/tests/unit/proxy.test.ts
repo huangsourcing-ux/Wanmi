@@ -53,4 +53,27 @@ describe('public redirect proxy', () => {
     expect(response.status).toBe(404)
     expect(response.headers.get('cache-control')).toBe('no-store')
   })
+
+  it.each([
+    '/api/admins/%6Cogin',
+    '/api/%61dmins/forgot-password',
+    '/api/admins/forgot-passwor%64',
+    '/api/admins/%256Cogin',
+    '/api/admins%2Freset-password',
+    '/api/admins\\refresh-token',
+    '/api/%67raphql',
+    '/admin/%66orgot',
+    '/api/%61dmins/%',
+  ])('blocks encoded and alternate-separator admin auth endpoint %s', async (path) => {
+    const response = await proxy(new NextRequest(`http://example.invalid${path}`))
+    expect(response.status).toBe(404)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('does not broaden the block to required Payload administrator REST endpoints', async () => {
+    for (const path of ['/api/admins/me', '/api/admins/logout', '/api/admins/123']) {
+      const response = await proxy(new NextRequest(`http://example.invalid${path}`))
+      expect(response.headers.get('x-middleware-next'), path).toBe('1')
+    }
+  })
 })

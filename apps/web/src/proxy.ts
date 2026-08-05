@@ -24,15 +24,34 @@ const BLOCKED_ADMIN_UI_PATHS = new Set([
   '/admin/unlock',
 ])
 
+export function normalizeSecurityPathname(pathname: string): string | null {
+  let decoded = pathname
+  try {
+    for (let pass = 0; pass < 4; pass += 1) {
+      const next = decodeURIComponent(decoded)
+      if (next === decoded) break
+      decoded = next
+    }
+  } catch {
+    return null
+  }
+
+  const normalized = decoded.replaceAll('\\', '/').replace(/\/{2,}/g, '/')
+  return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized
+}
+
+function isBlockedAdminSurface(pathname: string): boolean {
+  const normalized = normalizeSecurityPathname(pathname)
+  if (normalized === null) return true
+  return BLOCKED_ADMIN_AUTH_PATHS.has(normalized) || BLOCKED_ADMIN_UI_PATHS.has(normalized)
+}
+
 export async function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers)
   const traceId = getTraceId(request.headers)
   requestHeaders.set('x-request-id', traceId)
 
-  if (
-    BLOCKED_ADMIN_AUTH_PATHS.has(request.nextUrl.pathname) ||
-    BLOCKED_ADMIN_UI_PATHS.has(request.nextUrl.pathname)
-  ) {
+  if (isBlockedAdminSurface(request.nextUrl.pathname)) {
     return new NextResponse(null, {
       headers: { 'cache-control': 'no-store', 'x-request-id': traceId },
       status: 404,
