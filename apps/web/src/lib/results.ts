@@ -29,6 +29,7 @@ export function providerResultToResult<T>(
       lastSuccessfulAt: options.lastSuccessfulAt,
       observedAt: providerResult.observedAt,
       retryable: providerResult.error.retryable,
+      retryAfterSeconds: providerResult.error.retryAfterSeconds,
       title: providerResult.error.statusKnown ? '数据源暂时不可用' : '数据状态暂时无法确认',
     }),
     options.traceId,

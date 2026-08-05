@@ -30,10 +30,28 @@ export type RealnameStatus = (typeof REALNAME_STATUSES)[number]
 export type ProviderError = {
   code: string
   message: string
+  retryAfterSeconds?: number
   retryable: boolean
   statusKnown: boolean
 }
 
+export type ProviderCacheMetadata = {
+  expiresAt?: string
+  status: 'hit' | 'miss'
+}
+
 export type ProviderResult<T> =
-  | { data: T; observedAt: string; ok: true; requestId: string }
-  | { error: ProviderError; observedAt: string; ok: false; requestId: string }
+  | {
+      cache?: ProviderCacheMetadata
+      data: T
+      observedAt: string
+      ok: true
+      requestId: string
+    }
+  | {
+      cache?: ProviderCacheMetadata
+      error: ProviderError
+      observedAt: string
+      ok: false
+      requestId: string
+    }

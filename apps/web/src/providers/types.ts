@@ -51,6 +51,35 @@ export interface DomainProvider extends HealthAwareProvider {
   }): Promise<ProviderResult<{ providerRequestId: string }>>
 }
 
+export type WestDigitalAvailability = {
+  available: boolean
+  currency: 'CNY'
+  domainAscii: string
+  premium: boolean
+  premiumRegistrationPriceFen?: number
+}
+
+export type WestDigitalPrice = {
+  currency: 'CNY'
+  domainAscii: string
+  productId: string
+  purchaseYears: number
+  registrationPriceFen: number
+  renewalPriceFen: number
+}
+
+export interface WestDigitalReadProvider extends HealthAwareProvider {
+  queryAvailability(input: {
+    domain: string
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalAvailability>>
+  queryPrice(input: {
+    domain: string
+    traceId: string
+    years: number
+  }): Promise<ProviderResult<WestDigitalPrice>>
+}
+
 export interface PaymentProvider extends HealthAwareProvider {
   queryOrder(input: {
     merchantOrderNumber: string
