@@ -17,12 +17,36 @@ const run = (command, args, options = {}) =>
 const postgres = (args, options) =>
   run('docker', ['compose', 'exec', '-T', 'postgres', ...args], options)
 
+function verifyAuditReaderIndex(stage) {
+  const indexDefinition = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT indexdef FROM pg_indexes
+       WHERE schemaname = 'public'
+         AND tablename = 'audit_logs'
+         AND indexname = 'actorType_actorId_createdAt_idx'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (!/\(actor_type, actor_id, created_at\)$/.test(indexDefinition)) {
+    throw new Error(`D1-07 audit reader index missing after ${stage}: ${indexDefinition}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
   created = true
 
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyAuditReaderIndex('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -156,9 +180,10 @@ try {
   if (!lastSystemAdminProtected) {
     throw new Error('Database allowed the last active system administrator to be disabled')
   }
+  verifyAuditReaderIndex('legacy upgrade migration')
 
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, and the last-system-admin constraint.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, and the D1-07 audit reader index.\n',
   )
 } finally {
   if (created) {

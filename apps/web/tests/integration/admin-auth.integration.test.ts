@@ -199,6 +199,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
+  const cleanupReq = await systemRequest()
   const invitations = await payload.find({
     collection: 'adminInvitations',
     limit: 1_000,
@@ -225,7 +226,7 @@ afterAll(async () => {
         overrideAccess: true,
       })
     }
-    await payload.delete({ collection: 'admins', id, overrideAccess: true })
+    await payload.delete({ collection: 'admins', id, overrideAccess: true, req: cleanupReq })
   }
   if (traceIds.size) {
     const audits = await payload.find({

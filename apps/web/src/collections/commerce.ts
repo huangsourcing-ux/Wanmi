@@ -7,6 +7,7 @@ import {
   systemAdminHidden,
   systemAdminOnly,
 } from '@/access/roles'
+import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 import { ORDER_STATUSES } from '@/lib/domain'
 
 const integerMoney: Field = {
@@ -26,7 +27,7 @@ export const PriceRules: CollectionConfig = {
     read: systemAdminOnly,
     update: deny,
   },
-  admin: { hidden: systemAdminHidden, useAsTitle: 'tld' },
+  admin: { group: ADMIN_GROUPS.commerce, hidden: systemAdminHidden, useAsTitle: 'tld' },
   fields: [
     { name: 'tld', type: 'text', index: true, required: true, unique: true },
     { name: 'mode', type: 'select', options: ['fixed', 'percentage'], required: true },
@@ -39,7 +40,7 @@ export const PriceRules: CollectionConfig = {
 export const Quotes: CollectionConfig = {
   slug: 'quotes',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
-  admin: { hidden: systemAdminHidden },
+  admin: { group: ADMIN_GROUPS.commerce, hidden: systemAdminHidden },
   fields: [
     {
       name: 'customer',
@@ -66,7 +67,11 @@ export const Quotes: CollectionConfig = {
 export const Orders: CollectionConfig = {
   slug: 'orders',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
-  admin: { hidden: systemAdminHidden, useAsTitle: 'orderNumber' },
+  admin: {
+    group: ADMIN_GROUPS.commerce,
+    hidden: systemAdminHidden,
+    useAsTitle: 'orderNumber',
+  },
   fields: [
     { name: 'orderNumber', type: 'text', index: true, required: true, unique: true },
     {
@@ -107,7 +112,7 @@ export const Orders: CollectionConfig = {
 export const OrderEvents: CollectionConfig = {
   slug: 'orderEvents',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
-  admin: { hidden: systemAdminHidden },
+  admin: { group: ADMIN_GROUPS.commerce, hidden: systemAdminHidden },
   fields: [
     { name: 'order', type: 'relationship', relationTo: 'orders', index: true, required: true },
     {
@@ -135,7 +140,7 @@ export const OrderEvents: CollectionConfig = {
 export const PaymentNotifications: CollectionConfig = {
   slug: 'paymentNotifications',
   access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
-  admin: { hidden: systemAdminHidden },
+  admin: { group: ADMIN_GROUPS.commerce, hidden: systemAdminHidden },
   fields: [
     {
       name: 'wechatTransactionId',
@@ -156,7 +161,11 @@ export const PaymentNotifications: CollectionConfig = {
 export const Refunds: CollectionConfig = {
   slug: 'refunds',
   access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
-  admin: { hidden: systemAdminHidden, useAsTitle: 'refundNumber' },
+  admin: {
+    group: ADMIN_GROUPS.commerce,
+    hidden: systemAdminHidden,
+    useAsTitle: 'refundNumber',
+  },
   fields: [
     { name: 'refundNumber', type: 'text', index: true, required: true, unique: true },
     { name: 'order', type: 'relationship', relationTo: 'orders', index: true, required: true },

@@ -14,6 +14,7 @@ import {
   systemAdminOnly,
 } from '@/access/roles'
 import { AppError } from '@/lib/errors'
+import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 import {
   isSeoContentCollection,
   MAX_REDIRECT_HOPS,
@@ -171,7 +172,6 @@ export const auditRedirectChange: CollectionAfterChangeHook = async ({
       before: redirectSnapshot(previousDoc as RedirectDocument | undefined),
     },
     targetId: doc.id,
-    targetType: 'redirect',
   })
   return doc
 }
@@ -181,7 +181,6 @@ export const auditRedirectDelete: CollectionAfterDeleteHook = async ({ doc, req 
     action: 'redirect.delete',
     metadata: { before: redirectSnapshot(doc as RedirectDocument) },
     targetId: doc.id,
-    targetType: 'redirect',
   })
   return doc
 }
@@ -214,7 +213,7 @@ export const redirectsOverrides = {
     read: () => true,
     update: contentManagers,
   },
-  admin: { hidden: contentAdminHidden },
+  admin: { group: ADMIN_GROUPS.content, hidden: contentAdminHidden },
   hooks: {
     afterChange: [auditRedirectChange],
     afterDelete: [auditRedirectDelete],
@@ -229,7 +228,7 @@ export const formOverrides = {
     read: contentManagers,
     update: contentManagers,
   },
-  admin: { hidden: contentAdminHidden },
+  admin: { group: ADMIN_GROUPS.content, hidden: contentAdminHidden },
   hooks: { beforeValidate: [validateSafeForm] },
 }
 
@@ -240,7 +239,7 @@ export const formSubmissionOverrides = {
     read: systemAdminOnly,
     update: systemAdminOnly,
   },
-  admin: { hidden: systemAdminHidden },
+  admin: { group: ADMIN_GROUPS.operations, hidden: systemAdminHidden },
 }
 
 export function appendFormPurposeField({ defaultFields }: { defaultFields: Field[] }): Field[] {

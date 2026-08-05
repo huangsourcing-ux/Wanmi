@@ -2,6 +2,7 @@ import type { Access, CollectionConfig } from 'payload'
 import { describe, expect, it } from 'vitest'
 
 import { collections } from '@/collections'
+import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 import { formOverrides, formSubmissionOverrides, redirectsOverrides } from '@/plugins/guards'
 
 type Operation = 'create' | 'delete' | 'read' | 'readVersions' | 'update'
@@ -244,4 +245,84 @@ describe('D1 official plugin permission matrix', () => {
       )
     },
   )
+})
+
+describe('D1 administrator navigation groups', () => {
+  const expectedGroups: Record<string, string> = {
+    adCreatives: ADMIN_GROUPS.advertising,
+    adPlacements: ADMIN_GROUPS.advertising,
+    adSchedules: ADMIN_GROUPS.advertising,
+    adminInvitations: ADMIN_GROUPS.identity,
+    adminMfaCredentials: ADMIN_GROUPS.identity,
+    admins: ADMIN_GROUPS.identity,
+    advertisers: ADMIN_GROUPS.advertising,
+    articles: ADMIN_GROUPS.content,
+    auditLogs: ADMIN_GROUPS.operations,
+    customerSecurityEvents: ADMIN_GROUPS.operations,
+    customerSessions: ADMIN_GROUPS.identity,
+    customers: ADMIN_GROUPS.identity,
+    domainAssets: ADMIN_GROUPS.fulfillment,
+    manualReviews: ADMIN_GROUPS.operations,
+    media: ADMIN_GROUPS.content,
+    nameserverChanges: ADMIN_GROUPS.fulfillment,
+    navigation: ADMIN_GROUPS.content,
+    orderEvents: ADMIN_GROUPS.commerce,
+    orders: ADMIN_GROUPS.commerce,
+    paymentNotifications: ADMIN_GROUPS.commerce,
+    priceRules: ADMIN_GROUPS.commerce,
+    providerOperations: ADMIN_GROUPS.fulfillment,
+    quotes: ADMIN_GROUPS.commerce,
+    realnameDocuments: ADMIN_GROUPS.realname,
+    realnameTemplates: ADMIN_GROUPS.realname,
+    reconciliations: ADMIN_GROUPS.operations,
+    refunds: ADMIN_GROUPS.commerce,
+    renewals: ADMIN_GROUPS.fulfillment,
+    siteSettings: ADMIN_GROUPS.content,
+    smsChallenges: ADMIN_GROUPS.identity,
+    tldPages: ADMIN_GROUPS.content,
+    topics: ADMIN_GROUPS.content,
+    userFeedback: ADMIN_GROUPS.operations,
+  }
+
+  it('assigns every core and plugin collection to its frozen domain', () => {
+    expect(
+      Object.fromEntries(
+        collections.map((collection) => [collection.slug, collection.admin?.group]),
+      ),
+    ).toEqual(expectedGroups)
+    expect(redirectsOverrides.admin.group).toBe(ADMIN_GROUPS.content)
+    expect(formOverrides.admin.group).toBe(ADMIN_GROUPS.content)
+    expect(formSubmissionOverrides.admin.group).toBe(ADMIN_GROUPS.operations)
+  })
+
+  it.each([
+    ['content_editor', [ADMIN_GROUPS.content]],
+    ['ad_operator', [ADMIN_GROUPS.advertising, ADMIN_GROUPS.operations]],
+    ['analyst', [ADMIN_GROUPS.advertising, ADMIN_GROUPS.operations]],
+    ['system_admin', Object.values(ADMIN_GROUPS)],
+  ] as const)('shows only authorized groups to %s', (persona, expected) => {
+    const visibleGroups = new Set(
+      collections
+        .filter((collection) => visibleInAdmin(collection, personas[persona]))
+        .map((collection) => collection.admin?.group as string),
+    )
+    expect([...visibleGroups].sort()).toEqual([...expected].sort())
+  })
+
+  it('shows the union of groups for a multi-role administrator', () => {
+    const user = {
+      collection: 'admins',
+      id: 20,
+      roles: ['content_editor', 'ad_operator'],
+      status: 'active',
+    }
+    const visibleGroups = new Set(
+      collections
+        .filter((collection) => visibleInAdmin(collection, user))
+        .map((collection) => collection.admin?.group as string),
+    )
+    expect([...visibleGroups].sort()).toEqual(
+      [ADMIN_GROUPS.advertising, ADMIN_GROUPS.content, ADMIN_GROUPS.operations].sort(),
+    )
+  })
 })

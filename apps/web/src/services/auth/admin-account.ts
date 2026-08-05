@@ -159,7 +159,6 @@ export const revokeSessionsAfterAdminChange: CollectionAfterChangeHook = async (
       action: 'admin.account.changed',
       metadata: { changedFields: changes },
       targetId: doc.id,
-      targetType: 'admin',
     })
   }
   return { ...doc, sessions: [] }
@@ -193,7 +192,6 @@ export const auditAdminDelete: CollectionAfterDeleteHook = async ({ doc, req }) 
   await recordAuditEvent(req, {
     action: 'admin.account.deleted',
     targetId: doc.id,
-    targetType: 'admin',
   })
   return doc
 }

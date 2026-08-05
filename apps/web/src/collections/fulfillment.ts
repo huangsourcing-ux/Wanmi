@@ -7,11 +7,12 @@ import {
   systemAdminHidden,
   systemAdminOnly,
 } from '@/access/roles'
+import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 
 export const ProviderOperations: CollectionConfig = {
   slug: 'providerOperations',
   access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
-  admin: { hidden: systemAdminHidden },
+  admin: { group: ADMIN_GROUPS.fulfillment, hidden: systemAdminHidden },
   fields: [
     { name: 'operationKey', type: 'text', index: true, required: true, unique: true },
     { name: 'order', type: 'relationship', relationTo: 'orders', index: true, required: true },
@@ -38,7 +39,11 @@ export const ProviderOperations: CollectionConfig = {
 export const DomainAssets: CollectionConfig = {
   slug: 'domainAssets',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
-  admin: { hidden: systemAdminHidden, useAsTitle: 'domainAscii' },
+  admin: {
+    group: ADMIN_GROUPS.fulfillment,
+    hidden: systemAdminHidden,
+    useAsTitle: 'domainAscii',
+  },
   fields: [
     {
       name: 'customer',
@@ -71,7 +76,7 @@ export const DomainAssets: CollectionConfig = {
 export const Renewals: CollectionConfig = {
   slug: 'renewals',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
-  admin: { hidden: systemAdminHidden },
+  admin: { group: ADMIN_GROUPS.fulfillment, hidden: systemAdminHidden },
   fields: [
     {
       name: 'customer',
@@ -101,7 +106,7 @@ export const Renewals: CollectionConfig = {
 export const NameserverChanges: CollectionConfig = {
   slug: 'nameserverChanges',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
-  admin: { hidden: systemAdminHidden },
+  admin: { group: ADMIN_GROUPS.fulfillment, hidden: systemAdminHidden },
   fields: [
     {
       name: 'customer',

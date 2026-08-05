@@ -8,6 +8,7 @@ import {
   systemAdminOnly,
 } from '@/access/roles'
 import { REALNAME_STATUSES } from '@/lib/domain'
+import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 
 // D1 closes generic writes to private real-name data. Keep ownership pinning as a
 // second layer for the future /api/v1 service, which will invoke Payload with an
@@ -26,7 +27,7 @@ export const RealnameTemplates: CollectionConfig = {
     read: ownOrSystem('customer'),
     update: deny,
   },
-  admin: { hidden: systemAdminHidden, useAsTitle: 'displayName' },
+  admin: { group: ADMIN_GROUPS.realname, hidden: systemAdminHidden, useAsTitle: 'displayName' },
   hooks: { beforeValidate: [pinCustomerOwner] },
   fields: [
     {
@@ -55,7 +56,7 @@ export const RealnameTemplates: CollectionConfig = {
 export const RealnameDocuments: CollectionConfig = {
   slug: 'realnameDocuments',
   access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
-  admin: { hidden: true },
+  admin: { group: ADMIN_GROUPS.realname, hidden: true },
   fields: [
     {
       name: 'customer',
