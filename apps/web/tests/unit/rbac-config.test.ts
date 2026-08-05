@@ -262,6 +262,7 @@ describe('D1 administrator navigation groups', () => {
     customerSessions: ADMIN_GROUPS.identity,
     customers: ADMIN_GROUPS.identity,
     domainAssets: ADMIN_GROUPS.fulfillment,
+    firstPartyEvents: ADMIN_GROUPS.operations,
     manualReviews: ADMIN_GROUPS.operations,
     media: ADMIN_GROUPS.content,
     nameserverChanges: ADMIN_GROUPS.fulfillment,

@@ -15,6 +15,7 @@ import {
 import {
   AuditLogs,
   CustomerSecurityEvents,
+  FirstPartyEvents,
   ManualReviews,
   Reconciliations,
   UserFeedback,
@@ -53,6 +54,7 @@ export const collections: CollectionConfig[] = [
   ManualReviews,
   Reconciliations,
   AuditLogs,
+  FirstPartyEvents,
   UserFeedback,
   CustomerSecurityEvents,
 ]

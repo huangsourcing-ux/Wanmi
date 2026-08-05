@@ -40,6 +40,7 @@ test('content editors see content only and cannot open or write advertising coll
   await expect(collectionLink(page, 'redirects')).toBeVisible()
   await expect(collectionLink(page, 'advertisers')).toHaveCount(0)
   await expect(collectionLink(page, 'auditLogs')).toHaveCount(0)
+  await expect(collectionLink(page, 'firstPartyEvents')).toHaveCount(0)
   await expectNavigationGroups(page, ['内容'])
 
   const status = await page.evaluate(
@@ -111,6 +112,7 @@ test('analysts have safe read-only operations navigation and no audit or mutatio
     await expect(collectionLink(page, slug)).toBeVisible()
   }
   await expect(collectionLink(page, 'auditLogs')).toHaveCount(0)
+  await expect(collectionLink(page, 'firstPartyEvents')).toHaveCount(0)
   await expect(collectionLink(page, 'articles')).toHaveCount(0)
   await expect(collectionLink(page, 'admins')).toHaveCount(0)
   await expectNavigationGroups(page, ['广告', '运营'])
@@ -128,4 +130,6 @@ test('analysts have safe read-only operations navigation and no audit or mutatio
   expect(status).toBe(403)
   const direct = await page.goto('/admin/collections/auditLogs')
   expect(direct?.status()).toBe(404)
+  const eventDirect = await page.goto('/admin/collections/firstPartyEvents')
+  expect(eventDirect?.status()).toBe(404)
 })

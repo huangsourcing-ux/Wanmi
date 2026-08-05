@@ -1,8 +1,12 @@
+'use client'
+
 import { ArrowRightIcon, Globe2Icon } from 'lucide-react'
+import type { FormEvent } from 'react'
 
 import { FormField } from '@/components/forms/form-field'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { emitFirstPartyEvent, inferToolInput } from '@/lib/analytics'
 import { cn } from '@/lib/utils'
 
 export function DomainQueryForm({
@@ -14,8 +18,25 @@ export function DomainQueryForm({
   defaultValue?: string
   description?: string
 }) {
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    const query = new FormData(event.currentTarget).get('q')
+    const dimensions = inferToolInput(typeof query === 'string' ? query : '')
+    emitFirstPartyEvent({
+      event: 'tool_submitted',
+      fromLocalHistory: false,
+      ...dimensions,
+      schemaVersion: 1,
+      tool: 'domain-search',
+    })
+  }
+
   return (
-    <form action="/tools/domain-search" className={cn('w-full', className)} method="get">
+    <form
+      action="/tools/domain-search"
+      className={cn('w-full', className)}
+      method="get"
+      onSubmit={handleSubmit}
+    >
       <FormField description={description} hideLabel id="domain-query" label="输入完整域名或关键词">
         {(controlProps) => (
           <div className="flex flex-col gap-3 rounded-xl border bg-background p-2 shadow-sm sm:flex-row sm:items-center">

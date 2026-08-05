@@ -4,6 +4,7 @@ import * as migration_20260804_234636_d1_seo_foundation from './20260804_234636_
 import * as migration_20260805_005736_d1_redirect_foundation from './20260805_005736_d1_redirect_foundation'
 import * as migration_20260805_040152 from './20260805_040152'
 import * as migration_20260805_080646_d1_audit_navigation from './20260805_080646_d1_audit_navigation'
+import * as migration_20260805_090521_d1_first_party_events from './20260805_090521_d1_first_party_events'
 
 export const migrations = [
   {
@@ -35,5 +36,10 @@ export const migrations = [
     up: migration_20260805_080646_d1_audit_navigation.up,
     down: migration_20260805_080646_d1_audit_navigation.down,
     name: '20260805_080646_d1_audit_navigation',
+  },
+  {
+    up: migration_20260805_090521_d1_first_party_events.up,
+    down: migration_20260805_090521_d1_first_party_events.down,
+    name: '20260805_090521_d1_first_party_events',
   },
 ]

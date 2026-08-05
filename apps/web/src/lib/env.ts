@@ -13,6 +13,7 @@ const schema = z.object({
   CUSTOMER_SESSION_COOKIE: z.string().min(1).default('wanmi_customer_session'),
   CUSTOMER_SESSION_SECONDS: z.coerce.number().int().positive().default(2_592_000),
   DATABASE_URL: z.string().min(1),
+  FIRST_PARTY_EVENT_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(1_000),
   NEXT_PUBLIC_SERVER_URL: z.url().default('http://localhost:3000'),
   MOCK_SMS_OTP_CODE: z
     .string()
