@@ -1,10 +1,22 @@
 import type { CollectionConfig } from 'payload'
 
-import { analysts, deny, ownOrSystem, sensitiveFieldRead, systemAdminOnly } from '@/access/roles'
+import {
+  adManagerFieldRead,
+  auditAdminHidden,
+  auditReaders,
+  deny,
+  operationalReaders,
+  operationsAdminHidden,
+  ownOrSystem,
+  sensitiveFieldRead,
+  systemAdminHidden,
+  systemAdminOnly,
+} from '@/access/roles'
 
 export const ManualReviews: CollectionConfig = {
   slug: 'manualReviews',
-  access: { create: deny, delete: deny, read: systemAdminOnly, update: systemAdminOnly },
+  access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
+  admin: { hidden: systemAdminHidden },
   fields: [
     { name: 'order', type: 'relationship', relationTo: 'orders', index: true },
     { name: 'reasonCode', type: 'text', index: true, required: true },
@@ -24,7 +36,8 @@ export const ManualReviews: CollectionConfig = {
 
 export const Reconciliations: CollectionConfig = {
   slug: 'reconciliations',
-  access: { create: deny, delete: deny, read: analysts, update: systemAdminOnly },
+  access: { create: deny, delete: deny, read: operationalReaders, update: deny },
+  admin: { hidden: operationsAdminHidden },
   fields: [
     {
       name: 'kind',
@@ -46,7 +59,8 @@ export const Reconciliations: CollectionConfig = {
 
 export const AuditLogs: CollectionConfig = {
   slug: 'auditLogs',
-  access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
+  access: { create: deny, delete: deny, read: auditReaders, update: deny },
+  admin: { hidden: auditAdminHidden },
   fields: [
     { name: 'action', type: 'text', index: true, required: true },
     {
@@ -65,16 +79,28 @@ export const AuditLogs: CollectionConfig = {
 
 export const UserFeedback: CollectionConfig = {
   slug: 'userFeedback',
-  access: { create: deny, delete: deny, read: systemAdminOnly, update: systemAdminOnly },
+  access: { create: deny, delete: deny, read: operationalReaders, update: systemAdminOnly },
+  admin: { hidden: operationsAdminHidden },
   fields: [
-    { name: 'customer', type: 'relationship', relationTo: 'customers' },
+    {
+      name: 'customer',
+      type: 'relationship',
+      access: { read: sensitiveFieldRead },
+      relationTo: 'customers',
+    },
     {
       name: 'category',
       type: 'select',
       options: ['contact', 'feedback', 'request'],
       required: true,
     },
-    { name: 'message', type: 'textarea', maxLength: 2_000, required: true },
+    {
+      name: 'message',
+      type: 'textarea',
+      access: { read: adManagerFieldRead },
+      maxLength: 2_000,
+      required: true,
+    },
     {
       name: 'status',
       type: 'select',
@@ -88,6 +114,7 @@ export const UserFeedback: CollectionConfig = {
 export const CustomerSecurityEvents: CollectionConfig = {
   slug: 'customerSecurityEvents',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
+  admin: { hidden: systemAdminHidden },
   fields: [
     {
       name: 'customer',

@@ -1,11 +1,23 @@
 import type { CollectionConfig } from 'payload'
 
-import { adManagers, analysts, publicRead, systemAdminOnly } from '@/access/roles'
+import {
+  adManagerFieldRead,
+  adManagers,
+  advertisingAdminHidden,
+  operationalReaders,
+  publicRead,
+  systemAdminOnly,
+} from '@/access/roles'
 
 export const Advertisers: CollectionConfig = {
   slug: 'advertisers',
-  access: { create: adManagers, delete: systemAdminOnly, read: adManagers, update: adManagers },
-  admin: { useAsTitle: 'name' },
+  access: {
+    create: adManagers,
+    delete: systemAdminOnly,
+    read: operationalReaders,
+    update: adManagers,
+  },
+  admin: { hidden: advertisingAdminHidden, useAsTitle: 'name' },
   fields: [
     { name: 'name', type: 'text', required: true },
     {
@@ -15,14 +27,19 @@ export const Advertisers: CollectionConfig = {
       options: ['active', 'paused'],
       required: true,
     },
-    { name: 'notes', type: 'textarea' },
+    { name: 'notes', type: 'textarea', access: { read: adManagerFieldRead } },
   ],
 }
 
 export const AdCreatives: CollectionConfig = {
   slug: 'adCreatives',
-  access: { create: adManagers, delete: systemAdminOnly, read: adManagers, update: adManagers },
-  admin: { useAsTitle: 'name' },
+  access: {
+    create: adManagers,
+    delete: systemAdminOnly,
+    read: operationalReaders,
+    update: adManagers,
+  },
+  admin: { hidden: advertisingAdminHidden, useAsTitle: 'name' },
   fields: [
     { name: 'name', type: 'text', required: true },
     { name: 'advertiser', type: 'relationship', relationTo: 'advertisers', required: true },
@@ -50,7 +67,7 @@ export const AdCreatives: CollectionConfig = {
 export const AdPlacements: CollectionConfig = {
   slug: 'adPlacements',
   access: { create: adManagers, delete: systemAdminOnly, read: publicRead, update: adManagers },
-  admin: { useAsTitle: 'code' },
+  admin: { hidden: advertisingAdminHidden, useAsTitle: 'code' },
   fields: [
     { name: 'code', type: 'text', index: true, required: true, unique: true },
     { name: 'description', type: 'textarea', required: true },
@@ -60,7 +77,13 @@ export const AdPlacements: CollectionConfig = {
 
 export const AdSchedules: CollectionConfig = {
   slug: 'adSchedules',
-  access: { create: adManagers, delete: systemAdminOnly, read: analysts, update: adManagers },
+  access: {
+    create: adManagers,
+    delete: systemAdminOnly,
+    read: operationalReaders,
+    update: adManagers,
+  },
+  admin: { hidden: advertisingAdminHidden },
   fields: [
     { name: 'creative', type: 'relationship', relationTo: 'adCreatives', required: true },
     { name: 'placement', type: 'relationship', relationTo: 'adPlacements', required: true },

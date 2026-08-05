@@ -6,7 +6,13 @@ import type {
   PayloadRequest,
 } from 'payload'
 
-import { contentManagers, deny, systemAdminOnly } from '@/access/roles'
+import {
+  contentAdminHidden,
+  contentManagers,
+  deny,
+  systemAdminHidden,
+  systemAdminOnly,
+} from '@/access/roles'
 import { AppError } from '@/lib/errors'
 import {
   isSeoContentCollection,
@@ -208,6 +214,7 @@ export const redirectsOverrides = {
     read: () => true,
     update: contentManagers,
   },
+  admin: { hidden: contentAdminHidden },
   hooks: {
     afterChange: [auditRedirectChange],
     afterDelete: [auditRedirectDelete],
@@ -222,6 +229,7 @@ export const formOverrides = {
     read: contentManagers,
     update: contentManagers,
   },
+  admin: { hidden: contentAdminHidden },
   hooks: { beforeValidate: [validateSafeForm] },
 }
 
@@ -232,6 +240,7 @@ export const formSubmissionOverrides = {
     read: systemAdminOnly,
     update: systemAdminOnly,
   },
+  admin: { hidden: systemAdminHidden },
 }
 
 export function appendFormPurposeField({ defaultFields }: { defaultFields: Field[] }): Field[] {

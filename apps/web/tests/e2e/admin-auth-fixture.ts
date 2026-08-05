@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path'
 import { createLocalReq } from 'payload'
 
 import { encryptSecret } from '../../src/lib/crypto'
+import type { AdminRole } from '../../src/lib/domain'
 import { getEnv } from '../../src/lib/env'
 import { createTotpSecret, hashRecoveryCodes } from '../../src/services/auth/totp'
 import { getFixturePayload } from './redirect-fixture'
@@ -15,6 +16,29 @@ const systemRecoveryCode = 'e2e-system-recovery-code'
 const disabledEmail = 'e2e-disabled-admin@example.test'
 const disabledPassword = 'E2E-disabled-admin-password-2026'
 const disabledRecoveryCode = 'e2e-disabled-recovery-code'
+const roleAccounts = {
+  ad_operator: {
+    email: 'e2e-ad-operator@example.test',
+    password: 'E2E-ad-operator-password-2026',
+    recoveryCode: 'e2e-ad-operator-recovery-code',
+  },
+  analyst: {
+    email: 'e2e-analyst@example.test',
+    password: 'E2E-analyst-password-2026',
+    recoveryCode: 'e2e-analyst-recovery-code',
+  },
+  content_editor: {
+    email: 'e2e-content-editor@example.test',
+    password: 'E2E-content-editor-password-2026',
+    recoveryCode: 'e2e-content-editor-recovery-code',
+  },
+} as const
+
+type RoleAccount = {
+  email: string
+  password: string
+  recoveryCode: string
+}
 
 export type AdminAuthFixtureState = {
   disabledEmail: string
@@ -23,6 +47,7 @@ export type AdminAuthFixtureState = {
   invitationPassword: string
   invitationUrl: string
   invitedEmail: string
+  roleAccounts: Record<'ad_operator' | 'analyst' | 'content_editor', RoleAccount>
   systemEmail: string
   systemPassword: string
   systemRecoveryCode: string
@@ -71,7 +96,7 @@ async function replaceCredential(
 async function findOrCreateAdmin(
   email: string,
   password: string,
-  roles: ('analyst' | 'system_admin')[],
+  roles: AdminRole[],
   status: 'active' | 'disabled',
 ) {
   const payload = await getFixturePayload()
@@ -115,6 +140,13 @@ export async function createAdminAuthFixture() {
     'disabled',
   )
   await replaceCredential(disabledAdmin.id, disabledRecoveryCode)
+  for (const [role, account] of Object.entries(roleAccounts) as [
+    'ad_operator' | 'analyst' | 'content_editor',
+    RoleAccount,
+  ][]) {
+    const roleAdmin = await findOrCreateAdmin(account.email, account.password, [role], 'active')
+    await replaceCredential(roleAdmin.id, account.recoveryCode)
+  }
 
   const staleInvitations = await payload.find({
     collection: 'adminInvitations',
@@ -147,6 +179,7 @@ export async function createAdminAuthFixture() {
       'http://127.0.0.1:3100',
     ),
     invitedEmail,
+    roleAccounts,
     systemEmail,
     systemPassword,
     systemRecoveryCode,
