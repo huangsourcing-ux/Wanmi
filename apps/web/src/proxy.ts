@@ -6,10 +6,57 @@ import { isRedirectEligiblePath, normalizeRedirectPath } from '@/lib/redirects'
 import { getTraceId } from '@/lib/request-id'
 import { resolvePublicRedirect } from '@/services/redirects/runtime'
 
+const BLOCKED_ADMIN_AUTH_PATHS = new Set([
+  '/api/admins/first-register',
+  '/api/admins/forgot-password',
+  '/api/admins/login',
+  '/api/admins/refresh-token',
+  '/api/admins/reset-password',
+  '/api/admins/unlock',
+  '/api/graphql',
+  '/api/graphql-playground',
+])
+
+const BLOCKED_ADMIN_UI_PATHS = new Set([
+  '/admin/create-first-user',
+  '/admin/forgot',
+  '/admin/reset',
+  '/admin/unlock',
+])
+
+export function normalizeSecurityPathname(pathname: string): string | null {
+  let decoded = pathname
+  try {
+    for (let pass = 0; pass < 4; pass += 1) {
+      const next = decodeURIComponent(decoded)
+      if (next === decoded) break
+      decoded = next
+    }
+  } catch {
+    return null
+  }
+
+  const normalized = decoded.replaceAll('\\', '/').replace(/\/{2,}/g, '/')
+  return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized
+}
+
+function isBlockedAdminSurface(pathname: string): boolean {
+  const normalized = normalizeSecurityPathname(pathname)
+  if (normalized === null) return true
+  return BLOCKED_ADMIN_AUTH_PATHS.has(normalized) || BLOCKED_ADMIN_UI_PATHS.has(normalized)
+}
+
 export async function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers)
   const traceId = getTraceId(request.headers)
   requestHeaders.set('x-request-id', traceId)
+
+  if (isBlockedAdminSurface(request.nextUrl.pathname)) {
+    return new NextResponse(null, {
+      headers: { 'cache-control': 'no-store', 'x-request-id': traceId },
+      status: 404,
+    })
+  }
 
   if (
     (request.method === 'GET' || request.method === 'HEAD') &&

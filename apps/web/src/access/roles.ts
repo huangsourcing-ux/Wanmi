@@ -6,16 +6,20 @@ type AccessUser = {
   collection?: string
   id: number | string
   roles?: AdminRole[] | null
+  status?: 'active' | 'disabled' | null
 }
 
 export const isAdminUser = (user: unknown): user is AccessUser =>
   typeof user === 'object' && user !== null && (user as AccessUser).collection === 'admins'
 
+export const isActiveAdminUser = (user: unknown): user is AccessUser =>
+  isAdminUser(user) && user.status === 'active'
+
 export const isCustomerUser = (user: unknown): user is AccessUser =>
   typeof user === 'object' && user !== null && (user as AccessUser).collection === 'customers'
 
 export const hasRole = (user: unknown, roles: AdminRole[]): boolean =>
-  isAdminUser(user) && Boolean(user.roles?.some((role) => roles.includes(role)))
+  isActiveAdminUser(user) && Boolean(user.roles?.some((role) => roles.includes(role)))
 
 export const publicRead: Access = () => true
 export const authenticated: Access = ({ req }) => Boolean(req.user)
@@ -25,6 +29,12 @@ export const contentManagers: Access = ({ req }) =>
 export const adManagers: Access = ({ req }) => hasRole(req.user, ['ad_operator', 'system_admin'])
 export const analysts: Access = ({ req }) => hasRole(req.user, ['analyst', 'system_admin'])
 export const deny: Access = () => false
+
+export const adminSelfOrSystem: Access = ({ req }) => {
+  if (hasRole(req.user, ['system_admin'])) return true
+  if (!isActiveAdminUser(req.user)) return false
+  return { id: { equals: req.user.id } }
+}
 
 export const sensitiveFieldRead: FieldAccess = ({ req }) => hasRole(req.user, ['system_admin'])
 export const systemAdminField: FieldAccess = ({ req }) => hasRole(req.user, ['system_admin'])

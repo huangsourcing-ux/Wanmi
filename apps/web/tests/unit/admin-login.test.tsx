@@ -23,14 +23,17 @@ describe('admin MFA login', () => {
     fireEvent.change(screen.getByLabelText('邮箱'), { target: { value: 'admin@example.invalid' } })
     fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'not-a-real-password' } })
     fireEvent.click(screen.getByRole('button', { name: '登录' }))
-    expect((await screen.findByRole('alert')).textContent).toMatch(/TOTP/)
+    expect((await screen.findByRole('alert')).textContent).toMatch(/第二因素/)
 
     fireEvent.change(screen.getByLabelText('TOTP 验证码'), { target: { value: '123456' } })
     fireEvent.click(screen.getByRole('button', { name: '登录' }))
     await waitFor(() => expect(fetch).toHaveBeenCalledOnce())
     expect(fetch).toHaveBeenCalledWith(
-      '/api/admins/login',
-      expect.objectContaining({ headers: expect.objectContaining({ 'x-wanmi-totp': '123456' }) }),
+      '/api/v1/admin/auth/login',
+      expect.objectContaining({
+        body: expect.stringContaining('"totp":"123456"'),
+        headers: { 'content-type': 'application/json' },
+      }),
     )
     expect(replace).toHaveBeenCalledWith('/admin')
   })

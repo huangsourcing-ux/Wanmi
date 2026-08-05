@@ -57,6 +57,10 @@ const storagePlugin = s3Storage({
 
 export default buildConfig({
   admin: {
+    autoRefresh: false,
+    components: {
+      settingsMenu: ['@/components/admin/security-settings-link#SecuritySettingsLink'],
+    },
     importMap: {
       baseDir: appDir,
       importMapFile: resolve(configDir, 'app/(payload)/admin/importMap.js'),
@@ -68,6 +72,7 @@ export default buildConfig({
   cookiePrefix: 'wanmi_admin',
   cors: [serverOrigin],
   csrf: [serverOrigin],
+  graphQL: { disable: true },
   db: postgresAdapter({
     migrationDir: resolve(appDir, 'migrations'),
     pool: { connectionString: env.DATABASE_URL, max: 10 },

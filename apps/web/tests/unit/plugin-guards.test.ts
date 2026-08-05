@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { redirectsOverrides, validateRedirect, validateSafeForm } from '@/plugins/guards'
 
 function admin(role: 'ad_operator' | 'analyst' | 'content_editor' | 'system_admin') {
-  return { collection: 'admins', id: 1, roles: [role] }
+  return { collection: 'admins', id: 1, roles: [role], status: 'active' }
 }
 
 function request(

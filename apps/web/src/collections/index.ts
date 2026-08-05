@@ -4,7 +4,14 @@ import { AdCreatives, AdPlacements, AdSchedules, Advertisers } from './advertisi
 import { OrderEvents, Orders, PaymentNotifications, PriceRules, Quotes, Refunds } from './commerce'
 import { Articles, Media, Navigation, SiteSettings, TldPages, Topics } from './content'
 import { DomainAssets, NameserverChanges, ProviderOperations, Renewals } from './fulfillment'
-import { Admins, Customers, CustomerSessions, SmsChallenges } from './identity'
+import {
+  AdminInvitations,
+  AdminMfaCredentials,
+  Admins,
+  Customers,
+  CustomerSessions,
+  SmsChallenges,
+} from './identity'
 import {
   AuditLogs,
   CustomerSecurityEvents,
@@ -16,6 +23,8 @@ import { RealnameDocuments, RealnameTemplates } from './realname'
 
 export const collections: CollectionConfig[] = [
   Admins,
+  AdminMfaCredentials,
+  AdminInvitations,
   Customers,
   SmsChallenges,
   CustomerSessions,

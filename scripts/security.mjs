@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import {
   copyFileSync,
+  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -48,6 +49,7 @@ try {
     if (!source.startsWith(`${repository}${sep}`) || !destination.startsWith(`${scanRoot}${sep}`)) {
       throw new Error(`Refusing to scan path outside repository: ${relativePath}`)
     }
+    if (!existsSync(source)) continue
 
     mkdirSync(dirname(destination), { recursive: true })
     const metadata = lstatSync(source)

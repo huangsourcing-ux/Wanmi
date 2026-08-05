@@ -19,32 +19,43 @@ describe('authentication crypto', () => {
   it('rejects missing TOTP before Payload creates an admin session', async () => {
     await expect(
       verifyAdminTotpBeforeLogin({
-        req: { headers: new Headers(), payload: { update: vi.fn() } },
-        user: { id: 1, totpEnabled: true, totpSecretEncrypted: 'encrypted' },
+        req: { context: {}, headers: new Headers(), payload: { update: vi.fn() } },
+        user: { id: 1, status: 'active' },
       } as never),
-    ).rejects.toThrow(/TOTP/)
+    ).rejects.toThrow(/第二因素/)
   })
 
   it('accepts one current TOTP and persists its time step', async () => {
     const secret = new OTPAuth.Secret({ size: 20 })
     const totp = new OTPAuth.TOTP({ algorithm: 'SHA1', digits: 6, period: 30, secret })
-    const update = vi.fn().mockResolvedValue({})
+    const update = vi.fn().mockResolvedValue({ docs: [{ id: 9 }] })
+    const create = vi.fn().mockResolvedValue({ id: 10 })
+    const find = vi.fn().mockResolvedValue({
+      docs: [
+        {
+          admin: 1,
+          failedAttempts: 0,
+          id: 9,
+          lastUsedStep: null,
+          lockedUntil: null,
+          recoveryCodeHashes: [],
+          secretEncrypted: encryptSecret(secret.base32, getEnv().TOTP_ENCRYPTION_KEY),
+          version: 0,
+        },
+      ],
+    })
     await verifyAdminTotpBeforeLogin({
       req: {
-        headers: new Headers({ 'x-wanmi-totp': totp.generate() }),
-        payload: { update },
+        context: { adminMfa: { totp: totp.generate() } },
+        headers: new Headers(),
+        payload: { create, find, update },
       },
-      user: {
-        id: 1,
-        totpEnabled: true,
-        totpSecretEncrypted: encryptSecret(secret.base32, getEnv().TOTP_ENCRYPTION_KEY),
-      },
+      user: { id: 1, status: 'active' },
     } as never)
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
-        collection: 'admins',
-        data: { totpLastUsedStep: expect.any(Number) },
-        id: 1,
+        collection: 'adminMfaCredentials',
+        data: expect.objectContaining({ lastUsedStep: expect.any(Number), version: 1 }),
         overrideAccess: true,
       }),
     )

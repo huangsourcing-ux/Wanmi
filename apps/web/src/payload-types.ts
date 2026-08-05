@@ -69,6 +69,8 @@ export interface Config {
   blocks: {};
   collections: {
     admins: Admin;
+    adminMfaCredentials: AdminMfaCredential;
+    adminInvitations: AdminInvitation;
     customers: Customer;
     smsChallenges: SmsChallenge;
     customerSessions: CustomerSession;
@@ -111,6 +113,8 @@ export interface Config {
   collectionsJoins: {};
   collectionsSelect: {
     admins: AdminsSelect<false> | AdminsSelect<true>;
+    adminMfaCredentials: AdminMfaCredentialsSelect<false> | AdminMfaCredentialsSelect<true>;
+    adminInvitations: AdminInvitationsSelect<false> | AdminInvitationsSelect<true>;
     customers: CustomersSelect<false> | CustomersSelect<true>;
     smsChallenges: SmsChallengesSelect<false> | SmsChallengesSelect<true>;
     customerSessions: CustomerSessionsSelect<false> | CustomerSessionsSelect<true>;
@@ -217,10 +221,7 @@ export interface CustomerAuthOperations {
 export interface Admin {
   id: number;
   roles: ('content_editor' | 'ad_operator' | 'analyst' | 'system_admin')[];
-  totpSecretEncrypted?: string | null;
-  recoveryCodeHashes?: string[] | null;
-  totpEnabled: boolean;
-  totpLastUsedStep?: number | null;
+  status: 'active' | 'disabled';
   updatedAt: string;
   createdAt: string;
   email: string;
@@ -239,6 +240,42 @@ export interface Admin {
     | null;
   password?: string | null;
   collection: 'admins';
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "adminMfaCredentials".
+ */
+export interface AdminMfaCredential {
+  id: number;
+  admin: number | Admin;
+  secretEncrypted: string;
+  recoveryCodeHashes?: string[] | null;
+  lastUsedStep?: number | null;
+  failedAttempts: number;
+  lockedUntil?: string | null;
+  version: number;
+  configuredAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "adminInvitations".
+ */
+export interface AdminInvitation {
+  id: number;
+  purpose: 'new_admin' | 'mfa_reset';
+  email: string;
+  roles: ('content_editor' | 'ad_operator' | 'analyst' | 'system_admin')[];
+  targetAdmin?: (number | null) | Admin;
+  tokenHash: string;
+  totpSecretEncrypted: string;
+  expiresAt: string;
+  consumedAt?: string | null;
+  revokedAt?: string | null;
+  createdBy: number | Admin;
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1205,6 +1242,14 @@ export interface PayloadLockedDocument {
         value: number | Admin;
       } | null)
     | ({
+        relationTo: 'adminMfaCredentials';
+        value: number | AdminMfaCredential;
+      } | null)
+    | ({
+        relationTo: 'adminInvitations';
+        value: number | AdminInvitation;
+      } | null)
+    | ({
         relationTo: 'customers';
         value: number | Customer;
       } | null)
@@ -1394,10 +1439,7 @@ export interface PayloadMigration {
  */
 export interface AdminsSelect<T extends boolean = true> {
   roles?: T;
-  totpSecretEncrypted?: T;
-  recoveryCodeHashes?: T;
-  totpEnabled?: T;
-  totpLastUsedStep?: T;
+  status?: T;
   updatedAt?: T;
   createdAt?: T;
   email?: T;
@@ -1414,6 +1456,40 @@ export interface AdminsSelect<T extends boolean = true> {
         createdAt?: T;
         expiresAt?: T;
       };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "adminMfaCredentials_select".
+ */
+export interface AdminMfaCredentialsSelect<T extends boolean = true> {
+  admin?: T;
+  secretEncrypted?: T;
+  recoveryCodeHashes?: T;
+  lastUsedStep?: T;
+  failedAttempts?: T;
+  lockedUntil?: T;
+  version?: T;
+  configuredAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "adminInvitations_select".
+ */
+export interface AdminInvitationsSelect<T extends boolean = true> {
+  purpose?: T;
+  email?: T;
+  roles?: T;
+  targetAdmin?: T;
+  tokenHash?: T;
+  totpSecretEncrypted?: T;
+  expiresAt?: T;
+  consumedAt?: T;
+  revokedAt?: T;
+  createdBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
