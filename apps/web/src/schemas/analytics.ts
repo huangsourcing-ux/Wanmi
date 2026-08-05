@@ -110,3 +110,4 @@ export type FirstPartyPageType = z.infer<typeof firstPartyPageTypeSchema>
 export type FirstPartySource = z.infer<typeof firstPartySourceSchema>
 export type FirstPartyDeviceCategory = z.infer<typeof firstPartyDeviceCategorySchema>
 export type FirstPartyInputType = z.infer<typeof firstPartyInputTypeSchema>
+export type FirstPartyDurationBucket = z.infer<typeof firstPartyDurationBucketSchema>

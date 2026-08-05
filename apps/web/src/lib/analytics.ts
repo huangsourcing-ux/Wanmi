@@ -1,5 +1,6 @@
 import type {
   FirstPartyDeviceCategory,
+  FirstPartyDurationBucket,
   FirstPartyEventInput,
   FirstPartyInputType,
   FirstPartyPageType,
@@ -101,6 +102,15 @@ export function inferToolInput(value: string): { inputType: FirstPartyInputType;
   } catch {
     return { inputType: 'keyword' }
   }
+}
+
+export function bucketDuration(durationMs: number): FirstPartyDurationBucket {
+  if (durationMs < 100) return 'lt_100ms'
+  if (durationMs < 300) return '100_299ms'
+  if (durationMs < 1_000) return '300_999ms'
+  if (durationMs < 3_000) return '1000_2999ms'
+  if (durationMs < 10_000) return '3000_9999ms'
+  return 'gte_10000ms'
 }
 
 export function emitFirstPartyEvent(input: FirstPartyEventInput): void {

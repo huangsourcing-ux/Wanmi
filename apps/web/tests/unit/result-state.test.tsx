@@ -66,6 +66,7 @@ describe('D1 shared form and result states', () => {
     render(
       <RequestIdProvider requestId={traceId}>
         <ResultState
+          cacheStatus="mixed"
           dataSource="Who-Dat"
           description="正在展示最近成功的数据"
           lastSuccessfulAt="2026-08-04T11:00:00.000Z"
@@ -83,6 +84,7 @@ describe('D1 shared form and result states', () => {
     expect(status.textContent).toContain('是否可以重试是')
     expect(status.textContent).toContain(traceId)
     expect(status.textContent).toContain('最后成功时间')
+    expect(status.textContent).toContain('缓存状态部分缓存命中')
   })
 
   it('maps a 429 Problem Details object to the rate-limited presentation', () => {
