@@ -9,7 +9,7 @@ import { logger as defaultLogger } from '@/lib/logging'
 
 import { mockSuccess } from './mock'
 import type {
-  DomainProvider,
+  DomainOperationProvider,
   WestDigitalAvailability,
   WestDigitalPrice,
   WestDigitalReadProvider,
@@ -775,13 +775,9 @@ export class WestDigitalReadAdapter implements WestDigitalReadProvider {
   }
 }
 
-export class MockWestDigitalProvider implements DomainProvider {
+export class MockWestDigitalProvider implements DomainOperationProvider {
   async health() {
     return mockSuccess({ healthy: true })
-  }
-
-  async queryRegistration() {
-    return mockSuccess({ registered: false })
   }
 
   async submitOperation(input: { operationKey: string; traceId: string }) {

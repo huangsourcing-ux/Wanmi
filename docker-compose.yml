@@ -21,6 +21,8 @@ services:
     image: lissy93/who-dat:v2.0.0@sha256:7bbfe95c6bc5aa6d7aeac033812621a30cc54d1208ab8e7bf9ce9318029e133a
     environment:
       AUTH_KEY: local-who-dat-only
+      CACHE_TTL_SECONDS: 3600
+      ENABLE_CACHE: 'true'
     healthcheck:
       test: [CMD, wget, -q, --spider, http://127.0.0.1:8080/]
       interval: 5s
@@ -31,6 +33,11 @@ services:
     dns:
       - 1.1.1.1
       - 8.8.8.8
+    logging:
+      driver: local
+      options:
+        max-file: '3'
+        max-size: 10m
 
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e

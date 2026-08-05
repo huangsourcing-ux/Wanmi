@@ -252,18 +252,101 @@ test('robots, sitemap and the branded Open Graph image expose only stable public
   expect((await image.body()).byteLength).toBeGreaterThan(1_000)
 })
 
-test('all query-capable tool pages keep clean canonicals and noindex parameter results', async ({
+test('WHOIS stays separate from availability and keeps result requests and analytics private', async ({
   page,
 }) => {
-  await page.goto('/tools/whois?q=wanmi.net')
-  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/)
+  const observedAt = '2026-08-05T12:00:00.000Z'
+  const analyticsRequests: Array<{
+    body: Record<string, unknown>
+    headers: Record<string, string>
+  }> = []
+  const whoisRequests: Array<{
+    body: Record<string, unknown>
+    headers: Record<string, string>
+  }> = []
+  await page.setViewportSize({ height: 844, width: 390 })
+  await page
+    .context()
+    .addCookies([{ name: 'tracking_test_cookie', url: canonicalOrigin, value: 'must-not-be-sent' }])
+  await page.route('**/api/v1/events', async (route) => {
+    analyticsRequests.push({
+      body: route.request().postDataJSON() as Record<string, unknown>,
+      headers: await route.request().allHeaders(),
+    })
+    await route.fulfill({ json: { accepted: true }, status: 202 })
+  })
+  await page.route('**/api/v1/tools/whois', async (route) => {
+    whoisRequests.push({
+      body: route.request().postDataJSON() as Record<string, unknown>,
+      headers: await route.request().allHeaders(),
+    })
+    await route.fulfill({
+      json: {
+        data: {
+          dates: {
+            created: '2000-01-01T00:00:00.000Z',
+            expires: null,
+            updated: '2026-01-01T00:00:00.000Z',
+          },
+          domainAscii: 'xn--fsqu00a.xn--0zwm56d',
+          domainUnicode: '例子.测试',
+          nameServers: ['ns1.example.test'],
+          normalizedQueryAscii: 'xn--fsqu00a.xn--0zwm56d',
+          normalizedQueryUnicode: '例子.测试',
+          recordStatus: 'record_found',
+          registrar: 'Fixture Registrar',
+          risks: [],
+          source: { protocol: 'rdap', provider: 'whodat' },
+          statuses: ['client transfer prohibited'],
+        },
+        meta: {
+          cacheStatus: 'hit',
+          dataSource: 'Who-Dat RDAP',
+          observedAt,
+          traceId: 'trace-whois-e2e',
+        },
+        state: 'ready',
+      },
+      status: 200,
+    })
+  })
+
+  await page.goto('/tools/whois')
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /index, follow/)
+  await page.getByLabel('输入要查询公开注册信息的完整域名').fill('例子.测试')
+  await page.getByRole('button', { name: '查询 WHOIS' }).click()
+
+  await expect(page).toHaveURL(/\/tools\/whois\?q=/)
+  await expect(page.getByRole('heading', { level: 2, name: 'RDAP / WHOIS 查询结果' })).toBeVisible()
+  await expect(page.getByText('Fixture Registrar')).toBeVisible()
+  await expect(page.getByText('Who-Dat RDAP')).toBeVisible()
+  await expect(page.getByText('Who-Dat 缓存命中')).toBeVisible()
+  await expect(page.getByText(/此页面不判断可注册状态/)).toBeVisible()
+  await expect(page.getByRole('link', { name: /购买|注册/ })).toHaveCount(0)
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex, nofollow/)
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     'href',
     `${canonicalOrigin}/tools/whois`,
   )
+  await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
+    'content',
+    `${canonicalOrigin}/tools/whois`,
+  )
 
-  await page.goto('/tools/whois')
-  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /index, follow/)
+  expect(whoisRequests).toHaveLength(1)
+  expect(whoisRequests[0].body).toEqual({ query: '例子.测试' })
+  expect(whoisRequests[0].headers.cookie).toBeUndefined()
+  expect(whoisRequests[0].headers.referer ?? '').not.toContain('?q=')
+  await expect
+    .poll(() => analyticsRequests.some(({ body }) => body.event === 'tool_completed'))
+    .toBe(true)
+  for (const event of analyticsRequests) {
+    expect(JSON.stringify(event.body)).not.toMatch(/例子|xn--fsqu00a/)
+    expect(event.body).not.toHaveProperty('domain')
+    expect(event.body).not.toHaveProperty('query')
+    expect(event.headers.cookie).toBeUndefined()
+    expect(event.headers.referer ?? '').not.toContain('?q=')
+  }
 })
 
 test('content fallback and branded not-found states work on mobile', async ({ page }) => {

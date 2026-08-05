@@ -4,6 +4,31 @@ export interface HealthAwareProvider {
   health(): Promise<ProviderResult<{ healthy: boolean }>>
 }
 
+export type PublicRegistrationRecord = {
+  dates: {
+    created: string | null
+    expires: string | null
+    updated: string | null
+  }
+  domainAscii: string
+  domainUnicode: string
+  nameServers: string[]
+  recordStatus: 'record_found' | 'no_public_record'
+  registrar: string | null
+  source: {
+    protocol: 'rdap' | 'whois'
+    provider: 'whodat' | 'westdigital'
+  }
+  statuses: string[]
+}
+
+export interface PublicRegistrationProvider extends HealthAwareProvider {
+  queryPublicRegistration(input: {
+    domainAscii: string
+    traceId: string
+  }): Promise<ProviderResult<PublicRegistrationRecord>>
+}
+
 export interface SmsProvider extends HealthAwareProvider {
   sendOtp(input: {
     code: string
@@ -40,11 +65,7 @@ export interface RealnameObjectProvider extends HealthAwareProvider {
   }): Promise<ProviderResult<{ etag: string }>>
 }
 
-export interface DomainProvider extends HealthAwareProvider {
-  queryRegistration(input: {
-    domainAscii: string
-    traceId: string
-  }): Promise<ProviderResult<{ registered: boolean }>>
+export interface DomainOperationProvider extends HealthAwareProvider {
   submitOperation(input: {
     operationKey: string
     traceId: string
