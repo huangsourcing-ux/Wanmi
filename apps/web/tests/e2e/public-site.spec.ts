@@ -21,6 +21,20 @@ test('database redirect returns a canonical 301 with query parameters and a requ
 test('homepage works on desktop and submits a noindex domain query without provider access', async ({
   page,
 }) => {
+  const analyticsRequests: Array<{
+    body: Record<string, unknown>
+    headers: Record<string, string>
+  }> = []
+  await page
+    .context()
+    .addCookies([{ name: 'tracking_test_cookie', url: canonicalOrigin, value: 'must-not-be-sent' }])
+  await page.route('**/api/v1/events', async (route) => {
+    analyticsRequests.push({
+      body: route.request().postDataJSON() as Record<string, unknown>,
+      headers: await route.request().allHeaders(),
+    })
+    await route.fulfill({ body: 'analytics unavailable', status: 503 })
+  })
   await page.goto('/')
 
   await expect(page.getByRole('heading', { level: 1, name: /查清域名状态/ })).toBeVisible()
@@ -41,6 +55,68 @@ test('homepage works on desktop and submits a noindex domain query without provi
   )
   await expect(page.getByText(/不会调用查询 provider/)).toBeVisible()
   await expect(page.getByLabel('输入完整域名或关键词')).toHaveValue('wanmi.net')
+
+  await expect
+    .poll(() => analyticsRequests.some(({ body }) => body.event === 'tool_submitted'))
+    .toBe(true)
+  const submitted = analyticsRequests.find(({ body }) => body.event === 'tool_submitted')!
+  expect(submitted.body).toEqual({
+    event: 'tool_submitted',
+    fromLocalHistory: false,
+    inputType: 'full_domain',
+    schemaVersion: 1,
+    tld: 'net',
+    tool: 'domain-search',
+  })
+  expect(analyticsRequests.some(({ body }) => body.event === 'page_viewed')).toBe(true)
+  for (const event of analyticsRequests) {
+    expect(JSON.stringify(event.body)).not.toContain('wanmi.net')
+    expect(event.body).not.toHaveProperty('domain')
+    expect(event.body).not.toHaveProperty('query')
+    expect(event.body).not.toHaveProperty('referrer')
+    expect(event.headers.cookie).toBeUndefined()
+    expect(event.headers.referer ?? '').not.toContain('?q=')
+  }
+})
+
+test('the first-party endpoint and client honor DNT/GPC without blocking tools', async ({
+  page,
+  request,
+}) => {
+  for (const header of ['dnt', 'sec-gpc']) {
+    const response = await request.post('/api/v1/events', {
+      data: 'not-a-valid-event',
+      headers: { [header]: '1' },
+    })
+    expect(response.status()).toBe(204)
+  }
+
+  const accepted = await request.post('/api/v1/events', {
+    data: {
+      deviceCategory: 'desktop',
+      event: 'page_viewed',
+      pageType: 'home',
+      schemaVersion: 1,
+      source: 'direct',
+    },
+  })
+  expect(accepted.status()).toBe(202)
+  expect(await accepted.json()).toEqual({ accepted: true })
+
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'doNotTrack', { configurable: true, value: '1' })
+  })
+  let eventRequests = 0
+  await page.route('**/api/v1/events', async (route) => {
+    eventRequests += 1
+    await route.fulfill({ json: { accepted: true }, status: 202 })
+  })
+  await page.goto('/')
+  await page.getByLabel('输入完整域名或关键词').fill('wanmi.net')
+  await page.getByRole('button', { name: '查询域名' }).click()
+  await expect(page).toHaveURL(/\/tools\/domain-search\?q=.*wanmi\.net/)
+  await page.waitForTimeout(250)
+  expect(eventRequests).toBe(0)
 })
 
 test('mobile navigation is keyboard-accessible and keeps primary routes reachable', async ({

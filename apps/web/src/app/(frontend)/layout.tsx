@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
+import { Suspense } from 'react'
 
+import { PageViewTracker } from '@/components/analytics/page-view-tracker'
 import { SiteFooter } from '@/components/site/site-footer'
 import { SiteHeader } from '@/components/site/site-header'
 import { getPublicSiteData } from '@/lib/public-site-data'
@@ -26,6 +28,9 @@ export default async function FrontendLayout({ children }: { children: ReactNode
   return (
     <html data-scroll-behavior="smooth" lang="zh-CN">
       <body>
+        <Suspense fallback={null}>
+          <PageViewTracker />
+        </Suspense>
         <a
           className="fixed top-2 left-2 z-[100] -translate-y-20 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground focus:translate-y-0 focus:outline-none"
           href="#main-content"

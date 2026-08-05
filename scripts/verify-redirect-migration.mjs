@@ -40,6 +40,56 @@ function verifyAuditReaderIndex(stage) {
   }
 }
 
+function verifyFirstPartyEventSchema(stage) {
+  const forbiddenColumns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(column_name, ',' ORDER BY column_name)
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'first_party_events'
+         AND column_name IN (
+           'client_id', 'cookie', 'domain', 'ip', 'query', 'referrer',
+           'session_id', 'url', 'user_agent'
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (forbiddenColumns) {
+    throw new Error(
+      `D1-08 first-party event table has forbidden columns after ${stage}: ${forbiddenColumns}`,
+    )
+  }
+
+  const indexes = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(indexdef, E'\n' ORDER BY indexname)
+       FROM pg_indexes
+       WHERE schemaname = 'public'
+         AND tablename = 'first_party_events'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (!/\(event, created_at\)/.test(indexes) || !/\(tool, created_at\)/.test(indexes)) {
+    throw new Error(`D1-08 aggregation indexes missing after ${stage}: ${indexes}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -47,6 +97,7 @@ try {
 
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
   verifyAuditReaderIndex('empty-database migration')
+  verifyFirstPartyEventSchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -181,9 +232,43 @@ try {
     throw new Error('Database allowed the last active system administrator to be disabled')
   }
   verifyAuditReaderIndex('legacy upgrade migration')
+  verifyFirstPartyEventSchema('legacy upgrade migration')
+
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 4
+     WHERE name = '20260805_090521_d1_first_party_events'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const eventTableAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT to_regclass('public.first_party_events') IS NOT NULL`,
+    ],
+    { capture: true },
+  ).trim()
+  if (eventTableAfterDown !== 'f') {
+    throw new Error('D1-08 migration down did not remove the first-party event table')
+  }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyFirstPartyEventSchema('D1-08 migration round trip')
 
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, and the D1-07 audit reader index.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, and the D1-08 first-party event schema round trip.\n',
   )
 } finally {
   if (created) {

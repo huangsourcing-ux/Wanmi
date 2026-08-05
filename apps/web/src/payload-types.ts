@@ -99,6 +99,7 @@ export interface Config {
     manualReviews: ManualReview;
     reconciliations: Reconciliation;
     auditLogs: AuditLog;
+    firstPartyEvents: FirstPartyEvent;
     userFeedback: UserFeedback;
     customerSecurityEvents: CustomerSecurityEvent;
     redirects: Redirect;
@@ -143,6 +144,7 @@ export interface Config {
     manualReviews: ManualReviewsSelect<false> | ManualReviewsSelect<true>;
     reconciliations: ReconciliationsSelect<false> | ReconciliationsSelect<true>;
     auditLogs: AuditLogsSelect<false> | AuditLogsSelect<true>;
+    firstPartyEvents: FirstPartyEventsSelect<false> | FirstPartyEventsSelect<true>;
     userFeedback: UserFeedbackSelect<false> | UserFeedbackSelect<true>;
     customerSecurityEvents: CustomerSecurityEventsSelect<false> | CustomerSecurityEventsSelect<true>;
     redirects: RedirectsSelect<false> | RedirectsSelect<true>;
@@ -873,6 +875,30 @@ export interface AuditLog {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "firstPartyEvents".
+ */
+export interface FirstPartyEvent {
+  id: number;
+  schemaVersion: number;
+  event: 'page_viewed' | 'tool_submitted' | 'tool_completed' | 'tool_failed';
+  pageType?: ('home' | 'tool_index' | 'tool' | 'pricing' | 'content_index' | 'help' | 'legal' | 'other') | null;
+  source?: ('direct' | 'internal' | 'search' | 'social' | 'referral') | null;
+  deviceCategory?: ('mobile' | 'tablet' | 'desktop') | null;
+  tool?: ('domain-search' | 'whois' | 'dns' | 'ssl-check' | 'idn' | 'pricing') | null;
+  inputType?: ('full_domain' | 'keyword' | 'unknown') | null;
+  fromLocalHistory?: boolean | null;
+  tld?: string | null;
+  resultCategory?: ('ready' | 'empty' | 'partial' | 'degraded') | null;
+  succeeded?: boolean | null;
+  durationBucket?: ('lt_100ms' | '100_299ms' | '300_999ms' | '1000_2999ms' | '3000_9999ms' | 'gte_10000ms') | null;
+  dataSource?: ('local' | 'cache' | 'westdigital' | 'whodat' | 'dns' | 'tls' | 'unknown') | null;
+  errorCode?: string | null;
+  traceId: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "userFeedback".
  */
 export interface UserFeedback {
@@ -1360,6 +1386,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'auditLogs';
         value: number | AuditLog;
+      } | null)
+    | ({
+        relationTo: 'firstPartyEvents';
+        value: number | FirstPartyEvent;
       } | null)
     | ({
         relationTo: 'userFeedback';
@@ -1908,6 +1938,29 @@ export interface AuditLogsSelect<T extends boolean = true> {
   targetId?: T;
   traceId?: T;
   metadata?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "firstPartyEvents_select".
+ */
+export interface FirstPartyEventsSelect<T extends boolean = true> {
+  schemaVersion?: T;
+  event?: T;
+  pageType?: T;
+  source?: T;
+  deviceCategory?: T;
+  tool?: T;
+  inputType?: T;
+  fromLocalHistory?: T;
+  tld?: T;
+  resultCategory?: T;
+  succeeded?: T;
+  durationBucket?: T;
+  dataSource?: T;
+  errorCode?: T;
+  traceId?: T;
   updatedAt?: T;
   createdAt?: T;
 }

@@ -87,6 +87,74 @@ export const AuditLogs: CollectionConfig = {
   ],
 }
 
+export const FirstPartyEvents: CollectionConfig = {
+  slug: 'firstPartyEvents',
+  access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
+  admin: {
+    defaultColumns: ['event', 'pageType', 'tool', 'tld', 'succeeded', 'createdAt'],
+    group: ADMIN_GROUPS.operations,
+    hidden: systemAdminHidden,
+    useAsTitle: 'event',
+  },
+  defaultSort: '-createdAt',
+  indexes: [{ fields: ['event', 'createdAt'] }, { fields: ['tool', 'createdAt'] }],
+  labels: { plural: '第一方事件', singular: '第一方事件' },
+  fields: [
+    { name: 'schemaVersion', type: 'number', defaultValue: 1, max: 1, min: 1, required: true },
+    {
+      name: 'event',
+      type: 'select',
+      options: ['page_viewed', 'tool_submitted', 'tool_completed', 'tool_failed'],
+      required: true,
+    },
+    {
+      name: 'pageType',
+      type: 'select',
+      options: ['home', 'tool_index', 'tool', 'pricing', 'content_index', 'help', 'legal', 'other'],
+    },
+    {
+      name: 'source',
+      type: 'select',
+      options: ['direct', 'internal', 'search', 'social', 'referral'],
+    },
+    {
+      name: 'deviceCategory',
+      type: 'select',
+      options: ['mobile', 'tablet', 'desktop'],
+    },
+    {
+      name: 'tool',
+      type: 'select',
+      options: ['domain-search', 'whois', 'dns', 'ssl-check', 'idn', 'pricing'],
+    },
+    {
+      name: 'inputType',
+      type: 'select',
+      options: ['full_domain', 'keyword', 'unknown'],
+    },
+    { name: 'fromLocalHistory', type: 'checkbox' },
+    { name: 'tld', type: 'text' },
+    {
+      name: 'resultCategory',
+      type: 'select',
+      options: ['ready', 'empty', 'partial', 'degraded'],
+    },
+    { name: 'succeeded', type: 'checkbox' },
+    {
+      name: 'durationBucket',
+      type: 'select',
+      options: ['lt_100ms', '100_299ms', '300_999ms', '1000_2999ms', '3000_9999ms', 'gte_10000ms'],
+    },
+    {
+      name: 'dataSource',
+      type: 'select',
+      options: ['local', 'cache', 'westdigital', 'whodat', 'dns', 'tls', 'unknown'],
+    },
+    { name: 'errorCode', type: 'text' },
+    { name: 'traceId', type: 'text', index: true, required: true, unique: true },
+  ],
+}
+
 export const UserFeedback: CollectionConfig = {
   slug: 'userFeedback',
   access: { create: deny, delete: deny, read: operationalReaders, update: systemAdminOnly },

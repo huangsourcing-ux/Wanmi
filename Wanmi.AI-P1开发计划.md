@@ -340,7 +340,7 @@ D0 的架构、权限、认证、迁移、Jobs 幂等、真实 OSS、隔离 RDS�
 - [x] 完善管理员独立 Auth Collection、Payload Session、密码 + TOTP MFA 和 RBAC；
 - [x] 建立内容编辑、广告运营、分析、系统管理员角色边界；
 - [x] 建立审计事件公共组件和后台导航骨架；
-- [ ] 建立第一方事件入口，默认不采集完整查询域名。
+- [x] 建立第一方事件入口，默认不采集完整查询域名。
 
 D1-01 验证记录（2026-08-04）：已建立响应式主站外壳、六类工具与内容入口、`GET /tools/domain-search?q=` 查询骨架、帮助和四类合规说明入口；公共 Payload Local API 读取固定 `overrideAccess: false`，草稿隔离、栏目独立降级、桌面/移动端与未知路由均有自动化测试。本切片未调用 provider、未新增 API、未修改 Payload schema 或迁移。
 
@@ -357,6 +357,8 @@ D1-05 审核修正记录（2026-08-05）：确认 Next.js Proxy 中对 Payload �
 D1-06 验证记录（2026-08-05）：已将匿名、customer、禁用管理员与 `content_editor`、`ad_operator`、`analyst`、`system_admin` 的 Collection CRUD、内容版本和 Payload Admin 可见性收敛为完整矩阵；内容与广告写权限相互隔离，广告运营可读安全运营数据和本人审计，分析角色只读脱敏广告参考、反馈摘要与聚合/对账结果，系统管理员获得全局读取但不能通过通用 Payload CRUD 修改实名、价格、commerce、provider、对账或人工复核状态。客户读取继续按本人行级约束，并隐藏上游成本、报价规则快照、内部订单证据和操作者标识；官方 Redirects、Form Builder Collections 使用相同后台可见性与服务端权限。共享 Media 不提前增加广告分类，第一方事件、通用审计组件和自定义后台导航仍属于 D1-07/D1-08/D3。`make check` 通过生成类型/schema 漂移、空库及遗留 migration、Nginx、lint、TypeScript strict、144 个单元测试、23 个 PostgreSQL 集成测试、生产构建、linux/amd64 同镜像、依赖 high 门禁和 Gitleaks；`make test-e2e` 的 15 个 Playwright 场景通过，覆盖三类非系统角色导航、未授权后台路由 404 与 REST 越权写入 403。依赖审计仍为既有 2 个低危和 2 个中危，无 high/critical；本切片无 schema、migration 或公开 API 变更，未部署或调用真实 provider。
 
 D1-07 验证记录（2026-08-05）：已将 Redirect、管理员账号与邀请、TOTP/MFA、管理员登录、Session 撤销和系统 Local API 的审计写入收敛到强类型公共服务；现有 action 标识保持兼容，事件目录统一派生 actor 约束和 `targetType`，metadata 在唯一写入边界递归替换手机号、证件号、Cookie、OTP、token、密码、密钥和 provider secret，安全 Hash/Digest/Masked 派生值保留，Session 仅记录 `sessionIdHash`。Payload Admin 按内容、广告、身份、实名、交易、履约、运营七域分组，仍以 D1-06 服务端 access 为授权基线；审计原生列表支持时间倒序、默认列和安全搜索，`system_admin` 全量读取、`ad_operator` 仅本人 admin 事件且看不到 metadata、`analyst` 无入口和读取权限。新增命名 migration 为 `actorType + actorId + createdAt` 建复合索引，不重写历史审计；空库及 D1-03/D1-05 遗留升级路径均验证索引。`make check` 通过生成类型/schema 漂移、迁移、Nginx、lint、TypeScript strict、154 个单元测试、24 个 PostgreSQL/MinIO 集成测试、生产构建、linux/amd64 同镜像、依赖 high 门禁和 Gitleaks；`make test-e2e` 的 15 个 Playwright 场景通过，覆盖七域分组、广告运营本人审计、分析角色拒绝和直接路由保护。依赖审计仍为既有 2 个低危和 2 个中危，无 high/critical；本切片无公开 API 变更，未实现 D1-08、未部署或调用真实 provider。
+
+D1-08 验证记录（2026-08-05）：已建立严格 Zod 判别联合保护的 `POST /api/v1/events` 第一方入口和 `firstPartyEvents` Collection，仅允许页面类别、来源类别、设备类别、固定工具、输入类型、单标签 TLD、标准结果、数据源和耗时桶等聚合维度；不存在 domain、query、URL、原始 referrer、IP、User-Agent、Cookie、客户端/Session 标识或自由 metadata 字段。客户端只自动发送 `page_viewed` 与 `tool_submitted`，查询 `wanmi.net` 仅发送 `tld: net`；请求使用 `credentials: omit`、origin-only referrer 和 best-effort keepalive，DNT/GPC 在客户端和服务端均停止写入，不设置分析 Cookie 或 Web Storage。D1-07 递归脱敏规则已抽为共享隐私组件并在事件唯一写入服务复用；原始事件仅 `system_admin` 可读，`analyst` 继续只读 D1-06 规定的安全聚合结果。新增可配置的每分钟 1000 条无标识全局限流、命名 migration、生成类型及事件/工具时间索引；空库、D1-03/D1-05 遗留升级和 migration down/up 往返均通过，并验证事件表无禁止列。`make check` 通过生成/schema 漂移、迁移、Nginx、lint、TypeScript strict、167 个单元测试、26 个 PostgreSQL/MinIO 集成测试、生产构建、linux/amd64 同镜像、依赖 high 门禁和 Gitleaks；`make test-e2e` 的 16 个 Playwright 场景通过，覆盖请求最小化、Cookie/referrer 隔离、DNT/GPC、采集失败不阻塞查询和 analyst 直接路由拒绝。依赖审计仍为既有 2 个低危和 2 个中危，无 high/critical；工具完成/失败发送由 D2 接入，广告事件、聚合、留存清理和 analyst 仪表盘仍属于 D3。本切片未部署、未调用真实 provider，也不作为资金、广告结算或交易状态依据。
 
 ### 5.3 退出条件
 
@@ -585,7 +587,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 
 - [x] 文档与 P1 范围批准
 - [x] D0 Payload 架构验证（条件通过；ECS 门槛转入 D7）
-- [ ] D1 公共站与管理基础
+- [x] D1 公共站与管理基础
 - [ ] D2 六类域名工具
 - [ ] D3 内容、广告、分析与运营后台
 - [ ] D4 账号与实名
