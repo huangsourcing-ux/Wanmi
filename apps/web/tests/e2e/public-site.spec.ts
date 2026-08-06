@@ -739,6 +739,89 @@ test('SSL renders mobile certificate and inherited CAA diagnostics with isolated
   }
 })
 
+test('IDN converts locally on mobile, keeps Punycode public and marks parameter results noindex', async ({
+  page,
+}) => {
+  const analyticsRequests: Array<{
+    body: Record<string, unknown>
+    headers: Record<string, string>
+  }> = []
+  let idnApiRequests = 0
+
+  await page.setViewportSize({ height: 844, width: 390 })
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {
+    origin: canonicalOrigin,
+  })
+  await page
+    .context()
+    .addCookies([{ name: 'tracking_test_cookie', url: canonicalOrigin, value: 'must-not-be-sent' }])
+  await page.route('**/api/v1/events', async (route) => {
+    analyticsRequests.push({
+      body: route.request().postDataJSON() as Record<string, unknown>,
+      headers: await route.request().allHeaders(),
+    })
+    await route.fulfill({ json: { accepted: true }, status: 202 })
+  })
+  await page.route('**/api/v1/tools/idn', async (route) => {
+    idnApiRequests += 1
+    await route.abort()
+  })
+
+  await page.goto('/tools/idn')
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /index, follow/)
+  await page.getByLabel('输入要转换的域名').fill('例子.中国')
+  await page.getByRole('button', { name: '转换 IDN' }).click()
+
+  await expect(page).toHaveURL(`${canonicalOrigin}/tools/idn`)
+  await expect(page.locator('[data-idn-result="punycode"]')).toContainText('xn--fsqu00a.xn--fiqs8s')
+  await expect(page.locator('[data-idn-result="unicode"]')).toContainText('例子.中国')
+  await expect(page.locator('[data-public-domain]')).toHaveAttribute(
+    'data-public-domain',
+    'xn--fsqu00a.xn--fiqs8s',
+  )
+  await expect(page.getByRole('link', { name: '查询 WHOIS / RDAP' })).toHaveAttribute(
+    'href',
+    '/tools/whois?q=xn--fsqu00a.xn--fiqs8s',
+  )
+  await page.getByRole('button', { name: '复制 Punycode' }).click()
+  await expect(page.getByText('已复制 Punycode')).toBeVisible()
+
+  await page.getByLabel('输入要转换的域名').fill('раypal.com')
+  await page.getByRole('button', { name: '转换 IDN' }).click()
+  await expect(page.locator('[data-idn-risk]')).toContainText('西里尔文（Cyrillic）')
+  await expect(page.locator('[data-idn-risk]')).toContainText('拉丁文（Latin）')
+  await expect(page.getByText(/转换成功不代表可注册或商标安全/u).first()).toBeVisible()
+
+  await page.getByLabel('输入要转换的域名').fill('wanmi..com')
+  await page.getByRole('button', { name: '转换 IDN' }).click()
+  await expect(page.getByText('第 2 个标签为空').first()).toBeVisible()
+
+  await page.goto('/tools/idn?q=%E4%BE%8B%E5%AD%90.%E4%B8%AD%E5%9B%BD')
+  await expect(page.locator('[data-idn-result="punycode"]')).toContainText('xn--fsqu00a.xn--fiqs8s')
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex, nofollow/)
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    'href',
+    `${canonicalOrigin}/tools/idn`,
+  )
+  await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
+    'content',
+    `${canonicalOrigin}/tools/idn`,
+  )
+
+  expect(idnApiRequests).toBe(0)
+  await expect.poll(() => analyticsRequests.some(({ body }) => body.tool === 'idn')).toBe(true)
+  for (const request of analyticsRequests) {
+    expect(JSON.stringify(request.body)).not.toMatch(
+      /例子|中国|раypal|xn--fsqu00a|xn--fiqs8s|xn--ypal-43d9g/u,
+    )
+    expect(request.body).not.toHaveProperty('domain')
+    expect(request.body).not.toHaveProperty('query')
+    if (request.body.tool === 'idn') expect(request.body).not.toHaveProperty('tld')
+    expect(request.headers.cookie).toBeUndefined()
+    expect(request.headers.referer ?? '').not.toContain('?q=')
+  }
+})
+
 test('content fallback and branded not-found states work on mobile', async ({ page }) => {
   await page.setViewportSize({ height: 844, width: 390 })
   await page.goto('/articles')

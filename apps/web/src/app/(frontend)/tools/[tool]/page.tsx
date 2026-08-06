@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { DomainQueryForm } from '@/components/forms/domain-query-form'
 import { DnsResults } from '@/components/results/dns-results'
 import { DomainSearchResults } from '@/components/results/domain-search-results'
+import { IdnConverter } from '@/components/results/idn-converter'
 import { ResultState } from '@/components/results/result-state'
 import { SslResults } from '@/components/results/ssl-results'
 import { WhoisResults } from '@/components/results/whois-results'
@@ -39,7 +40,11 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
   const tool = getToolDefinition(slug)
   if (!tool) notFound()
   const query =
-    slug === 'dns' || slug === 'domain-search' || slug === 'ssl-check' || slug === 'whois'
+    slug === 'dns' ||
+    slug === 'domain-search' ||
+    slug === 'idn' ||
+    slug === 'ssl-check' ||
+    slug === 'whois'
       ? normalizeQueryParam(queryParams.q)
       : ''
 
@@ -134,6 +139,8 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
             />
           </div>
         )
+      ) : slug === 'idn' ? (
+        <IdnConverter defaultValue={query} key={query} />
       ) : (
         <ConstructionNotice
           description={`${tool.title}的服务端查询与结果状态将在后续工具开发中接入。`}

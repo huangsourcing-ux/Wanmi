@@ -21,6 +21,7 @@ export type DomainErrorCode = (typeof DOMAIN_ERROR_CODES)[number]
 
 export type DomainValidationError = {
   code: DomainErrorCode
+  labelPosition?: number
   message: string
 }
 
@@ -72,8 +73,61 @@ const ERROR_MESSAGES: Record<DomainErrorCode, string> = {
   DOMAIN_NUMERIC_TLD: '顶级域不能全部为数字',
 }
 
-function failure(code: DomainErrorCode): DomainNormalizationResult {
-  return { error: { code, message: ERROR_MESSAGES[code] }, ok: false }
+const LABEL_ERROR_MESSAGES: Partial<Record<DomainErrorCode, string>> = {
+  DOMAIN_EMPTY_LABEL: '为空',
+  DOMAIN_IDNA_INVALID: '不符合 IDNA2008 上下文或双向文本规则',
+  DOMAIN_INVALID_CHARACTER: '包含不受支持的字符',
+  DOMAIN_INVALID_HYPHEN: '的连字符位置无效',
+  DOMAIN_INVALID_PUNYCODE: '不是有效的 Punycode',
+  DOMAIN_LABEL_TOO_LONG: '转换后超过 63 个 ASCII 字节',
+  DOMAIN_NUMERIC_TLD: '是顶级域，不能全部为数字',
+}
+
+const SCRIPT_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  Arabic: '阿拉伯文',
+  Armenian: '亚美尼亚文',
+  Bengali: '孟加拉文',
+  Cyrillic: '西里尔文',
+  Devanagari: '天城文',
+  Georgian: '格鲁吉亚文',
+  Greek: '希腊文',
+  Gujarati: '古吉拉特文',
+  Gurmukhi: '古木基文',
+  Han: '汉字',
+  Hangul: '韩文',
+  Hebrew: '希伯来文',
+  Hiragana: '平假名',
+  Kannada: '卡纳达文',
+  Katakana: '片假名',
+  Latin: '拉丁文',
+  Malayalam: '马拉雅拉姆文',
+  Oriya: '奥里亚文',
+  Tamil: '泰米尔文',
+  Telugu: '泰卢固文',
+  Thai: '泰文',
+}
+
+export function formatUnicodeScriptName(script: string): string {
+  const canonicalName = script.replaceAll('_', ' ')
+  const localizedName = SCRIPT_DISPLAY_NAMES[script]
+  return localizedName ? `${localizedName}（${canonicalName}）` : canonicalName
+}
+
+function failure(code: DomainErrorCode, labelIndex?: number): DomainNormalizationResult {
+  const labelPosition = labelIndex === undefined ? undefined : labelIndex + 1
+  const labelMessage = LABEL_ERROR_MESSAGES[code]
+  const message =
+    labelPosition !== undefined && labelMessage
+      ? `第 ${labelPosition} 个标签${labelMessage}`
+      : ERROR_MESSAGES[code]
+  return {
+    error: {
+      code,
+      ...(labelPosition === undefined ? {} : { labelPosition }),
+      message,
+    },
+    ok: false,
+  }
 }
 
 function idna2008Category(codePoint: number): Idna2008Category | undefined {
@@ -134,21 +188,23 @@ function inspectInputLabels(candidate: string): DomainNormalizationResult | stri
     .replace(DOT_SEPARATOR_PATTERN, '.')
   const labels = inspectionValue.split('.')
 
-  if (labels.some((label) => label.length === 0)) return failure('DOMAIN_EMPTY_LABEL')
+  const emptyLabelIndex = labels.findIndex((label) => label.length === 0)
+  if (emptyLabelIndex >= 0) return failure('DOMAIN_EMPTY_LABEL', emptyLabelIndex)
 
-  for (const label of labels) {
+  for (const [index, label] of labels.entries()) {
     const isALabel = label.startsWith('xn--')
     if (isALabel) {
       if (label.startsWith('xn--xn--') || NON_ASCII_PATTERN.test(label))
-        return failure('DOMAIN_INVALID_PUNYCODE')
+        return failure('DOMAIN_INVALID_PUNYCODE', index)
       continue
     }
 
     if (label.startsWith('-') || label.endsWith('-') || (label[2] === '-' && label[3] === '-'))
-      return failure('DOMAIN_INVALID_HYPHEN')
+      return failure('DOMAIN_INVALID_HYPHEN', index)
   }
 
-  if (UNICODE_NUMERIC_LABEL_PATTERN.test(labels.at(-1) ?? '')) return failure('DOMAIN_NUMERIC_TLD')
+  if (UNICODE_NUMERIC_LABEL_PATTERN.test(labels.at(-1) ?? ''))
+    return failure('DOMAIN_NUMERIC_TLD', labels.length - 1)
 
   return labels
 }
@@ -161,10 +217,11 @@ function createRiskWarnings(unicodeLabels: string[], asciiLabels: string[]): Dom
     const scripts = [...unicodeScripts(label)].filter(
       (script) => script !== 'Common' && script !== 'Inherited' && script !== 'Unknown',
     )
+    const scriptNames = scripts.map(formatUnicodeScriptName).join('、')
     risks.push({
       code: 'DOMAIN_MIXED_SCRIPT_RISK',
       labelAscii: asciiLabels[index],
-      message: '该标签混合多种书写系统，可能存在同形异义风险；转换成功不代表可注册或商标安全。',
+      message: `标签“${asciiLabels[index]}”混合使用 ${scriptNames} 书写系统，可能存在同形异义风险；转换成功不代表可注册或商标安全。`,
       scripts,
     })
   }
@@ -184,36 +241,68 @@ export function normalizeDomain(input: string): DomainNormalizationResult {
 
   const ascii = toASCII(candidate, { ...TR46_OPTIONS, verifyDNSLength: false })
   if (ascii === null) {
-    if (inspectedLabels.some((label) => label.startsWith('xn--')))
-      return failure('DOMAIN_INVALID_PUNYCODE')
-    if (OBVIOUS_INVALID_CHARACTER_PATTERN.test(inspectedLabels.join('.')))
-      return failure('DOMAIN_INVALID_CHARACTER')
-    return failure('DOMAIN_IDNA_INVALID')
+    const invalidPunycodeIndex = inspectedLabels.findIndex(
+      (label) =>
+        label.startsWith('xn--') &&
+        toASCII(label, { ...TR46_OPTIONS, verifyDNSLength: false }) === null,
+    )
+    if (invalidPunycodeIndex >= 0) return failure('DOMAIN_INVALID_PUNYCODE', invalidPunycodeIndex)
+    const invalidCharacterIndex = inspectedLabels.findIndex((label) =>
+      OBVIOUS_INVALID_CHARACTER_PATTERN.test(label),
+    )
+    if (invalidCharacterIndex >= 0)
+      return failure('DOMAIN_INVALID_CHARACTER', invalidCharacterIndex)
+    const invalidIdnaIndex = inspectedLabels.findIndex(
+      (label) => toASCII(label, { ...TR46_OPTIONS, verifyDNSLength: false }) === null,
+    )
+    return failure('DOMAIN_IDNA_INVALID', invalidIdnaIndex >= 0 ? invalidIdnaIndex : undefined)
   }
 
   const asciiLabels = ascii.split('.')
-  if (asciiLabels.some((label) => label.length === 0)) return failure('DOMAIN_EMPTY_LABEL')
-  if (asciiLabels.some((label) => !ASCII_LABEL_PATTERN.test(label)))
-    return failure('DOMAIN_INVALID_CHARACTER')
+  const emptyAsciiLabelIndex = asciiLabels.findIndex((label) => label.length === 0)
+  if (emptyAsciiLabelIndex >= 0) return failure('DOMAIN_EMPTY_LABEL', emptyAsciiLabelIndex)
+  const invalidAsciiLabelIndex = asciiLabels.findIndex((label) => !ASCII_LABEL_PATTERN.test(label))
+  if (invalidAsciiLabelIndex >= 0)
+    return failure('DOMAIN_INVALID_CHARACTER', invalidAsciiLabelIndex)
 
   const unicodeResult = toUnicode(ascii, TR46_OPTIONS)
-  if (unicodeResult.error) return failure('DOMAIN_INVALID_PUNYCODE')
+  if (unicodeResult.error) {
+    const invalidPunycodeIndex = asciiLabels.findIndex(
+      (label) => toUnicode(label, TR46_OPTIONS).error,
+    )
+    return failure(
+      'DOMAIN_INVALID_PUNYCODE',
+      invalidPunycodeIndex >= 0 ? invalidPunycodeIndex : undefined,
+    )
+  }
   const unicodeLabels = unicodeResult.domain.split('.')
   if (unicodeLabels.length !== asciiLabels.length) return failure('DOMAIN_INVALID_PUNYCODE')
   const idna2008Statuses = unicodeLabels.map(validateIdna2008Label)
-  if (idna2008Statuses.includes('invalid-character')) return failure('DOMAIN_INVALID_CHARACTER')
-  if (idna2008Statuses.includes('invalid-context')) return failure('DOMAIN_IDNA_INVALID')
+  const invalidCharacterIndex = idna2008Statuses.indexOf('invalid-character')
+  if (invalidCharacterIndex >= 0) return failure('DOMAIN_INVALID_CHARACTER', invalidCharacterIndex)
+  const invalidContextIndex = idna2008Statuses.indexOf('invalid-context')
+  if (invalidContextIndex >= 0) return failure('DOMAIN_IDNA_INVALID', invalidContextIndex)
 
   const roundTrip = toASCII(unicodeResult.domain, { ...TR46_OPTIONS, verifyDNSLength: false })
-  if (roundTrip !== ascii) return failure('DOMAIN_INVALID_PUNYCODE')
+  if (roundTrip !== ascii) {
+    const roundTripLabels = roundTrip?.split('.') ?? []
+    const invalidPunycodeIndex = asciiLabels.findIndex(
+      (label, index) => roundTripLabels[index] !== label,
+    )
+    return failure(
+      'DOMAIN_INVALID_PUNYCODE',
+      invalidPunycodeIndex >= 0 ? invalidPunycodeIndex : undefined,
+    )
+  }
 
-  if (asciiLabels.some((label) => label.length > 63)) return failure('DOMAIN_LABEL_TOO_LONG')
+  const longLabelIndex = asciiLabels.findIndex((label) => label.length > 63)
+  if (longLabelIndex >= 0) return failure('DOMAIN_LABEL_TOO_LONG', longLabelIndex)
   if (ascii.length > 253) return failure('DOMAIN_NAME_TOO_LONG')
   if (
     NUMERIC_LABEL_PATTERN.test(asciiLabels.at(-1) ?? '') ||
     UNICODE_NUMERIC_LABEL_PATTERN.test(unicodeLabels.at(-1) ?? '')
   )
-    return failure('DOMAIN_NUMERIC_TLD')
+    return failure('DOMAIN_NUMERIC_TLD', asciiLabels.length - 1)
 
   return {
     ok: true,

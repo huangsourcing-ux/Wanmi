@@ -383,7 +383,7 @@ D1-08 验证记录（2026-08-05）：已建立严格 Zod 判别联合保护的 `
 - [x] 实现 A、AAAA、CNAME、MX、TXT、NS、SOA、CAA 只读查询；
 - [x] 实现 TLS/SSL/CAA 检查，固定 443 端口并阻断私有、保留和本地地址；
 - [x] 实现 TLD 注册价、续费价、1 年/3 年成本和快照追溯；
-- [ ] 实现 IDN 双向转换、非法输入和同形异义风险提示；
+- [x] 实现 IDN 双向转换、非法输入和同形异义风险提示；
 - [ ] 实现浏览器本地历史与收藏：最多 30 条、90 天、可单项删除和全部清空；
 - [ ] 建立工具间跳转、复制和分享入口，不默认分享完整查询结果；
 - [ ] 建立工具请求量、成功率、P50/P95、provider 错误和限频监控；
@@ -402,6 +402,8 @@ D2-05 验证记录（2026-08-05）：新增严格共享 Zod、`POST /api/v1/tool
 D2-06 验证记录（2026-08-05）：新增严格共享 Zod、`POST /api/v1/tools/ssl-check`、可注入 Node TLS provider、服务编排和公开结果页；请求只接受完整域名，固定端口为代码常量 443，不接受 IP、URL、端口、地址、解析器或其他控制字段。服务复用 D2-05 AliDNS provider、主备节点、TTL/LRU 缓存与 `isPublicDnsAddress`，只查询 A、AAAA、CAA；任何地址属于 loopback、私网、link-local、CGNAT、云元数据、保留/文档、组播或 IPv4-mapped 范围时整体失败关闭且不披露地址。最多接受 8 个已验证地址并按 IPv6/IPv4 稳定交错尝试 4 个，TCP `host` 直接使用已验证 IP、`autoSelectFamily: false`、端口固定 443，连接后再次核对远端 IP/端口；域名只用于 SNI 和 Node 原生主机名校验，不触发第二次 DNS 解析。原始 TCP 入站握手数据由 Duplex 包装硬限制 256 KiB，总连接/握手 5 秒；读取证书后立即禁用 renegotiation 并销毁连接，不发送应用数据、不执行 HTTP、重定向或 OCSP。证书诊断覆盖有效期、剩余天数、域名匹配、主题、签发者、系统信任/自签名/无效链，证书链最多 10 层、SAN 最多 128 项。CAA 按 RFC 8659 从当前域逐层查找首个 RRset、最多 16 层，当前层超时、SERVFAIL、畸形或受限即停止；`issue`、`issuewild`、`iodef`、空 `issue` 和 critical flag 提供中文解释，`iodef` 不访问，也不按签发者品牌推断现有证书合规。结果聚合为既有六状态并展示 TLS/CAA 各自与聚合的来源、时间、缓存和请求 ID；成功/证书诊断缓存最长 60 秒、无地址最长 30 秒、LRU 2,048 项，安全阻断/运行失败不缓存或返回 stale；TLS 默认 10 次/秒、突发 20、并发 4、队列 32/等待 2 秒，同域名 in-flight 合并。参数页保持干净 canonical/OG 与 `noindex, nofollow`，请求不带 Cookie、只发送 origin referrer，分析只含 TLD、状态、耗时桶和 `tls` 来源。最终 `make check` 通过生成物/schema 漂移、空库及遗留 migration、Nginx、lint、TypeScript strict、365 个单元测试、26 个 PostgreSQL/MinIO 集成测试、安全门禁、Next.js 生产构建和 linux/amd64 同镜像；依赖审计维持既有 2 low、2 moderate，无 high/critical，Gitleaks 无泄漏。`make test-e2e` 的 19 个 Playwright 场景通过，覆盖 390px 证书/链/CAA、来源/时间/缓存、noindex/canonical/OG、Cookie/referrer 与分析隐私。全部自动化 DNS 使用注入 fixture，TLS 测试只使用运行时生成证书和本机临时 TLS/raw server，未访问真实公网；未新增 Payload schema、migration、查询数据库或长期存储，未部署、签发证书、处理私钥或执行真实 provider 写操作。
 
 D2-07 验证记录（2026-08-06）：在 D2-02 `WestDigitalReadProvider.queryPrice({ years: 1 })` 之上新增默认 10 TLD 普通域名价格目录，配置项每次只调用一次既有适配器；`com/cn/net/org/top` 使用每项 500 分固定加价，`xyz/vip/cc/com.cn` 使用 1000 basis points，`tv` 故意不配置规则并在 provider 前失败关闭。全部金额、规则和中间结果使用非负安全整数分及 BigInt 比例计算、半入到分；`1 年=注册终价`、`3 年=注册终价+2×续费终价`，溢出或快照写入失败不公开终价。新增系统内部不可变 `priceSnapshots` Collection、命名 migration 和生成类型，保存 schema/计算版本、随机引用、稳定唯一 calculation hash、代表域名、普通价格类别、provider 请求与产品标识、上游注册/续费成本、完整规则与舍入快照、四项终价、取价/缓存时间和创建 trace ID；浏览器仅得到终价与不透明 `snapshotRef`，不暴露成本、加价或毛利。缓存命中复用相同快照；最新 provider 失败时仅按同 TLD、规则版本、schema/计算版本回退最近成功快照并标为 stale，未配置规则不查询、不显示金额且明确禁止购买。新增严格 4 KiB JSON、共享 Zod 的 `POST /api/v1/tools/pricing`，覆盖 `ready/empty/partial/degraded/error/rate_limited` 及五种逐项状态；`/pricing` 展示注册/续费、1/3 年成本、最低年限、来源、取价时间、缓存和快照引用，明确 fixture 非实时、普通域名范围、溢价排除及交易未开放。请求固定 `no-store`、`credentials: omit`、origin-only referrer，分析只发送工具、聚合状态、来源和耗时桶。`make check` 最终通过生成/schema 漂移、空库/升级及 D2-07 down/up 往返、Nginx、lint、TypeScript strict、378 个单元测试、28 个 PostgreSQL/MinIO 集成测试、安全门禁、Next.js 生产构建和 linux/amd64 同镜像；首次全量单元运行发现并补齐新增 Collection 的后台分组预期，随后完整门禁通过。`make test-e2e` 新增价格场景定向通过；两次四 worker 全量运行分别因既有 Admin 固定 5 秒首编译断言及第一方 endpoint 单次 `ECONNRESET` 得到 18/20、19/20，PostgreSQL 始终 healthy、无重启/OOM，最终 `CI=1 make test-e2e` 全量 20/20 通过。依赖审计仍为既有 2 low、2 moderate，无 high/critical，Gitleaks 无泄漏。全部价格测试仅使用 fixture，未调用真实西部数码、未新增 `quotes`、报价锁定、登录、购买、订单或订单状态机；D5 的 5 分钟客户报价快照仍保持未完成。
+
+D2-08 验证记录（2026-08-06）：在 D2-01 的同一 `normalizeDomain`、TR46/IDNA2008 数据和 UTS-39 检测上补充一基 `labelPosition` 及标签级中文原因，覆盖空标签、非法字符、首尾/三四位连字符、坏 Punycode、上下文字符、63 字节标签、253 字节域名和纯数字 TLD；混合书写系统风险按标签列出实际脚本中文名与 Unicode 英文名，并固定提示“转换成功不代表可注册或商标安全”，`display` 继续固定等于 ASCII/Punycode。新增严格共享 Zod 与 4 KiB `POST /api/v1/tools/idn` 公共六状态契约，纯转换只产生 `ready/error`，语义错误使用 HTTP 200 Result error，Content-Type、JSON、字段和体积错误使用稳定 Problem Details，响应固定 `no-store` 与安全请求 ID。`/tools/idn` 使用单输入 Client Component 自动识别并在浏览器本地双向转换，不调用该 API、不改写普通转换 URL；Punycode 是主结果、默认复制值及域名查询/WHOIS/DNS/SSL 跨工具参数，Unicode 只作显式预览。干净工具页可收录，直接 `?q=` 参数页本地转换且保持 `noindex, nofollow`、干净 canonical/OG；分析只发送 `idn/local`、结果类别和耗时桶等聚合字段，不发送 TLD、输入、Unicode 或 Punycode。22 项 IDN 纯函数/schema/route/组件测试与 1 项 390px Playwright 场景覆盖双向回转、错误定位、六状态可解析、严格请求、复制反馈、混合脚本、免责声明、ASCII 链接、参数页 SEO 及零 IDN API/输入泄漏。最终 `make check` 通过生成/schema 漂移、空库/升级 migration、Nginx、lint、TypeScript strict、389 个单元测试、28 个 PostgreSQL/MinIO 集成测试、安全门禁、Next.js 生产构建和 linux/amd64 同镜像；依赖审计仍为既有 2 low、2 moderate，无 high/critical，Gitleaks 无泄漏。`make test-e2e` 定向 IDN 与既有 DNT/GPC 场景均通过；前两次四 worker 全量分别出现既有事件 endpoint 单次 `ECONNRESET` 和价格页冷编译超过固定 5 秒等待，失败快照已显示完整价格页且未修改断言，隐私收口前后两次同一完整命令均全量 21/21 通过。全部转换为纯函数，未访问外网、provider 或数据库，未新增 Payload schema、migration、生成类型、域名查询、WHOIS、DNS、价格、购买或商标判断。
 
 ### 6.3 退出条件
 
@@ -653,7 +655,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 - [x] WHOIS 与可售状态独立；
 - [x] DNS 常见记录、NXDOMAIN、SERVFAIL、超时和无记录；
 - [x] TLS 有效、过期、不匹配、自签名、内网地址和 DNS rebinding；
-- [ ] IDN 中文、混合字符、非法长度和非法标签；
+- [x] IDN 中文、混合字符、非法长度和非法标签；
 - [ ] 西部数码限频、429、队列满和缓存降级；
 - [ ] 查询结果 noindex、canonical、sitemap 和结构化数据；
 - [ ] SEO 字段生成、草稿隔离、301 生效、重定向循环和开放跳转；
