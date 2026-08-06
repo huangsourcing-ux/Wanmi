@@ -2,9 +2,11 @@ import Link from 'next/link'
 import { AlertTriangleIcon, Clock3Icon, DatabaseIcon, ShieldCheckIcon } from 'lucide-react'
 
 import { PageIntro } from '@/components/site/page-intro'
+import { ContentLanding } from '@/components/site/content-landing'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { createStaticPageMetadata } from '@/lib/seo'
+import { getPublicSiteData } from '@/lib/public-site-data'
 
 export const metadata = createStaticPageMetadata('/help')
 
@@ -35,13 +37,18 @@ const helpItems = [
   },
 ] as const
 
-export default function HelpPage() {
+export default async function HelpPage() {
+  const data = await getPublicSiteData()
   return (
     <>
       <PageIntro
         badge="帮助中心"
         description="Wanmi 会尽量把数据来源、查询时间、缓存状态和失败原因放在结果旁边，而不是用模糊结论替代不确定性。"
         title="数据来源与使用说明"
+      />
+      <ContentLanding
+        emptyDescription="帮助文章会在人工审核并发布后显示；下线或归档内容不会公开。"
+        section={data.helpPages}
       />
       <section className="mx-auto grid max-w-7xl gap-5 px-4 pb-12 sm:grid-cols-2 sm:px-6 lg:px-8">
         {helpItems.map((item) => {

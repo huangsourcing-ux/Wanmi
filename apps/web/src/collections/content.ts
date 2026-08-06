@@ -1,14 +1,47 @@
-import type { CollectionConfig, Field } from 'payload'
+import {
+  BlockquoteFeature,
+  BoldFeature,
+  FixedToolbarFeature,
+  HeadingFeature,
+  InlineCodeFeature,
+  InlineToolbarFeature,
+  ItalicFeature,
+  LinkFeature,
+  OrderedListFeature,
+  ParagraphFeature,
+  UnderlineFeature,
+  UnorderedListFeature,
+  UploadFeature,
+  lexicalEditor,
+} from '@payloadcms/richtext-lexical'
+import type {
+  Access,
+  CollectionBeforeChangeHook,
+  CollectionConfig,
+  Field,
+  FieldAccess,
+} from 'payload'
 
 import {
   contentAdminHidden,
   contentManagers,
+  hasRole,
   publishedOrContentManager,
   publicRead,
   systemAdminHidden,
   systemAdminOnly,
 } from '@/access/roles'
 import { ADMIN_GROUPS } from '@/lib/admin-navigation'
+import { AppError } from '@/lib/errors'
+import { sanitizeRichText } from '@/services/content/rich-text'
+import {
+  CONTENT_WORKFLOW_CONTEXT,
+  CONTENT_WORKFLOW_STATUSES,
+  PUBLIC_TAXONOMY_CONTEXT,
+  type ContentCollection,
+  type ContentWorkflowStatus,
+  isContentWorkflowStatus,
+} from '@/services/content/types'
 
 const slugFields: Field[] = [
   { name: 'title', type: 'text', required: true },
@@ -16,7 +49,85 @@ const slugFields: Field[] = [
   { name: 'summary', type: 'textarea' },
 ]
 
-const versionedContent = (slug: 'articles' | 'tldPages' | 'topics'): CollectionConfig => ({
+const contentEditor = lexicalEditor({
+  features: () => [
+    ParagraphFeature(),
+    HeadingFeature({ enabledHeadingSizes: ['h2', 'h3', 'h4'] }),
+    BoldFeature(),
+    ItalicFeature(),
+    UnderlineFeature(),
+    InlineCodeFeature(),
+    OrderedListFeature(),
+    UnorderedListFeature(),
+    BlockquoteFeature(),
+    LinkFeature({ disableAutoLinks: true, enabledCollections: [] }),
+    UploadFeature({ enabledCollections: ['media'], maxDepth: 1 }),
+    FixedToolbarFeature(),
+    InlineToolbarFeature(),
+  ],
+})
+
+const workflowFieldAccess: FieldAccess = ({ req }) =>
+  Boolean(req.context?.[CONTENT_WORKFLOW_CONTEXT]) &&
+  hasRole(req.user, ['content_editor', 'system_admin'])
+
+const taxonomyRead: Access = ({ req }) => {
+  if (hasRole(req.user, ['content_editor', 'system_admin'])) return true
+  const ids = req.context?.[PUBLIC_TAXONOMY_CONTEXT]
+  if (!Array.isArray(ids) || !ids.length) return false
+  return {
+    id: { in: ids.filter((id): id is number | string => ['number', 'string'].includes(typeof id)) },
+  }
+}
+
+function currentWorkflowStatus(originalDoc: unknown): ContentWorkflowStatus {
+  if (
+    typeof originalDoc === 'object' &&
+    originalDoc !== null &&
+    isContentWorkflowStatus((originalDoc as Record<string, unknown>).workflowStatus)
+  ) {
+    return (originalDoc as Record<string, unknown>).workflowStatus as ContentWorkflowStatus
+  }
+  return 'draft'
+}
+
+const guardAndSanitizeContent: CollectionBeforeChangeHook = ({
+  data,
+  operation,
+  originalDoc,
+  req,
+}) => {
+  const workflowOperation = Boolean(req.context?.[CONTENT_WORKFLOW_CONTEXT])
+  const actorIsContentManager = hasRole(req.user, ['content_editor', 'system_admin'])
+  const originalStatus = currentWorkflowStatus(originalDoc)
+
+  if (operation === 'update' && originalStatus === 'archived' && !workflowOperation) {
+    throw new AppError('CONTENT_ARCHIVED_READ_ONLY', '已归档内容不可修改', 409)
+  }
+
+  if (data.content !== undefined) data.content = sanitizeRichText(data.content)
+  if (typeof data.source === 'string') data.source = data.source.trim()
+
+  if (actorIsContentManager && !workflowOperation) {
+    data.workflowStatus = operation === 'create' ? 'draft' : originalStatus
+    data.scheduledPublishAt =
+      operation === 'create'
+        ? null
+        : (originalDoc as Record<string, unknown> | undefined)?.scheduledPublishAt
+    data.publishedAt =
+      operation === 'create'
+        ? null
+        : (originalDoc as Record<string, unknown> | undefined)?.publishedAt
+    data._status = 'draft'
+  } else if (!req.user && operation === 'create' && data.workflowStatus === undefined) {
+    data.workflowStatus = data._status === 'published' ? 'published' : 'draft'
+  }
+
+  if (actorIsContentManager) data.revisionBy = String(req.user?.id)
+  return data
+}
+
+const versionedContent = (slug: ContentCollection): CollectionConfig => ({
   slug,
   access: {
     create: contentManagers,
@@ -25,15 +136,70 @@ const versionedContent = (slug: 'articles' | 'tldPages' | 'topics'): CollectionC
     readVersions: contentManagers,
     update: contentManagers,
   },
-  admin: { group: ADMIN_GROUPS.content, hidden: contentAdminHidden, useAsTitle: 'title' },
+  admin: {
+    components: {
+      edit: {
+        beforeDocumentControls: [
+          '@/components/admin/content-workflow-controls#ContentWorkflowControls',
+        ],
+        PreviewButton: '@/components/admin/content-native-action-disabled#DisabledNativeAction',
+        PublishButton: '@/components/admin/content-native-action-disabled#DisabledNativeAction',
+        UnpublishButton: '@/components/admin/content-native-action-disabled#DisabledNativeAction',
+      },
+    },
+    defaultColumns: ['title', 'workflowStatus', 'publishedAt', 'updatedAt'],
+    group: ADMIN_GROUPS.content,
+    hidden: contentAdminHidden,
+    useAsTitle: 'title',
+  },
   fields: [
     ...slugFields,
-    { name: 'content', type: 'richText', required: true },
-    { name: 'publishedAt', type: 'date', index: true },
+    { name: 'content', type: 'richText', editor: contentEditor, required: true },
     { name: 'source', type: 'text' },
+    {
+      name: 'workflowStatus',
+      type: 'select',
+      access: { create: workflowFieldAccess, update: workflowFieldAccess },
+      admin: { readOnly: true },
+      defaultValue: 'draft',
+      index: true,
+      options: [...CONTENT_WORKFLOW_STATUSES],
+      required: true,
+    },
+    {
+      name: 'scheduledPublishAt',
+      type: 'date',
+      access: { create: workflowFieldAccess, update: workflowFieldAccess },
+      admin: { readOnly: true },
+      index: true,
+    },
+    {
+      name: 'publishedAt',
+      type: 'date',
+      access: { create: workflowFieldAccess, update: workflowFieldAccess },
+      admin: { readOnly: true },
+      index: true,
+    },
+    {
+      name: 'revisionBy',
+      type: 'text',
+      access: {
+        create: workflowFieldAccess,
+        read: ({ req }) => hasRole(req.user, ['content_editor', 'system_admin']),
+        update: workflowFieldAccess,
+      },
+      admin: { readOnly: true },
+    },
+    ...(slug === 'articles'
+      ? ([
+          { name: 'categories', type: 'relationship', hasMany: true, relationTo: 'categories' },
+          { name: 'tags', type: 'relationship', hasMany: true, relationTo: 'tags' },
+        ] satisfies Field[])
+      : []),
   ],
+  hooks: { beforeChange: [guardAndSanitizeContent] },
   versions: {
-    drafts: { autosave: true, schedulePublish: true },
+    drafts: { autosave: true, schedulePublish: false },
     maxPerDoc: 50,
   },
 })
@@ -41,6 +207,31 @@ const versionedContent = (slug: 'articles' | 'tldPages' | 'topics'): CollectionC
 export const Articles = versionedContent('articles')
 export const Topics = versionedContent('topics')
 export const TldPages = versionedContent('tldPages')
+export const HelpPages = versionedContent('helpPages')
+
+const taxonomyCollection = (slug: 'categories' | 'tags'): CollectionConfig => ({
+  slug,
+  access: {
+    create: contentManagers,
+    delete: systemAdminOnly,
+    read: taxonomyRead,
+    update: contentManagers,
+  },
+  admin: {
+    defaultColumns: ['title', 'slug', 'updatedAt'],
+    group: ADMIN_GROUPS.content,
+    hidden: contentAdminHidden,
+    useAsTitle: 'title',
+  },
+  fields: [
+    { name: 'title', type: 'text', required: true },
+    { name: 'slug', type: 'text', index: true, required: true, unique: true },
+    { name: 'description', type: 'textarea' },
+  ],
+})
+
+export const Categories = taxonomyCollection('categories')
+export const Tags = taxonomyCollection('tags')
 
 export const Media: CollectionConfig = {
   slug: 'media',

@@ -77,6 +77,9 @@ export interface Config {
     articles: Article;
     topics: Topic;
     tldPages: TldPage;
+    helpPages: HelpPage;
+    categories: Category;
+    tags: Tag;
     media: Media;
     navigation: Navigation;
     siteSettings: SiteSetting;
@@ -124,6 +127,9 @@ export interface Config {
     articles: ArticlesSelect<false> | ArticlesSelect<true>;
     topics: TopicsSelect<false> | TopicsSelect<true>;
     tldPages: TldPagesSelect<false> | TldPagesSelect<true>;
+    helpPages: HelpPagesSelect<false> | HelpPagesSelect<true>;
+    categories: CategoriesSelect<false> | CategoriesSelect<true>;
+    tags: TagsSelect<false> | TagsSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
     navigation: NavigationSelect<false> | NavigationSelect<true>;
     siteSettings: SiteSettingsSelect<false> | SiteSettingsSelect<true>;
@@ -172,15 +178,10 @@ export interface Config {
   };
   user: Admin | Customer;
   jobs: {
-    tasks: {
-      schedulePublish: TaskSchedulePublish;
-      inline: {
-        input: unknown;
-        output: unknown;
-      };
-    };
+    tasks: unknown;
     workflows: {
       publishingProbe: WorkflowPublishingProbe;
+      contentScheduledPublish: WorkflowContentScheduledPublish;
       backgroundProbe: WorkflowBackgroundProbe;
       commerceFulfillment: WorkflowCommerceFulfillment;
     };
@@ -354,12 +355,41 @@ export interface Article {
     };
     [k: string]: unknown;
   };
-  publishedAt?: string | null;
   source?: string | null;
+  workflowStatus: 'draft' | 'in_review' | 'published' | 'unpublished' | 'archived';
+  scheduledPublishAt?: string | null;
+  publishedAt?: string | null;
+  revisionBy?: string | null;
+  categories?: (number | Category)[] | null;
+  tags?: (number | Tag)[] | null;
   meta?: WanmiSeoMeta;
   updatedAt: string;
   createdAt: string;
   _status?: ('draft' | 'published') | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "categories".
+ */
+export interface Category {
+  id: number;
+  title: string;
+  slug: string;
+  description?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "tags".
+ */
+export interface Tag {
+  id: number;
+  title: string;
+  slug: string;
+  description?: string | null;
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -427,8 +457,11 @@ export interface Topic {
     };
     [k: string]: unknown;
   };
-  publishedAt?: string | null;
   source?: string | null;
+  workflowStatus: 'draft' | 'in_review' | 'published' | 'unpublished' | 'archived';
+  scheduledPublishAt?: string | null;
+  publishedAt?: string | null;
+  revisionBy?: string | null;
   meta?: WanmiSeoMeta;
   updatedAt: string;
   createdAt: string;
@@ -458,9 +491,45 @@ export interface TldPage {
     };
     [k: string]: unknown;
   };
-  publishedAt?: string | null;
   source?: string | null;
+  workflowStatus: 'draft' | 'in_review' | 'published' | 'unpublished' | 'archived';
+  scheduledPublishAt?: string | null;
+  publishedAt?: string | null;
+  revisionBy?: string | null;
   meta?: WanmiSeoMeta;
+  updatedAt: string;
+  createdAt: string;
+  _status?: ('draft' | 'published') | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "helpPages".
+ */
+export interface HelpPage {
+  id: number;
+  title: string;
+  slug: string;
+  summary?: string | null;
+  content: {
+    root: {
+      type: string;
+      children: {
+        type: any;
+        version: number;
+        [k: string]: unknown;
+      }[];
+      direction: ('ltr' | 'rtl') | null;
+      format: 'left' | 'start' | 'center' | 'right' | 'end' | 'justify' | '';
+      indent: number;
+      version: number;
+    };
+    [k: string]: unknown;
+  };
+  source?: string | null;
+  workflowStatus: 'draft' | 'in_review' | 'published' | 'unpublished' | 'archived';
+  scheduledPublishAt?: string | null;
+  publishedAt?: string | null;
+  revisionBy?: string | null;
   updatedAt: string;
   createdAt: string;
   _status?: ('draft' | 'published') | null;
@@ -1286,7 +1355,7 @@ export interface PayloadJob {
     | {
         executedAt: string;
         completedAt: string;
-        taskSlug: 'inline' | 'schedulePublish';
+        taskSlug: 'inline';
         taskID: string;
         input?:
           | {
@@ -1317,14 +1386,14 @@ export interface PayloadJob {
           | boolean
           | null;
         parent?: {
-          taskSlug?: ('inline' | 'schedulePublish') | null;
+          taskSlug?: 'inline' | null;
           taskID?: string | null;
         };
         id?: string | null;
       }[]
     | null;
-  workflowSlug?: ('publishingProbe' | 'backgroundProbe' | 'commerceFulfillment') | null;
-  taskSlug?: ('inline' | 'schedulePublish') | null;
+  workflowSlug?: ('publishingProbe' | 'contentScheduledPublish' | 'backgroundProbe' | 'commerceFulfillment') | null;
+  taskSlug?: 'inline' | null;
   queue?: string | null;
   waitUntil?: string | null;
   processing?: boolean | null;
@@ -1377,6 +1446,18 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'tldPages';
         value: number | TldPage;
+      } | null)
+    | ({
+        relationTo: 'helpPages';
+        value: number | HelpPage;
+      } | null)
+    | ({
+        relationTo: 'categories';
+        value: number | Category;
+      } | null)
+    | ({
+        relationTo: 'tags';
+        value: number | Tag;
       } | null)
     | ({
         relationTo: 'media';
@@ -1652,8 +1733,13 @@ export interface ArticlesSelect<T extends boolean = true> {
   slug?: T;
   summary?: T;
   content?: T;
-  publishedAt?: T;
   source?: T;
+  workflowStatus?: T;
+  scheduledPublishAt?: T;
+  publishedAt?: T;
+  revisionBy?: T;
+  categories?: T;
+  tags?: T;
   meta?: T | WanmiSeoMetaSelect<T>;
   updatedAt?: T;
   createdAt?: T;
@@ -1679,8 +1765,11 @@ export interface TopicsSelect<T extends boolean = true> {
   slug?: T;
   summary?: T;
   content?: T;
-  publishedAt?: T;
   source?: T;
+  workflowStatus?: T;
+  scheduledPublishAt?: T;
+  publishedAt?: T;
+  revisionBy?: T;
   meta?: T | WanmiSeoMetaSelect<T>;
   updatedAt?: T;
   createdAt?: T;
@@ -1695,12 +1784,55 @@ export interface TldPagesSelect<T extends boolean = true> {
   slug?: T;
   summary?: T;
   content?: T;
-  publishedAt?: T;
   source?: T;
+  workflowStatus?: T;
+  scheduledPublishAt?: T;
+  publishedAt?: T;
+  revisionBy?: T;
   meta?: T | WanmiSeoMetaSelect<T>;
   updatedAt?: T;
   createdAt?: T;
   _status?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "helpPages_select".
+ */
+export interface HelpPagesSelect<T extends boolean = true> {
+  title?: T;
+  slug?: T;
+  summary?: T;
+  content?: T;
+  source?: T;
+  workflowStatus?: T;
+  scheduledPublishAt?: T;
+  publishedAt?: T;
+  revisionBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  _status?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "categories_select".
+ */
+export interface CategoriesSelect<T extends boolean = true> {
+  title?: T;
+  slug?: T;
+  description?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "tags_select".
+ */
+export interface TagsSelect<T extends boolean = true> {
+  title?: T;
+  slug?: T;
+  description?: T;
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -2380,37 +2512,23 @@ export interface CollectionsWidget {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "TaskSchedulePublish".
- */
-export interface TaskSchedulePublish {
-  input: {
-    type?: ('publish' | 'unpublish') | null;
-    locale?: string | null;
-    doc?:
-      | ({
-          relationTo: 'articles';
-          value: number | Article;
-        } | null)
-      | ({
-          relationTo: 'topics';
-          value: number | Topic;
-        } | null)
-      | ({
-          relationTo: 'tldPages';
-          value: number | TldPage;
-        } | null);
-    global?: string | null;
-    user?: (number | null) | Admin;
-  };
-  output?: unknown;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "WorkflowPublishingProbe".
  */
 export interface WorkflowPublishingProbe {
   input: {
     traceId: string;
+  };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WorkflowContentScheduledPublish".
+ */
+export interface WorkflowContentScheduledPublish {
+  input: {
+    collection: 'articles' | 'topics' | 'tldPages' | 'helpPages';
+    documentId: string;
+    publishAt: string;
+    scheduledBy: string;
   };
 }
 /**

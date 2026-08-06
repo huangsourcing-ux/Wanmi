@@ -9,6 +9,7 @@ import type { PublicContentSection } from '@/lib/public-site-data'
 
 const fallbackCopy: Record<PublicContentSection['href'], string> = {
   '/articles': '内容将围绕域名选择、注册规则、DNS、WHOIS、SSL 与建站逐步发布。',
+  '/help': '帮助文章会说明数据来源、查询限制和使用边界。',
   '/pricing': '已通过上游能力和价格验证的后缀才会展示价格与购买入口。',
   '/topics': '专题将把工具、TLD 页面和实用指南串联成可执行的工作流。',
 }

@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge'
+import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ResultState } from '@/components/results/result-state'
 import type { PublicContentSection } from '@/lib/public-site-data'
@@ -30,7 +31,11 @@ export function ContentLanding({
             <ul className="divide-y">
               {section.items.map((item) => (
                 <li className="py-5 first:pt-0 last:pb-0" key={item.id}>
-                  <h2 className="text-base font-medium">{item.title}</h2>
+                  <h2 className="text-base font-medium">
+                    <Link className="underline-offset-4 hover:underline" href={item.href}>
+                      {item.title}
+                    </Link>
+                  </h2>
                   {item.summary ? (
                     <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
                       {item.summary}

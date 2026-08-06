@@ -48,6 +48,7 @@ const personas: Record<Persona, unknown> = {
 const publicReads = [
   'adPlacements',
   'articles',
+  'helpPages',
   'media',
   'navigation',
   'siteSettings',
@@ -66,7 +67,16 @@ const customerReads = [
   'realnameTemplates',
   'renewals',
 ]
-const contentWrites = ['articles', 'media', 'navigation', 'tldPages', 'topics']
+const contentWrites = [
+  'articles',
+  'categories',
+  'helpPages',
+  'media',
+  'navigation',
+  'tags',
+  'tldPages',
+  'topics',
+]
 const advertisingWrites = ['adCreatives', 'adPlacements', 'adSchedules', 'advertisers']
 const operationalReads = [
   ...publicReads,
@@ -78,7 +88,16 @@ const operationalReads = [
   'userFeedback',
 ]
 const analyticalReads = [...operationalReads, 'toolObservabilityBuckets']
-const contentAdminCollections = ['articles', 'media', 'navigation', 'tldPages', 'topics']
+const contentAdminCollections = [
+  'articles',
+  'categories',
+  'helpPages',
+  'media',
+  'navigation',
+  'tags',
+  'tldPages',
+  'topics',
+]
 const advertisingAdminCollections = [
   'adCreatives',
   'adPlacements',
@@ -102,8 +121,8 @@ const expected: Record<Persona, Record<Operation, string[]>> = {
   content_editor: {
     create: contentWrites,
     delete: [],
-    read: [...publicReads, 'admins'],
-    readVersions: ['articles', 'tldPages', 'topics'],
+    read: [...publicReads, 'admins', 'categories', 'tags'],
+    readVersions: ['articles', 'helpPages', 'tldPages', 'topics'],
     update: [...contentWrites, 'admins'],
   },
   ad_operator: {
@@ -126,7 +145,7 @@ const expected: Record<Persona, Record<Operation, string[]>> = {
     read: collections
       .map(({ slug }) => slug)
       .filter((slug) => !['adminInvitations', 'adminMfaCredentials'].includes(slug)),
-    readVersions: ['articles', 'tldPages', 'topics'],
+    readVersions: ['articles', 'helpPages', 'tldPages', 'topics'],
     update: [...advertisingWrites, ...contentWrites, 'admins', 'siteSettings', 'userFeedback'],
   },
   disabled_admin: { create: [], delete: [], read: publicReads, readVersions: [], update: [] },
@@ -259,12 +278,14 @@ describe('D1 administrator navigation groups', () => {
     admins: ADMIN_GROUPS.identity,
     advertisers: ADMIN_GROUPS.advertising,
     articles: ADMIN_GROUPS.content,
+    categories: ADMIN_GROUPS.content,
     auditLogs: ADMIN_GROUPS.operations,
     customerSecurityEvents: ADMIN_GROUPS.operations,
     customerSessions: ADMIN_GROUPS.identity,
     customers: ADMIN_GROUPS.identity,
     domainAssets: ADMIN_GROUPS.fulfillment,
     firstPartyEvents: ADMIN_GROUPS.operations,
+    helpPages: ADMIN_GROUPS.content,
     manualReviews: ADMIN_GROUPS.operations,
     media: ADMIN_GROUPS.content,
     nameserverChanges: ADMIN_GROUPS.fulfillment,
@@ -283,6 +304,7 @@ describe('D1 administrator navigation groups', () => {
     renewals: ADMIN_GROUPS.fulfillment,
     siteSettings: ADMIN_GROUPS.content,
     smsChallenges: ADMIN_GROUPS.identity,
+    tags: ADMIN_GROUPS.content,
     tldPages: ADMIN_GROUPS.content,
     topics: ADMIN_GROUPS.content,
     toolObservabilityBuckets: ADMIN_GROUPS.operations,

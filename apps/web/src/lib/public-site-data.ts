@@ -7,6 +7,7 @@ import { logger } from '@/lib/logging'
 import { DEFAULT_NAVIGATION, type SiteNavigationItem } from '@/lib/site-config'
 
 export type PublicContentItem = {
+  href: string
   id: string
   slug: string
   summary?: string
@@ -16,7 +17,7 @@ export type PublicContentItem = {
 export type PublicSectionStatus = 'empty' | 'ready' | 'unavailable'
 
 export type PublicContentSection = {
-  href: '/articles' | '/pricing' | '/topics'
+  href: '/articles' | '/help' | '/pricing' | '/topics'
   items: PublicContentItem[]
   status: PublicSectionStatus
   title: string
@@ -24,6 +25,7 @@ export type PublicContentSection = {
 
 export type PublicSiteData = {
   articles: PublicContentSection
+  helpPages: PublicContentSection
   navigation: {
     items: SiteNavigationItem[]
     status: PublicSectionStatus
@@ -68,8 +70,12 @@ export function sanitizeNavigationItems(documents: NavigationDocument[]): SiteNa
     })
 }
 
-function mapContentItems(documents: ContentDocument[]): PublicContentItem[] {
+function mapContentItems(
+  documents: ContentDocument[],
+  pathForSlug: (slug: string) => string,
+): PublicContentItem[] {
   return documents.map((document) => ({
+    href: pathForSlug(document.slug),
     id: String(document.id),
     slug: document.slug,
     summary: document.summary?.trim() || undefined,
@@ -81,15 +87,17 @@ function makeContentSection(
   result: PromiseSettledResult<{ docs: ContentDocument[] }>,
   title: string,
   href: PublicContentSection['href'],
+  pathForSlug: (slug: string) => string,
 ): PublicContentSection {
   if (result.status === 'rejected') return { href, items: [], status: 'unavailable', title }
-  const items = mapContentItems(result.value.docs)
+  const items = mapContentItems(result.value.docs, pathForSlug)
   return { href, items, status: items.length ? 'ready' : 'empty', title }
 }
 
 export function createUnavailablePublicSiteData(): PublicSiteData {
   return {
     articles: { href: '/articles', items: [], status: 'unavailable', title: '最新实用内容' },
+    helpPages: { href: '/help', items: [], status: 'unavailable', title: '帮助文章' },
     navigation: { items: DEFAULT_NAVIGATION, status: 'unavailable' },
     tldPages: { href: '/pricing', items: [], status: 'unavailable', title: 'TLD 页面' },
     topics: { href: '/topics', items: [], status: 'unavailable', title: '专题与指南' },
@@ -127,9 +135,16 @@ export async function readPublicSiteData(payload: PublicSitePayload): Promise<Pu
       overrideAccess: false,
       sort: '-publishedAt',
     }),
+    payload.find({
+      collection: 'helpPages',
+      depth: 0,
+      limit: 6,
+      overrideAccess: false,
+      sort: '-publishedAt',
+    }),
   ] as const)
 
-  const [navigationResult, articlesResult, tldPagesResult, topicsResult] = results
+  const [navigationResult, articlesResult, tldPagesResult, topicsResult, helpPagesResult] = results
   const navigationItems =
     navigationResult.status === 'fulfilled'
       ? sanitizeNavigationItems(navigationResult.value.docs as NavigationDocument[])
@@ -142,13 +157,34 @@ export async function readPublicSiteData(payload: PublicSitePayload): Promise<Pu
         : 'empty'
 
   return {
-    articles: makeContentSection(articlesResult, '最新实用内容', '/articles'),
+    articles: makeContentSection(
+      articlesResult,
+      '最新实用内容',
+      '/articles',
+      (slug) => `/articles/${encodeURIComponent(slug)}`,
+    ),
+    helpPages: makeContentSection(
+      helpPagesResult,
+      '帮助文章',
+      '/help',
+      (slug) => `/help/${encodeURIComponent(slug)}`,
+    ),
     navigation: {
       items: navigationItems.length ? navigationItems : DEFAULT_NAVIGATION,
       status: navigationStatus,
     },
-    tldPages: makeContentSection(tldPagesResult, 'TLD 页面', '/pricing'),
-    topics: makeContentSection(topicsResult, '专题与指南', '/topics'),
+    tldPages: makeContentSection(
+      tldPagesResult,
+      'TLD 页面',
+      '/pricing',
+      (slug) => `/tld/${encodeURIComponent(slug)}`,
+    ),
+    topics: makeContentSection(
+      topicsResult,
+      '专题与指南',
+      '/topics',
+      (slug) => `/topics/${encodeURIComponent(slug)}`,
+    ),
   }
 }
 
@@ -159,6 +195,7 @@ async function loadPublicSiteData(): Promise<PublicSiteData> {
     const unavailableSections = [
       data.navigation.status === 'unavailable' ? 'navigation' : undefined,
       data.articles.status === 'unavailable' ? 'articles' : undefined,
+      data.helpPages.status === 'unavailable' ? 'helpPages' : undefined,
       data.tldPages.status === 'unavailable' ? 'tldPages' : undefined,
       data.topics.status === 'unavailable' ? 'topics' : undefined,
     ].filter(Boolean)

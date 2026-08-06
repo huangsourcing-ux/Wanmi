@@ -35,7 +35,10 @@ test('content editors see content only and cannot open or write advertising coll
 }) => {
   await loginAs(page, 'content_editor')
   await expect(collectionLink(page, 'articles')).toBeVisible()
+  await expect(collectionLink(page, 'categories')).toBeVisible()
+  await expect(collectionLink(page, 'helpPages')).toBeVisible()
   await expect(collectionLink(page, 'media')).toBeVisible()
+  await expect(collectionLink(page, 'tags')).toBeVisible()
   await expect(collectionLink(page, 'forms')).toBeVisible()
   await expect(collectionLink(page, 'redirects')).toBeVisible()
   await expect(collectionLink(page, 'advertisers')).toHaveCount(0)

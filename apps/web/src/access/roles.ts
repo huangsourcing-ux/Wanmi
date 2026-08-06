@@ -74,5 +74,8 @@ export function ownOrSystem(ownerField: string): Access {
 
 export const publishedOrContentManager: Access = ({ req }) => {
   if (hasRole(req.user, ['content_editor', 'system_admin'])) return true
-  return { _status: { equals: 'published' } }
+  const where: Where = {
+    and: [{ _status: { equals: 'published' } }, { workflowStatus: { equals: 'published' } }],
+  }
+  return where
 }

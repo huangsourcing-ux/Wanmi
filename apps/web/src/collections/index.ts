@@ -10,7 +10,17 @@ import {
   Quotes,
   Refunds,
 } from './commerce'
-import { Articles, Media, Navigation, SiteSettings, TldPages, Topics } from './content'
+import {
+  Articles,
+  Categories,
+  HelpPages,
+  Media,
+  Navigation,
+  SiteSettings,
+  Tags,
+  TldPages,
+  Topics,
+} from './content'
 import { DomainAssets, NameserverChanges, ProviderOperations, Renewals } from './fulfillment'
 import {
   AdminInvitations,
@@ -41,6 +51,9 @@ export const collections: CollectionConfig[] = [
   Articles,
   Topics,
   TldPages,
+  HelpPages,
+  Categories,
+  Tags,
   Media,
   Navigation,
   SiteSettings,
