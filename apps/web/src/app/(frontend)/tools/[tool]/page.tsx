@@ -11,6 +11,7 @@ import { SslResults } from '@/components/results/ssl-results'
 import { WhoisResults } from '@/components/results/whois-results'
 import { ConstructionNotice } from '@/components/site/construction-notice'
 import { PageIntro } from '@/components/site/page-intro'
+import { ToolActions } from '@/components/tool-actions/tool-actions'
 import { createPageMetadata } from '@/lib/seo'
 import { normalizeDomain } from '@/lib/domain-name'
 import { TOOL_DEFINITIONS, getToolDefinition, normalizeQueryParam } from '@/lib/site-config'
@@ -50,6 +51,10 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
       ? normalizeQueryParam(queryParams.q, slug === 'idn' ? 1_024 : 253)
       : ''
   const normalizedFavorite = query ? normalizeDomain(query) : undefined
+  const normalizedDomain =
+    normalizedFavorite?.ok && normalizedFavorite.value.ascii.includes('.')
+      ? normalizedFavorite.value
+      : undefined
 
   return (
     <>
@@ -94,16 +99,16 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
           tool="ssl-check"
         />
       ) : null}
-      {slug !== 'idn' && normalizedFavorite?.ok ? (
+      {slug !== 'idn' && normalizedDomain ? (
         <div className="mx-auto mb-6 flex w-[calc(100%-2rem)] max-w-7xl items-center gap-3 rounded-xl border border-dashed px-4 py-3 sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]">
           <p className="min-w-0 flex-1 text-sm text-muted-foreground">
             将当前域名保存到本机收藏，不锁定状态或价格。
           </p>
-          <DomainFavoriteButton
-            domain={normalizedFavorite.value.ascii}
-            label={normalizedFavorite.value.unicode}
-          />
+          <DomainFavoriteButton domain={normalizedDomain.ascii} label={normalizedDomain.unicode} />
         </div>
+      ) : null}
+      {slug !== 'idn' ? (
+        <ToolActions currentTool={tool.slug} domainAscii={normalizedDomain?.ascii} />
       ) : null}
       {slug === 'domain-search' ? (
         query ? (

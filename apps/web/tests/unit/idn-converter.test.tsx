@@ -36,10 +36,10 @@ describe('D2-08 browser-local IDN converter', () => {
     expect(screen.getByText('xn--fsqu00a.xn--fiqs8s')).not.toBeNull()
     expect(screen.getByRole('heading', { name: 'Unicode（转换预览）' })).not.toBeNull()
     expect(screen.getByText('例子.中国')).not.toBeNull()
-    expect(screen.getByRole('link', { name: '查询 WHOIS / RDAP' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'WHOIS / RDAP' }).getAttribute('href')).toBe(
       '/tools/whois?q=xn--fsqu00a.xn--fiqs8s',
     )
-    expect(screen.getByRole('link', { name: '查询 DNS / NS' }).getAttribute('href')).toBe(
+    expect(screen.getByRole('link', { name: 'DNS / NS 查询' }).getAttribute('href')).toBe(
       '/tools/dns?q=xn--fsqu00a.xn--fiqs8s',
     )
     expect(screen.getByText(/本工具不查询注册、WHOIS、DNS 或价格/u)).not.toBeNull()
@@ -53,7 +53,7 @@ describe('D2-08 browser-local IDN converter', () => {
     }
   })
 
-  it('copies both explicit outputs with accessible feedback', async () => {
+  it('copies only Punycode with accessible feedback', async () => {
     analyticsFetch()
     const writeText = vi.fn(async () => undefined)
     Object.defineProperty(navigator, 'clipboard', {
@@ -65,10 +65,8 @@ describe('D2-08 browser-local IDN converter', () => {
     fireEvent.click(screen.getByRole('button', { name: '复制 Punycode' }))
     await screen.findByText('已复制 Punycode')
     expect(writeText).toHaveBeenCalledWith('xn--fsqu00a.xn--fiqs8s')
-
-    fireEvent.click(screen.getByRole('button', { name: '复制 Unicode' }))
-    await screen.findByText('已复制 Unicode')
-    expect(writeText).toHaveBeenCalledWith('例子.中国')
+    expect(screen.queryByRole('button', { name: '复制 Unicode' })).toBeNull()
+    expect(writeText).not.toHaveBeenCalledWith('例子.中国')
   })
 
   it('names mixed writing systems and repeats the registration and trademark boundary', () => {

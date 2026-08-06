@@ -4,10 +4,12 @@ import { AlertTriangleIcon, Clock3Icon, DatabaseIcon, ShieldCheckIcon } from 'lu
 import { useEffect, useState } from 'react'
 
 import { ResultState } from '@/components/results/result-state'
+import { CopyAction } from '@/components/tool-actions/copy-action'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { AppError, getTraceId, readProblemResponse, toProblemDetails } from '@/lib/errors'
 import { bucketDuration, emitFirstPartyEvent, inferToolInput } from '@/lib/analytics'
+import { formatWhoisField } from '@/lib/tool-actions'
 import type { ProblemDetails } from '@/schemas/api'
 import {
   whoisLookupResultSchema,
@@ -63,8 +65,20 @@ function emitOutcome(result: WhoisLookupResult, query: string, durationMs: numbe
   })
 }
 
-function DetailValue({ value }: { value: string | null }) {
-  return <dd className="mt-1 break-words font-medium text-foreground">{value ?? '数据源未提供'}</dd>
+function DetailValue({ label, value }: { label: string; value: string | null }) {
+  return (
+    <dd className="mt-1 space-y-2 break-words font-medium text-foreground">
+      <span className="block">{value ?? '数据源未提供'}</span>
+      {value ? (
+        <CopyAction
+          ariaLabel={`复制 WHOIS 字段：${label}`}
+          label="复制此字段"
+          size="xs"
+          text={formatWhoisField(label, value)}
+        />
+      ) : null}
+    </dd>
+  )
 }
 
 function RegistrationDetails({ data }: { data: WhoisLookupData }) {
@@ -85,32 +99,36 @@ function RegistrationDetails({ data }: { data: WhoisLookupData }) {
         <dl className="grid gap-x-8 gap-y-5 text-sm sm:grid-cols-2">
           <div>
             <dt className="text-muted-foreground">注册商</dt>
-            <DetailValue value={data.registrar} />
+            <DetailValue label="注册商" value={data.registrar} />
           </div>
           <div>
             <dt className="text-muted-foreground">创建时间</dt>
-            <DetailValue value={data.dates.created} />
+            <DetailValue label="创建时间" value={data.dates.created} />
           </div>
           <div>
             <dt className="text-muted-foreground">更新时间</dt>
-            <DetailValue value={data.dates.updated} />
+            <DetailValue label="更新时间" value={data.dates.updated} />
           </div>
           <div>
             <dt className="text-muted-foreground">到期时间</dt>
-            <DetailValue value={data.dates.expires} />
+            <DetailValue label="到期时间" value={data.dates.expires} />
           </div>
           <div>
             <dt className="text-muted-foreground">注册状态</dt>
             <dd className="mt-2 flex flex-wrap gap-2">
               {data.statuses.length > 0 ? (
                 data.statuses.map((status) => (
-                  <Badge
-                    className="max-w-full break-all whitespace-normal"
-                    key={status}
-                    variant="secondary"
-                  >
-                    {status}
-                  </Badge>
+                  <span className="flex flex-wrap items-center gap-1" key={status}>
+                    <Badge className="max-w-full break-all whitespace-normal" variant="secondary">
+                      {status}
+                    </Badge>
+                    <CopyAction
+                      ariaLabel={`复制 WHOIS 状态：${status}`}
+                      label="复制状态"
+                      size="xs"
+                      text={formatWhoisField('注册状态', status)}
+                    />
+                  </span>
                 ))
               ) : (
                 <span className="font-medium text-foreground">数据源未提供</span>
@@ -121,7 +139,17 @@ function RegistrationDetails({ data }: { data: WhoisLookupData }) {
             <dt className="text-muted-foreground">Name Server</dt>
             <dd className="mt-2 space-y-1 font-mono text-xs text-foreground break-all">
               {data.nameServers.length > 0 ? (
-                data.nameServers.map((nameServer) => <div key={nameServer}>{nameServer}</div>)
+                data.nameServers.map((nameServer) => (
+                  <div className="flex flex-wrap items-center gap-2" key={nameServer}>
+                    <span>{nameServer}</span>
+                    <CopyAction
+                      ariaLabel={`复制 Name Server：${nameServer}`}
+                      label="复制 NS"
+                      size="xs"
+                      text={formatWhoisField('Name Server', nameServer, true)}
+                    />
+                  </div>
+                ))
               ) : (
                 <span className="font-sans text-sm font-medium">数据源未提供</span>
               )}

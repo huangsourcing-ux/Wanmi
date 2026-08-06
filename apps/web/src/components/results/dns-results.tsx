@@ -10,10 +10,12 @@ import {
 import { useEffect, useState } from 'react'
 
 import { ResultState } from '@/components/results/result-state'
+import { CopyAction } from '@/components/tool-actions/copy-action'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { bucketDuration, emitFirstPartyEvent, inferToolInput } from '@/lib/analytics'
 import { AppError, getTraceId, readProblemResponse, toProblemDetails } from '@/lib/errors'
+import { formatDnsRecord } from '@/lib/tool-actions'
 import type { ProblemDetails } from '@/schemas/api'
 import {
   dnsLookupResultSchema,
@@ -156,7 +158,7 @@ function RecordSetCard({ recordSet }: { recordSet: DnsRecordSet }) {
           <div className="divide-y rounded-lg border">
             {recordSet.records.map((record, index) => (
               <div
-                className="grid gap-3 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_7rem]"
+                className="grid gap-3 px-4 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_7rem_auto] sm:items-center"
                 key={`${record.ownerName}-${record.ttl}-${index}`}
               >
                 <div className="min-w-0">
@@ -167,6 +169,12 @@ function RecordSetCard({ recordSet }: { recordSet: DnsRecordSet }) {
                   <p className="text-xs text-muted-foreground">TTL</p>
                   <p className="mt-1 font-mono">{record.ttl} 秒</p>
                 </div>
+                <CopyAction
+                  ariaLabel={`复制 ${record.type} 记录 ${index + 1}`}
+                  label="复制记录"
+                  size="xs"
+                  text={formatDnsRecord(record)}
+                />
               </div>
             ))}
           </div>

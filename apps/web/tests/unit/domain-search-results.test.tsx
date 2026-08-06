@@ -98,6 +98,8 @@ describe('D2-03 domain search result presentation', () => {
     }
     expect(screen.getAllByText(/fixture/).length).toBeGreaterThan(6)
     expect(screen.getAllByText(/最新查询|未使用缓存/).length).toBeGreaterThan(5)
+    expect(screen.getAllByRole('button', { name: /复制可售记录/u })).toHaveLength(6)
+    expect(screen.getAllByRole('link', { name: 'WHOIS / RDAP' })).toHaveLength(6)
     expect(screen.queryByRole('link', { name: /购买|注册/ })).toBeNull()
 
     expect(fetch.mock.calls[0]).toEqual([

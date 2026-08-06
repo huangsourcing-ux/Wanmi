@@ -5,10 +5,13 @@ import { useEffect, useState } from 'react'
 
 import { ResultState } from '@/components/results/result-state'
 import { DomainFavoriteButton } from '@/components/local-library/favorite-buttons'
+import { CopyAction } from '@/components/tool-actions/copy-action'
+import { ToolActions } from '@/components/tool-actions/tool-actions'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { AppError, getTraceId, readProblemResponse, toProblemDetails } from '@/lib/errors'
 import { formatCnyFen } from '@/lib/money'
+import { formatAvailabilityRecord } from '@/lib/tool-actions'
 import { bucketDuration, emitFirstPartyEvent, inferToolInput } from '@/lib/analytics'
 import {
   domainSearchResultSchema,
@@ -131,7 +134,15 @@ function DomainResultCard({ item }: { item: DomainSearchItem }) {
             </div>
           ) : null}
         </dl>
-        <DomainFavoriteButton domain={item.domainAscii} label={item.domainUnicode} />
+        <div className="flex flex-wrap gap-2">
+          <CopyAction
+            ariaLabel={`复制可售记录 ${item.domainAscii}`}
+            label="复制此条结果"
+            text={formatAvailabilityRecord(item)}
+          />
+          <DomainFavoriteButton domain={item.domainAscii} label={item.domainUnicode} />
+        </div>
+        <ToolActions currentTool="domain-search" domainAscii={item.domainAscii} variant="compact" />
       </CardContent>
     </Card>
   )
