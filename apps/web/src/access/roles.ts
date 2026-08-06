@@ -60,6 +60,7 @@ export const hiddenUnlessRoles =
 export const contentAdminHidden = hiddenUnlessRoles(['content_editor'])
 export const advertisingAdminHidden = hiddenUnlessRoles(['ad_operator', 'analyst'])
 export const operationsAdminHidden = hiddenUnlessRoles(['ad_operator', 'analyst'])
+export const analystAdminHidden = hiddenUnlessRoles(['analyst'])
 export const auditAdminHidden = hiddenUnlessRoles(['ad_operator'])
 export const systemAdminHidden = hiddenUnlessRoles([])
 

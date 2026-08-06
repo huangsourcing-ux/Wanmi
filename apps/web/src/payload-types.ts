@@ -100,6 +100,7 @@ export interface Config {
     reconciliations: Reconciliation;
     auditLogs: AuditLog;
     firstPartyEvents: FirstPartyEvent;
+    toolObservabilityBuckets: ToolObservabilityBucket;
     userFeedback: UserFeedback;
     customerSecurityEvents: CustomerSecurityEvent;
     priceSnapshots: PriceSnapshot;
@@ -146,6 +147,7 @@ export interface Config {
     reconciliations: ReconciliationsSelect<false> | ReconciliationsSelect<true>;
     auditLogs: AuditLogsSelect<false> | AuditLogsSelect<true>;
     firstPartyEvents: FirstPartyEventsSelect<false> | FirstPartyEventsSelect<true>;
+    toolObservabilityBuckets: ToolObservabilityBucketsSelect<false> | ToolObservabilityBucketsSelect<true>;
     userFeedback: UserFeedbackSelect<false> | UserFeedbackSelect<true>;
     customerSecurityEvents: CustomerSecurityEventsSelect<false> | CustomerSecurityEventsSelect<true>;
     priceSnapshots: PriceSnapshotsSelect<false> | PriceSnapshotsSelect<true>;
@@ -896,6 +898,43 @@ export interface FirstPartyEvent {
   dataSource?: ('local' | 'cache' | 'westdigital' | 'whodat' | 'dns' | 'tls' | 'unknown') | null;
   errorCode?: string | null;
   traceId: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "toolObservabilityBuckets".
+ */
+export interface ToolObservabilityBucket {
+  id: number;
+  schemaVersion: number;
+  bucketKey: string;
+  bucketStart: string;
+  bucketEnd: string;
+  lastObservedAt: string;
+  scope: 'tool' | 'provider';
+  tool?: ('domain-search' | 'whois' | 'dns' | 'ssl-check' | 'idn' | 'pricing') | null;
+  provider?: ('westdigital' | 'whodat' | 'alidns' | 'node_tls') | null;
+  providerOperation?: ('availability' | 'price' | 'whois' | 'dns' | 'tls') | null;
+  requestCount: number;
+  successCount: number;
+  failureCount: number;
+  successRateBasisPoints: number;
+  p50Bucket?: ('lt_100ms' | '100_299ms' | '300_999ms' | '1000_2999ms' | '3000_9999ms' | 'gte_10000ms') | null;
+  p95Bucket?: ('lt_100ms' | '100_299ms' | '300_999ms' | '1000_2999ms' | '3000_9999ms' | 'gte_10000ms') | null;
+  latencyLt100MsCount: number;
+  latency100To299MsCount: number;
+  latency300To999MsCount: number;
+  latency1000To2999MsCount: number;
+  latency3000To9999MsCount: number;
+  latencyGte10000MsCount: number;
+  timeoutErrorCount: number;
+  rateLimitedErrorCount: number;
+  upstreamErrorCount: number;
+  invalidResponseErrorCount: number;
+  lastQueueDepth: number;
+  maxQueueDepth: number;
+  rejectedCount: number;
   updatedAt: string;
   createdAt: string;
 }
@@ -2001,6 +2040,42 @@ export interface FirstPartyEventsSelect<T extends boolean = true> {
   dataSource?: T;
   errorCode?: T;
   traceId?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "toolObservabilityBuckets_select".
+ */
+export interface ToolObservabilityBucketsSelect<T extends boolean = true> {
+  schemaVersion?: T;
+  bucketKey?: T;
+  bucketStart?: T;
+  bucketEnd?: T;
+  lastObservedAt?: T;
+  scope?: T;
+  tool?: T;
+  provider?: T;
+  providerOperation?: T;
+  requestCount?: T;
+  successCount?: T;
+  failureCount?: T;
+  successRateBasisPoints?: T;
+  p50Bucket?: T;
+  p95Bucket?: T;
+  latencyLt100MsCount?: T;
+  latency100To299MsCount?: T;
+  latency300To999MsCount?: T;
+  latency1000To2999MsCount?: T;
+  latency3000To9999MsCount?: T;
+  latencyGte10000MsCount?: T;
+  timeoutErrorCount?: T;
+  rateLimitedErrorCount?: T;
+  upstreamErrorCount?: T;
+  invalidResponseErrorCount?: T;
+  lastQueueDepth?: T;
+  maxQueueDepth?: T;
+  rejectedCount?: T;
   updatedAt?: T;
   createdAt?: T;
 }

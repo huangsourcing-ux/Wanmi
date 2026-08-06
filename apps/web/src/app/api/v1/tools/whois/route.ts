@@ -4,6 +4,7 @@ import { WhoDatProvider } from '@/providers/whodat'
 import type { PublicRegistrationProvider } from '@/providers/types'
 import { whoisLookupRequestSchema, whoisLookupResultSchema } from '@/schemas/whois'
 import { queryPublicRegistration } from '@/services/whois/query-public-registration'
+import { runtimeProviderObservability } from '@/services/observability/runtime'
 
 const MAX_REQUEST_BODY_BYTES = 4_096
 
@@ -80,10 +81,12 @@ export function createWhoisPostHandler(dependencies: WhoisHandlerDependencies) {
   }
 }
 
-const configuredFallback = createConfiguredWestDigitalWhoisProvider()
+const configuredFallback = createConfiguredWestDigitalWhoisProvider({
+  logger: runtimeProviderObservability.logger,
+})
 const POST_HANDLER = createWhoisPostHandler({
   ...(configuredFallback ? { fallback: configuredFallback } : {}),
-  primary: new WhoDatProvider(),
+  primary: new WhoDatProvider({ logger: runtimeProviderObservability.logger }),
 })
 
 export const POST = POST_HANDLER

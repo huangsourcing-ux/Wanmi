@@ -416,6 +416,7 @@ export class NodeTlsProvider implements TlsHandshakeProvider {
     traceId: string,
     requestId: string,
   ): Promise<ProviderResult<TlsHandshakeReport>> {
+    const startedAt = this.now()
     try {
       return await this.limiter.schedule(() =>
         this.concurrency.schedule(() => this.execute(addresses, domainAscii, traceId, requestId)),
@@ -428,19 +429,47 @@ export class NodeTlsProvider implements TlsHandshakeProvider {
         error instanceof ReadQueueTimeoutError ||
         error instanceof ReadConcurrencyTimeoutError
       ) {
-        return failure(
+        const result = failure<TlsHandshakeReport>(
           queueFull ? 'TLS_QUEUE_FULL' : 'TLS_QUEUE_TIMEOUT',
           queueFull ? 'TLS 检查队列已满' : 'TLS 检查排队超时',
           this.observedAt(),
           requestId,
           { retryAfterSeconds: 1, retryable: true, statusKnown: false },
         )
+        this.logScheduleFailure(result.error.code, traceId, requestId, startedAt)
+        return result
       }
-      return failure('TLS_UNAVAILABLE', 'TLS 检查暂时不可用', this.observedAt(), requestId, {
-        retryable: true,
-        statusKnown: false,
-      })
+      const result = failure<TlsHandshakeReport>(
+        'TLS_UNAVAILABLE',
+        'TLS 检查暂时不可用',
+        this.observedAt(),
+        requestId,
+        {
+          retryable: true,
+          statusKnown: false,
+        },
+      )
+      this.logScheduleFailure(result.error.code, traceId, requestId, startedAt)
+      return result
     }
+  }
+
+  private logScheduleFailure(
+    errorCode: string,
+    traceId: string,
+    requestId: string,
+    startedAt: number,
+  ): void {
+    this.logger.warn({
+      durationMs: Math.max(0, this.now() - startedAt),
+      errorCode,
+      event: 'tls.request_failed',
+      provider: 'node_tls',
+      queueDepth: this.limiter.queueSize + this.concurrency.queueSize,
+      requestId,
+      retryable: true,
+      traceId,
+    })
   }
 
   private async execute(
@@ -479,6 +508,7 @@ export class NodeTlsProvider implements TlsHandshakeProvider {
           findingCount: report.findings.length,
           port: TLS_PORT,
           provider: 'node_tls',
+          queueDepth: this.limiter.queueSize + this.concurrency.queueSize,
           requestId,
           traceId,
         })
@@ -499,6 +529,7 @@ export class NodeTlsProvider implements TlsHandshakeProvider {
       event: 'tls.request_failed',
       port: TLS_PORT,
       provider: 'node_tls',
+      queueDepth: this.limiter.queueSize + this.concurrency.queueSize,
       requestId,
       retryable: mapped.error.retryable,
       traceId,

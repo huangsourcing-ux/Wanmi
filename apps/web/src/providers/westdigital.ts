@@ -651,6 +651,7 @@ export class WestDigitalReadAdapter implements WestDigitalReadProvider {
         event: 'westdigital.request_succeeded',
         operation: input.operation,
         provider: 'westdigital',
+        queueDepth: this.limiter.queueSize,
         requestId: input.requestId,
         traceId: input.traceId,
       })

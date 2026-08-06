@@ -77,6 +77,7 @@ const operationalReads = [
   'reconciliations',
   'userFeedback',
 ]
+const analyticalReads = [...operationalReads, 'toolObservabilityBuckets']
 const contentAdminCollections = ['articles', 'media', 'navigation', 'tldPages', 'topics']
 const advertisingAdminCollections = [
   'adCreatives',
@@ -86,6 +87,7 @@ const advertisingAdminCollections = [
   'reconciliations',
   'userFeedback',
 ]
+const analyticalAdminCollections = [...advertisingAdminCollections, 'toolObservabilityBuckets']
 const alwaysHiddenCollections = [
   'adminInvitations',
   'adminMfaCredentials',
@@ -114,7 +116,7 @@ const expected: Record<Persona, Record<Operation, string[]>> = {
   analyst: {
     create: [],
     delete: [],
-    read: operationalReads,
+    read: analyticalReads,
     readVersions: [],
     update: ['admins'],
   },
@@ -135,7 +137,7 @@ const expectedVisible: Record<Persona, string[]> = {
   customer: [],
   content_editor: contentAdminCollections,
   ad_operator: [...advertisingAdminCollections, 'auditLogs'],
-  analyst: advertisingAdminCollections,
+  analyst: analyticalAdminCollections,
   system_admin: collections
     .map(({ slug }) => slug)
     .filter((slug) => !alwaysHiddenCollections.includes(slug)),
@@ -283,6 +285,7 @@ describe('D1 administrator navigation groups', () => {
     smsChallenges: ADMIN_GROUPS.identity,
     tldPages: ADMIN_GROUPS.content,
     topics: ADMIN_GROUPS.content,
+    toolObservabilityBuckets: ADMIN_GROUPS.operations,
     userFeedback: ADMIN_GROUPS.operations,
   }
 

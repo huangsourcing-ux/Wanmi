@@ -41,6 +41,7 @@ test('content editors see content only and cannot open or write advertising coll
   await expect(collectionLink(page, 'advertisers')).toHaveCount(0)
   await expect(collectionLink(page, 'auditLogs')).toHaveCount(0)
   await expect(collectionLink(page, 'firstPartyEvents')).toHaveCount(0)
+  await expect(collectionLink(page, 'toolObservabilityBuckets')).toHaveCount(0)
   await expectNavigationGroups(page, ['内容'])
 
   const status = await page.evaluate(
@@ -75,6 +76,7 @@ test('ad operators see advertising and own-audit workspaces but no content works
   }
   await expect(collectionLink(page, 'articles')).toHaveCount(0)
   await expect(collectionLink(page, 'admins')).toHaveCount(0)
+  await expect(collectionLink(page, 'toolObservabilityBuckets')).toHaveCount(0)
   await expectNavigationGroups(page, ['广告', '运营'])
 
   await page.goto(`/admin/collections/auditLogs?search=${ownAuditTargetId}`)
@@ -107,6 +109,7 @@ test('analysts have safe read-only operations navigation and no audit or mutatio
     'adPlacements',
     'adSchedules',
     'reconciliations',
+    'toolObservabilityBuckets',
     'userFeedback',
   ]) {
     await expect(collectionLink(page, slug)).toBeVisible()
@@ -132,4 +135,17 @@ test('analysts have safe read-only operations navigation and no audit or mutatio
   expect(direct?.status()).toBe(404)
   const eventDirect = await page.goto('/admin/collections/firstPartyEvents')
   expect(eventDirect?.status()).toBe(404)
+  const aggregateDirect = await page.goto('/admin/collections/toolObservabilityBuckets')
+  expect(aggregateDirect?.status()).toBe(200)
+  const aggregateWriteStatus = await page.evaluate(
+    async () =>
+      (
+        await fetch('/api/toolObservabilityBuckets', {
+          body: JSON.stringify({ scope: 'tool' }),
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+        })
+      ).status,
+  )
+  expect(aggregateWriteStatus).toBe(403)
 })

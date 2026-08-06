@@ -3,6 +3,7 @@ import { AliDnsProvider } from '@/providers/alidns'
 import type { DnsReadProvider } from '@/providers/types'
 import { dnsLookupRequestSchema, dnsLookupResultSchema } from '@/schemas/dns'
 import { DnsResultCache, queryDnsRecords } from '@/services/dns/query-dns-records'
+import { runtimeProviderObservability } from '@/services/observability/runtime'
 
 const MAX_REQUEST_BODY_BYTES = 4_096
 
@@ -75,4 +76,6 @@ export function createDnsPostHandler(dependencies: DnsHandlerDependencies) {
   }
 }
 
-export const POST = createDnsPostHandler({ provider: new AliDnsProvider() })
+export const POST = createDnsPostHandler({
+  provider: new AliDnsProvider({ logger: runtimeProviderObservability.logger }),
+})

@@ -68,6 +68,8 @@ type ProviderOptions = {
   transport: WestDigitalWhoisTransport
 }
 
+type ProviderLogger = NonNullable<ProviderOptions['logger']>
+
 type LiveTransportOptions = {
   apiPassword: string
   fetchImpl?: typeof fetch
@@ -260,6 +262,7 @@ export class WestDigitalWhoisProvider implements PublicRegistrationProvider {
     traceId: string,
     requestId: string,
   ): Promise<ProviderResult<PublicRegistrationRecord>> {
+    const startedAt = this.now()
     const observedAt = this.observedAt()
     try {
       this.logger.info({
@@ -342,8 +345,10 @@ export class WestDigitalWhoisProvider implements PublicRegistrationProvider {
 
       this.logger.info({
         cacheStatus: 'miss',
+        durationMs: Math.max(0, this.now() - startedAt),
         event: 'westdigital_whois.request_succeeded',
         provider: 'westdigital',
+        queueDepth: this.limiter.queueSize,
         requestId,
         traceId,
       })
@@ -400,6 +405,7 @@ export class WestDigitalWhoisProvider implements PublicRegistrationProvider {
       errorCode: code,
       event: 'westdigital_whois.request_failed',
       provider: 'westdigital',
+      queueDepth: this.limiter.queueSize,
       requestId,
       traceId,
     })
@@ -411,12 +417,15 @@ export class WestDigitalWhoisProvider implements PublicRegistrationProvider {
   }
 }
 
-export function createConfiguredWestDigitalWhoisProvider(): PublicRegistrationProvider | undefined {
+export function createConfiguredWestDigitalWhoisProvider(
+  options: { logger?: ProviderLogger } = {},
+): PublicRegistrationProvider | undefined {
   const env = getEnv()
   if (!env.WESTDIGITAL_WHOIS_FALLBACK_ENABLED) return undefined
   if (!env.WESTDIGITAL_USERNAME || !env.WESTDIGITAL_API_PASSWORD)
     throw new Error('West Digital WHOIS fallback credentials are missing')
   return new WestDigitalWhoisProvider({
+    ...(options.logger ? { logger: options.logger } : {}),
     transport: new LiveWestDigitalWhoisTransport({
       apiPassword: env.WESTDIGITAL_API_PASSWORD,
       maxResponseBytes: env.WESTDIGITAL_READ_RESPONSE_MAX_BYTES,

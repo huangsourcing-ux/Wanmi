@@ -96,17 +96,28 @@ describe('first-party event write service', () => {
   it('stores failed tools with an explicit unsuccessful aggregate dimension', async () => {
     const create = vi.fn().mockResolvedValue({ id: 1 })
     const count = vi.fn().mockResolvedValue({ totalDocs: 0 })
-    await recordFirstPartyEvent({ count, create } as never, {
-      dataSource: 'whodat',
-      durationBucket: '300_999ms',
-      errorCode: 'PROVIDER_UNAVAILABLE',
-      event: 'tool_failed',
-      schemaVersion: 1,
-      tld: 'net',
-      tool: 'whois',
-    })
+    const record = vi.fn().mockResolvedValue(undefined)
+    await recordFirstPartyEvent(
+      { count, create } as never,
+      {
+        dataSource: 'whodat',
+        durationBucket: '300_999ms',
+        errorCode: 'PROVIDER_UNAVAILABLE',
+        event: 'tool_failed',
+        schemaVersion: 1,
+        tld: 'net',
+        tool: 'whois',
+      },
+      { observability: { record } },
+    )
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ succeeded: false }) }),
     )
+    expect(record).toHaveBeenCalledWith({
+      durationBucket: '300_999ms',
+      scope: 'tool',
+      succeeded: false,
+      tool: 'whois',
+    })
   })
 })
