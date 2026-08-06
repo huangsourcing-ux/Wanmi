@@ -1,4 +1,5 @@
 import type { ProviderResult } from '@/lib/domain'
+import type { DnsRecord, DnsRecordType } from '@/schemas/dns'
 
 export interface HealthAwareProvider {
   health(): Promise<ProviderResult<{ healthy: boolean }>>
@@ -27,6 +28,22 @@ export interface PublicRegistrationProvider extends HealthAwareProvider {
     domainAscii: string
     traceId: string
   }): Promise<ProviderResult<PublicRegistrationRecord>>
+}
+
+export type DnsProviderAnswer = {
+  fallbackUsed: boolean
+  negativeTtlSeconds?: number
+  records: DnsRecord[]
+  resolverNode: 'alidns_primary' | 'alidns_secondary'
+  status: 'records' | 'no_record' | 'nxdomain' | 'servfail'
+}
+
+export interface DnsReadProvider extends HealthAwareProvider {
+  queryRecordSet(input: {
+    domainAscii: string
+    recordType: DnsRecordType
+    traceId: string
+  }): Promise<ProviderResult<DnsProviderAnswer>>
 }
 
 export interface SmsProvider extends HealthAwareProvider {

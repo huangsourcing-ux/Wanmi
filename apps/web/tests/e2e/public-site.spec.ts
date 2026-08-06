@@ -349,6 +349,140 @@ test('WHOIS stays separate from availability and keeps result requests and analy
   }
 })
 
+test('DNS renders eight mobile record sets, isolates requests and never treats NXDOMAIN as availability', async ({
+  page,
+}) => {
+  const observedAt = '2026-08-05T12:00:00.000Z'
+  const recordTypes = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SOA', 'CAA'] as const
+  const analyticsRequests: Array<{
+    body: Record<string, unknown>
+    headers: Record<string, string>
+  }> = []
+  const dnsRequests: Array<{
+    body: Record<string, unknown>
+    headers: Record<string, string>
+  }> = []
+  let responseMode: 'nxdomain' | 'ready' = 'ready'
+  await page.setViewportSize({ height: 844, width: 390 })
+  await page
+    .context()
+    .addCookies([{ name: 'tracking_test_cookie', url: canonicalOrigin, value: 'must-not-be-sent' }])
+  await page.route('**/api/v1/events', async (route) => {
+    analyticsRequests.push({
+      body: route.request().postDataJSON() as Record<string, unknown>,
+      headers: await route.request().allHeaders(),
+    })
+    await route.fulfill({ json: { accepted: true }, status: 202 })
+  })
+  await page.route('**/api/v1/tools/dns', async (route) => {
+    dnsRequests.push({
+      body: route.request().postDataJSON() as Record<string, unknown>,
+      headers: await route.request().allHeaders(),
+    })
+    const recordFor = (type: (typeof recordTypes)[number]) => {
+      const base = { ownerName: 'xn--fsqu00a.xn--0zwm56d', ttl: 300, type }
+      if (type === 'A') return { ...base, address: '93.184.216.34' }
+      if (type === 'AAAA') return { ...base, address: '2606:2800:220:1:248:1893:25c8:1946' }
+      if (type === 'CNAME') return { ...base, target: 'target.example.test' }
+      if (type === 'MX') return { ...base, exchange: 'mail.example.test', priority: 10 }
+      if (type === 'TXT') return { ...base, value: 'v=spf1 ~all' }
+      if (type === 'NS') return { ...base, host: 'ns1.example.test' }
+      if (type === 'SOA') {
+        return {
+          ...base,
+          expire: 604_800,
+          minimum: 300,
+          primaryNameServer: 'ns1.example.test',
+          refresh: 3_600,
+          responsibleMailbox: 'hostmaster.example.test',
+          retry: 600,
+          serial: 2_026_080_501,
+        }
+      }
+      return { ...base, flags: 0, tag: 'issue', value: 'letsencrypt.org' }
+    }
+    await route.fulfill({
+      json: {
+        data: {
+          normalizedQueryAscii:
+            responseMode === 'ready' ? 'xn--fsqu00a.xn--0zwm56d' : 'missing.example.test',
+          normalizedQueryUnicode: responseMode === 'ready' ? '例子.测试' : 'missing.example.test',
+          recordSets: recordTypes.map((type, index) => ({
+            cacheStatus: responseMode === 'ready' && index === 0 ? 'hit' : 'miss',
+            observedAt,
+            records: responseMode === 'ready' ? [recordFor(type)] : [],
+            resolverNode:
+              responseMode === 'ready' && index === 0 ? 'alidns_secondary' : 'alidns_primary',
+            status: responseMode === 'ready' ? 'records' : 'nxdomain',
+            type,
+          })),
+          risks: [],
+        },
+        meta: {
+          cacheStatus: responseMode === 'ready' ? 'mixed' : 'miss',
+          dataSource: '阿里公共 DNS（受控 DoH）',
+          observedAt,
+          traceId: 'trace-dns-e2e',
+        },
+        state: responseMode === 'ready' ? 'ready' : 'empty',
+      },
+      status: 200,
+    })
+  })
+
+  await page.goto('/tools/dns')
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /index, follow/)
+  await page.getByLabel('输入要查询 DNS 记录的完整域名').fill('例子.测试')
+  await page.getByRole('button', { name: '查询 DNS' }).click()
+
+  await expect(page).toHaveURL(/\/tools\/dns\?q=/)
+  await expect(page.getByRole('heading', { level: 2, name: 'DNS / NS 查询结果' })).toBeVisible()
+  await expect(page.locator('[data-dns-status="records"]')).toHaveCount(8)
+  await expect(page.getByText('例子.测试')).toBeVisible()
+  await expect(page.getByText('xn--fsqu00a.xn--0zwm56d').first()).toBeVisible()
+  await expect(page.getByText('阿里公共 DNS（受控 DoH）').first()).toBeVisible()
+  await expect(page.getByText('阿里公共 DNS 备用节点').first()).toBeVisible()
+  await expect(page.getByText('部分缓存命中').first()).toBeVisible()
+  await expect(page.getByText('300 秒').first()).toBeVisible()
+  await expect(page.getByText(/单一受控递归解析视角/)).toBeVisible()
+  await expect(page.getByText(/CAA 在此只作为原始 DNS 记录展示/)).toBeVisible()
+  await expect(page.getByRole('link', { name: /购买|注册|管理/ })).toHaveCount(0)
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex, nofollow/)
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    'href',
+    `${canonicalOrigin}/tools/dns`,
+  )
+  await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
+    'content',
+    `${canonicalOrigin}/tools/dns`,
+  )
+
+  responseMode = 'nxdomain'
+  await page.goto('/tools/dns?q=missing.example.test')
+  await expect(page.getByRole('heading', { name: 'DNS 返回 NXDOMAIN' })).toBeVisible()
+  await expect(page.getByText(/绝不代表域名可注册/)).toBeVisible()
+  await expect(page.locator('[data-dns-status="nxdomain"]')).toHaveCount(8)
+
+  expect(dnsRequests.map(({ body }) => body)).toEqual([
+    { query: '例子.测试' },
+    { query: 'missing.example.test' },
+  ])
+  for (const request of dnsRequests) {
+    expect(request.headers.cookie).toBeUndefined()
+    expect(request.headers.referer ?? '').not.toContain('?q=')
+  }
+  await expect
+    .poll(() => analyticsRequests.filter(({ body }) => body.event === 'tool_completed').length)
+    .toBeGreaterThanOrEqual(2)
+  for (const event of analyticsRequests) {
+    expect(JSON.stringify(event.body)).not.toMatch(/例子|xn--fsqu00a|missing\.example/)
+    expect(event.body).not.toHaveProperty('domain')
+    expect(event.body).not.toHaveProperty('query')
+    expect(event.headers.cookie).toBeUndefined()
+    expect(event.headers.referer ?? '').not.toContain('?q=')
+  }
+})
+
 test('content fallback and branded not-found states work on mobile', async ({ page }) => {
   await page.setViewportSize({ height: 844, width: 390 })
   await page.goto('/articles')
