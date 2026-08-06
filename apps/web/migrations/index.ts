@@ -5,6 +5,7 @@ import * as migration_20260805_005736_d1_redirect_foundation from './20260805_00
 import * as migration_20260805_040152 from './20260805_040152'
 import * as migration_20260805_080646_d1_audit_navigation from './20260805_080646_d1_audit_navigation'
 import * as migration_20260805_090521_d1_first_party_events from './20260805_090521_d1_first_party_events'
+import * as migration_20260806_055310_d2_tld_price_snapshots from './20260806_055310_d2_tld_price_snapshots'
 
 export const migrations = [
   {
@@ -41,5 +42,10 @@ export const migrations = [
     up: migration_20260805_090521_d1_first_party_events.up,
     down: migration_20260805_090521_d1_first_party_events.down,
     name: '20260805_090521_d1_first_party_events',
+  },
+  {
+    up: migration_20260806_055310_d2_tld_price_snapshots.up,
+    down: migration_20260806_055310_d2_tld_price_snapshots.down,
+    name: '20260806_055310_d2_tld_price_snapshots',
   },
 ]

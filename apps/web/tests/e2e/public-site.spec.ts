@@ -139,6 +139,91 @@ test('keyword queries return 10 ordered TLD results with partial success and bou
   })
 })
 
+test('pricing exposes 10 traceable fixture results, reuses snapshots and has no purchase surface', async ({
+  page,
+  request,
+}) => {
+  const first = await request.post('/api/v1/tools/pricing', { data: { tlds: ['com'] } })
+  const second = await request.post('/api/v1/tools/pricing', { data: { tlds: ['com'] } })
+  expect(first.status()).toBe(200)
+  expect(second.status()).toBe(200)
+  expect(first.headers()['cache-control']).toBe('no-store')
+  expect(first.headers()['set-cookie']).toBeUndefined()
+  const firstBody = (await first.json()) as Record<string, unknown>
+  const secondBody = (await second.json()) as Record<string, unknown>
+  const firstItem = (firstBody as { data: { items: Array<Record<string, unknown>> } }).data
+    .items[0]!
+  const secondItem = (secondBody as { data: { items: Array<Record<string, unknown>> } }).data
+    .items[0]!
+  expect(firstItem.cache).toMatchObject({ status: 'miss' })
+  expect(secondItem.cache).toMatchObject({ status: 'hit' })
+  expect(secondItem.snapshotRef).toBe(firstItem.snapshotRef)
+  for (const body of [firstBody, secondBody]) {
+    const serialized = JSON.stringify(body)
+    expect(serialized).not.toMatch(
+      /upstreamRegistrationPriceFen|upstreamRenewalPriceFen|fixedAmountFen|percentageBasisPoints|markupAmountFen/,
+    )
+  }
+
+  const analyticsRequests: Array<{
+    body: Record<string, unknown>
+    headers: Record<string, string>
+  }> = []
+  const pricingRequests: Array<{
+    body: Record<string, unknown>
+    headers: Record<string, string>
+  }> = []
+  await page
+    .context()
+    .addCookies([{ name: 'tracking_test_cookie', url: canonicalOrigin, value: 'must-not-be-sent' }])
+  await page.route('**/api/v1/events', async (route) => {
+    analyticsRequests.push({
+      body: route.request().postDataJSON() as Record<string, unknown>,
+      headers: await route.request().allHeaders(),
+    })
+    await route.fulfill({ json: { accepted: true }, status: 202 })
+  })
+  await page.route('**/api/v1/tools/pricing', async (route) => {
+    pricingRequests.push({
+      body: route.request().postDataJSON() as Record<string, unknown>,
+      headers: await route.request().allHeaders(),
+    })
+    await route.continue()
+  })
+  await page.goto('/pricing')
+
+  await expect(page.getByRole('heading', { level: 2, name: '普通域名价格表' })).toBeVisible()
+  await expect(page.locator('[data-pricing-status]')).toHaveCount(10)
+  await expect(page.locator('[data-pricing-status="priced"]')).toHaveCount(9)
+  await expect(page.locator('[data-pricing-status="unconfigured"]')).toHaveCount(1)
+  await expect(page.locator('[data-pricing-status="unconfigured"]')).toContainText('.tv')
+  await expect(page.getByText('未配置加价规则，不开放购买。')).toBeVisible()
+  await expect(page.getByText('¥25.00').first()).toBeVisible()
+  await expect(page.getByText('¥95.00').first()).toBeVisible()
+  await expect(page.getByText('数据源').first()).toBeVisible()
+  await expect(page.getByText('取价时间').first()).toBeVisible()
+  await expect(page.getByText('缓存状态').first()).toBeVisible()
+  await expect(page.getByText('快照引用').first()).toBeVisible()
+  await expect(page.getByText(/溢价域名不在本表内/)).toBeVisible()
+  await expect(page.getByText(/交易功能尚未开放/).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /购买|注册/ })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: /购买|注册/ })).toHaveCount(0)
+
+  expect(pricingRequests).toHaveLength(1)
+  expect(pricingRequests[0].body).toEqual({})
+  expect(pricingRequests[0].headers.cookie).toBeUndefined()
+  expect(pricingRequests[0].headers.referer).toBe(`${canonicalOrigin}/`)
+  await expect
+    .poll(() => analyticsRequests.some(({ body }) => body.event === 'tool_completed'))
+    .toBe(true)
+  const pricingAnalytics = analyticsRequests.find(
+    ({ body }) => body.event === 'tool_completed' && body.tool === 'pricing',
+  )!
+  expect(pricingAnalytics.body).not.toHaveProperty('tld')
+  expect(JSON.stringify(pricingAnalytics.body)).not.toMatch(/snapshotRef|2500|9500/)
+  expect(pricingAnalytics.headers.cookie).toBeUndefined()
+})
+
 test('the first-party endpoint and client honor DNT/GPC without blocking tools', async ({
   page,
   request,

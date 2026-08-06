@@ -1,7 +1,15 @@
 import type { CollectionConfig } from 'payload'
 
 import { AdCreatives, AdPlacements, AdSchedules, Advertisers } from './advertising'
-import { OrderEvents, Orders, PaymentNotifications, PriceRules, Quotes, Refunds } from './commerce'
+import {
+  OrderEvents,
+  Orders,
+  PaymentNotifications,
+  PriceRules,
+  PriceSnapshots,
+  Quotes,
+  Refunds,
+} from './commerce'
 import { Articles, Media, Navigation, SiteSettings, TldPages, Topics } from './content'
 import { DomainAssets, NameserverChanges, ProviderOperations, Renewals } from './fulfillment'
 import {
@@ -57,4 +65,5 @@ export const collections: CollectionConfig[] = [
   FirstPartyEvents,
   UserFeedback,
   CustomerSecurityEvents,
+  PriceSnapshots,
 ]

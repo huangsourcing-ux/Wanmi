@@ -90,6 +90,86 @@ function verifyFirstPartyEventSchema(stage) {
   }
 }
 
+function verifyPriceSnapshotSchema(stage) {
+  const columns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(column_name, ',' ORDER BY column_name)
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'price_snapshots'
+         AND column_name IN (
+           'calculation_hash', 'calculation_version', 'created_trace_id',
+           'one_year_total_minor', 'provider_observed_at', 'provider_product_id',
+           'provider_request_id', 'registration_price_minor', 'renewal_price_minor',
+           'representative_domain_ascii', 'rounding_mode', 'rule_fixed_amount_minor',
+           'rule_key', 'rule_mode', 'rule_percentage_basis_points', 'rule_source',
+           'rule_version', 'schema_version', 'snapshot_ref', 'three_year_total_minor',
+           'tld', 'upstream_registration_price_minor', 'upstream_renewal_price_minor'
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (columns.split(',').filter(Boolean).length !== 23) {
+    throw new Error(`D2-07 price snapshot columns incomplete after ${stage}: ${columns}`)
+  }
+
+  const indexes = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(indexdef, E'\n' ORDER BY indexname)
+       FROM pg_indexes
+       WHERE schemaname = 'public'
+         AND tablename = 'price_snapshots'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    !/UNIQUE INDEX .*\(calculation_hash\)/.test(indexes) ||
+    !/UNIQUE INDEX .*\(snapshot_ref\)/.test(indexes) ||
+    !/\(tld, rule_key, provider_observed_at\)/.test(indexes)
+  ) {
+    throw new Error(`D2-07 price snapshot indexes missing after ${stage}: ${indexes}`)
+  }
+
+  const lockRelation = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'payload_locked_documents_rels'
+           AND column_name = 'price_snapshots_id'
+       )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (lockRelation !== 'f') {
+    throw new Error(`D2-07 immutable snapshots unexpectedly enable document locking after ${stage}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -98,6 +178,7 @@ try {
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
   verifyAuditReaderIndex('empty-database migration')
   verifyFirstPartyEventSchema('empty-database migration')
+  verifyPriceSnapshotSchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -267,8 +348,41 @@ try {
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
   verifyFirstPartyEventSchema('D1-08 migration round trip')
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 5
+     WHERE name = '20260806_055310_d2_tld_price_snapshots'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const snapshotTableAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT to_regclass('public.price_snapshots') IS NOT NULL`,
+    ],
+    { capture: true },
+  ).trim()
+  if (snapshotTableAfterDown !== 'f') {
+    throw new Error('D2-07 migration down did not remove the price snapshot table')
+  }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyPriceSnapshotSchema('D2-07 migration round trip')
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, and the D1-08 first-party event schema round trip.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, and the D2-07 price snapshot schema round trips.\n',
   )
 } finally {
   if (created) {
