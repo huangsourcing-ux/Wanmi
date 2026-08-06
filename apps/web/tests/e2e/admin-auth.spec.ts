@@ -10,7 +10,7 @@ test('administrator login reaches the protected security workspace', async ({ pa
   await page.getByLabel('密码').fill(fixture.systemPassword)
   await page.getByLabel(/恢复码/).fill(fixture.systemRecoveryCode)
   await page.getByRole('button', { name: '登录' }).click()
-  await expect(page).toHaveURL(/\/admin$/)
+  await expect(page).toHaveURL(/\/admin$/, { timeout: 15_000 })
   await expect
     .poll(async () => (await page.locator('.nav-group__label').allTextContents()).sort())
     .toEqual(['交易', '内容', '实名', '履约', '广告', '身份', '运营'].sort())

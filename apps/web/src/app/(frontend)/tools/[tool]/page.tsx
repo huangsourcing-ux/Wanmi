@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 
 import { DomainQueryForm } from '@/components/forms/domain-query-form'
+import { DnsResults } from '@/components/results/dns-results'
 import { DomainSearchResults } from '@/components/results/domain-search-results'
 import { ResultState } from '@/components/results/result-state'
 import { WhoisResults } from '@/components/results/whois-results'
@@ -37,7 +38,9 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
   const tool = getToolDefinition(slug)
   if (!tool) notFound()
   const query =
-    slug === 'domain-search' || slug === 'whois' ? normalizeQueryParam(queryParams.q) : ''
+    slug === 'dns' || slug === 'domain-search' || slug === 'whois'
+      ? normalizeQueryParam(queryParams.q)
+      : ''
 
   return (
     <>
@@ -58,6 +61,17 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
           label="输入要查询公开注册信息的完整域名"
           placeholder="例如 wanmi.net"
           tool="whois"
+        />
+      ) : slug === 'dns' ? (
+        <DomainQueryForm
+          action="/tools/dns"
+          buttonLabel="查询 DNS"
+          className="mx-auto mb-6 w-[calc(100%-2rem)] max-w-7xl sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]"
+          defaultValue={query}
+          description="输入完整域名，一次查询八种常见只读记录。固定使用受控解析器，不保存输入，也不提供 DNS 修改。"
+          label="输入要查询 DNS 记录的完整域名"
+          placeholder="例如 wanmi.net"
+          tool="dns"
         />
       ) : null}
       {slug === 'domain-search' ? (
@@ -81,6 +95,18 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
               description="输入完整域名，查询公开 RDAP/WHOIS 注册记录。查询结果不代表域名是否可注册。"
               state="empty"
               title="等待 WHOIS 查询"
+            />
+          </div>
+        )
+      ) : slug === 'dns' ? (
+        query ? (
+          <DnsResults key={query} query={query} />
+        ) : (
+          <div className="mx-auto mb-16 w-[calc(100%-2rem)] max-w-7xl sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]">
+            <ResultState
+              description="输入完整域名，查询 A、AAAA、CNAME、MX、TXT、NS、SOA 和 CAA 记录。"
+              state="empty"
+              title="等待 DNS 查询"
             />
           </div>
         )

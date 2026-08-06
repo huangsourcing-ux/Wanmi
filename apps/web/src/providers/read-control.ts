@@ -1,5 +1,7 @@
 export class ReadQueueFullError extends Error {}
 export class ReadQueueTimeoutError extends Error {}
+export class ReadConcurrencyFullError extends Error {}
+export class ReadConcurrencyTimeoutError extends Error {}
 
 type QueueEntry = {
   execute: () => Promise<unknown>
@@ -83,6 +85,72 @@ export class TokenBucketReadLimiter {
     const elapsedMs = Math.max(0, currentTime - this.lastRefillAt)
     this.tokens = Math.min(this.burst, this.tokens + (elapsedMs / 1_000) * this.ratePerSecond)
     this.lastRefillAt = currentTime
+  }
+}
+
+type ConcurrencyEntry = {
+  execute: () => Promise<unknown>
+  reject: (error: unknown) => void
+  resolve: (value: unknown) => void
+  timeout: ReturnType<typeof setTimeout>
+}
+
+export class BoundedReadConcurrency {
+  private active = 0
+  private readonly queue: ConcurrencyEntry[] = []
+
+  constructor(
+    private readonly maxConcurrency: number,
+    private readonly queueCapacity: number,
+    private readonly queueWaitMs: number,
+  ) {}
+
+  get activeCount(): number {
+    return this.active
+  }
+
+  get queueSize(): number {
+    return this.queue.length
+  }
+
+  schedule<T>(execute: () => Promise<T>): Promise<T> {
+    if (this.active < this.maxConcurrency) return this.run(execute)
+    if (this.queue.length >= this.queueCapacity)
+      return Promise.reject(new ReadConcurrencyFullError())
+
+    return new Promise<T>((resolve, reject) => {
+      const entry: ConcurrencyEntry = {
+        execute,
+        reject,
+        resolve: (value) => resolve(value as T),
+        timeout: setTimeout(() => {
+          const index = this.queue.indexOf(entry)
+          if (index === -1) return
+          this.queue.splice(index, 1)
+          reject(new ReadConcurrencyTimeoutError())
+        }, this.queueWaitMs),
+      }
+      this.queue.push(entry)
+    })
+  }
+
+  private drain(): void {
+    while (this.active < this.maxConcurrency && this.queue.length > 0) {
+      const entry = this.queue.shift()
+      if (!entry) break
+      clearTimeout(entry.timeout)
+      void this.run(entry.execute).then(entry.resolve, entry.reject)
+    }
+  }
+
+  private run<T>(execute: () => Promise<T>): Promise<T> {
+    this.active += 1
+    return Promise.resolve()
+      .then(execute)
+      .finally(() => {
+        this.active -= 1
+        this.drain()
+      })
   }
 }
 

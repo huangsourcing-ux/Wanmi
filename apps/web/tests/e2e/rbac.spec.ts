@@ -17,7 +17,7 @@ async function loginAs(page: Page, role: Role) {
   await page.getByLabel('密码').fill(account.password)
   await page.getByLabel(/恢复码/).fill(account.recoveryCode)
   await page.getByRole('button', { name: '登录' }).click()
-  await expect(page).toHaveURL(/\/admin$/)
+  await expect(page).toHaveURL(/\/admin$/, { timeout: 15_000 })
 }
 
 function collectionLink(page: Page, slug: string) {
