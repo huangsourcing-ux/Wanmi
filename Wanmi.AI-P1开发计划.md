@@ -387,7 +387,7 @@ D1-08 验证记录（2026-08-05）：已建立严格 Zod 判别联合保护的 `
 - [x] 实现浏览器本地历史与收藏：最多 30 条、90 天、可单项删除和全部清空；
 - [x] 建立工具间跳转、复制和分享入口，不默认分享完整查询结果；
 - [x] 建立工具请求量、成功率、P50/P95、provider 错误和限频监控；
-- [ ] 为西部数码 429、队列满、Who-Dat 失败、DNS/TLS 超时建立降级测试。
+- [x] 为西部数码 429、队列满、Who-Dat 失败、DNS/TLS 超时建立降级测试。
 
 D2-01 验证记录（2026-08-05）：新增浏览器/服务端可复用的纯函数域名标准化模块，固定使用 Unicode 17、UTS-46 非过渡处理和 IDNA2008 允许/上下文规则；统一处理大小写、首尾空白、全角字符、等价点和单个根尾点，输出 ASCII/Punycode、显式 Unicode 转换值及固定为 ASCII 的公开展示值。标签 63 字节、总长 253 字节、字符、连字符、空标签、纯数字 TLD、无效/双重 `xn--` 均有稳定错误码并适配 D1-02 `Result`/Problem Details；UTS-39 按标签检测混合书写系统并返回非阻断风险提示。`make check` 的 178 个单元测试、26 个 PostgreSQL/MinIO 集成测试、迁移/类型漂移、生产构建、linux/amd64 同镜像和安全门禁通过；`make test-e2e` 冷启动首次因 Next 开发服务器仍在编译导致 2 个既有管理员场景超时、其余 14 个通过，未改代码直接完整复跑后 16 个场景全部通过。未新增公开 API、工具页、Payload schema、迁移或 provider 调用；后续 IDN 工具页任务保持未完成。
 
@@ -410,6 +410,8 @@ D2-09 验证记录（2026-08-06）：新增版本化浏览器本地工具库，�
 D2-10 验证记录（2026-08-06）：集中定义域名查询、WHOIS、DNS、价格、IDN 和 SSL/CAA 六类工具及安全路由生成器；每个工具页展示其余五类入口，只有有效完整域名会以规范化 ASCII/Punycode `q` 传给五类查询工具，关键词不透传，价格入口始终为干净 `/pricing`。域名候选结果提供独立跨工具操作；可售状态、WHOIS 标准字段/状态/NS、DNS zone 单条、单个 TLD 公开价格、IDN Punycode、TLS/证书/SAN/证书链/CAA 均可按确定性格式单条复制，域名型字段统一为 Punycode，IDN 不再提供 Unicode 复制；复用按钮对剪贴板成功和失败给出可访问反馈。新增 Radix 可访问分享确认弹层，每次打开默认“仅分享工具入口”，用户主动选择并再次确认后才生成含 `q=Punycode` 的域名链接；链接只由当前 HTTP(S) origin、固定工具路径和可选 `q` 白名单构造，不读取当前 URL 其他参数，不含完整结果、`traceId`、请求 ID、缓存键或快照引用，不使用 Web Share、第三方 SDK、网络接口或分析事件。带参数结果页继续输出 `noindex, nofollow` 和干净 canonical。最终 `make check` 通过生成类型/schema 漂移、空库/升级 migration、Nginx、lint、TypeScript strict、403 个单元测试、28 个 PostgreSQL/MinIO 集成测试、安全门禁、Next.js 生产构建和 linux/amd64 同镜像；Gitleaks 无泄漏，依赖审计维持既有 2 low、2 moderate，无 high/critical。定向四项 Playwright 核心交互 4/4，完整 `make test-e2e` 23/23 通过，覆盖 390px WHOIS 跨工具跳转、候选操作、DNS 单条复制、IDN 仅复制 Punycode、默认/确认后分享和参数页 noindex。未新增或修改 `/api/v1` endpoint、Payload schema、migration、生成类型或事件 schema，未调用 provider、未部署、未执行外部写操作。
 
 D2-11 验证记录（2026-08-06）：复用 D1-07 结构化脱敏日志和 D1-08 第一方事件/六档延迟分桶，新增只由系统服务写入的 Payload 小时聚合桶；六类工具按固定工具枚举统计终态请求量、成功/失败数、整数基点成功率及分桶 P50/P95，provider 按 `westdigital`、`whodat`、`alidns`、`node_tls` 与固定操作枚举统计完成请求、同一延迟分桶、超时/限频/上游错误/无效响应四类错误、最后/最大小时队列深度和被拒次数。provider 适配器继续写既有结构化日志，观测包装器只白名单提取聚合维度，持久化失败不会阻断工具；聚合 Collection 不包含完整域名、查询值、TLD、IP、Cookie、URL、User-Agent、`traceId`、request/session/client ID，且所有通用 create/update/delete 均关闭。按 D1-06 矩阵，仅 active `analyst` 与 `system_admin` 可读取聚合桶；原始第一方事件继续仅 `system_admin` 可见，匿名、customer、content editor、ad operator 和 disabled admin 均被拒绝。新增命名 migration、snapshot、生成类型与空库/遗留升级/down-up/隐私列/索引/无文档锁关系门禁。最终 `make check` 通过生成物/schema 漂移、完整 migration、Nginx、lint、TypeScript strict、416 个单元测试、30 个 PostgreSQL/MinIO 集成测试、安全门禁、Next.js 生产构建和 linux/amd64 同镜像；Gitleaks 无泄漏，依赖审计维持既有 2 low、2 moderate，无 high/critical。完整 `make test-e2e` 最终 23/23 通过，覆盖 analyst 聚合只读、非授权角色隐藏/拒绝及测试聚合数据回收；此前两轮分别受本地 dev 冷编译/瞬时 500 和复用 dev server 缓存状态影响，未放宽断言，清理状态并完成最终同命令全量通过。未引入第三方 APM、Prometheus、Grafana、告警通知、额外业务后端或完整查询持久化；未部署、未调用真实 provider 或执行外部写操作。
+
+D2-12 验证记录（2026-08-06）：新增跨层综合降级矩阵，并仅修正一处既有契约映射，使域名可售和价格服务与 Who-Dat、DNS、TLS 一致，将西部数码 `WESTDIGITAL_QUEUE_FULL`、`WESTDIGITAL_QUEUE_TIMEOUT` 及显式限流统一归入 `rate_limited`/HTTP 429 语义。西部数码全量失败保留 `retryAfterSeconds` 且无伪造数据，单个 TLD 失败返回 `partial` 并保留其余结果；价格历史快照在队列失败时保持 `degraded`、stale 且禁止购买。Who-Dat 主源失败而 fallback 成功为 `degraded`，无 fallback 或双源失败为 `error`，均不推断可注册且不影响独立可售查询；DNS 单记录类型超时为 `partial` 并保留其他记录，全量超时为 `error`，队列满为 `rate_limited`；TLS 超时或握手失败且 CAA 可用时为 `partial` 并保留 CAA，两者均失败为 `error`，队列满为 `rate_limited`。新增 Playwright 逐页断言明确中文状态、可读原因、建议动作/请求 ID、部分成功隔离，以及不存在白屏、静默失败、购买入口或错误“可注册”结论。定向 Vitest 120/120、定向 Playwright 4/4 通过；最终 `make check` 通过生成物/schema 漂移、完整 migration、Nginx、lint、TypeScript strict、423 个单元测试、30 个 PostgreSQL/MinIO 集成测试、安全门禁、Next.js 生产构建和 linux/amd64 同镜像，Gitleaks 无泄漏，依赖审计维持既有 2 low、2 moderate，无 high/critical；完整 `make test-e2e` 27/27 通过。全部自动化场景复用 fixture、可注入 mock 和路由拦截，未调用真实西部数码、Who-Dat、DNS 或公网 TLS，未新增 Payload schema、Collection、migration 或生成类型，未部署或执行外部写操作。D2 十二项任务及退出条件据此完成，生产联调与上线门槛仍按后续阶段执行。
 
 ### 6.3 退出条件
 
@@ -610,7 +612,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 - [x] 文档与 P1 范围批准
 - [x] D0 Payload 架构验证（条件通过；ECS 门槛转入 D7）
 - [x] D1 公共站与管理基础
-- [ ] D2 六类域名工具
+- [x] D2 六类域名工具
 - [ ] D3 内容、广告、分析与运营后台
 - [ ] D4 账号与实名
 - [ ] D5 报价、订单与微信支付

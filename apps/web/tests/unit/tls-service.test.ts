@@ -113,11 +113,19 @@ function tlsSuccess(findings: TlsFinding[] = []): ProviderResult<TlsHandshakeRep
 }
 
 function tlsFailure(code: string): ProviderResult<TlsHandshakeReport> {
+  const message =
+    code === 'TLS_TIMEOUT'
+      ? 'TLS 连接或握手超时'
+      : code === 'TLS_HANDSHAKE_FAILED'
+        ? '目标未能完成 TLS 握手'
+        : code === 'TLS_HANDSHAKE_TOO_LARGE'
+          ? 'TLS 握手数据超过安全上限'
+          : 'TLS 检查失败'
   return {
     cache: { status: 'miss' },
     error: {
       code,
-      message: code === 'TLS_HANDSHAKE_TOO_LARGE' ? 'TLS 握手数据超过安全上限' : 'TLS 检查失败',
+      message,
       retryable: code !== 'TLS_HANDSHAKE_TOO_LARGE' && code !== 'TLS_TARGET_CHANGED',
       statusKnown: false,
     },
@@ -413,6 +421,47 @@ describe('TLS / CAA orchestration and SSRF controls', () => {
     expect(oversized).not.toHaveProperty('data')
   })
 
+  it.each([
+    ['TLS_TIMEOUT', 'timeout', 'TLS 连接或握手超时'],
+    ['TLS_HANDSHAKE_FAILED', 'handshake_failed', '目标未能完成 TLS 握手'],
+  ] as const)(
+    'keeps CAA diagnostics visible when TLS returns %s',
+    async (code, tlsStatus, message) => {
+      const publicDns = dnsProvider(({ domainAscii, recordType }) =>
+        recordType === 'A'
+          ? dnsSuccess('A', [
+              { address: '93.184.216.34', ownerName: domainAscii, ttl: 60, type: 'A' },
+            ])
+          : dnsSuccess(recordType),
+      )
+      const result = await queryTlsCertificate(
+        { query: `${tlsStatus.replaceAll('_', '-')}.example.test` },
+        options(
+          publicDns,
+          tlsProvider(() => tlsFailure(code)),
+        ),
+      )
+
+      expect(result).toMatchObject({
+        data: {
+          caa: { status: 'no_record' },
+          tls: {
+            issue: { code, message, retryable: true },
+            status: tlsStatus,
+          },
+        },
+        problem: {
+          action: '请稍后重试',
+          code,
+          detail: `${message}；CAA 结果仍可查看`,
+          retryable: true,
+        },
+        state: 'partial',
+      })
+      expect(JSON.stringify(result)).not.toMatch(/"available"|"purchase"/iu)
+    },
+  )
+
   it('returns empty, partial, error and rate-limited without manufacturing diagnostics', async () => {
     const noAddressDns = dnsProvider(({ recordType }) => dnsSuccess(recordType))
     expect(
@@ -466,7 +515,11 @@ describe('TLS / CAA orchestration and SSRF controls', () => {
       ),
     )
     expect(noDiagnostics).toMatchObject({
-      problem: { code: 'SSL_CHECK_UNAVAILABLE' },
+      problem: {
+        action: '请稍后重试',
+        code: 'SSL_CHECK_UNAVAILABLE',
+        detail: 'TLS 与 CAA 均未能取得可用诊断数据',
+      },
       state: 'error',
     })
     expect(noDiagnostics).not.toHaveProperty('data')
@@ -477,7 +530,15 @@ describe('TLS / CAA orchestration and SSRF controls', () => {
         { query: 'busy-dns.example.test' },
         options(allDnsBusy, tlsProvider()),
       ),
-    ).toMatchObject({ problem: { code: 'TLS_RATE_LIMITED' }, state: 'rate_limited' })
+    ).toMatchObject({
+      problem: {
+        action: '请稍后重试',
+        code: 'TLS_RATE_LIMITED',
+        detail: 'DNS 查询队列繁忙，未能解析 TLS 目标',
+        status: 429,
+      },
+      state: 'rate_limited',
+    })
 
     const targetChanged = await queryTlsCertificate(
       { query: 'changed.example.test' },

@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest'
 import type { ProviderResult } from '@/lib/domain'
 import { FixtureWestDigitalTransport } from '@/providers/westdigital-fixtures'
 import { WestDigitalReadAdapter, type WestDigitalReadConfig } from '@/providers/westdigital'
-import type { WestDigitalPrice, WestDigitalReadProvider } from '@/providers/types'
+import type {
+  WestDigitalAvailability,
+  WestDigitalPrice,
+  WestDigitalReadProvider,
+} from '@/providers/types'
 import {
   DEFAULT_DOMAIN_SEARCH_TLDS,
   queryDomainAvailability,
@@ -38,6 +42,45 @@ function fixtureProvider() {
 function dataFrom(result: Awaited<ReturnType<typeof queryDomainAvailability>>) {
   if (!('data' in result)) throw new Error(`Expected data-bearing result, received ${result.state}`)
   return result.data
+}
+
+function providerFailure<T>(code: string, retryAfterSeconds = 7): ProviderResult<T> {
+  return {
+    cache: { status: 'miss' },
+    error: {
+      code,
+      message: 'fixture capacity failure',
+      retryAfterSeconds,
+      retryable: true,
+      statusKnown: false,
+    },
+    observedAt: '2026-08-06T12:00:00.000Z',
+    ok: false,
+    requestId: 'fixture-capacity-failure',
+  }
+}
+
+function capacityProvider(
+  code: string,
+  failingTld?: string,
+): WestDigitalReadProvider {
+  return {
+    async health() {
+      return success({ healthy: true })
+    },
+    async queryAvailability({ domain }): Promise<ProviderResult<WestDigitalAvailability>> {
+      if (!failingTld || domain.endsWith(`.${failingTld}`)) return providerFailure(code)
+      return success({
+        available: true,
+        currency: 'CNY',
+        domainAscii: domain,
+        premium: false,
+      })
+    },
+    async queryPrice(): Promise<ProviderResult<WestDigitalPrice>> {
+      throw new Error('not used')
+    },
+  }
 }
 
 describe('D2-03 domain availability orchestration', () => {
@@ -150,6 +193,60 @@ describe('D2-03 domain availability orchestration', () => {
     expect(dataFrom(empty).items).toEqual([])
     expect(empty.meta?.cacheStatus).toBe('not_used')
   })
+
+  it.each([
+    'WESTDIGITAL_RATE_LIMITED',
+    'WESTDIGITAL_QUEUE_FULL',
+    'WESTDIGITAL_QUEUE_TIMEOUT',
+  ])('maps an all-target %s capacity failure to a readable rate-limited result', async (code) => {
+    const result = await queryDomainAvailability(
+      { query: 'capacity.com' },
+      { provider: capacityProvider(code), traceId },
+    )
+
+    expect(result).toMatchObject({
+      problem: {
+        action: '请稍后重试',
+        code: 'WESTDIGITAL_RATE_LIMITED',
+        detail: '域名查询请求过于频繁，请稍后重试',
+        retryable: true,
+        retryAfterSeconds: 7,
+        status: 429,
+      },
+      state: 'rate_limited',
+    })
+    expect(result).not.toHaveProperty('data')
+    expect(JSON.stringify(result)).not.toMatch(/"status":"available"|"state":"ready"/u)
+  })
+
+  it.each(['WESTDIGITAL_RATE_LIMITED', 'WESTDIGITAL_QUEUE_FULL'])(
+    'keeps nine independent TLD conclusions when one target returns %s',
+    async (code) => {
+      const result = await queryDomainAvailability(
+        { query: 'capacity' },
+        { provider: capacityProvider(code, 'xyz'), traceId },
+      )
+
+      expect(result).toMatchObject({
+        problem: {
+          detail: '1 个域名暂时无法确认，其余结果仍可查看',
+          retryable: true,
+        },
+        state: 'partial',
+      })
+      const failed = dataFrom(result).items.find((item) => item.tld === 'xyz')
+      expect(failed).toMatchObject({
+        problem: {
+          code,
+          detail: '域名数据源请求过于频繁，请稍后重试',
+          status: 429,
+        },
+        status: 'query_failed',
+      })
+      expect(dataFrom(result).items.filter((item) => item.status === 'available')).toHaveLength(9)
+      expect(failed).not.toMatchObject({ status: 'available' })
+    },
+  )
 
   it('isolates a thrown TLD request and rejects ambiguous request shapes explicitly', async () => {
     const provider: WestDigitalReadProvider = {
