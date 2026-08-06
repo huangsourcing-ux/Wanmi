@@ -5,6 +5,7 @@ import { DomainQueryForm } from '@/components/forms/domain-query-form'
 import { DnsResults } from '@/components/results/dns-results'
 import { DomainSearchResults } from '@/components/results/domain-search-results'
 import { ResultState } from '@/components/results/result-state'
+import { SslResults } from '@/components/results/ssl-results'
 import { WhoisResults } from '@/components/results/whois-results'
 import { ConstructionNotice } from '@/components/site/construction-notice'
 import { PageIntro } from '@/components/site/page-intro'
@@ -38,7 +39,7 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
   const tool = getToolDefinition(slug)
   if (!tool) notFound()
   const query =
-    slug === 'dns' || slug === 'domain-search' || slug === 'whois'
+    slug === 'dns' || slug === 'domain-search' || slug === 'ssl-check' || slug === 'whois'
       ? normalizeQueryParam(queryParams.q)
       : ''
 
@@ -72,6 +73,17 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
           label="输入要查询 DNS 记录的完整域名"
           placeholder="例如 wanmi.net"
           tool="dns"
+        />
+      ) : slug === 'ssl-check' ? (
+        <DomainQueryForm
+          action="/tools/ssl-check"
+          buttonLabel="检查 SSL"
+          className="mx-auto mb-6 w-[calc(100%-2rem)] max-w-7xl sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]"
+          defaultValue={query}
+          description="输入完整公网域名，固定连接 443 端口检查 TLS 证书与 CAA。不会抓取网页、跟随跳转或执行 OCSP。"
+          label="输入要检查 TLS 证书与 CAA 的完整域名"
+          placeholder="例如 wanmi.net"
+          tool="ssl-check"
         />
       ) : null}
       {slug === 'domain-search' ? (
@@ -107,6 +119,18 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
               description="输入完整域名，查询 A、AAAA、CNAME、MX、TXT、NS、SOA 和 CAA 记录。"
               state="empty"
               title="等待 DNS 查询"
+            />
+          </div>
+        )
+      ) : slug === 'ssl-check' ? (
+        query ? (
+          <SslResults key={query} query={query} />
+        ) : (
+          <div className="mx-auto mb-16 w-[calc(100%-2rem)] max-w-7xl sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]">
+            <ResultState
+              description="输入完整公网域名，检查固定 443 端口的 TLS 证书、证书链、域名匹配与 CAA 策略。"
+              state="empty"
+              title="等待 SSL / CAA 检查"
             />
           </div>
         )

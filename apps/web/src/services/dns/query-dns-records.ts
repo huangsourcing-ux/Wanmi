@@ -27,14 +27,14 @@ const FORBIDDEN_HOST_SUFFIXES = ['.home', '.internal', '.lan', '.local', '.local
 const FORBIDDEN_SYNTAX = /[\s/:@?#\\]/u
 const METADATA_ADDRESSES = new Set(['100.100.100.200', '168.63.129.16', '169.254.169.254'])
 
-type DnsCacheConfig = {
+export type DnsCacheConfig = {
   maxEntries: number
   maxNegativeTtlMs: number
   maxPositiveTtlMs: number
   maxTargets: number
 }
 
-type ResolvedSet = {
+export type ResolvedDnsRecordSet = {
   cacheTtlSeconds?: number
   fallbackUsed: boolean
   recordSet: DnsRecordSet
@@ -42,7 +42,7 @@ type ResolvedSet = {
 
 type CacheEntry = {
   expiresAt: number
-  value: ResolvedSet
+  value: ResolvedDnsRecordSet
 }
 
 type QueryDnsRecordsOptions = {
@@ -71,7 +71,7 @@ export class DnsResultCache {
     private readonly now: () => number,
   ) {}
 
-  get(key: string): ResolvedSet | undefined {
+  get(key: string): ResolvedDnsRecordSet | undefined {
     const entry = this.values.get(key)
     const currentTime = this.now()
     if (!entry) return undefined
@@ -88,7 +88,7 @@ export class DnsResultCache {
     }
   }
 
-  set(key: string, value: ResolvedSet, ttlMs: number): void {
+  set(key: string, value: ResolvedDnsRecordSet, ttlMs: number): void {
     if (ttlMs <= 0) return
     const currentTime = this.now()
     for (const [cachedKey, entry] of this.values) {
@@ -207,7 +207,7 @@ function providerFailureSet(
 function recordSetFromProvider(
   type: DnsRecordType,
   result: Extract<ProviderResult<DnsProviderAnswer>, { ok: true }>,
-): ResolvedSet {
+): ResolvedDnsRecordSet {
   if (result.data.status === 'servfail') {
     return {
       fallbackUsed: result.data.fallbackUsed,
@@ -260,7 +260,7 @@ function targetsFor(recordSet: DnsRecordSet): string[] {
   return [...new Set(targets)]
 }
 
-function cacheTtlMs(value: ResolvedSet, config: DnsCacheConfig): number {
+function cacheTtlMs(value: ResolvedDnsRecordSet, config: DnsCacheConfig): number {
   if (!value.cacheTtlSeconds || value.cacheTtlSeconds <= 0) return 0
   const maximum =
     value.recordSet.status === 'records' ? config.maxPositiveTtlMs : config.maxNegativeTtlMs
@@ -276,7 +276,7 @@ async function providerSet(
   type: DnsRecordType,
   provider: DnsReadProvider,
   traceId: string,
-): Promise<ResolvedSet> {
+): Promise<ResolvedDnsRecordSet> {
   const result = await provider.queryRecordSet({ domainAscii, recordType: type, traceId })
   if (!result.ok) return { fallbackUsed: false, recordSet: providerFailureSet(type, result) }
   return recordSetFromProvider(type, result)
@@ -291,7 +291,7 @@ async function validatedAddressSet(
     provider: DnsReadProvider
     traceId: string
   },
-): Promise<ResolvedSet> {
+): Promise<ResolvedDnsRecordSet> {
   const key = cacheKey(domainAscii, type)
   const cached = context.cache.get(key)
   if (cached) return cached
@@ -318,7 +318,7 @@ async function validatedAddressSet(
   return result
 }
 
-function validationFailed(sets: ResolvedSet[]): boolean {
+function validationFailed(sets: ResolvedDnsRecordSet[]): boolean {
   const hasFailure = sets.some(
     ({ recordSet }) =>
       recordSet.status !== 'records' &&
@@ -361,6 +361,55 @@ function resultProblem(
   )
 }
 
+export async function querySafeDnsRecordSet(
+  domainAscii: string,
+  type: 'A' | 'AAAA' | 'CAA',
+  options: QueryDnsRecordsOptions,
+): Promise<ResolvedDnsRecordSet> {
+  const normalized = normalizeDomain(domainAscii)
+  if (
+    !normalized.ok ||
+    (type !== 'CAA' && !normalized.value.ascii.includes('.')) ||
+    isForbiddenHostname(normalized.ok ? normalized.value.ascii : domainAscii)
+  ) {
+    return {
+      fallbackUsed: false,
+      recordSet: failedSet(
+        type,
+        'blocked',
+        issue('DNS_TARGET_BLOCKED', 'DNS 查询目标未通过安全校验', false),
+        new Date((options.now ?? Date.now)()).toISOString(),
+      ),
+    }
+  }
+
+  const now = options.now ?? Date.now
+  const config = options.cacheConfig ?? cacheConfigFromEnv()
+  const cache = options.cache ?? (sharedCache ??= new DnsResultCache(config.maxEntries, now))
+  const key = cacheKey(normalized.value.ascii, type)
+  const cached = cache.get(key)
+  if (cached) return cached
+
+  if (type === 'A' || type === 'AAAA') {
+    return validatedAddressSet(normalized.value.ascii, type, {
+      cache,
+      config,
+      provider: options.provider,
+      traceId: options.traceId,
+    })
+  }
+
+  const result = await providerSet(normalized.value.ascii, type, options.provider, options.traceId)
+  if (
+    result.recordSet.status === 'records' ||
+    result.recordSet.status === 'no_record' ||
+    result.recordSet.status === 'nxdomain'
+  ) {
+    cache.set(key, result, cacheTtlMs(result, config))
+  }
+  return result
+}
+
 export async function queryDnsRecords(
   candidate: DnsLookupRequest,
   options: QueryDnsRecordsOptions,
@@ -373,7 +422,7 @@ export async function queryDnsRecords(
   const context = { cache, config, provider: options.provider, traceId: options.traceId }
 
   const rawSets = await Promise.all(
-    DNS_RECORD_TYPES.map(async (type): Promise<ResolvedSet> => {
+    DNS_RECORD_TYPES.map(async (type): Promise<ResolvedDnsRecordSet> => {
       if (type === 'A' || type === 'AAAA') {
         return validatedAddressSet(query.ascii, type, context)
       }
@@ -389,7 +438,7 @@ export async function queryDnsRecords(
   }
 
   const targetLimitExceeded = uncachedTargets.size > config.maxTargets
-  const targetResults = new Map<string, ResolvedSet[]>()
+  const targetResults = new Map<string, ResolvedDnsRecordSet[]>()
   if (!targetLimitExceeded) {
     await Promise.all(
       [...uncachedTargets].map(async (target) => {
@@ -440,7 +489,7 @@ export async function queryDnsRecords(
           resolved.recordSet.observedAt,
           resolved.recordSet.resolverNode,
         ),
-      } satisfies ResolvedSet
+      } satisfies ResolvedDnsRecordSet
     }
 
     const validations = targets.flatMap((target) => targetResults.get(target) ?? [])
@@ -453,7 +502,7 @@ export async function queryDnsRecords(
       resolved.cacheTtlSeconds !== undefined
         ? Math.min(resolved.cacheTtlSeconds, ...validationTtls)
         : undefined
-    const validated: ResolvedSet = {
+    const validated: ResolvedDnsRecordSet = {
       cacheTtlSeconds,
       fallbackUsed: resolved.fallbackUsed || validations.some((item) => item.fallbackUsed),
       recordSet: dnsRecordSetSchema.parse({

@@ -483,6 +483,177 @@ test('DNS renders eight mobile record sets, isolates requests and never treats N
   }
 })
 
+test('SSL renders mobile certificate and inherited CAA diagnostics with isolated noindex requests', async ({
+  page,
+}) => {
+  const observedAt = '2026-08-05T12:00:00.000Z'
+  const analyticsRequests: Array<{
+    body: Record<string, unknown>
+    headers: Record<string, string>
+  }> = []
+  const sslRequests: Array<{
+    body: Record<string, unknown>
+    headers: Record<string, string>
+  }> = []
+  await page.setViewportSize({ height: 844, width: 390 })
+  await page
+    .context()
+    .addCookies([{ name: 'tracking_test_cookie', url: canonicalOrigin, value: 'must-not-be-sent' }])
+  await page.route('**/api/v1/events', async (route) => {
+    analyticsRequests.push({
+      body: route.request().postDataJSON() as Record<string, unknown>,
+      headers: await route.request().allHeaders(),
+    })
+    await route.fulfill({ json: { accepted: true }, status: 202 })
+  })
+  await page.route('**/api/v1/tools/ssl-check', async (route) => {
+    sslRequests.push({
+      body: route.request().postDataJSON() as Record<string, unknown>,
+      headers: await route.request().allHeaders(),
+    })
+    await route.fulfill({
+      json: {
+        data: {
+          caa: {
+            effectiveOwnerName: 'example.test',
+            inherited: true,
+            records: [
+              {
+                critical: true,
+                explanation: '该属性设置了 critical 标志；issue 指定可签发的 CA。',
+                flags: 128,
+                ownerName: 'example.test',
+                tag: 'issue',
+                ttl: 300,
+                value: 'ca.example',
+              },
+              {
+                critical: false,
+                explanation: 'iodef 是违规签发报告地址；Wanmi 不会访问该地址。',
+                flags: 0,
+                ownerName: 'example.test',
+                tag: 'iodef',
+                ttl: 300,
+                value: 'mailto:security@example.test',
+              },
+            ],
+            source: {
+              cacheStatus: 'hit',
+              dataSource: '阿里公共 DNS（受控 DoH）',
+              observedAt,
+            },
+            status: 'records',
+          },
+          normalizedQueryAscii: 'xn--fsqu00a.xn--0zwm56d',
+          normalizedQueryUnicode: '例子.测试',
+          risks: [],
+          tls: {
+            certificate: {
+              chain: {
+                certificates: [
+                  {
+                    fingerprint256: 'AA:BB',
+                    issuer: { commonName: 'Test Intermediate', organization: 'Wanmi Tests' },
+                    subject: { commonName: '例子.测试', organization: 'Wanmi Tests' },
+                    validFrom: '2026-08-01T00:00:00.000Z',
+                    validTo: '2026-09-01T00:00:00.000Z',
+                  },
+                  {
+                    fingerprint256: 'CC:DD',
+                    issuer: { commonName: 'Test Root', organization: 'Wanmi Tests' },
+                    subject: { commonName: 'Test Intermediate', organization: 'Wanmi Tests' },
+                    validFrom: '2025-01-01T00:00:00.000Z',
+                    validTo: '2030-01-01T00:00:00.000Z',
+                  },
+                ],
+                depth: 2,
+                status: 'trusted',
+                truncated: false,
+              },
+              daysRemaining: 27,
+              hostnameMatch: true,
+              issuer: { commonName: 'Test Intermediate', organization: 'Wanmi Tests' },
+              sanCount: 1,
+              sanTruncated: false,
+              subject: { commonName: '例子.测试', organization: 'Wanmi Tests' },
+              subjectAlternativeNames: ['xn--fsqu00a.xn--0zwm56d'],
+              validFrom: '2026-08-01T00:00:00.000Z',
+              validityStatus: 'valid',
+              validTo: '2026-09-01T00:00:00.000Z',
+            },
+            cipherSuite: 'TLS_AES_256_GCM_SHA384',
+            findings: [],
+            port: 443,
+            protocol: 'TLSv1.3',
+            source: {
+              cacheStatus: 'miss',
+              dataSource: '直接 TLS 443 握手（Node.js 系统信任库）',
+              observedAt,
+            },
+            status: 'connected',
+          },
+        },
+        meta: {
+          cacheStatus: 'mixed',
+          dataSource: '阿里公共 DNS + 直接 TLS 443 握手',
+          observedAt,
+          traceId: 'trace-ssl-e2e',
+        },
+        state: 'ready',
+      },
+      status: 200,
+    })
+  })
+
+  await page.goto('/tools/ssl-check')
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /index, follow/)
+  await page.getByLabel('输入要检查 TLS 证书与 CAA 的完整域名').fill('例子.测试')
+  await page.getByRole('button', { name: '检查 SSL' }).click()
+
+  await expect(page).toHaveURL(/\/tools\/ssl-check\?q=/)
+  await expect(
+    page.getByRole('heading', { level: 2, name: 'SSL / TLS / CAA 检查结果' }),
+  ).toBeVisible()
+  await expect(page.locator('[data-tls-status="connected"]')).toBeVisible()
+  await expect(page.locator('[data-caa-status="records"]')).toBeVisible()
+  await expect(page.getByText('TLS_AES_256_GCM_SHA384')).toBeVisible()
+  await expect(page.getByText(/证书链（共 2 层）/)).toBeVisible()
+  await expect(page.getByText(/继承自父域：example.test/)).toBeVisible()
+  await expect(page.getByText(/不会访问该地址/)).toBeVisible()
+  await expect(page.getByText('trace-ssl-e2e')).toBeVisible()
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex, nofollow/)
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    'href',
+    `${canonicalOrigin}/tools/ssl-check`,
+  )
+  await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
+    'content',
+    `${canonicalOrigin}/tools/ssl-check`,
+  )
+
+  expect(sslRequests).toHaveLength(1)
+  expect(sslRequests[0].body).toEqual({ query: '例子.测试' })
+  expect(sslRequests[0].headers.cookie).toBeUndefined()
+  expect(sslRequests[0].headers.referer ?? '').not.toContain('?q=')
+  await expect
+    .poll(() => analyticsRequests.some(({ body }) => body.event === 'tool_completed'))
+    .toBe(true)
+  const outcomeEvents = analyticsRequests.filter(
+    ({ body }) => body.event === 'tool_completed' || body.event === 'tool_failed',
+  )
+  expect(outcomeEvents.length).toBeGreaterThan(0)
+  for (const event of outcomeEvents) {
+    expect(event.body).toMatchObject({ dataSource: 'tls', tool: 'ssl-check' })
+  }
+  for (const event of analyticsRequests) {
+    expect(JSON.stringify(event.body)).not.toMatch(/例子|xn--fsqu00a/)
+    expect(event.body).not.toHaveProperty('domain')
+    expect(event.body).not.toHaveProperty('query')
+    expect(event.headers.cookie).toBeUndefined()
+    expect(event.headers.referer ?? '').not.toContain('?q=')
+  }
+})
+
 test('content fallback and branded not-found states work on mobile', async ({ page }) => {
   await page.setViewportSize({ height: 844, width: 390 })
   await page.goto('/articles')
