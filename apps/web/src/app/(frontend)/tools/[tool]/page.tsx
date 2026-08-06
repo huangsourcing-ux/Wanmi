@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 
 import { DomainQueryForm } from '@/components/forms/domain-query-form'
+import { DomainFavoriteButton } from '@/components/local-library/favorite-buttons'
 import { DnsResults } from '@/components/results/dns-results'
 import { DomainSearchResults } from '@/components/results/domain-search-results'
 import { IdnConverter } from '@/components/results/idn-converter'
@@ -11,6 +12,7 @@ import { WhoisResults } from '@/components/results/whois-results'
 import { ConstructionNotice } from '@/components/site/construction-notice'
 import { PageIntro } from '@/components/site/page-intro'
 import { createPageMetadata } from '@/lib/seo'
+import { normalizeDomain } from '@/lib/domain-name'
 import { TOOL_DEFINITIONS, getToolDefinition, normalizeQueryParam } from '@/lib/site-config'
 
 type ToolPageProps = {
@@ -45,8 +47,9 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
     slug === 'idn' ||
     slug === 'ssl-check' ||
     slug === 'whois'
-      ? normalizeQueryParam(queryParams.q)
+      ? normalizeQueryParam(queryParams.q, slug === 'idn' ? 1_024 : 253)
       : ''
+  const normalizedFavorite = query ? normalizeDomain(query) : undefined
 
   return (
     <>
@@ -55,7 +58,7 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
         <DomainQueryForm
           className="mx-auto mb-6 w-[calc(100%-2rem)] max-w-7xl sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]"
           defaultValue={query}
-          description="支持完整域名，或关键词自动查询默认 10 个 TLD。当前仅使用本地 fixture，不保存输入。"
+          description="支持完整域名，或关键词自动查询默认 10 个 TLD。当前仅使用本地 fixture；启用历史时输入只保存在当前浏览器。"
         />
       ) : slug === 'whois' ? (
         <DomainQueryForm
@@ -63,7 +66,7 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
           buttonLabel="查询 WHOIS"
           className="mx-auto mb-6 w-[calc(100%-2rem)] max-w-7xl sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]"
           defaultValue={query}
-          description="输入完整域名，查询公开 RDAP/WHOIS 注册记录。查询输入不会长期保存，也不会判断是否可注册。"
+          description="输入完整域名，查询公开 RDAP/WHOIS 注册记录。浏览器历史不会同步服务端，也不会判断是否可注册。"
           label="输入要查询公开注册信息的完整域名"
           placeholder="例如 wanmi.net"
           tool="whois"
@@ -74,7 +77,7 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
           buttonLabel="查询 DNS"
           className="mx-auto mb-6 w-[calc(100%-2rem)] max-w-7xl sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]"
           defaultValue={query}
-          description="输入完整域名，一次查询八种常见只读记录。固定使用受控解析器，不保存输入，也不提供 DNS 修改。"
+          description="输入完整域名，一次查询八种常见只读记录。固定使用受控解析器；历史仅保存在当前浏览器，不提供 DNS 修改。"
           label="输入要查询 DNS 记录的完整域名"
           placeholder="例如 wanmi.net"
           tool="dns"
@@ -90,6 +93,17 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
           placeholder="例如 wanmi.net"
           tool="ssl-check"
         />
+      ) : null}
+      {slug !== 'idn' && normalizedFavorite?.ok ? (
+        <div className="mx-auto mb-6 flex w-[calc(100%-2rem)] max-w-7xl items-center gap-3 rounded-xl border border-dashed px-4 py-3 sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]">
+          <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+            将当前域名保存到本机收藏，不锁定状态或价格。
+          </p>
+          <DomainFavoriteButton
+            domain={normalizedFavorite.value.ascii}
+            label={normalizedFavorite.value.unicode}
+          />
+        </div>
       ) : null}
       {slug === 'domain-search' ? (
         query ? (

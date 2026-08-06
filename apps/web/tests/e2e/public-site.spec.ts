@@ -3,6 +3,8 @@ import { expect, test } from '@playwright/test'
 import { redirectFixtureFrom } from './redirect-fixture'
 
 const canonicalOrigin = 'http://127.0.0.1:3100'
+const localHistoryStorageKey = 'wanmi:tool-history:v1'
+const localFavoritesStorageKey = 'wanmi:tool-favorites:v1'
 
 test('database redirect returns a canonical 301 with query parameters and a request ID', async ({
   request,
@@ -819,6 +821,139 @@ test('IDN converts locally on mobile, keeps Punycode public and marks parameter 
     if (request.body.tool === 'idn') expect(request.body).not.toHaveProperty('tld')
     expect(request.headers.cookie).toBeUndefined()
     expect(request.headers.referer ?? '').not.toContain('?q=')
+  }
+})
+
+test('local history and favorites stay browser-only, rerun safely, and clear every key', async ({
+  page,
+}) => {
+  const analyticsRequests: Array<Record<string, unknown>> = []
+  const browserErrors: string[] = []
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text())
+  })
+  page.on('pageerror', (error) => browserErrors.push(error.message))
+  await page.route('**/api/v1/events', async (route) => {
+    analyticsRequests.push(route.request().postDataJSON() as Record<string, unknown>)
+    await route.fulfill({ json: { accepted: true }, status: 202 })
+  })
+
+  await page.goto('/tools/whois?q=wanmi.net')
+  expect(
+    await page.evaluate((key) => window.localStorage.getItem(key), localHistoryStorageKey),
+  ).toBeNull()
+
+  await page.goto('/')
+  await page.getByLabel('输入完整域名或关键词').fill('wanmi.net')
+  await page.getByRole('button', { name: '查询域名' }).click()
+  await expect(page).toHaveURL(/\/tools\/domain-search\?q=.*wanmi\.net/)
+  await expect(page.getByRole('heading', { level: 2, name: '可注册查询结果' })).toBeVisible()
+  expect(
+    await page.evaluate((key) => window.localStorage.getItem(key), localHistoryStorageKey),
+  ).toContain('wanmi.net')
+
+  analyticsRequests.length = 0
+  await page.goto('/tools')
+  await expect(page.getByRole('heading', { name: '我的本地工具箱' })).toBeVisible()
+  await expect(page.locator('[data-nextjs-dialog]')).toHaveCount(0)
+  await expect(page.locator('[data-local-history-list]')).toContainText('wanmi.net')
+  await expect.poll(() => analyticsRequests.some((body) => body.event === 'page_viewed')).toBe(true)
+  analyticsRequests.length = 0
+
+  await page.getByRole('button', { name: '收藏工具：TLD 价格与成本' }).click()
+  await expect(page.getByRole('button', { name: '取消收藏工具：TLD 价格与成本' })).toBeVisible()
+  await page.getByRole('button', { name: '收藏域名：wanmi.net' }).click()
+  await expect(page.getByRole('button', { name: '取消收藏域名：wanmi.net' })).toBeVisible()
+  await page.waitForTimeout(250)
+  expect(analyticsRequests).toEqual([])
+  expect(
+    await page.evaluate((key) => window.localStorage.getItem(key), localFavoritesStorageKey),
+  ).toContain('wanmi.net')
+
+  await page
+    .locator('[data-local-history-list] li')
+    .filter({ hasText: 'wanmi.net' })
+    .getByRole('link', { name: '再次查询' })
+    .click()
+  await expect(page).toHaveURL(/\/tools\/domain-search\?q=wanmi\.net/)
+  await expect(page.getByRole('heading', { level: 2, name: '可注册查询结果' })).toBeVisible()
+  await expect.poll(() => analyticsRequests.length).toBeGreaterThan(0)
+  for (const body of analyticsRequests) {
+    expect(JSON.stringify(body)).not.toContain('wanmi.net')
+    expect(body).not.toHaveProperty('query')
+    expect(body).not.toHaveProperty('domain')
+  }
+
+  analyticsRequests.length = 0
+  await page.goto('/tools')
+  await expect(page.locator('[data-local-history-list]')).toContainText('wanmi.net')
+  await expect.poll(() => analyticsRequests.some((body) => body.event === 'page_viewed')).toBe(true)
+  analyticsRequests.length = 0
+  await page.getByRole('button', { name: '删除查询历史：wanmi.net' }).click()
+  await expect(page.getByText('已删除查询历史“wanmi.net”')).toBeVisible()
+  expect(
+    await page.evaluate((key) => window.localStorage.getItem(key), localHistoryStorageKey),
+  ).toBeNull()
+
+  await page.getByRole('button', { name: '清空全部本地数据' }).click()
+  await expect(page.getByText('已清空全部本地历史与收藏')).toBeVisible()
+  expect(
+    await page.evaluate(
+      ([historyKey, favoritesKey]) => ({
+        favorites: window.localStorage.getItem(favoritesKey),
+        history: window.localStorage.getItem(historyKey),
+      }),
+      [localHistoryStorageKey, localFavoritesStorageKey],
+    ),
+  ).toEqual({ favorites: null, history: null })
+  await page.waitForTimeout(250)
+  expect(analyticsRequests).toEqual([])
+
+  await page.evaluate((key) => {
+    window.localStorage.setItem(key, '{broken-json')
+    window.dispatchEvent(new StorageEvent('storage', { key }))
+  }, localHistoryStorageKey)
+  await expect(page.getByText('已修复本地数据')).toBeVisible()
+  expect(
+    await page.evaluate((key) => window.localStorage.getItem(key), localHistoryStorageKey),
+  ).toBeNull()
+  expect(browserErrors).toEqual([])
+})
+
+test('DNT and GPC stop automatic local history but allow explicit local favorites', async ({
+  browser,
+}) => {
+  for (const signal of ['dnt', 'gpc'] as const) {
+    const context = await browser.newContext()
+    await context.addInitScript((activeSignal) => {
+      if (activeSignal === 'dnt') {
+        Object.defineProperty(navigator, 'doNotTrack', { configurable: true, value: '1' })
+      } else {
+        Object.defineProperty(navigator, 'globalPrivacyControl', {
+          configurable: true,
+          value: true,
+        })
+      }
+    }, signal)
+    const privacyPage = await context.newPage()
+    await privacyPage.goto('/')
+    await privacyPage.getByLabel('输入完整域名或关键词').fill(`${signal}.example`)
+    await privacyPage.getByRole('button', { name: '查询域名' }).click()
+    await expect(privacyPage).toHaveURL(/\/tools\/domain-search\?q=/)
+    expect(
+      await privacyPage.evaluate((key) => window.localStorage.getItem(key), localHistoryStorageKey),
+    ).toBeNull()
+
+    await privacyPage.goto('/tools')
+    await expect(privacyPage.getByText('已尊重 DNT / GPC 隐私信号')).toBeVisible()
+    await privacyPage.getByRole('button', { name: '收藏工具：DNS / NS 查询' }).click()
+    expect(
+      await privacyPage.evaluate(
+        (key) => window.localStorage.getItem(key),
+        localFavoritesStorageKey,
+      ),
+    ).toContain('dns')
+    await context.close()
   }
 })
 

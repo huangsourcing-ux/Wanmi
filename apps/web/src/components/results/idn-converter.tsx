@@ -11,6 +11,8 @@ import {
 import { useState, type FormEvent } from 'react'
 
 import { FormField } from '@/components/forms/form-field'
+import { DomainFavoriteButton } from '@/components/local-library/favorite-buttons'
+import { useLocalToolLibrary } from '@/components/local-library/local-tool-library-provider'
 import { ResultState } from '@/components/results/result-state'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -95,10 +97,13 @@ function ConversionResults({
             >
               {data.display}
             </output>
-            <Button onClick={() => onCopy('punycode', data.display)} type="button">
-              <CopyIcon aria-hidden="true" data-icon="inline-start" />
-              复制 Punycode
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => onCopy('punycode', data.display)} type="button">
+                <CopyIcon aria-hidden="true" data-icon="inline-start" />
+                复制 Punycode
+              </Button>
+              <DomainFavoriteButton domain={data.ascii} label={data.unicode} />
+            </div>
           </CardContent>
         </Card>
 
@@ -183,6 +188,7 @@ export function IdnConverter({ defaultValue = '' }: { defaultValue?: string }) {
     defaultValue ? normalizeDomain(defaultValue) : undefined,
   )
   const [copyState, setCopyState] = useState<CopyState>('idle')
+  const { recordHistory } = useLocalToolLibrary()
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -190,6 +196,8 @@ export function IdnConverter({ defaultValue = '' }: { defaultValue?: string }) {
     const value = typeof query === 'string' ? query : ''
     const startedAt = performance.now()
     const inputType = inferToolInput(value).inputType
+
+    recordHistory({ query: value, tool: 'idn' })
 
     emitFirstPartyEvent({
       event: 'tool_submitted',
