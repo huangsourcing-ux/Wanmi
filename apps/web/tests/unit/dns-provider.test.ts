@@ -82,6 +82,19 @@ function provider(
 }
 
 describe('AliDNS controlled DoH provider', () => {
+  it('allows a single-label TLD only for RFC 8659 CAA tree climbing', async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) =>
+      packetResponse(init, [answerFor('CAA', 'test')]),
+    ) as unknown as typeof fetch
+    const dns = provider(fetchImpl)
+    await expect(
+      dns.queryRecordSet({ domainAscii: 'test', recordType: 'CAA', traceId: 'trace-caa-tld' }),
+    ).resolves.toMatchObject({ data: { records: [{ type: 'CAA' }], status: 'records' }, ok: true })
+    await expect(
+      dns.queryRecordSet({ domainAscii: 'test', recordType: 'A', traceId: 'trace-a-tld' }),
+    ).resolves.toMatchObject({ error: { code: 'DNS_INVALID_DOMAIN' }, ok: false })
+  })
+
   it.each(DNS_RECORD_TYPES)(
     'parses %s records with TTL from a strict DNS response',
     async (type) => {

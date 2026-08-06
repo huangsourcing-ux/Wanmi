@@ -26,7 +26,7 @@ export function DomainQueryForm({
   description?: string
   label?: string
   placeholder?: string
-  tool?: 'dns' | 'domain-search' | 'whois'
+  tool?: 'dns' | 'domain-search' | 'ssl-check' | 'whois'
 }) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     const query = new FormData(event.currentTarget).get('q')

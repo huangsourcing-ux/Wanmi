@@ -99,9 +99,11 @@ function failure<T>(
   }
 }
 
-function canonicalName(value: string): string {
+function canonicalName(value: string, allowSingleLabel = false): string {
   const normalized = normalizeDomain(value)
-  if (!normalized.ok || !normalized.value.ascii.includes('.')) throw new DnsInvalidResponseError()
+  if (!normalized.ok || (!allowSingleLabel && !normalized.value.ascii.includes('.'))) {
+    throw new DnsInvalidResponseError()
+  }
   return normalized.value.ascii
 }
 
@@ -148,7 +150,7 @@ function txtValue(data: dnsPacket.TxtData): string {
   return value
 }
 
-function cnameChain(packet: DecodedPacket, query: string): Set<string> {
+function cnameChain(packet: DecodedPacket, query: string, allowSingleLabel: boolean): Set<string> {
   const answers = packet.answers ?? []
   const cnames = answers.filter(
     (answer): answer is dnsPacket.StringAnswer => answer.type === 'CNAME',
@@ -159,9 +161,9 @@ function cnameChain(packet: DecodedPacket, query: string): Set<string> {
   for (let pass = 0; pass <= cnames.length; pass += 1) {
     let changed = false
     for (const answer of remaining) {
-      const owner = canonicalName(answer.name)
+      const owner = canonicalName(answer.name, allowSingleLabel)
       if (!allowed.has(owner)) continue
-      allowed.add(canonicalName(answer.data))
+      allowed.add(canonicalName(answer.data, allowSingleLabel))
       remaining.delete(answer)
       changed = true
     }
@@ -171,8 +173,12 @@ function cnameChain(packet: DecodedPacket, query: string): Set<string> {
   return allowed
 }
 
-function parseRecord(answer: dnsPacket.Answer, type: DnsRecordType): DnsRecord {
-  const ownerName = canonicalName(answer.name)
+function parseRecord(
+  answer: dnsPacket.Answer,
+  type: DnsRecordType,
+  allowSingleLabel: boolean,
+): DnsRecord {
+  const ownerName = canonicalName(answer.name, allowSingleLabel)
   const ttl = safeTtl('ttl' in answer ? answer.ttl : undefined)
 
   if (type === 'A' && answer.type === 'A') {
@@ -246,6 +252,7 @@ function parsePacket(
     throw new DnsInvalidResponseError()
   }
   const question = packet.questions?.[0]
+  const allowSingleLabel = input.recordType === 'CAA'
   if (
     packet.type !== 'response' ||
     packet.id !== input.transactionId ||
@@ -256,7 +263,7 @@ function parsePacket(
     !question ||
     question.class !== 'IN' ||
     question.type !== input.recordType ||
-    canonicalName(question.name) !== input.domainAscii
+    canonicalName(question.name, allowSingleLabel) !== input.domainAscii
   ) {
     throw new DnsInvalidResponseError()
   }
@@ -281,13 +288,13 @@ function parsePacket(
   }
   if (rcode !== 'NOERROR') throw new DnsUnavailableError()
 
-  const allowedOwners = cnameChain(packet, input.domainAscii)
+  const allowedOwners = cnameChain(packet, input.domainAscii, allowSingleLabel)
   const answers = (packet.answers ?? []).filter((answer) => answer.type === input.recordType)
   if (answers.length > DNS_MAX_RECORDS_PER_TYPE) throw new DnsInvalidResponseError()
   const records = answers.map((answer) => {
-    const owner = canonicalName(answer.name)
+    const owner = canonicalName(answer.name, allowSingleLabel)
     if (!allowedOwners.has(owner)) throw new DnsInvalidResponseError()
-    return parseRecord(answer, input.recordType)
+    return parseRecord(answer, input.recordType, allowSingleLabel)
   })
   return {
     fallbackUsed,
@@ -352,7 +359,7 @@ export class AliDnsProvider implements DnsReadProvider {
     traceId: string
   }): Promise<ProviderResult<DnsProviderAnswer>> {
     const normalized = normalizeDomain(input.domainAscii)
-    if (!normalized.ok || !normalized.value.ascii.includes('.')) {
+    if (!normalized.ok || (!normalized.value.ascii.includes('.') && input.recordType !== 'CAA')) {
       return failure(
         'DNS_INVALID_DOMAIN',
         'DNS 查询域名格式无效',

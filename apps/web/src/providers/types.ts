@@ -1,5 +1,6 @@
 import type { ProviderResult } from '@/lib/domain'
 import type { DnsRecord, DnsRecordType } from '@/schemas/dns'
+import type { TlsCertificate, TlsFinding } from '@/schemas/tls'
 
 export interface HealthAwareProvider {
   health(): Promise<ProviderResult<{ healthy: boolean }>>
@@ -44,6 +45,21 @@ export interface DnsReadProvider extends HealthAwareProvider {
     recordType: DnsRecordType
     traceId: string
   }): Promise<ProviderResult<DnsProviderAnswer>>
+}
+
+export type TlsHandshakeReport = {
+  certificate: TlsCertificate
+  cipherSuite: string
+  findings: TlsFinding[]
+  protocol: string
+}
+
+export interface TlsHandshakeProvider extends HealthAwareProvider {
+  inspectCertificate(input: {
+    addresses: string[]
+    domainAscii: string
+    traceId: string
+  }): Promise<ProviderResult<TlsHandshakeReport>>
 }
 
 export interface SmsProvider extends HealthAwareProvider {
