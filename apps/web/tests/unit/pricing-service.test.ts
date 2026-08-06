@@ -170,6 +170,26 @@ describe('D2-07 TLD pricing orchestration', () => {
       status: 'stale',
     })
 
+    const queueLimitedStale = await queryTldPricing(
+      { tlds: ['com'] },
+      { provider: failureProvider('WESTDIGITAL_QUEUE_FULL'), snapshots, traceId },
+    )
+    expect(queueLimitedStale).toMatchObject({
+      data: {
+        items: [
+          expect.objectContaining({
+            purchaseBlockCode: 'PRICE_STALE',
+            purchaseEligible: false,
+            status: 'stale',
+          }),
+        ],
+      },
+      problem: {
+        detail: '当前仅能展示历史价格快照，不能用于购买',
+      },
+      state: 'degraded',
+    })
+
     const partialProvider: WestDigitalReadProvider = {
       ...failureProvider(),
       async queryPrice(input): Promise<ProviderResult<WestDigitalPrice>> {
@@ -206,18 +226,31 @@ describe('D2-07 TLD pricing orchestration', () => {
         )
       ).state,
     ).toBe('error')
-    expect(
-      (
-        await queryTldPricing(
-          { tlds: ['com', 'tv'] },
-          {
-            provider: failureProvider('WESTDIGITAL_RATE_LIMITED'),
-            snapshots: new MemorySnapshotStore(),
-            traceId,
-          },
-        )
-      ).state,
-    ).toBe('rate_limited')
+    for (const code of [
+      'WESTDIGITAL_RATE_LIMITED',
+      'WESTDIGITAL_QUEUE_FULL',
+      'WESTDIGITAL_QUEUE_TIMEOUT',
+    ]) {
+      const capacityLimited = await queryTldPricing(
+        { tlds: ['com', 'tv'] },
+        {
+          provider: failureProvider(code),
+          snapshots: new MemorySnapshotStore(),
+          traceId,
+        },
+      )
+      expect(capacityLimited, code).toMatchObject({
+        problem: {
+          action: '请稍后重试',
+          code: 'PRICING_RATE_LIMITED',
+          detail: '价格查询请求过于频繁，请稍后重试',
+          retryable: true,
+          status: 429,
+        },
+        state: 'rate_limited',
+      })
+      expect(capacityLimited).not.toHaveProperty('data')
+    }
     expect(
       (
         await queryTldPricing(

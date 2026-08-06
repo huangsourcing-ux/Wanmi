@@ -1,6 +1,7 @@
 import type { ProviderResult } from '@/lib/domain'
 import { normalizeDomain } from '@/lib/domain-name'
 import { AppError, toProblemDetails } from '@/lib/errors'
+import { isWestDigitalRateLimitError } from '@/providers/westdigital'
 import type { WestDigitalPrice, WestDigitalReadProvider } from '@/providers/types'
 import {
   PRICING_MAX_TLDS,
@@ -83,7 +84,7 @@ function providerFailureProblem(
   result: Extract<ProviderResult<WestDigitalPrice>, { ok: false }>,
   traceId: string,
 ) {
-  const rateLimited = result.error.code === 'WESTDIGITAL_RATE_LIMITED'
+  const rateLimited = isWestDigitalRateLimitError(result.error.code)
   return toProblemDetails(
     new AppError(
       result.error.code,

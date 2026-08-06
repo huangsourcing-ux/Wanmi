@@ -245,12 +245,50 @@ describe('DNS orchestration and SSRF controls', () => {
     )
     expect(servfail).toMatchObject({ problem: { code: 'DNS_SERVFAIL' }, state: 'error' })
 
+    const partialTimeoutProvider = provider(({ recordType }) => {
+      if (recordType === 'A') return success('A')
+      if (recordType === 'AAAA') return failed('DNS_TIMEOUT')
+      return success(recordType, { status: 'no_record' })
+    })
+    const partialTimeout = await queryDnsRecords(
+      { query: 'partial-timeout.example.test' },
+      options(partialTimeoutProvider),
+    )
+    expect(partialTimeout).toMatchObject({
+      data: {
+        recordSets: expect.arrayContaining([
+          expect.objectContaining({ records: expect.any(Array), status: 'records', type: 'A' }),
+          expect.objectContaining({
+            issue: { code: 'DNS_TIMEOUT', message: 'DNS 查询超时', retryable: true },
+            records: [],
+            status: 'timeout',
+            type: 'AAAA',
+          }),
+        ]),
+      },
+      problem: {
+        action: '请稍后重试',
+        detail: '部分 DNS 记录类型未能完成查询，其余结果仍可查看',
+      },
+      state: 'partial',
+    })
+
     const timeoutProvider = provider(() => failed('DNS_TIMEOUT'))
     const timeout = await queryDnsRecords(
       { query: 'timeout.example.test' },
       options(timeoutProvider),
     )
-    expect(timeout).toMatchObject({ problem: { code: 'DNS_TIMEOUT' }, state: 'error' })
+    expect(timeout).toMatchObject({
+      problem: {
+        action: '请稍后重试',
+        code: 'DNS_TIMEOUT',
+        detail: 'DNS 查询超时',
+        retryable: true,
+      },
+      state: 'error',
+    })
+    expect(timeout).not.toHaveProperty('data')
+    expect(JSON.stringify(timeout)).not.toMatch(/available|purchase/iu)
 
     const saturatedProvider = provider(() => failed('DNS_QUEUE_FULL'))
     const saturated = await queryDnsRecords(
@@ -258,9 +296,15 @@ describe('DNS orchestration and SSRF controls', () => {
       options(saturatedProvider),
     )
     expect(saturated).toMatchObject({
-      problem: { code: 'DNS_RATE_LIMITED', status: 429 },
+      problem: {
+        action: '请稍后重试',
+        code: 'DNS_RATE_LIMITED',
+        detail: '当前 DNS 查询请求较多，请稍后重试',
+        status: 429,
+      },
       state: 'rate_limited',
     })
+    expect(saturated).not.toHaveProperty('data')
   })
 
   it('returns degraded for secondary-node data and bounded cache hits on repeat lookup', async () => {

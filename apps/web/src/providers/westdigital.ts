@@ -27,6 +27,16 @@ export const WESTDIGITAL_ERROR_MESSAGES = {
   WESTDIGITAL_UNAVAILABLE: '暂时无法连接域名数据源，请稍后重试',
 } as const
 
+const WESTDIGITAL_RATE_LIMIT_ERROR_CODES = new Set([
+  'WESTDIGITAL_QUEUE_FULL',
+  'WESTDIGITAL_QUEUE_TIMEOUT',
+  'WESTDIGITAL_RATE_LIMITED',
+])
+
+export function isWestDigitalRateLimitError(code: string): boolean {
+  return WESTDIGITAL_RATE_LIMIT_ERROR_CODES.has(code)
+}
+
 export type WestDigitalOperation = 'availability' | 'price'
 
 export type WestDigitalTransportRequest = {

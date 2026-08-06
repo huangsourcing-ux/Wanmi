@@ -1,6 +1,7 @@
 import { AppError, toProblemDetails } from '@/lib/errors'
 import { normalizeDomain, type NormalizedDomain } from '@/lib/domain-name'
 import type { ProviderResult } from '@/lib/domain'
+import { isWestDigitalRateLimitError } from '@/providers/westdigital'
 import type { WestDigitalAvailability, WestDigitalReadProvider } from '@/providers/types'
 import {
   DOMAIN_SEARCH_MAX_TLDS,
@@ -105,7 +106,7 @@ function providerFailureItem(
   result: Extract<ProviderResult<WestDigitalAvailability>, { ok: false }>,
   traceId: string,
 ): DomainSearchItem {
-  const rateLimited = result.error.code === 'WESTDIGITAL_RATE_LIMITED'
+  const rateLimited = isWestDigitalRateLimitError(result.error.code)
   const problem = toProblemDetails(
     new AppError(
       result.error.code,

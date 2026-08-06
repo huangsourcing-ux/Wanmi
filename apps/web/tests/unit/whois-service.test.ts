@@ -165,9 +165,15 @@ describe('WHOIS public registration orchestration', () => {
         source: { protocol: 'whois', provider: 'westdigital' },
       },
       meta: { dataSource: '西部数码 WHOIS（Who-Dat 降级）' },
-      problem: { code: 'WHOIS_FALLBACK_USED' },
+      problem: {
+        action: '请稍后重试；不要据此推断域名是否可注册',
+        code: 'WHOIS_FALLBACK_USED',
+        detail: 'Who-Dat 暂时不可用，当前展示西部数码 WHOIS 降级结果',
+        retryable: true,
+      },
       state: 'degraded',
     })
+    expect(JSON.stringify(result)).not.toMatch(/"available"|"purchase"/iu)
   })
 
   it('returns a safe aggregate error when both sources fail and preserves fallback rate limiting', async () => {
@@ -181,9 +187,16 @@ describe('WHOIS public registration orchestration', () => {
     )
     expect(unavailable).toMatchObject({
       meta: { dataSource: 'Who-Dat RDAP/WHOIS + 西部数码 WHOIS' },
-      problem: { code: 'WHOIS_SOURCES_UNAVAILABLE' },
+      problem: {
+        action: '请稍后重试；不要据此推断域名是否可注册',
+        code: 'WHOIS_SOURCES_UNAVAILABLE',
+        detail: '两个公开注册数据源均未能完成本次查询',
+        retryable: true,
+      },
       state: 'error',
     })
+    expect(unavailable).not.toHaveProperty('data')
+    expect(JSON.stringify(unavailable)).not.toMatch(/"available"|"purchase"/iu)
 
     const rateLimited = await queryPublicRegistration(
       { query: 'example.test' },
