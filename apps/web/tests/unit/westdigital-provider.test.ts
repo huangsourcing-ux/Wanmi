@@ -183,7 +183,7 @@ describe('D2-02 West Digital read adapter', () => {
       domain: '😀.com',
       traceId: 'trace-westdigital-invalid-domain',
     })
-    expectFailure(invalidDomain, 'DOMAIN_INVALID_CHARACTER', '域名包含不受支持的字符', false)
+    expectFailure(invalidDomain, 'DOMAIN_INVALID_CHARACTER', '第 1 个标签包含不受支持的字符', false)
 
     const missingSuffix = await provider.queryAvailability({
       domain: 'example',
