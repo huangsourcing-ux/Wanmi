@@ -5,6 +5,7 @@ import type { DnsReadProvider, TlsHandshakeProvider } from '@/providers/types'
 import { sslCheckRequestSchema, sslCheckResultSchema } from '@/schemas/tls'
 import { DnsResultCache } from '@/services/dns/query-dns-records'
 import { TlsResultCache, queryTlsCertificate } from '@/services/tls/query-tls-certificate'
+import { runtimeProviderObservability } from '@/services/observability/runtime'
 
 const MAX_REQUEST_BODY_BYTES = 4_096
 
@@ -84,6 +85,6 @@ export function createSslCheckPostHandler(dependencies: SslCheckHandlerDependenc
 }
 
 export const POST = createSslCheckPostHandler({
-  dnsProvider: new AliDnsProvider(),
-  tlsProvider: new NodeTlsProvider(),
+  dnsProvider: new AliDnsProvider({ logger: runtimeProviderObservability.logger }),
+  tlsProvider: new NodeTlsProvider({ logger: runtimeProviderObservability.logger }),
 })

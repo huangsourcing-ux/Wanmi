@@ -19,27 +19,31 @@ export const firstPartySourceSchema = z.enum(['direct', 'internal', 'search', 's
 
 export const firstPartyDeviceCategorySchema = z.enum(['mobile', 'tablet', 'desktop'])
 
-export const firstPartyToolSchema = z.enum([
+export const FIRST_PARTY_TOOLS = [
   'domain-search',
   'whois',
   'dns',
   'ssl-check',
   'idn',
   'pricing',
-])
+] as const
+
+export const firstPartyToolSchema = z.enum(FIRST_PARTY_TOOLS)
 
 export const firstPartyInputTypeSchema = z.enum(['full_domain', 'keyword', 'unknown'])
 
 export const firstPartyResultCategorySchema = z.enum(['ready', 'empty', 'partial', 'degraded'])
 
-export const firstPartyDurationBucketSchema = z.enum([
+export const FIRST_PARTY_DURATION_BUCKETS = [
   'lt_100ms',
   '100_299ms',
   '300_999ms',
   '1000_2999ms',
   '3000_9999ms',
   'gte_10000ms',
-])
+] as const
+
+export const firstPartyDurationBucketSchema = z.enum(FIRST_PARTY_DURATION_BUCKETS)
 
 export const firstPartyDataSourceSchema = z.enum([
   'local',
@@ -111,3 +115,4 @@ export type FirstPartySource = z.infer<typeof firstPartySourceSchema>
 export type FirstPartyDeviceCategory = z.infer<typeof firstPartyDeviceCategorySchema>
 export type FirstPartyInputType = z.infer<typeof firstPartyInputTypeSchema>
 export type FirstPartyDurationBucket = z.infer<typeof firstPartyDurationBucketSchema>
+export type FirstPartyTool = z.infer<typeof firstPartyToolSchema>

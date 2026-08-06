@@ -170,6 +170,116 @@ function verifyPriceSnapshotSchema(stage) {
   }
 }
 
+function verifyToolObservabilitySchema(stage) {
+  const forbiddenColumns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(column_name, ',' ORDER BY column_name)
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'tool_observability_buckets'
+         AND column_name IN (
+           'client_id', 'cookie', 'domain', 'domain_ascii', 'ip', 'query',
+           'request_id', 'session_id', 'tld', 'trace_id', 'url', 'user_agent'
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (forbiddenColumns) {
+    throw new Error(
+      `D2-11 observability table has forbidden dimensions after ${stage}: ${forbiddenColumns}`,
+    )
+  }
+
+  const columns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(column_name, ',' ORDER BY column_name)
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'tool_observability_buckets'
+         AND column_name IN (
+           'bucket_end', 'bucket_key', 'bucket_start', 'failure_count',
+           'invalid_response_error_count', 'last_observed_at', 'last_queue_depth',
+           'latency100_to299_ms_count', 'latency1000_to2999_ms_count',
+           'latency300_to999_ms_count', 'latency3000_to9999_ms_count',
+           'latency_gte10000_ms_count', 'latency_lt100_ms_count', 'max_queue_depth',
+           'p50_bucket', 'p95_bucket', 'provider', 'provider_operation',
+           'rate_limited_error_count', 'rejected_count', 'request_count',
+           'schema_version', 'scope', 'success_count', 'success_rate_basis_points',
+           'timeout_error_count', 'tool', 'upstream_error_count'
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (columns.split(',').filter(Boolean).length !== 28) {
+    throw new Error(`D2-11 observability columns incomplete after ${stage}: ${columns}`)
+  }
+
+  const indexes = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(indexdef, E'\n' ORDER BY indexname)
+       FROM pg_indexes
+       WHERE schemaname = 'public'
+         AND tablename = 'tool_observability_buckets'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    !/UNIQUE INDEX .*\(bucket_key\)/.test(indexes) ||
+    !/\(scope, bucket_start\)/.test(indexes) ||
+    !/\(tool, bucket_start\)/.test(indexes) ||
+    !/\(provider, bucket_start\)/.test(indexes)
+  ) {
+    throw new Error(`D2-11 observability indexes missing after ${stage}: ${indexes}`)
+  }
+
+  const lockRelation = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'payload_locked_documents_rels'
+           AND column_name = 'tool_observability_buckets_id'
+       )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (lockRelation !== 'f') {
+    throw new Error(`D2-11 aggregate buckets unexpectedly enable document locking after ${stage}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -179,6 +289,7 @@ try {
   verifyAuditReaderIndex('empty-database migration')
   verifyFirstPartyEventSchema('empty-database migration')
   verifyPriceSnapshotSchema('empty-database migration')
+  verifyToolObservabilitySchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -381,8 +492,41 @@ try {
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
   verifyPriceSnapshotSchema('D2-07 migration round trip')
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 6
+     WHERE name = '20260806_113033_d2_tool_observability'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const observabilityTableAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT to_regclass('public.tool_observability_buckets') IS NOT NULL`,
+    ],
+    { capture: true },
+  ).trim()
+  if (observabilityTableAfterDown !== 'f') {
+    throw new Error('D2-11 migration down did not remove the observability aggregate table')
+  }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyToolObservabilitySchema('D2-11 migration round trip')
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, and the D2-07 price snapshot schema round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, and the D2-11 observability aggregate schema round trips.\n',
   )
 } finally {
   if (created) {

@@ -7,6 +7,7 @@ import { WestDigitalReadAdapter } from '@/providers/westdigital'
 import type { WestDigitalReadProvider } from '@/providers/types'
 import { PRICING_MAX_TLDS, pricingRequestSchema, pricingResultSchema } from '@/schemas/pricing'
 import { queryTldPricing } from '@/services/pricing/query-tld-pricing'
+import { runtimeProviderObservability } from '@/services/observability/runtime'
 import {
   PayloadPriceSnapshotStore,
   type PriceSnapshotStore,
@@ -15,7 +16,10 @@ import {
 export const runtime = 'nodejs'
 
 const MAX_REQUEST_BODY_BYTES = 4_096
-const provider = new WestDigitalReadAdapter({ transport: new FixtureWestDigitalTransport() })
+const provider = new WestDigitalReadAdapter({
+  logger: runtimeProviderObservability.logger,
+  transport: new FixtureWestDigitalTransport(),
+})
 
 type PricingPostDependencies = {
   getSnapshotStore: () => Promise<PriceSnapshotStore>

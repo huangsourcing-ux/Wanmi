@@ -245,6 +245,7 @@ export class WhoDatProvider implements PublicRegistrationProvider {
     traceId: string,
     requestId: string,
   ): Promise<ProviderResult<PublicRegistrationRecord>> {
+    const startedAt = this.now()
     const observedAt = this.observedAt()
     try {
       this.logger.info({
@@ -306,8 +307,10 @@ export class WhoDatProvider implements PublicRegistrationProvider {
       }
       this.logger.info({
         cacheStatus: parsed.data.meta.cached ? 'hit' : 'miss',
+        durationMs: Math.max(0, this.now() - startedAt),
         event: 'whodat.request_succeeded',
         provider: 'whodat',
+        queueDepth: this.limiter.queueSize,
         requestId,
         traceId,
       })
@@ -422,6 +425,7 @@ export class WhoDatProvider implements PublicRegistrationProvider {
       errorCode: code,
       event: 'whodat.request_failed',
       provider: 'whodat',
+      queueDepth: this.limiter.queueSize,
       requestId,
       traceId,
     })

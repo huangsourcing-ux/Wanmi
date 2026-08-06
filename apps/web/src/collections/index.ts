@@ -26,6 +26,7 @@ import {
   FirstPartyEvents,
   ManualReviews,
   Reconciliations,
+  ToolObservabilityBuckets,
   UserFeedback,
 } from './operations'
 import { RealnameDocuments, RealnameTemplates } from './realname'
@@ -63,6 +64,7 @@ export const collections: CollectionConfig[] = [
   Reconciliations,
   AuditLogs,
   FirstPartyEvents,
+  ToolObservabilityBuckets,
   UserFeedback,
   CustomerSecurityEvents,
   PriceSnapshots,

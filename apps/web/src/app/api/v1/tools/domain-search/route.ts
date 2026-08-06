@@ -7,9 +7,13 @@ import {
   domainSearchResultSchema,
 } from '@/schemas/domain-search'
 import { queryDomainAvailability } from '@/services/domain-search/query-availability'
+import { runtimeProviderObservability } from '@/services/observability/runtime'
 
 const MAX_REQUEST_BODY_BYTES = 4_096
-const provider = new WestDigitalReadAdapter({ transport: new FixtureWestDigitalTransport() })
+const provider = new WestDigitalReadAdapter({
+  logger: runtimeProviderObservability.logger,
+  transport: new FixtureWestDigitalTransport(),
+})
 
 async function readJsonBody(request: Request): Promise<unknown> {
   const contentType = request.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
