@@ -62,7 +62,7 @@ export function getToolDefinition(slug: string): ToolDefinition | undefined {
   return TOOL_DEFINITIONS.find((tool) => tool.slug === slug)
 }
 
-export function normalizeQueryParam(value: string | string[] | undefined): string {
+export function normalizeQueryParam(value: string | string[] | undefined, maxLength = 253): string {
   const query = Array.isArray(value) ? value[0] : value
-  return query?.trim().slice(0, 253) ?? ''
+  return query?.trim().slice(0, maxLength) ?? ''
 }

@@ -4,6 +4,7 @@ import { ArrowRightIcon, Globe2Icon } from 'lucide-react'
 import type { FormEvent } from 'react'
 
 import { FormField } from '@/components/forms/form-field'
+import { useLocalToolLibrary } from '@/components/local-library/local-tool-library-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { emitFirstPartyEvent, inferToolInput } from '@/lib/analytics'
@@ -14,7 +15,7 @@ export function DomainQueryForm({
   buttonLabel = '查询域名',
   className,
   defaultValue,
-  description = '支持完整域名与关键词。本阶段只建立安全入口，不调用查询服务，也不保存输入。',
+  description = '支持完整域名与关键词。启用浏览器历史时，提交内容只保存在当前浏览器。',
   label = '输入完整域名或关键词',
   placeholder = '例如 wanmi.net 或品牌关键词',
   tool = 'domain-search',
@@ -28,9 +29,13 @@ export function DomainQueryForm({
   placeholder?: string
   tool?: 'dns' | 'domain-search' | 'ssl-check' | 'whois'
 }) {
+  const { recordHistory } = useLocalToolLibrary()
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     const query = new FormData(event.currentTarget).get('q')
-    const dimensions = inferToolInput(typeof query === 'string' ? query : '')
+    const value = typeof query === 'string' ? query : ''
+    recordHistory({ query: value, tool })
+    const dimensions = inferToolInput(value)
     emitFirstPartyEvent({
       event: 'tool_submitted',
       fromLocalHistory: false,

@@ -4,6 +4,7 @@ import { AlertCircleIcon, CheckCircle2Icon, Clock3Icon, DatabaseIcon } from 'luc
 import { useEffect, useState } from 'react'
 
 import { ResultState } from '@/components/results/result-state'
+import { DomainFavoriteButton } from '@/components/local-library/favorite-buttons'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { AppError, getTraceId, readProblemResponse, toProblemDetails } from '@/lib/errors'
@@ -130,6 +131,7 @@ function DomainResultCard({ item }: { item: DomainSearchItem }) {
             </div>
           ) : null}
         </dl>
+        <DomainFavoriteButton domain={item.domainAscii} label={item.domainUnicode} />
       </CardContent>
     </Card>
   )
