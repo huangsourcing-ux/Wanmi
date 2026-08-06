@@ -37,6 +37,94 @@ export const PriceRules: CollectionConfig = {
   ],
 }
 
+const safeInteger = (name: string, required = true): Extract<Field, { type: 'number' }> => ({
+  name,
+  type: 'number',
+  min: 0,
+  required,
+  validate: (value: null | number | undefined) =>
+    value === null || value === undefined
+      ? required
+        ? '字段必须是非负安全整数'
+        : true
+      : Number.isSafeInteger(value) && value >= 0
+        ? true
+        : '字段必须是非负安全整数',
+})
+
+export const PriceSnapshots: CollectionConfig = {
+  slug: 'priceSnapshots',
+  access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
+  admin: {
+    defaultColumns: ['snapshotRef', 'tld', 'providerObservedAt', 'createdAt'],
+    group: ADMIN_GROUPS.commerce,
+    hidden: systemAdminHidden,
+    listSearchableFields: ['snapshotRef', 'tld', 'calculationHash'],
+    useAsTitle: 'snapshotRef',
+  },
+  defaultSort: '-providerObservedAt',
+  indexes: [{ fields: ['tld', 'ruleKey', 'providerObservedAt'] }],
+  labels: { plural: '价格计算快照', singular: '价格计算快照' },
+  lockDocuments: false,
+  fields: [
+    { ...safeInteger('schemaVersion'), defaultValue: 1, max: 1, min: 1 },
+    { ...safeInteger('calculationVersion'), defaultValue: 1, max: 1, min: 1 },
+    {
+      name: 'snapshotRef',
+      type: 'text',
+      index: true,
+      required: true,
+      unique: true,
+      validate: (value: null | string | undefined) =>
+        typeof value === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value)
+          ? true
+          : '快照引用必须是随机 UUID',
+    },
+    {
+      name: 'calculationHash',
+      type: 'text',
+      index: true,
+      required: true,
+      unique: true,
+      validate: (value: null | string | undefined) =>
+        typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value)
+          ? true
+          : '计算哈希必须是 SHA-256 十六进制值',
+    },
+    { name: 'tld', type: 'text', index: true, required: true },
+    { name: 'representativeDomainAscii', type: 'text', required: true },
+    { name: 'priceClass', type: 'select', options: ['standard'], required: true },
+    { name: 'currency', type: 'select', options: ['CNY'], required: true },
+    { name: 'provider', type: 'select', options: ['westdigital_fixture'], required: true },
+    { name: 'providerProductId', type: 'text', required: true },
+    { name: 'providerRequestId', type: 'text', required: true },
+    { name: 'providerObservedAt', type: 'date', index: true, required: true },
+    { name: 'providerCacheStatus', type: 'select', options: ['hit', 'miss'], required: true },
+    { name: 'providerCacheExpiresAt', type: 'date' },
+    { name: 'ruleSource', type: 'select', options: ['wanmi_fixture'], required: true },
+    { name: 'ruleKey', type: 'text', index: true, required: true },
+    { ...safeInteger('ruleVersion'), defaultValue: 1, max: 1, min: 1 },
+    { name: 'ruleMode', type: 'select', options: ['fixed', 'percentage'], required: true },
+    safeInteger('ruleFixedAmountMinor', false),
+    safeInteger('rulePercentageBasisPoints', false),
+    { name: 'roundingMode', type: 'select', options: ['half_up_to_fen'], required: true },
+    safeInteger('upstreamRegistrationPriceMinor'),
+    safeInteger('upstreamRenewalPriceMinor'),
+    safeInteger('registrationPriceMinor'),
+    safeInteger('renewalPriceMinor'),
+    safeInteger('oneYearTotalMinor'),
+    safeInteger('threeYearTotalMinor'),
+    {
+      name: 'calculationFormula',
+      type: 'select',
+      options: ['registration_price_plus_annual_renewal_price'],
+      required: true,
+    },
+    { name: 'createdTraceId', type: 'text', index: true, required: true },
+  ],
+}
+
 export const Quotes: CollectionConfig = {
   slug: 'quotes',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },

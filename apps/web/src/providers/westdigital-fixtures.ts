@@ -16,6 +16,45 @@ export const WESTDIGITAL_PRICE_FIXTURE = {
   result: 200,
 } as const
 
+const PRICING_FIXTURE_TLDS = [
+  'com',
+  'cn',
+  'net',
+  'org',
+  'top',
+  'xyz',
+  'vip',
+  'cc',
+  'tv',
+  'com.cn',
+] as const
+
+export const WESTDIGITAL_TLD_PRICE_FIXTURES = Object.fromEntries(
+  PRICING_FIXTURE_TLDS.map((tld, index) => {
+    const buyprice = 20 + index * 5
+    return [
+      `wanmi.${tld}`,
+      {
+        clientid: `fixture-pricing-${tld.replaceAll('.', '-')}`,
+        data: {
+          buyprice,
+          buyyear: '1',
+          proid: `fixture-domain-${tld.replaceAll('.', '-')}`,
+          renewprice: buyprice + 10,
+        },
+        result: 200,
+      },
+    ]
+  }),
+) as Record<
+  string,
+  {
+    clientid: string
+    data: { buyprice: number; buyyear: '1'; proid: string; renewprice: number }
+    result: 200
+  }
+>
+
 export type WestDigitalFixtureHandler = (
   request: WestDigitalTransportRequest,
 ) => Promise<WestDigitalTransportResponse> | WestDigitalTransportResponse
@@ -78,6 +117,11 @@ function defaultHandler(request: WestDigitalTransportRequest): WestDigitalTransp
     request.body.year === '1'
   )
     return { body: WESTDIGITAL_PRICE_FIXTURE, status: 200 }
+
+  if (request.operation === 'price' && request.body.year === '1') {
+    const fixture = WESTDIGITAL_TLD_PRICE_FIXTURES[request.body.value ?? '']
+    if (fixture) return { body: fixture, status: 200 }
+  }
 
   return { body: { result: 500 }, status: 200 }
 }

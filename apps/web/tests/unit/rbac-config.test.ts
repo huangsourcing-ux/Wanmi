@@ -271,6 +271,7 @@ describe('D1 administrator navigation groups', () => {
     orders: ADMIN_GROUPS.commerce,
     paymentNotifications: ADMIN_GROUPS.commerce,
     priceRules: ADMIN_GROUPS.commerce,
+    priceSnapshots: ADMIN_GROUPS.commerce,
     providerOperations: ADMIN_GROUPS.fulfillment,
     quotes: ADMIN_GROUPS.commerce,
     realnameDocuments: ADMIN_GROUPS.realname,

@@ -102,6 +102,7 @@ export interface Config {
     firstPartyEvents: FirstPartyEvent;
     userFeedback: UserFeedback;
     customerSecurityEvents: CustomerSecurityEvent;
+    priceSnapshots: PriceSnapshot;
     redirects: Redirect;
     forms: Form;
     'form-submissions': FormSubmission;
@@ -147,6 +148,7 @@ export interface Config {
     firstPartyEvents: FirstPartyEventsSelect<false> | FirstPartyEventsSelect<true>;
     userFeedback: UserFeedbackSelect<false> | UserFeedbackSelect<true>;
     customerSecurityEvents: CustomerSecurityEventsSelect<false> | CustomerSecurityEventsSelect<true>;
+    priceSnapshots: PriceSnapshotsSelect<false> | PriceSnapshotsSelect<true>;
     redirects: RedirectsSelect<false> | RedirectsSelect<true>;
     forms: FormsSelect<false> | FormsSelect<true>;
     'form-submissions': FormSubmissionsSelect<false> | FormSubmissionsSelect<true>;
@@ -928,6 +930,44 @@ export interface CustomerSecurityEvent {
     | number
     | boolean
     | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "priceSnapshots".
+ */
+export interface PriceSnapshot {
+  id: number;
+  schemaVersion: number;
+  calculationVersion: number;
+  snapshotRef: string;
+  calculationHash: string;
+  tld: string;
+  representativeDomainAscii: string;
+  priceClass: 'standard';
+  currency: 'CNY';
+  provider: 'westdigital_fixture';
+  providerProductId: string;
+  providerRequestId: string;
+  providerObservedAt: string;
+  providerCacheStatus: 'hit' | 'miss';
+  providerCacheExpiresAt?: string | null;
+  ruleSource: 'wanmi_fixture';
+  ruleKey: string;
+  ruleVersion: number;
+  ruleMode: 'fixed' | 'percentage';
+  ruleFixedAmountMinor?: number | null;
+  rulePercentageBasisPoints?: number | null;
+  roundingMode: 'half_up_to_fen';
+  upstreamRegistrationPriceMinor: number;
+  upstreamRenewalPriceMinor: number;
+  registrationPriceMinor: number;
+  renewalPriceMinor: number;
+  oneYearTotalMinor: number;
+  threeYearTotalMinor: number;
+  calculationFormula: 'registration_price_plus_annual_renewal_price';
+  createdTraceId: string;
   updatedAt: string;
   createdAt: string;
 }
@@ -1985,6 +2025,43 @@ export interface CustomerSecurityEventsSelect<T extends boolean = true> {
   event?: T;
   occurredAt?: T;
   safeMetadata?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "priceSnapshots_select".
+ */
+export interface PriceSnapshotsSelect<T extends boolean = true> {
+  schemaVersion?: T;
+  calculationVersion?: T;
+  snapshotRef?: T;
+  calculationHash?: T;
+  tld?: T;
+  representativeDomainAscii?: T;
+  priceClass?: T;
+  currency?: T;
+  provider?: T;
+  providerProductId?: T;
+  providerRequestId?: T;
+  providerObservedAt?: T;
+  providerCacheStatus?: T;
+  providerCacheExpiresAt?: T;
+  ruleSource?: T;
+  ruleKey?: T;
+  ruleVersion?: T;
+  ruleMode?: T;
+  ruleFixedAmountMinor?: T;
+  rulePercentageBasisPoints?: T;
+  roundingMode?: T;
+  upstreamRegistrationPriceMinor?: T;
+  upstreamRenewalPriceMinor?: T;
+  registrationPriceMinor?: T;
+  renewalPriceMinor?: T;
+  oneYearTotalMinor?: T;
+  threeYearTotalMinor?: T;
+  calculationFormula?: T;
+  createdTraceId?: T;
   updatedAt?: T;
   createdAt?: T;
 }
