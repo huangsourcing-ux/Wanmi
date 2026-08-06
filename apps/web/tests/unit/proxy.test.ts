@@ -1,13 +1,20 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { resolvePublicRedirect } = vi.hoisted(() => ({ resolvePublicRedirect: vi.fn() }))
+const { isPublishedPublicContentPath, resolvePublicRedirect } = vi.hoisted(() => ({
+  isPublishedPublicContentPath: vi.fn(),
+  resolvePublicRedirect: vi.fn(),
+}))
+vi.mock('@/services/content/publication-gate', () => ({ isPublishedPublicContentPath }))
 vi.mock('@/services/redirects/runtime', () => ({ resolvePublicRedirect }))
 
 import { proxy } from '@/proxy'
 
 describe('public redirect proxy', () => {
-  beforeEach(() => resolvePublicRedirect.mockReset())
+  beforeEach(() => {
+    isPublishedPublicContentPath.mockReset().mockResolvedValue(undefined)
+    resolvePublicRedirect.mockReset()
+  })
 
   it('returns a canonical 301 with the original query and trace ID', async () => {
     resolvePublicRedirect.mockResolvedValue('/articles/current')
@@ -75,5 +82,20 @@ describe('public redirect proxy', () => {
       const response = await proxy(new NextRequest(`http://example.invalid${path}`))
       expect(response.headers.get('x-middleware-next'), path).toBe('1')
     }
+  })
+
+  it('forces private no-store and noindex headers on every content preview response', async () => {
+    const response = await proxy(
+      new NextRequest('http://example.invalid/preview/content/articles/private-draft'),
+    )
+    expect(response.headers.get('cache-control')).toBe('private, no-store, max-age=0')
+    expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow')
+  })
+
+  it('returns a literal 404 before streaming an unpublished public content detail', async () => {
+    isPublishedPublicContentPath.mockResolvedValue(false)
+    const response = await proxy(new NextRequest('http://example.invalid/articles/private-draft'))
+    expect(response.status).toBe(404)
+    expect(response.headers.get('cache-control')).toBe('no-store')
   })
 })

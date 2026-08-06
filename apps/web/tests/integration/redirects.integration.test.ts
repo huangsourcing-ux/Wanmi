@@ -308,9 +308,12 @@ describe('D1 controlled redirects', () => {
       data: {
         _status: 'published',
         content,
+        source: 'D3 test fixture',
         slug: `${fixturePrefix}-published`,
         title: `${fixturePrefix} published`,
+        workflowStatus: 'published',
       },
+      draft: false,
       overrideAccess: true,
     })
     const draft = await payload.create({

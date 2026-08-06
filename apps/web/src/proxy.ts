@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { getEnv } from '@/lib/env'
 import { isRedirectEligiblePath, normalizeRedirectPath } from '@/lib/redirects'
 import { getTraceId } from '@/lib/request-id'
+import { isPublishedPublicContentPath } from '@/services/content/publication-gate'
 import { resolvePublicRedirect } from '@/services/redirects/runtime'
 
 const BLOCKED_ADMIN_AUTH_PATHS = new Set([
@@ -75,8 +76,27 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  if (request.method === 'GET' || request.method === 'HEAD') {
+    let published: boolean | undefined
+    try {
+      published = await isPublishedPublicContentPath(request.nextUrl.pathname)
+    } catch {
+      published = false
+    }
+    if (published === false) {
+      return new NextResponse(null, {
+        headers: { 'cache-control': 'no-store', 'x-request-id': traceId },
+        status: 404,
+      })
+    }
+  }
+
   const response = NextResponse.next({ request: { headers: requestHeaders } })
   response.headers.set('x-request-id', traceId)
+  if (request.nextUrl.pathname.startsWith('/preview/content/')) {
+    response.headers.set('cache-control', 'private, no-store, max-age=0')
+    response.headers.set('x-robots-tag', 'noindex, nofollow')
+  }
   return response
 }
 

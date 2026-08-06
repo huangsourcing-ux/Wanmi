@@ -84,8 +84,13 @@ async function createPaidOrderFixture() {
 describe('D0 PostgreSQL, auth and Jobs baseline', () => {
   it('boots all official plugins and draft/version/scheduling configuration', () => {
     expect(payload.collections.articles.config.versions).toMatchObject({
-      drafts: expect.objectContaining({ schedulePublish: true }),
+      drafts: expect.objectContaining({ schedulePublish: false }),
     })
+    expect(payload.config.jobs?.workflows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ queue: 'publishing', slug: 'contentScheduledPublish' }),
+      ]),
+    )
     expect(payload.collections.redirects).toBeDefined()
     expect(payload.collections.forms).toBeDefined()
     expect(payload.collections['form-submissions']).toBeDefined()

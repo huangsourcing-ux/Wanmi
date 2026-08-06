@@ -35,7 +35,7 @@ describe('public site data', () => {
 
     const data = await readPublicSiteData(asPublicPayload(find))
 
-    expect(find).toHaveBeenCalledTimes(4)
+    expect(find).toHaveBeenCalledTimes(5)
     expect(find.mock.calls.every(([args]) => args.overrideAccess === false)).toBe(true)
     expect(data.navigation).toEqual({
       items: [
@@ -45,6 +45,7 @@ describe('public site data', () => {
       status: 'ready',
     })
     expect(data.articles).toMatchObject({ status: 'ready', title: '最新实用内容' })
+    expect(data.helpPages).toMatchObject({ status: 'ready', title: '帮助文章' })
     expect(data.tldPages).toMatchObject({ status: 'ready', title: 'TLD 页面' })
     expect(data.topics).toMatchObject({ status: 'ready', title: '专题与指南' })
   })
@@ -60,6 +61,7 @@ describe('public site data', () => {
 
     expect(data.navigation).toEqual({ items: DEFAULT_NAVIGATION, status: 'unavailable' })
     expect(data.articles.status).toBe('unavailable')
+    expect(data.helpPages.status).toBe('ready')
     expect(data.tldPages.status).toBe('empty')
     expect(data.topics.status).toBe('ready')
   })
@@ -69,10 +71,11 @@ describe('public site data', () => {
 
     const data = await readPublicSiteData(asPublicPayload(find))
 
-    expect(find).toHaveBeenCalledTimes(4)
+    expect(find).toHaveBeenCalledTimes(5)
     expect(find.mock.calls.every(([args]) => args.overrideAccess === false)).toBe(true)
     expect(data.navigation).toEqual({ items: DEFAULT_NAVIGATION, status: 'unavailable' })
     expect(data.articles.status).toBe('unavailable')
+    expect(data.helpPages.status).toBe('unavailable')
     expect(data.tldPages.status).toBe('unavailable')
     expect(data.topics.status).toBe('unavailable')
   })

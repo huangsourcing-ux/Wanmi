@@ -431,9 +431,9 @@ D2-12 验证记录（2026-08-06）：新增跨层综合降级矩阵，并仅修�
 
 ### 7.2 任务
 
-- [ ] 建立轻量 CMS：文章、专题、分类、标签、TLD 页面、帮助页；
-- [ ] 实现草稿、待审核、定时发布、发布、下线、归档和修订记录；
-- [ ] 实现受控 Markdown/富文本清洗、OSS 图片、预览和来源字段；
+- [x] 建立轻量 CMS：文章、专题、分类、标签、TLD 页面、帮助页；
+- [x] 实现草稿、待审核、定时发布、发布、下线、归档和修订记录；
+- [x] 实现受控 Markdown/富文本清洗、OSS 图片、预览和来源字段；
 - [ ] 实现 TLD 页面、工具与内容双向关联；
 - [ ] 使用 `@payloadcms/plugin-seo` 实现 SEO 标题、描述和 Open Graph，并完成 canonical、收录开关和 sitemap 集成；
 - [ ] 使用 `@payloadcms/plugin-redirects` 管理内容、工具和 TLD 页面改址后的 301，并验证循环和开放跳转防护；
@@ -446,6 +446,8 @@ D2-12 验证记录（2026-08-06）：新增跨层综合降级矩阵，并仅修�
 - [ ] 建立工具状态、内容、广告、TLD/价格、反馈和审计后台；
 - [ ] 建立第一方事件聚合与基础运营仪表盘；
 - [ ] 准备首批内容模板和发布 Runbook，内容本身由项目负责人持续补充。
+
+D3-01 验证记录（2026-08-06）：在 D0 `articles`、`topics`、`tldPages` 基础上新增 `helpPages`、`categories`、`tags`，四类内容统一使用 Payload drafts/autosave/50 版本与 `draft → in_review → published → unpublished → archived` 单向状态机；已发布内容可保存草稿修订并通过 `publish_revision` 替换线上版本。管理端工作流 API 仅接受完成 TOTP 的 active `content_editor`/`system_admin`，直接 REST、Local API、Admin 字段修改均不能绕过状态机；每次状态动作记录操作者、前后状态和调度信息，版本快照保留 `revisionBy`。自定义 `publishing` Job 以内容文档为并发键，定时、替换、取消、旧任务重放、重复执行和调度人权限失效均安全，Payload 原生 `schedulePublish` 已关闭。内容只持久化受控 Lexical JSON，创建、更新、autosave 与发布前服务端递归重建白名单树；拒绝 HTML/脚本/嵌入/未知节点、事件属性、样式、危险协议、协议相对链接及外链/data 图片，图片只解析 `media` ID，外部 HTTP(S) 链接统一输出 `nofollow noopener`，公开渲染不使用 `dangerouslySetInnerHTML`。新增四类公开详情与受 TOTP/内容角色保护的私有预览；匿名读取同时要求 Payload `_status=published` 和 `workflowStatus=published`，Proxy 发布门禁保证未发布内容返回真实 404，预览输出 `noindex, nofollow` 与私有禁缓存策略，分类/标签不能被匿名直接枚举。命名 migration `20260806_141657_d3_content_cms_workflow` 已覆盖新表、版本、关系、索引、Job 枚举与旧内容回填：有来源的旧发布内容保留发布，缺来源内容回退待审核；生成类型和 import map 已同步。最终 `make check` 通过生成物/schema 漂移、空库/当前升级/down-up migration、Nginx、lint、TypeScript strict、460 个单元测试、32 个 PostgreSQL/MinIO 集成测试、安全门禁、Next.js 生产构建与 linux/amd64 同镜像；Gitleaks 无泄漏，依赖审计维持既有 2 low、2 moderate，无 high/critical。最终 `make test-e2e` 29/29 通过，覆盖创建、审核、私有预览、即时发布、公开访问、下线、归档、四类详情、匿名预览拒绝与 XSS 不落库/不渲染。本切片未实现广告、仪表盘、交易、完整 SEO/Redirect/Sitemap，未部署或执行真实 OSS/其他外部写操作。
 
 ### 7.3 退出条件
 

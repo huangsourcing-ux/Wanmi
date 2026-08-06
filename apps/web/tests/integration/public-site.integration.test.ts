@@ -9,7 +9,10 @@ import type { Article } from '@/payload-types'
 
 let payload: Payload
 const fixturePrefix = `d1-public-${randomUUID()}`
-const created: Array<{ collection: 'articles' | 'tldPages' | 'topics'; id: number | string }> = []
+const created: Array<{
+  collection: 'articles' | 'helpPages' | 'tldPages' | 'topics'
+  id: number | string
+}> = []
 
 const content: Article['content'] = {
   root: {
@@ -80,6 +83,7 @@ describe('D1 public content access', () => {
       { collection: 'articles' as const, suffix: 'article', title: '公开文章' },
       { collection: 'tldPages' as const, suffix: 'tld', title: '公开 TLD' },
       { collection: 'topics' as const, suffix: 'topic', title: '公开专题' },
+      { collection: 'helpPages' as const, suffix: 'help', title: '公开帮助' },
     ]) {
       const document = await payload.create({
         collection: fixture.collection,
@@ -94,9 +98,11 @@ describe('D1 public content access', () => {
             noIndex: false,
           },
           publishedAt: '2099-01-01T00:00:00.000Z',
+          source: 'D3 test fixture',
           slug: `${fixturePrefix}-${fixture.suffix}`,
           summary: '公开摘要',
           title: `${fixturePrefix} ${fixture.title}`,
+          workflowStatus: 'published',
         },
         draft: false,
         overrideAccess: true,
@@ -107,6 +113,7 @@ describe('D1 public content access', () => {
     const data = await readPublicSiteData(payload)
 
     expect(data.articles.items.map((item) => item.title)).toContain(`${fixturePrefix} 公开文章`)
+    expect(data.helpPages.items.map((item) => item.title)).toContain(`${fixturePrefix} 公开帮助`)
     expect(data.articles.items.map((item) => item.title)).not.toContain(`${fixturePrefix} draft`)
     expect(data.tldPages.items.map((item) => item.title)).toContain(`${fixturePrefix} 公开 TLD`)
     expect(data.topics.items.map((item) => item.title)).toContain(`${fixturePrefix} 公开专题`)

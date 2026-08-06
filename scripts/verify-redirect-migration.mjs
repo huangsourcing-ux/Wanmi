@@ -280,6 +280,74 @@ function verifyToolObservabilitySchema(stage) {
   }
 }
 
+function verifyContentCmsSchema(stage) {
+  const tables = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(table_name, ',' ORDER BY table_name)
+       FROM information_schema.tables
+       WHERE table_schema = 'public'
+         AND table_name IN (
+           '_help_pages_v', 'articles_rels', 'categories', 'help_pages', 'tags'
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (tables !== '_help_pages_v,articles_rels,categories,help_pages,tags') {
+    throw new Error(`D3-01 content CMS tables incomplete after ${stage}: ${tables}`)
+  }
+
+  const columns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(column_name, ',' ORDER BY column_name)
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'articles'
+         AND column_name IN (
+           'published_at', 'revision_by', 'scheduled_publish_at',
+           'source', 'workflow_status'
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (columns !== 'published_at,revision_by,scheduled_publish_at,source,workflow_status') {
+    throw new Error(`D3-01 article workflow columns incomplete after ${stage}: ${columns}`)
+  }
+
+  const workflowValues = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT array_to_string(enum_range(NULL::enum_payload_jobs_workflow_slug), ',')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (!workflowValues.split(',').includes('contentScheduledPublish')) {
+    throw new Error(`D3-01 publishing workflow missing after ${stage}: ${workflowValues}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -290,6 +358,7 @@ try {
   verifyFirstPartyEventSchema('empty-database migration')
   verifyPriceSnapshotSchema('empty-database migration')
   verifyToolObservabilitySchema('empty-database migration')
+  verifyContentCmsSchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -525,8 +594,78 @@ try {
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
   verifyToolObservabilitySchema('D2-11 migration round trip')
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 7
+     WHERE name = '20260806_141657_d3_content_cms_workflow'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const cmsTableAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT to_regclass('public.help_pages') IS NOT NULL`,
+    ],
+    { capture: true },
+  ).trim()
+  if (cmsTableAfterDown !== 'f') {
+    throw new Error('D3-01 migration down did not remove the help page table')
+  }
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `INSERT INTO articles (
+       title, slug, content, source, published_at, updated_at, created_at, _status
+     ) VALUES
+       ('legacy sourced', 'legacy-sourced', '{"root":{"type":"root","children":[]}}',
+        'legacy source', NOW(), NOW(), NOW(), 'published'),
+       ('legacy missing source', 'legacy-missing-source',
+        '{"root":{"type":"root","children":[]}}', NULL, NOW(), NOW(), NOW(), 'published')`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  const contentBackfill = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(slug || ':' || _status || ':' || workflow_status, ',' ORDER BY slug)
+       FROM articles WHERE slug IN ('legacy-missing-source', 'legacy-sourced')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    contentBackfill !== 'legacy-missing-source:draft:in_review,legacy-sourced:published:published'
+  ) {
+    throw new Error(`D3-01 legacy content backfill was unsafe: ${contentBackfill}`)
+  }
+  verifyContentCmsSchema('D3-01 migration round trip')
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, and the D2-11 observability aggregate schema round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, and the D3-01 content CMS backfill and round trips.\n',
   )
 } finally {
   if (created) {
