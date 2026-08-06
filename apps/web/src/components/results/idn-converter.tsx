@@ -1,19 +1,14 @@
 'use client'
 
-import Link from 'next/link'
-import {
-  AlertTriangleIcon,
-  ArrowRightIcon,
-  CheckCircle2Icon,
-  CopyIcon,
-  Globe2Icon,
-} from 'lucide-react'
+import { AlertTriangleIcon, ArrowRightIcon, CheckCircle2Icon, Globe2Icon } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 
 import { FormField } from '@/components/forms/form-field'
 import { DomainFavoriteButton } from '@/components/local-library/favorite-buttons'
 import { useLocalToolLibrary } from '@/components/local-library/local-tool-library-provider'
 import { ResultState } from '@/components/results/result-state'
+import { CopyAction } from '@/components/tool-actions/copy-action'
+import { ToolActions } from '@/components/tool-actions/tool-actions'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,15 +20,6 @@ import {
   type DomainNormalizationResult,
   type NormalizedDomain,
 } from '@/lib/domain-name'
-
-type CopyState = 'failed' | 'idle' | 'punycode' | 'unicode'
-
-const destinationTools = [
-  { label: '查询可注册状态', path: '/tools/domain-search' },
-  { label: '查询 WHOIS / RDAP', path: '/tools/whois' },
-  { label: '查询 DNS / NS', path: '/tools/dns' },
-  { label: '检查 SSL / CAA', path: '/tools/ssl-check' },
-] as const
 
 function emitOutcome(result: DomainNormalizationResult, durationMs: number): void {
   if (!result.ok) {
@@ -59,17 +45,7 @@ function emitOutcome(result: DomainNormalizationResult, durationMs: number): voi
   })
 }
 
-function ConversionResults({
-  copyState,
-  data,
-  onCopy,
-}: {
-  copyState: CopyState
-  data: NormalizedDomain
-  onCopy: (kind: 'punycode' | 'unicode', value: string) => void
-}) {
-  const encodedPunycode = encodeURIComponent(data.display)
-
+function ConversionResults({ data }: { data: NormalizedDomain }) {
   return (
     <div className="space-y-6">
       <div className="rounded-xl border bg-accent/40 px-5 py-4" role="status">
@@ -98,10 +74,13 @@ function ConversionResults({
               {data.display}
             </output>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => onCopy('punycode', data.display)} type="button">
-                <CopyIcon aria-hidden="true" data-icon="inline-start" />
-                复制 Punycode
-              </Button>
+              <CopyAction
+                label="复制 Punycode"
+                size="default"
+                successLabel="已复制 Punycode"
+                text={data.display}
+                variant="default"
+              />
               <DomainFavoriteButton domain={data.ascii} label={data.unicode} />
             </div>
           </CardContent>
@@ -112,29 +91,18 @@ function ConversionResults({
             <CardTitle>
               <h3>Unicode（转换预览）</h3>
             </CardTitle>
-            <CardDescription>仅用于识读和核对，不作为公开展示值。</CardDescription>
+            <CardDescription>仅用于识读和核对，不作为公开展示或剪贴板值。</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <output className="block rounded-lg bg-muted px-4 py-3 text-base break-all">
               {data.unicode}
             </output>
-            <Button onClick={() => onCopy('unicode', data.unicode)} type="button" variant="outline">
-              <CopyIcon aria-hidden="true" data-icon="inline-start" />
-              复制 Unicode
-            </Button>
+            <p className="text-xs leading-5 text-muted-foreground">
+              为避免把 Unicode 域名误传到外部，复制操作固定使用上方 Punycode。
+            </p>
           </CardContent>
         </Card>
       </div>
-
-      <p aria-live="polite" className="min-h-5 text-sm text-muted-foreground" role="status">
-        {copyState === 'punycode'
-          ? '已复制 Punycode'
-          : copyState === 'unicode'
-            ? '已复制 Unicode'
-            : copyState === 'failed'
-              ? '复制失败，请手动选择结果'
-              : ''}
-      </p>
 
       {data.risks.map((risk) => (
         <Alert
@@ -162,23 +130,6 @@ function ConversionResults({
           转换成功不代表可注册或商标安全；本工具不查询注册、WHOIS、DNS 或价格。
         </AlertDescription>
       </Alert>
-
-      <div className="rounded-xl border bg-card px-5 py-5">
-        <h3 className="font-heading text-lg font-semibold">使用 Punycode 进入其他工具</h3>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          只有点击以下链接时，Punycode 才会作为查询参数发送给对应工具。
-        </p>
-        <div className="mt-4 flex flex-wrap gap-3">
-          {destinationTools.map((tool) => (
-            <Button asChild key={tool.path} variant="outline">
-              <Link href={`${tool.path}?q=${encodedPunycode}`}>
-                {tool.label}
-                <ArrowRightIcon aria-hidden="true" data-icon="inline-end" />
-              </Link>
-            </Button>
-          ))}
-        </div>
-      </div>
     </div>
   )
 }
@@ -187,7 +138,6 @@ export function IdnConverter({ defaultValue = '' }: { defaultValue?: string }) {
   const [result, setResult] = useState<DomainNormalizationResult | undefined>(() =>
     defaultValue ? normalizeDomain(defaultValue) : undefined,
   )
-  const [copyState, setCopyState] = useState<CopyState>('idle')
   const { recordHistory } = useLocalToolLibrary()
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -208,18 +158,8 @@ export function IdnConverter({ defaultValue = '' }: { defaultValue?: string }) {
     })
 
     const nextResult = normalizeDomain(value)
-    setCopyState('idle')
     setResult(nextResult)
     emitOutcome(nextResult, performance.now() - startedAt)
-  }
-
-  async function copyValue(kind: 'punycode' | 'unicode', value: string) {
-    try {
-      await navigator.clipboard.writeText(value)
-      setCopyState(kind)
-    } catch {
-      setCopyState('failed')
-    }
   }
 
   return (
@@ -276,7 +216,7 @@ export function IdnConverter({ defaultValue = '' }: { defaultValue?: string }) {
           title="等待 IDN 转换"
         />
       ) : result.ok ? (
-        <ConversionResults copyState={copyState} data={result.value} onCopy={copyValue} />
+        <ConversionResults data={result.value} />
       ) : (
         <ResultState
           description={result.error.message}
@@ -286,6 +226,11 @@ export function IdnConverter({ defaultValue = '' }: { defaultValue?: string }) {
           title="域名格式无效"
         />
       )}
+      <ToolActions
+        currentTool="idn"
+        domainAscii={result?.ok ? result.value.ascii : undefined}
+        variant="compact"
+      />
     </section>
   )
 }

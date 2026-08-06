@@ -15,7 +15,7 @@ import { PageIntro } from '@/components/site/page-intro'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { createStaticPageMetadata } from '@/lib/seo'
-import { PRICING_TOOL, TOOL_DEFINITIONS } from '@/lib/site-config'
+import { PUBLIC_TOOL_DEFINITIONS } from '@/lib/site-config'
 
 export const metadata = createStaticPageMetadata('/tools')
 
@@ -28,8 +28,6 @@ const toolIcons = {
   whois: FileSearchIcon,
 } as const
 
-const tools = [...TOOL_DEFINITIONS, { ...PRICING_TOOL, slug: 'pricing' as const }]
-
 export default function ToolsPage() {
   return (
     <>
@@ -40,7 +38,7 @@ export default function ToolsPage() {
       />
       <LocalToolLibraryPanel />
       <section className="mx-auto grid max-w-7xl gap-5 px-4 pb-16 sm:grid-cols-2 sm:px-6 lg:grid-cols-3 lg:px-8">
-        {tools.map((tool) => {
+        {PUBLIC_TOOL_DEFINITIONS.map((tool) => {
           const Icon = toolIcons[tool.slug]
           return (
             <Card key={tool.href}>

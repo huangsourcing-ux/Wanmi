@@ -64,6 +64,9 @@ describe('D2-04 WHOIS result presentation', () => {
     expect(screen.getByText('Fixture Registrar')).not.toBeNull()
     expect(screen.getByText('数据源未提供')).not.toBeNull()
     expect(screen.getByText('例子.测试')).not.toBeNull()
+    expect(screen.getByRole('button', { name: '复制 WHOIS 字段：注册商' })).not.toBeNull()
+    expect(screen.getByRole('button', { name: /复制 WHOIS 状态/u })).not.toBeNull()
+    expect(screen.getByRole('button', { name: /复制 Name Server/u })).not.toBeNull()
     expect(screen.queryByRole('link', { name: /购买|注册/ })).toBeNull()
     expect(document.body.textContent).not.toMatch(/邮箱|电话|地址|联系人|clientid/i)
 

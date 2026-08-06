@@ -4,10 +4,20 @@ export type SiteNavigationItem = {
   label: string
 }
 
+export type QueryToolSlug = 'dns' | 'domain-search' | 'idn' | 'ssl-check' | 'whois'
+export type PublicToolSlug = QueryToolSlug | 'pricing'
+
 export type ToolDefinition = {
   description: string
   href: string
-  slug: 'dns' | 'domain-search' | 'idn' | 'ssl-check' | 'whois'
+  slug: QueryToolSlug
+  title: string
+}
+
+export type PublicToolDefinition = {
+  description: string
+  href: string
+  slug: PublicToolSlug
   title: string
 }
 
@@ -55,11 +65,20 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
 export const PRICING_TOOL = {
   description: '比较 TLD 注册、续费、最低年限和 1 年 / 3 年成本。',
   href: '/pricing',
+  slug: 'pricing',
   title: 'TLD 价格与成本',
 } as const
 
+export const PUBLIC_TOOL_DEFINITIONS: PublicToolDefinition[] = [...TOOL_DEFINITIONS, PRICING_TOOL]
+
 export function getToolDefinition(slug: string): ToolDefinition | undefined {
   return TOOL_DEFINITIONS.find((tool) => tool.slug === slug)
+}
+
+export function getPublicToolDefinition(slug: PublicToolSlug): PublicToolDefinition {
+  const tool = PUBLIC_TOOL_DEFINITIONS.find((candidate) => candidate.slug === slug)
+  if (!tool) throw new Error(`Unknown public tool: ${slug}`)
+  return tool
 }
 
 export function normalizeQueryParam(value: string | string[] | undefined, maxLength = 253): string {

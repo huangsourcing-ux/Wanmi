@@ -13,11 +13,18 @@ import {
 import { useEffect, useState } from 'react'
 
 import { ResultState } from '@/components/results/result-state'
+import { CopyAction } from '@/components/tool-actions/copy-action'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { bucketDuration, emitFirstPartyEvent, inferToolInput } from '@/lib/analytics'
 import { AppError, getTraceId, readProblemResponse, toProblemDetails } from '@/lib/errors'
+import {
+  formatCaaRecord,
+  formatCertificateRecord,
+  formatSanRecord,
+  formatTlsConnection,
+} from '@/lib/tool-actions'
 import type { ProblemDetails } from '@/schemas/api'
 import {
   sslCheckResultSchema,
@@ -142,6 +149,7 @@ function CertificateDetails({ tls }: { tls: TlsInspection }) {
         </CardHeader>
         <CardContent>
           <p className="mb-4 text-sm">固定端口：{tls.port}</p>
+          <CopyAction label="复制 TLS 状态" text={formatTlsConnection(tls)} />
           <SourceDetails source={tls.source} />
         </CardContent>
       </Card>
@@ -184,6 +192,7 @@ function CertificateDetails({ tls }: { tls: TlsInspection }) {
             <dd className="mt-1 font-mono break-all">{tls.cipherSuite}</dd>
           </div>
         </dl>
+        <CopyAction label="复制 TLS 连接" text={formatTlsConnection(tls)} />
 
         {tls.findings.map((finding) => (
           <Alert key={finding.code} variant="destructive">
@@ -243,8 +252,17 @@ function CertificateDetails({ tls }: { tls: TlsInspection }) {
             <h4 className="text-sm font-medium">Subject Alternative Names</h4>
             <ul className="mt-2 grid gap-2 rounded-lg border px-4 py-3 font-mono text-xs sm:grid-cols-2">
               {certificate.subjectAlternativeNames.map((name, index) => (
-                <li className="break-all" key={`${name}-${index}`}>
-                  {name}
+                <li
+                  className="flex flex-wrap items-center justify-between gap-2 break-all"
+                  key={`${name}-${index}`}
+                >
+                  <span>{name}</span>
+                  <CopyAction
+                    ariaLabel={`复制 SAN：${name}`}
+                    label="复制 SAN"
+                    size="xs"
+                    text={formatSanRecord(name)}
+                  />
                 </li>
               ))}
             </ul>
@@ -270,6 +288,13 @@ function CertificateDetails({ tls }: { tls: TlsInspection }) {
                     SHA-256 {item.fingerprint256}
                   </p>
                 ) : null}
+                <CopyAction
+                  ariaLabel={`复制证书链第 ${index + 1} 项`}
+                  className="mt-2"
+                  label="复制证书项"
+                  size="xs"
+                  text={formatCertificateRecord(certificate, index)}
+                />
               </li>
             ))}
           </ol>
@@ -329,6 +354,12 @@ function CaaDetails({ caa }: { caa: CaaInspection }) {
                   所属域名 {record.ownerName} · TTL {record.ttl} 秒
                   {record.critical ? ' · critical' : ''}
                 </p>
+                <CopyAction
+                  ariaLabel={`复制 CAA 记录 ${index + 1}`}
+                  label="复制 CAA"
+                  size="xs"
+                  text={formatCaaRecord(record)}
+                />
               </div>
             ))}
           </div>

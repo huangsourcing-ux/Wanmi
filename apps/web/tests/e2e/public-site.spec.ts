@@ -71,6 +71,15 @@ test('homepage submits a noindex fixture domain query without leaking cookies or
   )
   await expect(page.getByText(/与 WHOIS\/RDAP 注册信息严格分离/)).toBeVisible()
   await expect(page.getByLabel('输入完整域名或关键词')).toHaveValue('wanmi.net')
+  const domainCard = page.locator('[data-domain-status="available"]')
+  await expect(domainCard.getByRole('link', { name: 'WHOIS / RDAP' })).toHaveAttribute(
+    'href',
+    '/tools/whois?q=wanmi.net',
+  )
+  await expect(domainCard.getByRole('link', { name: 'TLD 价格与成本' })).toHaveAttribute(
+    'href',
+    '/pricing',
+  )
 
   await expect
     .poll(() => analyticsRequests.some(({ body }) => body.event === 'tool_submitted'))
@@ -115,6 +124,12 @@ test('keyword queries return 10 ordered TLD results with partial success and bou
   await expect(page.getByText('查询时间').first()).toBeVisible()
   await expect(page.getByText('缓存状态').first()).toBeVisible()
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/)
+  await expect(
+    page
+      .locator('section[data-tool-actions="domain-search"]')
+      .first()
+      .getByRole('link', { name: 'WHOIS / RDAP' }),
+  ).toHaveAttribute('href', '/tools/whois')
 
   const first = await request.post('/api/v1/tools/domain-search', {
     data: { query: 'premium.top' },
@@ -209,7 +224,7 @@ test('pricing exposes 10 traceable fixture results, reuses snapshots and has no 
   await expect(page.getByText(/溢价域名不在本表内/)).toBeVisible()
   await expect(page.getByText(/交易功能尚未开放/).first()).toBeVisible()
   await expect(page.getByRole('button', { name: /购买|注册/ })).toHaveCount(0)
-  await expect(page.getByRole('link', { name: /购买|注册/ })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: /购买|在 Wanmi 注册|立即注册/u })).toHaveCount(0)
 
   expect(pricingRequests).toHaveLength(1)
   expect(pricingRequests[0].body).toEqual({})
@@ -352,6 +367,9 @@ test('WHOIS stays separate from availability and keeps result requests and analy
     headers: Record<string, string>
   }> = []
   await page.setViewportSize({ height: 844, width: 390 })
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {
+    origin: canonicalOrigin,
+  })
   await page
     .context()
     .addCookies([{ name: 'tracking_test_cookie', url: canonicalOrigin, value: 'must-not-be-sent' }])
@@ -409,7 +427,7 @@ test('WHOIS stays separate from availability and keeps result requests and analy
   await expect(page.getByText('Who-Dat RDAP')).toBeVisible()
   await expect(page.getByText('Who-Dat 缓存命中')).toBeVisible()
   await expect(page.getByText(/此页面不判断可注册状态/)).toBeVisible()
-  await expect(page.getByRole('link', { name: /购买|注册/ })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: /购买|在 Wanmi 注册|立即注册/u })).toHaveCount(0)
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex, nofollow/)
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     'href',
@@ -419,6 +437,31 @@ test('WHOIS stays separate from availability and keeps result requests and analy
     'content',
     `${canonicalOrigin}/tools/whois`,
   )
+  await expect(page.getByRole('link', { name: 'DNS / NS 查询' })).toHaveAttribute(
+    'href',
+    '/tools/dns?q=xn--fsqu00a.xn--0zwm56d',
+  )
+  await expect(page.getByRole('link', { name: 'SSL / CAA 检查' })).toHaveAttribute(
+    'href',
+    '/tools/ssl-check?q=xn--fsqu00a.xn--0zwm56d',
+  )
+
+  await page.getByRole('button', { name: '复制 Name Server：ns1.example.test' }).click()
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe('Name Server\tns1.example.test')
+
+  await page.getByRole('button', { name: '生成分享链接' }).click()
+  await expect(page.getByRole('radio', { name: /仅分享工具入口/u })).toBeChecked()
+  await page.getByRole('button', { name: '确认并生成链接' }).click()
+  await expect(page.getByLabel('可分享链接')).toHaveValue(`${canonicalOrigin}/tools/whois`)
+  await page.getByRole('radio', { name: /包含当前域名/u }).check()
+  await expect(page.getByText('确认公开域名')).toBeVisible()
+  await page.getByRole('button', { name: '确认并生成链接' }).click()
+  const domainShareUrl = `${canonicalOrigin}/tools/whois?q=xn--fsqu00a.xn--0zwm56d`
+  await expect(page.getByLabel('可分享链接')).toHaveValue(domainShareUrl)
+  expect(domainShareUrl).not.toMatch(/traceId|requestId|cacheKey|trace-whois-e2e/u)
+  await page.getByRole('button', { name: '取消' }).click()
 
   expect(whoisRequests).toHaveLength(1)
   expect(whoisRequests[0].body).toEqual({ query: '例子.测试' })
@@ -451,6 +494,9 @@ test('DNS renders eight mobile record sets, isolates requests and never treats N
   }> = []
   let responseMode: 'nxdomain' | 'ready' = 'ready'
   await page.setViewportSize({ height: 844, width: 390 })
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {
+    origin: canonicalOrigin,
+  })
   await page
     .context()
     .addCookies([{ name: 'tracking_test_cookie', url: canonicalOrigin, value: 'must-not-be-sent' }])
@@ -533,7 +579,9 @@ test('DNS renders eight mobile record sets, isolates requests and never treats N
   await expect(page.getByText('300 秒').first()).toBeVisible()
   await expect(page.getByText(/单一受控递归解析视角/)).toBeVisible()
   await expect(page.getByText(/CAA 在此只作为原始 DNS 记录展示/)).toBeVisible()
-  await expect(page.getByRole('link', { name: /购买|注册|管理/ })).toHaveCount(0)
+  await expect(
+    page.getByRole('link', { name: /购买|在 Wanmi 注册|立即注册|管理 DNS/u }),
+  ).toHaveCount(0)
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex, nofollow/)
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
     'href',
@@ -543,6 +591,10 @@ test('DNS renders eight mobile record sets, isolates requests and never treats N
     'content',
     `${canonicalOrigin}/tools/dns`,
   )
+  await page.getByRole('button', { name: '复制 A 记录 1' }).click()
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe('xn--fsqu00a.xn--0zwm56d 300 IN A 93.184.216.34')
 
   responseMode = 'nxdomain'
   await page.goto('/tools/dns?q=missing.example.test')
@@ -781,12 +833,13 @@ test('IDN converts locally on mobile, keeps Punycode public and marks parameter 
     'data-public-domain',
     'xn--fsqu00a.xn--fiqs8s',
   )
-  await expect(page.getByRole('link', { name: '查询 WHOIS / RDAP' })).toHaveAttribute(
+  await expect(page.getByRole('link', { name: 'WHOIS / RDAP' })).toHaveAttribute(
     'href',
     '/tools/whois?q=xn--fsqu00a.xn--fiqs8s',
   )
   await page.getByRole('button', { name: '复制 Punycode' }).click()
   await expect(page.getByText('已复制 Punycode')).toBeVisible()
+  await expect(page.getByRole('button', { name: '复制 Unicode' })).toHaveCount(0)
 
   await page.getByLabel('输入要转换的域名').fill('раypal.com')
   await page.getByRole('button', { name: '转换 IDN' }).click()

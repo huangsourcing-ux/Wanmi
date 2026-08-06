@@ -10,11 +10,13 @@ import {
 import { useEffect, useState } from 'react'
 
 import { ResultState } from '@/components/results/result-state'
+import { CopyAction } from '@/components/tool-actions/copy-action'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { bucketDuration, emitFirstPartyEvent } from '@/lib/analytics'
 import { AppError, getTraceId, readProblemResponse, toProblemDetails } from '@/lib/errors'
 import { formatCnyFen } from '@/lib/money'
+import { formatPricingRecord } from '@/lib/tool-actions'
 import type { ProblemDetails } from '@/schemas/api'
 import { pricingResultSchema, type PricingItem, type PricingResult } from '@/schemas/pricing'
 
@@ -164,6 +166,11 @@ function PricingCard({ item }: { item: PricingItem }) {
             </div>
           ) : null}
         </dl>
+        <CopyAction
+          ariaLabel={`复制 .${item.tld} 价格记录`}
+          label="复制此条价格"
+          text={formatPricingRecord(item)}
+        />
       </CardContent>
     </Card>
   )

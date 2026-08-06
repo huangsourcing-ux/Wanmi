@@ -110,6 +110,9 @@ describe('D2-05 DNS result presentation', () => {
     expect(screen.getAllByText('阿里公共 DNS 备用节点').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Wanmi 短时缓存命中').length).toBeGreaterThan(0)
     expect(screen.getAllByText('部分缓存命中').length).toBeGreaterThan(0)
+    expect(
+      screen.getAllByRole('button', { name: /复制 (?:A|AAAA|CNAME|MX|TXT|NS|SOA|CAA) 记录 1/u }),
+    ).toHaveLength(8)
     expect(screen.getByText(/CAA 在此只作为原始 DNS 记录展示/)).not.toBeNull()
     expect(screen.queryByRole('link', { name: /购买|注册|管理/ })).toBeNull()
 
