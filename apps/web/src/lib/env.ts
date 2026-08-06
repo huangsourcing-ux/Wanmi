@@ -43,8 +43,18 @@ const schema = z.object({
   WESTDIGITAL_READ_QUEUE_CAPACITY: z.coerce.number().int().positive().default(32),
   WESTDIGITAL_READ_QUEUE_WAIT_MS: z.coerce.number().int().positive().default(5_000),
   WESTDIGITAL_READ_RATE_PER_SECOND: z.coerce.number().positive().default(2),
+  WESTDIGITAL_READ_RESPONSE_MAX_BYTES: z.coerce.number().int().positive().default(65_536),
   WESTDIGITAL_READ_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+  WESTDIGITAL_API_PASSWORD: z.string().min(1).optional(),
+  WESTDIGITAL_USERNAME: z.string().min(1).optional(),
+  WESTDIGITAL_WHOIS_FALLBACK_ENABLED: booleanFromString,
   WHO_DAT_AUTH_KEY: z.string().optional(),
+  WHO_DAT_READ_BURST: z.coerce.number().int().positive().default(10),
+  WHO_DAT_READ_QUEUE_CAPACITY: z.coerce.number().int().positive().default(32),
+  WHO_DAT_READ_QUEUE_WAIT_MS: z.coerce.number().int().positive().default(3_000),
+  WHO_DAT_READ_RATE_PER_SECOND: z.coerce.number().positive().default(5),
+  WHO_DAT_RESPONSE_MAX_BYTES: z.coerce.number().int().positive().default(65_536),
+  WHO_DAT_TIMEOUT_MS: z.coerce.number().int().positive().default(5_500),
   WHO_DAT_URL: z.url().default('http://127.0.0.1:8080'),
 })
 
