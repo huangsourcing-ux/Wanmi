@@ -5,6 +5,7 @@ import { runScheduledContentPublish } from '@/services/content/workflow'
 import { CONTENT_COLLECTIONS, type ContentCollection } from '@/services/content/types'
 import { runAdvertisingMaintenance } from '@/services/advertising/maintenance'
 import { reconcileSmsReceipts } from '@/services/auth/sms-receipts'
+import { runRealnameCleanup } from '@/services/realname/lifecycle'
 
 const probeInput = [{ name: 'traceId', type: 'text', required: true }] as const
 
@@ -66,6 +67,22 @@ export const smsReceiptReconciliation: WorkflowConfig = {
   },
 }
 
+export const realnameCleanup: WorkflowConfig = {
+  slug: 'realnameCleanup',
+  concurrency: {
+    exclusive: true,
+    key: () => 'realname:cleanup',
+    supersedes: true,
+  },
+  inputSchema: [],
+  queue: 'background',
+  retries: 0,
+  schedule: [{ cron: '0 15 * * * *', queue: 'background' }],
+  handler: async ({ req }) => {
+    await runRealnameCleanup(req)
+  },
+}
+
 type ScheduledContentPublishInput = {
   collection: ContentCollection
   documentId: string
@@ -124,5 +141,6 @@ export const workflows = [
   backgroundProbe,
   advertisingMaintenance,
   smsReceiptReconciliation,
+  realnameCleanup,
   commerceFulfillment,
 ]

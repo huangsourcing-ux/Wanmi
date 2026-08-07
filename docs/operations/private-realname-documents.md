@@ -37,4 +37,4 @@
 - 历史 D0 占位记录迁移后统一为 `upload_failed`，不会被当作已加密可访问对象。
 - KMS 解封、GCM 认证、摘要或元数据副本任一不一致均返回通用不可用错误，不回显 provider 原始响应或对象内容。
 
-30 天主存储/备份清理与失败重试 Job 不属于本切片，由 D4-04（开发计划 8.2 第 11 项）实现。生产启用前仍须完成真实 KMS key、私有 Bucket、密钥轮换、删除恢复和告警演练。
+D4-04 已由 `realnameCleanup` background Job 实现删除/注销后 30 天主对象、备份对象引用和证件数据库行清理，操作与失败恢复见 `docs/operations/realname-lifecycle.md`。生产启用前仍须完成真实 KMS key、私有 Bucket、密钥轮换、删除恢复和告警演练。

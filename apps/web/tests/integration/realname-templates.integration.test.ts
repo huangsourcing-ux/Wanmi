@@ -9,14 +9,19 @@ import {
   assertRealnameTemplateUsableForRegistration,
   createRealnameTemplate,
   disableRealnameTemplate,
+  resolveRealnameManualReview,
   submitRealnameTemplate,
   syncRealnameTemplateStatus,
+  updateRejectedRealnameTemplate,
 } from '@/services/realname/templates'
 
 import { realnameTemplateFixture } from '../fixtures/realname'
 
 const fixturePrefix = `d4-realname-${randomUUID()}`
-const created: Array<{ collection: 'customers' | 'realnameTemplates'; id: number | string }> = []
+const created: Array<{
+  collection: 'admins' | 'customers' | 'manualReviews' | 'realnameTemplates'
+  id: number | string
+}> = []
 let payload: Payload
 
 async function requestFor(user: unknown, suffix: string) {
@@ -211,6 +216,26 @@ describe('D4 real-name templates', () => {
       safeFailureReason: 'identity_mismatch',
       status: 'rejected',
     })
+    const corrected = await updateRejectedRealnameTemplate(
+      await requestFor(owner, 'rejected-corrected'),
+      rejected.id,
+      realnameTemplateFixture({
+        addressChinese: '北京市朝阳区修正路 2 号',
+        displayName: `${fixturePrefix}-corrected`,
+      }),
+    )
+    expect(corrected).toMatchObject({
+      displayName: `${fixturePrefix}-corrected`,
+      providerReviewState: 'unsubmitted',
+      safeFailureReason: null,
+      status: 'draft',
+    })
+    const resubmitted = await submitRealnameTemplate(
+      await requestFor(owner, 'rejected-resubmitted'),
+      corrected.id,
+      new MockWestDigitalRealnameAdapter(),
+    )
+    expect(resubmitted).toMatchObject({ providerReviewState: 'pending', status: 'pending_review' })
 
     const unavailableDraft = await createTemplate(owner, 'unavailable')
     const unavailable = await submitRealnameTemplate(
@@ -224,7 +249,76 @@ describe('D4 real-name templates', () => {
       status: 'manual_review',
     })
 
-    for (const template of [rejected, unavailable]) {
+    const openReview = await payload.find({
+      collection: 'manualReviews',
+      overrideAccess: true,
+      where: {
+        and: [{ realnameTemplate: { equals: unavailable.id } }, { status: { equals: 'open' } }],
+      },
+    })
+    expect(openReview.totalDocs).toBe(1)
+    created.push({ collection: 'manualReviews', id: openReview.docs[0]!.id })
+    const adminDocument = await payload.create({
+      collection: 'admins',
+      context: { adminAccountOperation: 'bootstrap' },
+      data: {
+        email: `${fixturePrefix}-reviewer@example.test`,
+        password: `${fixturePrefix}-review-password`,
+        roles: ['system_admin'],
+        status: 'active',
+      },
+      overrideAccess: true,
+    })
+    created.push({ collection: 'admins', id: adminDocument.id })
+    const admin = { ...adminDocument, collection: 'admins' as const }
+    const observedAt = new Date().toISOString()
+    await expect(
+      resolveRealnameManualReview(
+        await requestFor({ ...admin, roles: ['analyst'] }, 'review-forbidden'),
+        unavailable.id,
+        {
+          evidence: { observedAt, reference: 'WD-CONSOLE-1001', source: 'provider_console' },
+          note: '外部控制台已确认通过',
+          providerTemplateId: 'manual-confirmed-template',
+          to: 'approved',
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'ADMIN_SYSTEM_ROLE_REQUIRED' })
+    await expect(
+      resolveRealnameManualReview(await requestFor(admin, 'review-no-evidence'), unavailable.id, {
+        evidence: {} as never,
+        note: '缺少外部证据',
+        providerTemplateId: 'manual-confirmed-template',
+        to: 'approved',
+      }),
+    ).rejects.toThrow()
+    const manuallyApproved = await resolveRealnameManualReview(
+      await requestFor(admin, 'review-approved'),
+      unavailable.id,
+      {
+        evidence: { observedAt, reference: 'WD-CONSOLE-1001', source: 'provider_console' },
+        note: '项目负责人依据西部数码控制台记录确认通过',
+        providerTemplateId: 'manual-confirmed-template',
+        to: 'approved',
+      },
+    )
+    expect(manuallyApproved).toMatchObject({
+      providerReviewState: 'approved',
+      providerTemplateId: 'manual-confirmed-template',
+      status: 'approved',
+    })
+    const resolvedReview = await payload.findByID({
+      collection: 'manualReviews',
+      id: openReview.docs[0]!.id,
+      overrideAccess: true,
+    })
+    expect(resolvedReview).toMatchObject({
+      evidence: { reference: 'WD-CONSOLE-1001', source: 'provider_console' },
+      resolutionNote: '项目负责人依据西部数码控制台记录确认通过',
+      status: 'resolved',
+    })
+
+    for (const template of [rejected]) {
       await expect(
         assertRealnameTemplateUsableForRegistration(
           await requestFor(owner, `blocked-${template.id}`),
@@ -232,5 +326,11 @@ describe('D4 real-name templates', () => {
         ),
       ).rejects.toMatchObject({ code: 'REALNAME_TEMPLATE_NOT_USABLE' })
     }
+    await expect(
+      assertRealnameTemplateUsableForRegistration(await requestFor(owner, 'manual-approved-use'), {
+        customerId: owner.id,
+        templateId: unavailable.id,
+      }),
+    ).resolves.toMatchObject({ providerTemplateId: 'manual-confirmed-template' })
   })
 })

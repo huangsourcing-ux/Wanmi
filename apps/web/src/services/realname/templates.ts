@@ -1,17 +1,22 @@
 import { z } from 'zod'
-import type {
-  CollectionAfterChangeHook,
-  CollectionBeforeChangeHook,
-  CollectionBeforeValidateHook,
-  PayloadRequest,
+import {
+  commitTransaction,
+  initTransaction,
+  killTransaction,
+  type CollectionAfterChangeHook,
+  type CollectionBeforeChangeHook,
+  type CollectionBeforeValidateHook,
+  type PayloadRequest,
 } from 'payload'
 
-import { isCustomerUser } from '@/access/roles'
+import { hasRole, isActiveAdminUser, isCustomerUser } from '@/access/roles'
 import { AppError } from '@/lib/errors'
 import type { RealnameStatus } from '@/lib/domain'
 import { getTraceId } from '@/lib/request-id'
 import type { WestDigitalRealnameProfile, WestDigitalRealnameProvider } from '@/providers/types'
 import { recordAuditEvent, type AuditActor } from '@/services/audit/record-audit-event'
+
+import { realnameCleanupDeadline } from './retention'
 
 export const REALNAME_TRANSITION_CONTEXT = 'realnameStatusTransition'
 
@@ -19,9 +24,9 @@ const TRANSITIONS: Record<RealnameStatus, readonly RealnameStatus[]> = {
   approved: ['disabled'],
   disabled: [],
   draft: ['pending_review', 'disabled'],
-  manual_review: ['disabled'],
+  manual_review: ['approved', 'disabled', 'pending_review', 'rejected'],
   pending_review: ['approved', 'rejected', 'manual_review', 'disabled'],
-  rejected: ['disabled'],
+  rejected: ['draft', 'disabled'],
 }
 
 const profileSchema = z
@@ -82,11 +87,39 @@ export const createRealnameTemplateSchema = profileSchema.extend({
 type TemplateRecord = Record<string, unknown> & { id: number | string }
 type TransitionContext = {
   actor?: AuditActor
+  evidence?: Record<string, unknown>
   expectedFrom: RealnameStatus
   expectedTo: RealnameStatus
+  note?: string
   providerRequestId?: string
   reasonCode: string
 }
+
+const externalEvidenceSchema = z
+  .object({
+    observedAt: z.iso.datetime(),
+    reference: z.string().trim().min(3).max(256),
+    source: z.enum(['provider_console', 'provider_query', 'written_confirmation']),
+  })
+  .strict()
+
+export const manualReviewResolutionSchema = z
+  .object({
+    evidence: externalEvidenceSchema,
+    note: z.string().trim().min(3).max(1000),
+    providerTemplateId: z.string().trim().min(1).max(128).optional(),
+    safeFailureReason: z
+      .enum([
+        'identity_mismatch',
+        'material_invalid',
+        'provider_unavailable',
+        'status_unknown',
+        'other',
+      ])
+      .optional(),
+    to: z.enum(['approved', 'pending_review', 'rejected']),
+  })
+  .strict()
 
 function relationshipId(value: unknown): string | undefined {
   if (typeof value === 'number' || typeof value === 'string') return String(value)
@@ -184,6 +217,8 @@ async function updateWithTransition(
   input: {
     actor?: AuditActor
     data?: Record<string, unknown>
+    evidence?: Record<string, unknown>
+    note?: string
     providerRequestId?: string
     reasonCode: string
   },
@@ -195,8 +230,10 @@ async function updateWithTransition(
     context: {
       [REALNAME_TRANSITION_CONTEXT]: {
         actor: input.actor,
+        evidence: input.evidence,
         expectedFrom: from,
         expectedTo: to,
+        note: input.note,
         providerRequestId: input.providerRequestId,
         reasonCode: input.reasonCode,
       } satisfies TransitionContext,
@@ -280,10 +317,61 @@ export const auditRealnameTemplateStatusChange: CollectionAfterChangeHook = asyn
       providerRequestId: authorized.providerRequestId,
       reasonCode: authorized.reasonCode,
       toStatus: doc.status,
+      ...(authorized.note ? { note: authorized.note } : {}),
+      ...(authorized.evidence ? { externalEvidence: authorized.evidence } : {}),
+      ...(doc.status === 'disabled'
+        ? { cleanupDueAt: doc.cleanupDueAt, disabledAt: doc.disabledAt }
+        : {}),
     },
     targetId: doc.id,
   })
   return doc
+}
+
+async function ensureOpenManualReview(
+  req: PayloadRequest,
+  templateId: number | string,
+  reasonCode: string,
+): Promise<void> {
+  const existing = await req.payload.find({
+    collection: 'manualReviews',
+    depth: 0,
+    limit: 1,
+    overrideAccess: true,
+    req,
+    where: {
+      and: [{ realnameTemplate: { equals: templateId } }, { status: { equals: 'open' } }],
+    },
+  })
+  if (existing.totalDocs) return
+  await req.payload.create({
+    collection: 'manualReviews',
+    data: { realnameTemplate: templateId as never, reasonCode, status: 'open' },
+    overrideAccess: true,
+    req,
+  })
+}
+
+async function enterManualReview(
+  req: PayloadRequest,
+  template: TemplateRecord,
+  input: {
+    actor: AuditActor
+    data: Record<string, unknown>
+    providerRequestId?: string
+    reasonCode: string
+  },
+): Promise<TemplateRecord> {
+  const startedTransaction = await initTransaction(req)
+  try {
+    const updated = await updateWithTransition(req, template, 'manual_review', input)
+    await ensureOpenManualReview(req, updated.id, input.reasonCode)
+    if (startedTransaction) await commitTransaction(req)
+    return updated
+  } catch (error) {
+    if (startedTransaction) await killTransaction(req)
+    throw error
+  }
 }
 
 export async function createRealnameTemplate(
@@ -315,20 +403,22 @@ export async function submitRealnameTemplate(
     data: { providerReviewState: 'pending', safeFailureReason: null },
     reasonCode: 'customer_submitted',
   })
-  const result = await provider.createTemplate({
-    profile: profileFromRecord(pending),
-    traceId: getTraceId(req.headers),
-  })
-  if (!result.ok) {
-    return updateWithTransition(req, pending, 'manual_review', {
+  const result = await provider
+    .createTemplate({
+      profile: profileFromRecord(pending),
+      traceId: getTraceId(req.headers),
+    })
+    .catch(() => null)
+  if (!result || !result.ok) {
+    return enterManualReview(req, pending, {
       actor: { id: 'westdigital', type: 'provider' },
       data: {
-        providerLastCheckedAt: result.observedAt,
-        providerRequestId: result.requestId,
+        providerLastCheckedAt: result?.observedAt ?? new Date().toISOString(),
+        providerRequestId: result?.requestId,
         providerReviewState: 'unknown',
         safeFailureReason: 'provider_unavailable',
       },
-      providerRequestId: result.requestId,
+      providerRequestId: result?.requestId,
       reasonCode: 'provider_create_unavailable',
     })
   }
@@ -365,28 +455,30 @@ export async function syncRealnameTemplateStatus(
     throw new AppError('REALNAME_STATUS_NOT_PENDING', '实名模板当前不在审核中', 409)
   }
   if (typeof template.providerTemplateId !== 'string' || !template.providerTemplateId) {
-    return updateWithTransition(req, template, 'manual_review', {
+    return enterManualReview(req, template, {
       actor: { type: 'system' },
       data: { providerReviewState: 'unknown', safeFailureReason: 'status_unknown' },
       reasonCode: 'provider_template_id_missing',
     })
   }
 
-  const result = await provider.queryTemplate({
-    providerTemplateId: template.providerTemplateId,
-    traceId: getTraceId(req.headers),
-  })
-  if (!result.ok || result.data.reviewState === 'unknown') {
-    return updateWithTransition(req, template, 'manual_review', {
+  const result = await provider
+    .queryTemplate({
+      providerTemplateId: template.providerTemplateId,
+      traceId: getTraceId(req.headers),
+    })
+    .catch(() => null)
+  if (!result || !result.ok || result.data.reviewState === 'unknown') {
+    return enterManualReview(req, template, {
       actor: { id: 'westdigital', type: 'provider' },
       data: {
-        providerLastCheckedAt: result.observedAt,
-        providerRequestId: result.requestId,
+        providerLastCheckedAt: result?.observedAt ?? new Date().toISOString(),
+        providerRequestId: result?.requestId,
         providerReviewState: 'unknown',
-        safeFailureReason: !result.ok ? 'provider_unavailable' : 'status_unknown',
+        safeFailureReason: !result || !result.ok ? 'provider_unavailable' : 'status_unknown',
       },
-      providerRequestId: result.requestId,
-      reasonCode: !result.ok ? 'provider_status_unavailable' : 'provider_status_unknown',
+      providerRequestId: result?.requestId,
+      reasonCode: !result || !result.ok ? 'provider_status_unavailable' : 'provider_status_unknown',
     })
   }
   if (result.data.reviewState === 'pending') {
@@ -423,11 +515,137 @@ export async function disableRealnameTemplate(
   templateId: number | string,
 ): Promise<TemplateRecord> {
   const template = await ownedTemplate(req, templateId)
-  if (template.status === 'disabled') return template
-  return updateWithTransition(req, template, 'disabled', {
-    data: { disabledAt: new Date().toISOString() },
+  if (template.status === 'disabled' && template.cleanupDueAt) return template
+  return disableRealnameTemplateForLifecycle(req, template, {
     reasonCode: 'customer_disabled',
+    startedAt: new Date().toISOString(),
   })
+}
+
+export async function disableRealnameTemplateForLifecycle(
+  req: PayloadRequest,
+  template: TemplateRecord,
+  input: { actor?: AuditActor; reasonCode: string; startedAt: string },
+): Promise<TemplateRecord> {
+  const cleanupDueAt = realnameCleanupDeadline(input.startedAt)
+  if (template.status === 'disabled') {
+    return (await req.payload.update({
+      collection: 'realnameTemplates',
+      data: {
+        cleanupDueAt:
+          typeof template.cleanupDueAt === 'string' ? template.cleanupDueAt : cleanupDueAt,
+        disabledAt: typeof template.disabledAt === 'string' ? template.disabledAt : input.startedAt,
+      },
+      id: template.id,
+      overrideAccess: true,
+      req,
+    })) as unknown as TemplateRecord
+  }
+  return updateWithTransition(req, template, 'disabled', {
+    actor: input.actor,
+    data: { cleanupDueAt, disabledAt: input.startedAt },
+    reasonCode: input.reasonCode,
+  })
+}
+
+export async function updateRejectedRealnameTemplate(
+  req: PayloadRequest,
+  templateId: number | string,
+  input: z.input<typeof createRealnameTemplateSchema>,
+): Promise<TemplateRecord> {
+  const template = await ownedTemplate(req, templateId)
+  if (template.status !== 'rejected') {
+    throw new AppError('REALNAME_TEMPLATE_NOT_REJECTED', '只有审核未通过的模板可以修改重提', 409)
+  }
+  const data = createRealnameTemplateSchema.parse(input)
+  return updateWithTransition(req, template, 'draft', {
+    data: {
+      ...data,
+      providerConfirmedAt: null,
+      providerLastCheckedAt: null,
+      providerRequestId: null,
+      providerReviewState: 'unsubmitted',
+      providerTemplateId: null,
+      safeFailureReason: null,
+    },
+    reasonCode: 'customer_corrected_rejected_template',
+  })
+}
+
+export async function resolveRealnameManualReview(
+  req: PayloadRequest,
+  templateId: number | string,
+  rawInput: z.input<typeof manualReviewResolutionSchema>,
+): Promise<TemplateRecord> {
+  if (!isActiveAdminUser(req.user) || !hasRole(req.user, ['system_admin'])) {
+    throw new AppError('ADMIN_SYSTEM_ROLE_REQUIRED', '仅系统管理员可处理实名人工复核', 403)
+  }
+  const input = manualReviewResolutionSchema.parse(rawInput)
+  const startedTransaction = await initTransaction(req)
+  try {
+    const template = (await req.payload.findByID({
+      collection: 'realnameTemplates',
+      depth: 0,
+      id: templateId,
+      overrideAccess: true,
+      req,
+    })) as unknown as TemplateRecord
+    if (template.status !== 'manual_review') {
+      throw new AppError('REALNAME_MANUAL_REVIEW_NOT_OPEN', '实名模板当前不在人工复核中', 409)
+    }
+    const reviews = await req.payload.find({
+      collection: 'manualReviews',
+      depth: 0,
+      limit: 1,
+      overrideAccess: true,
+      req,
+      where: {
+        and: [{ realnameTemplate: { equals: template.id } }, { status: { equals: 'open' } }],
+      },
+    })
+    const review = reviews.docs[0]
+    if (!review) throw new AppError('REALNAME_MANUAL_REVIEW_NOT_OPEN', '人工复核记录缺失', 409)
+    const providerTemplateId = input.providerTemplateId ?? template.providerTemplateId
+    if (
+      (input.to === 'approved' || input.to === 'pending_review') &&
+      (typeof providerTemplateId !== 'string' || !providerTemplateId)
+    ) {
+      throw new AppError('REALNAME_PROVIDER_CONFIRMATION_REQUIRED', '外部证据必须包含模板标识', 409)
+    }
+    const observedAt = input.evidence.observedAt
+    const updated = await updateWithTransition(req, template, input.to, {
+      actor: { id: req.user.id, type: 'admin' },
+      data: {
+        providerConfirmedAt: input.to === 'approved' ? observedAt : null,
+        providerLastCheckedAt: observedAt,
+        providerReviewState:
+          input.to === 'approved' ? 'approved' : input.to === 'rejected' ? 'rejected' : 'pending',
+        providerTemplateId,
+        safeFailureReason: input.to === 'rejected' ? (input.safeFailureReason ?? 'other') : null,
+      },
+      evidence: input.evidence,
+      note: input.note,
+      reasonCode: `manual_review_resolved_${input.to}`,
+    })
+    await req.payload.update({
+      collection: 'manualReviews',
+      data: {
+        evidence: input.evidence,
+        resolutionNote: input.note,
+        resolvedAt: new Date().toISOString(),
+        resolvedBy: req.user.id,
+        status: 'resolved',
+      },
+      id: review.id,
+      overrideAccess: true,
+      req,
+    })
+    if (startedTransaction) await commitTransaction(req)
+    return updated
+  } catch (error) {
+    if (startedTransaction) await killTransaction(req)
+    throw error
+  }
 }
 
 export async function assertRealnameTemplateUsableForRegistration(
