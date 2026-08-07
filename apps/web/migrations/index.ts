@@ -10,6 +10,7 @@ import * as migration_20260806_113033_d2_tool_observability from './20260806_113
 import * as migration_20260806_141657_d3_content_cms_workflow from './20260806_141657_d3_content_cms_workflow'
 import * as migration_20260807_004430_d3_content_relations_seo from './20260807_004430_d3_content_relations_seo'
 import * as migration_20260807_025608_d3_advertising_controlled_delivery from './20260807_025608_d3_advertising_controlled_delivery'
+import * as migration_20260807_042030_d3_ad_events_maintenance from './20260807_042030_d3_ad_events_maintenance'
 
 export const migrations = [
   {
@@ -71,5 +72,10 @@ export const migrations = [
     up: migration_20260807_025608_d3_advertising_controlled_delivery.up,
     down: migration_20260807_025608_d3_advertising_controlled_delivery.down,
     name: '20260807_025608_d3_advertising_controlled_delivery',
+  },
+  {
+    up: migration_20260807_042030_d3_ad_events_maintenance.up,
+    down: migration_20260807_042030_d3_ad_events_maintenance.down,
+    name: '20260807_042030_d3_ad_events_maintenance',
   },
 ]

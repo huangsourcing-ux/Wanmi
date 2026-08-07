@@ -1,4 +1,5 @@
 import type {
+  FirstPartyAdPageType,
   FirstPartyDeviceCategory,
   FirstPartyDurationBucket,
   FirstPartyEventInput,
@@ -6,6 +7,7 @@ import type {
   FirstPartyPageType,
   FirstPartySource,
 } from '@/schemas/analytics'
+import { adConvertedEventSchema, firstPartyAdCampaignIdSchema } from '@/schemas/analytics'
 
 type PrivacyNavigator = Navigator & {
   globalPrivacyControl?: boolean
@@ -32,6 +34,14 @@ const socialReferrers = [
 ]
 const tldPattern = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/
 const hostnameLabelPattern = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
+const pendingAdConversionStorageKey = 'wanmi:pending-ad-conversion:v1'
+const pendingAdConversionMaxAgeMs = 30 * 60 * 1_000
+
+type AdAttribution = {
+  campaignId: string
+  pageType: FirstPartyAdPageType
+  placementCode: string
+}
 
 export function isTrackingOptedOut(): boolean {
   if (typeof navigator === 'undefined' || typeof window === 'undefined') return true
@@ -127,4 +137,57 @@ export function emitFirstPartyEvent(input: FirstPartyEventInput): void {
   } catch {
     // Analytics is best effort and must never interrupt a public tool flow.
   }
+}
+
+export function rememberPendingAdConversion(input: AdAttribution): void {
+  if (isTrackingOptedOut() || typeof window === 'undefined') return
+  const candidate = {
+    ...input,
+    conversionType: 'landing_viewed' as const,
+    event: 'ad_converted' as const,
+    schemaVersion: 1 as const,
+  }
+  if (!adConvertedEventSchema.safeParse(candidate).success) return
+  try {
+    window.sessionStorage.setItem(
+      pendingAdConversionStorageKey,
+      JSON.stringify({ ...candidate, recordedAt: Date.now() }),
+    )
+  } catch {
+    // Attribution is optional and must never interrupt navigation.
+  }
+}
+
+export function consumePendingAdConversion(): void {
+  if (typeof window === 'undefined') return
+  let serialized: string | null = null
+  try {
+    serialized = window.sessionStorage.getItem(pendingAdConversionStorageKey)
+    window.sessionStorage.removeItem(pendingAdConversionStorageKey)
+  } catch {
+    return
+  }
+  if (!serialized || isTrackingOptedOut()) return
+  try {
+    const stored = JSON.parse(serialized) as Record<string, unknown>
+    const recordedAt = stored.recordedAt
+    if (
+      typeof recordedAt !== 'number' ||
+      !Number.isFinite(recordedAt) ||
+      recordedAt > Date.now() ||
+      Date.now() - recordedAt > pendingAdConversionMaxAgeMs
+    ) {
+      return
+    }
+    const { recordedAt: _recordedAt, ...candidate } = stored
+    void _recordedAt
+    const event = adConvertedEventSchema.safeParse(candidate)
+    if (event.success) emitFirstPartyEvent(event.data)
+  } catch {
+    // Ignore corrupt or user-edited session data.
+  }
+}
+
+export function isAdCampaignId(value: unknown): value is string {
+  return firstPartyAdCampaignIdSchema.safeParse(value).success
 }

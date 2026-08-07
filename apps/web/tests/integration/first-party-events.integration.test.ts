@@ -133,4 +133,43 @@ describe('D1 first-party event persistence and access', () => {
     const after = await payload.count({ collection: 'firstPartyEvents', overrideAccess: true })
     expect(after.totalDocs).toBe(before.totalDocs)
   })
+
+  it('stores closed advertising dimensions without a query, account or cross-site identifier', async () => {
+    const result = await recordFirstPartyEvent(payload, {
+      campaignId: '3c9cc764-74fd-4baa-94e9-48865e85efb1',
+      conversionType: 'landing_viewed',
+      event: 'ad_converted',
+      pageType: 'content',
+      placementCode: 'content-inline',
+      schemaVersion: 1,
+    })
+    const stored = await payload.find({
+      collection: 'firstPartyEvents',
+      limit: 1,
+      overrideAccess: true,
+      where: { traceId: { equals: result.traceId } },
+    })
+    expect(stored.docs).toHaveLength(1)
+    const event = stored.docs[0]!
+    createdIds.push(event.id)
+    expect(event).toMatchObject({
+      campaignId: '3c9cc764-74fd-4baa-94e9-48865e85efb1',
+      conversionType: 'landing_viewed',
+      event: 'ad_converted',
+      pageType: 'content',
+      placementCode: 'content-inline',
+    })
+    for (const forbidden of [
+      'clientId',
+      'cookie',
+      'crossSiteId',
+      'customerId',
+      'domain',
+      'query',
+      'sessionId',
+      'userId',
+    ]) {
+      expect(event).not.toHaveProperty(forbidden)
+    }
+  })
 })

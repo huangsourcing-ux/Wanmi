@@ -56,8 +56,9 @@ function verifyFirstPartyEventSchema(stage) {
        WHERE table_schema = 'public'
          AND table_name = 'first_party_events'
          AND column_name IN (
-           'client_id', 'cookie', 'domain', 'ip', 'query', 'referrer',
-           'session_id', 'url', 'user_agent'
+           'client_id', 'cookie', 'cross_site_id', 'customer_id', 'device_id',
+           'domain', 'full_domain', 'ip', 'query', 'referrer', 'session_id',
+           'url', 'user_agent', 'user_id'
          )`,
     ],
     { capture: true },
@@ -85,8 +86,54 @@ function verifyFirstPartyEventSchema(stage) {
     ],
     { capture: true },
   ).trim()
-  if (!/\(event, created_at\)/.test(indexes) || !/\(tool, created_at\)/.test(indexes)) {
+  if (
+    !/\(event, created_at\)/.test(indexes) ||
+    !/\(tool, created_at\)/.test(indexes) ||
+    !/\(campaign_id, event, created_at\)/.test(indexes)
+  ) {
     throw new Error(`D1-08 aggregation indexes missing after ${stage}: ${indexes}`)
+  }
+
+  const advertisingColumns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(column_name, ',' ORDER BY column_name)
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'first_party_events'
+         AND column_name IN ('campaign_id', 'conversion_type', 'placement_code')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (advertisingColumns !== 'campaign_id,conversion_type,placement_code') {
+    throw new Error(`D3-04 advertising event columns missing after ${stage}: ${advertisingColumns}`)
+  }
+
+  const eventValues = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT array_to_string(enum_range(NULL::enum_first_party_events_event), ',')`,
+    ],
+    { capture: true },
+  ).trim()
+  for (const event of ['ad_requested', 'ad_served', 'ad_viewable', 'ad_clicked', 'ad_converted']) {
+    if (!eventValues.split(',').includes(event)) {
+      throw new Error(`D3-04 advertising event ${event} missing after ${stage}: ${eventValues}`)
+    }
   }
 }
 
@@ -525,6 +572,79 @@ function verifyAdvertisingSchema(stage) {
   }
 }
 
+function verifyAdvertisingMaintenanceSchema(stage) {
+  const columns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(column_name, ',' ORDER BY column_name)
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'ad_creatives'
+         AND column_name IN (
+           'target_check_failure', 'target_check_status', 'target_checked_at'
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (columns !== 'target_check_failure,target_check_status,target_checked_at') {
+    throw new Error(`D3-04 target check columns incomplete after ${stage}: ${columns}`)
+  }
+
+  const indexes = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(indexdef, E'\n' ORDER BY indexname)
+       FROM pg_indexes
+       WHERE schemaname = 'public' AND tablename = 'ad_creatives'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (!/\(target_check_status\)/.test(indexes) || !/\(target_checked_at\)/.test(indexes)) {
+    throw new Error(`D3-04 target check indexes missing after ${stage}: ${indexes}`)
+  }
+
+  const jobsSchema = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (to_regclass('public.payload_jobs_stats') IS NOT NULL)::text || ':' ||
+         (EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payload_jobs' AND column_name = 'meta'
+         ))::text || ':' ||
+         array_to_string(enum_range(NULL::enum_payload_jobs_workflow_slug), ',')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    !jobsSchema.startsWith('true:true:') ||
+    !jobsSchema.split(':')[2]?.split(',').includes('advertisingMaintenance')
+  ) {
+    throw new Error(`D3-04 scheduled advertising workflow missing after ${stage}: ${jobsSchema}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -538,6 +658,7 @@ try {
   verifyContentCmsSchema('empty-database migration')
   verifyContentRelationsSeoSchema('empty-database migration')
   verifyAdvertisingSchema('empty-database migration')
+  verifyAdvertisingMaintenanceSchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -684,7 +805,10 @@ try {
     'ON_ERROR_STOP=1',
     '--command',
     `UPDATE payload_migrations SET batch = 4
-     WHERE name = '20260805_090521_d1_first_party_events'`,
+     WHERE name IN (
+       '20260805_090521_d1_first_party_events',
+       '20260807_042030_d3_ad_events_maintenance'
+     )`,
   ])
   run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
   const eventTableAfterDown = postgres(
@@ -993,8 +1117,76 @@ try {
     throw new Error(`D3-03 legacy advertising backfill was unsafe: ${advertisingBackfill}`)
   }
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `INSERT INTO first_party_events (
+       schema_version, event, page_type, campaign_id, placement_code,
+       conversion_type, trace_id, updated_at, created_at
+     ) VALUES (
+       1, 'ad_converted', 'content', gen_random_uuid()::text, 'content-inline',
+       'landing_viewed', 'd3-04-round-trip-event', NOW(), NOW()
+     );
+     UPDATE payload_migrations SET batch = 10
+     WHERE name = '20260807_042030_d3_ad_events_maintenance'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const maintenanceAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (to_regclass('public.payload_jobs_stats') IS NULL)::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public'
+             AND table_name = 'ad_creatives'
+             AND column_name = 'target_check_status'
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM first_party_events WHERE trace_id = 'd3-04-round-trip-event'
+         ))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (maintenanceAfterDown !== 'true:true:true') {
+    throw new Error(`D3-04 migration down was incomplete: ${maintenanceAfterDown}`)
+  }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyFirstPartyEventSchema('D3-04 migration round trip')
+  verifyAdvertisingMaintenanceSchema('D3-04 migration round trip')
+  const safeInternalHealth = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT target_check_status FROM ad_creatives WHERE name = 'Legacy safe creative'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (safeInternalHealth !== 'reachable') {
+    throw new Error(`D3-04 safe internal target backfill was not reachable: ${safeInternalHealth}`)
+  }
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, and the D3-03 controlled-advertising migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, and the D3-04 event/maintenance migration round trips.\n',
   )
 } finally {
   if (created) {

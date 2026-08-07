@@ -27,12 +27,30 @@ export const AD_PLACEMENT_POSITIONS = [
   'tld_inline',
   'home_native',
 ] as const
+export const AD_TARGET_CHECK_STATUSES = ['pending', 'reachable', 'unreachable', 'unsafe'] as const
+export const AD_TARGET_CHECK_FAILURES = [
+  'none',
+  'not_allowlisted',
+  'restricted_address',
+  'unreachable',
+  'http_error',
+] as const
 
 export const PUBLIC_AD_INTERNAL_CONTEXT = 'wanmiPublicAdvertisingInternal'
+export const AD_MAINTENANCE_CONTEXT = 'wanmiAdvertisingMaintenanceInternal'
 
 export type AdTargetType = 'external' | 'internal'
 export type AdDeviceScope = (typeof AD_DEVICE_SCOPES)[number]
 export type AdPageType = (typeof AD_PAGE_TYPES)[number]
+export type AdTargetCheckStatus = (typeof AD_TARGET_CHECK_STATUSES)[number]
+export type AdTargetCheckFailure = (typeof AD_TARGET_CHECK_FAILURES)[number]
+
+export const AD_POSITION_BY_PAGE_TYPE = {
+  content: 'content_inline',
+  home: 'home_native',
+  tld: 'tld_inline',
+  tool: 'after_core_result',
+} as const satisfies Record<AdPageType, (typeof AD_PLACEMENT_POSITIONS)[number]>
 
 const HOST_LABEL_PATTERN = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/u
 const PLACEMENT_CODE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u

@@ -18,7 +18,14 @@ import {
 const publicId = '3c9cc764-74fd-4baa-94e9-48865e85efb1'
 const now = new Date('2026-08-07T12:00:00.000Z')
 
-function fixturePayload(overrides: { endsAt?: string; fail?: boolean } = {}) {
+function fixturePayload(
+  overrides: {
+    endsAt?: string
+    fail?: boolean
+    position?: 'after_core_result' | 'content_inline'
+    targetCheckStatus?: 'pending' | 'reachable'
+  } = {},
+) {
   const documents = {
     adCreatives: {
       2: {
@@ -28,6 +35,8 @@ function fixturePayload(overrides: { endsAt?: string; fail?: boolean } = {}) {
         headline: '可信域名服务合作方',
         id: 2,
         status: 'approved',
+        targetCheckFailure: 'none',
+        targetCheckStatus: overrides.targetCheckStatus ?? 'reachable',
         targetType: 'external',
         targetUrl: 'https://ads.example.test/landing?campaign=d3',
       },
@@ -39,6 +48,7 @@ function fixturePayload(overrides: { endsAt?: string; fail?: boolean } = {}) {
         enabled: true,
         id: 3,
         pageTypes: ['tool'],
+        position: overrides.position ?? 'after_core_result',
       },
     },
     advertisers: {
@@ -153,6 +163,20 @@ describe('D3 public advertising selection and rendering', () => {
         placementCode: 'tool-after-result',
       }),
     ).resolves.toBeNull()
+    await expect(
+      readPublicAdvertisement(fixturePayload({ position: 'content_inline' }) as never, {
+        now,
+        pageType: 'tool',
+        placementCode: 'tool-after-result',
+      }),
+    ).resolves.toBeNull()
+    await expect(
+      readPublicAdvertisement(fixturePayload({ targetCheckStatus: 'pending' }) as never, {
+        now,
+        pageType: 'tool',
+        placementCode: 'tool-after-result',
+      }),
+    ).resolves.toBeNull()
   })
 
   it('renders an unmistakable advertisement with the required external-link policy', () => {
@@ -167,6 +191,7 @@ describe('D3 public advertising selection and rendering', () => {
           placementCode: 'tool-after-result',
           publicId,
         }}
+        pageType="tool"
       />,
     )
     expect(markup).toContain('data-commercial-content="advertisement"')

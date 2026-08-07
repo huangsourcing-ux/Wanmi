@@ -1,6 +1,7 @@
 import type { Payload } from 'payload'
 
 import {
+  AD_POSITION_BY_PAGE_TYPE,
   PUBLIC_AD_INTERNAL_CONTEXT,
   type AdDeviceScope,
   type AdPageType,
@@ -93,6 +94,7 @@ function placementMatches(
   return (
     placement.enabled === true &&
     placement.code === placementCode &&
+    placement.position === AD_POSITION_BY_PAGE_TYPE[pageType] &&
     Array.isArray(placement.pageTypes) &&
     placement.pageTypes.includes(pageType)
   )
@@ -124,6 +126,7 @@ async function resolveRelations(
   if (
     advertiser.status !== 'active' ||
     creative.status !== 'approved' ||
+    creative.targetCheckStatus !== 'reachable' ||
     String(relationshipId(creative.advertiser)) !== String(advertiserId)
   ) {
     return undefined

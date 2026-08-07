@@ -1,5 +1,7 @@
 import Link from 'next/link'
+import { Suspense } from 'react'
 
+import { AdvertisingSlot } from '@/components/advertising/advertising-slot'
 import { Badge } from '@/components/ui/badge'
 import { RichTextContent } from '@/components/content/rich-text-content'
 import { PublicRelations } from '@/components/content/public-relations'
@@ -44,6 +46,15 @@ export function ContentDetail({
         </dl>
       </header>
       <RichTextContent content={content.content} media={content.media} />
+      {!preview ? (
+        <Suspense fallback={null}>
+          <AdvertisingSlot
+            className="my-10 w-full"
+            pageType={content.collection === 'tldPages' ? 'tld' : 'content'}
+            placementCode={content.collection === 'tldPages' ? 'tld-inline' : 'content-inline'}
+          />
+        </Suspense>
+      ) : null}
       {content.tags.length ? (
         <footer className="mt-10 flex flex-wrap gap-2 border-t pt-6">
           {content.tags.map((tag) => (

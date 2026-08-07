@@ -3,6 +3,7 @@ import type { WorkflowConfig } from 'payload'
 import { runMockFulfillment, type FulfillmentInput } from '@/services/commerce/fulfillment'
 import { runScheduledContentPublish } from '@/services/content/workflow'
 import { CONTENT_COLLECTIONS, type ContentCollection } from '@/services/content/types'
+import { runAdvertisingMaintenance } from '@/services/advertising/maintenance'
 
 const probeInput = [{ name: 'traceId', type: 'text', required: true }] as const
 
@@ -29,6 +30,22 @@ export const backgroundProbe: WorkflowConfig<{ traceId: string }> = {
       { jobId: job.id, traceId: job.input.traceId },
       'background probe completed',
     )
+  },
+}
+
+export const advertisingMaintenance: WorkflowConfig = {
+  slug: 'advertisingMaintenance',
+  concurrency: {
+    exclusive: true,
+    key: () => 'advertising:maintenance',
+    supersedes: true,
+  },
+  inputSchema: [],
+  queue: 'background',
+  retries: 0,
+  schedule: [{ cron: '0 * * * * *', queue: 'background' }],
+  handler: async ({ req }) => {
+    await runAdvertisingMaintenance(req)
   },
 }
 
@@ -88,5 +105,6 @@ export const workflows = [
   publishingProbe,
   contentScheduledPublish,
   backgroundProbe,
+  advertisingMaintenance,
   commerceFulfillment,
 ]
