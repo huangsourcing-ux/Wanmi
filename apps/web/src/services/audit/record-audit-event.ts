@@ -9,6 +9,8 @@ export const AUDIT_REDACTED_VALUE = REDACTED_VALUE
 export type AuditActorType = 'admin' | 'anonymous' | 'customer' | 'provider' | 'system'
 
 export const auditEventDefinitions = {
+  'advertising.change': { actorTypes: ['admin'], targetType: 'advertising' },
+  'advertising.delete': { actorTypes: ['admin'], targetType: 'advertising' },
   'admin.account.changed': { actorTypes: ['admin'], targetType: 'admin' },
   'admin.account.deleted': { actorTypes: ['admin'], targetType: 'admin' },
   'admin.auth.login_failed': { actorTypes: ['anonymous'], targetType: 'admin-auth' },

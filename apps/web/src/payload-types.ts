@@ -85,6 +85,7 @@ export interface Config {
     navigation: Navigation;
     siteSettings: SiteSetting;
     advertisers: Advertiser;
+    adMedia: AdMedia;
     adCreatives: AdCreative;
     adPlacements: AdPlacement;
     adSchedules: AdSchedule;
@@ -148,6 +149,7 @@ export interface Config {
     navigation: NavigationSelect<false> | NavigationSelect<true>;
     siteSettings: SiteSettingsSelect<false> | SiteSettingsSelect<true>;
     advertisers: AdvertisersSelect<false> | AdvertisersSelect<true>;
+    adMedia: AdMediaSelect<false> | AdMediaSelect<true>;
     adCreatives: AdCreativesSelect<false> | AdCreativesSelect<true>;
     adPlacements: AdPlacementsSelect<false> | AdPlacementsSelect<true>;
     adSchedules: AdSchedulesSelect<false> | AdSchedulesSelect<true>;
@@ -646,10 +648,45 @@ export interface SiteSetting {
 export interface Advertiser {
   id: number;
   name: string;
-  status: 'active' | 'paused';
+  legalName?: string | null;
+  contactName?: string | null;
+  contactEmail?: string | null;
+  contractReference?: string | null;
+  /**
+   * 外部广告目标只允许精确匹配这里配置的 HTTPS 主机；子域名需单独列出。
+   */
+  allowedHosts?:
+    | {
+        host: string;
+        id?: string | null;
+      }[]
+    | null;
+  status: 'draft' | 'active' | 'paused' | 'disabled';
   notes?: string | null;
   updatedAt: string;
   createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "adMedia".
+ */
+export interface AdMedia {
+  id: number;
+  alt: string;
+  source?: string | null;
+  reviewed: boolean;
+  prefix?: string | null;
+  updatedAt: string;
+  createdAt: string;
+  url?: string | null;
+  thumbnailURL?: string | null;
+  filename?: string | null;
+  mimeType?: string | null;
+  filesize?: number | null;
+  width?: number | null;
+  height?: number | null;
+  focalX?: number | null;
+  focalY?: number | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -659,10 +696,20 @@ export interface AdCreative {
   id: number;
   name: string;
   advertiser: number | Advertiser;
-  image: number | Media;
-  alt: string;
+  creativeType: 'image' | 'text';
+  image?: (number | null) | AdMedia;
+  alt?: string | null;
+  headline: string;
+  body?: string | null;
+  targetType: 'internal' | 'external';
+  /**
+   * 站内目标复用 D1-04 路径规范且不允许查询参数；外部目标必须匹配广告主 HTTPS 主机白名单。
+   */
   targetUrl: string;
-  status: 'draft' | 'approved' | 'disabled';
+  status: 'draft' | 'pending_review' | 'approved' | 'rejected' | 'disabled';
+  reviewNotes?: string | null;
+  reviewedAt?: string | null;
+  reviewedBy?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -673,7 +720,13 @@ export interface AdCreative {
 export interface AdPlacement {
   id: number;
   code: string;
+  name: string;
   description: string;
+  pageTypes: ('home' | 'tool' | 'content' | 'tld')[];
+  position: 'after_core_result' | 'content_inline' | 'tld_inline' | 'home_native';
+  deviceScope: 'all' | 'desktop' | 'mobile';
+  width: number;
+  height: number;
   enabled: boolean;
   updatedAt: string;
   createdAt: string;
@@ -684,11 +737,16 @@ export interface AdPlacement {
  */
 export interface AdSchedule {
   id: number;
+  publicId: string;
+  name: string;
+  advertiser: number | Advertiser;
   creative: number | AdCreative;
   placement: number | AdPlacement;
   startsAt: string;
   endsAt: string;
-  status: 'scheduled' | 'active' | 'ended' | 'disabled';
+  priority: number;
+  status: 'draft' | 'scheduled' | 'active' | 'paused' | 'ended' | 'disabled';
+  notes?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1568,6 +1626,10 @@ export interface PayloadLockedDocument {
         value: number | Advertiser;
       } | null)
     | ({
+        relationTo: 'adMedia';
+        value: number | AdMedia;
+      } | null)
+    | ({
         relationTo: 'adCreatives';
         value: number | AdCreative;
       } | null)
@@ -2005,10 +2067,41 @@ export interface SiteSettingsSelect<T extends boolean = true> {
  */
 export interface AdvertisersSelect<T extends boolean = true> {
   name?: T;
+  legalName?: T;
+  contactName?: T;
+  contactEmail?: T;
+  contractReference?: T;
+  allowedHosts?:
+    | T
+    | {
+        host?: T;
+        id?: T;
+      };
   status?: T;
   notes?: T;
   updatedAt?: T;
   createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "adMedia_select".
+ */
+export interface AdMediaSelect<T extends boolean = true> {
+  alt?: T;
+  source?: T;
+  reviewed?: T;
+  prefix?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  url?: T;
+  thumbnailURL?: T;
+  filename?: T;
+  mimeType?: T;
+  filesize?: T;
+  width?: T;
+  height?: T;
+  focalX?: T;
+  focalY?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -2017,10 +2110,17 @@ export interface AdvertisersSelect<T extends boolean = true> {
 export interface AdCreativesSelect<T extends boolean = true> {
   name?: T;
   advertiser?: T;
+  creativeType?: T;
   image?: T;
   alt?: T;
+  headline?: T;
+  body?: T;
+  targetType?: T;
   targetUrl?: T;
   status?: T;
+  reviewNotes?: T;
+  reviewedAt?: T;
+  reviewedBy?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -2030,7 +2130,13 @@ export interface AdCreativesSelect<T extends boolean = true> {
  */
 export interface AdPlacementsSelect<T extends boolean = true> {
   code?: T;
+  name?: T;
   description?: T;
+  pageTypes?: T;
+  position?: T;
+  deviceScope?: T;
+  width?: T;
+  height?: T;
   enabled?: T;
   updatedAt?: T;
   createdAt?: T;
@@ -2040,11 +2146,16 @@ export interface AdPlacementsSelect<T extends boolean = true> {
  * via the `definition` "adSchedules_select".
  */
 export interface AdSchedulesSelect<T extends boolean = true> {
+  publicId?: T;
+  name?: T;
+  advertiser?: T;
   creative?: T;
   placement?: T;
   startsAt?: T;
   endsAt?: T;
+  priority?: T;
   status?: T;
+  notes?: T;
   updatedAt?: T;
   createdAt?: T;
 }

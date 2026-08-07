@@ -11,7 +11,7 @@ const PROTECTED_REDIRECT_PATHS = new Set([
   '/robots.txt',
   '/sitemap.xml',
 ])
-const PROTECTED_REDIRECT_PREFIXES = ['/admin', '/api', '/_next']
+const PROTECTED_REDIRECT_PREFIXES = ['/admin', '/api', '/go', '/_next']
 // ASCII characters have an unambiguous literal spelling in a canonical path.
 // Rejecting their encoded forms also prevents reserved-path and delimiter smuggling.
 const AMBIGUOUS_ESCAPE_PATTERN = /%[0-7][0-9a-f]/i

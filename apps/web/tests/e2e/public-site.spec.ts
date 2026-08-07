@@ -1018,7 +1018,7 @@ test('published content and branded not-found states work on mobile', async ({ p
   await page.setViewportSize({ height: 844, width: 390 })
   await page.goto('/articles')
   await expect(page.getByRole('heading', { level: 1, name: '实用内容' })).toBeVisible()
-  await expect(page.locator(`a[href="${contentFixture.relationArticlePath}"]`)).toBeVisible()
+  await expect(page.locator(`a[href="${contentFixture.relationArticlePath}"]`).first()).toBeVisible()
   await expect(page.getByText('D3 草稿帮助')).toHaveCount(0)
 
   await page.goto('/tools/not-a-tool')

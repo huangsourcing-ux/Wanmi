@@ -1,6 +1,6 @@
 import type { CollectionConfig } from 'payload'
 
-import { AdCreatives, AdPlacements, AdSchedules, Advertisers } from './advertising'
+import { AdCreatives, AdMedia, AdPlacements, AdSchedules, Advertisers } from './advertising'
 import {
   OrderEvents,
   Orders,
@@ -60,6 +60,7 @@ export const collections: CollectionConfig[] = [
   Navigation,
   SiteSettings,
   Advertisers,
+  AdMedia,
   AdCreatives,
   AdPlacements,
   AdSchedules,

@@ -1,3 +1,6 @@
+import { Suspense } from 'react'
+
+import { AdvertisingSlot } from '@/components/advertising/advertising-slot'
 import { PublicRelations } from '@/components/content/public-relations'
 import { PricingResults } from '@/components/results/pricing-results'
 import { ContentLanding } from '@/components/site/content-landing'
@@ -24,6 +27,9 @@ export default async function PricingPage() {
       />
       <ToolActions currentTool="pricing" />
       <PricingResults />
+      <Suspense fallback={null}>
+        <AdvertisingSlot pageType="tool" placementCode="tool-after-result" />
+      </Suspense>
       <ContentLanding
         emptyDescription="价格与 TLD 页面将在上游能力、成本、最低年限和续费规则完成验证后发布。"
         section={data.tldPages}
