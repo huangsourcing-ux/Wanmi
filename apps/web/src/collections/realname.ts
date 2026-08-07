@@ -1,23 +1,20 @@
-import type { CollectionBeforeValidateHook, CollectionConfig } from 'payload'
+import type { CollectionConfig } from 'payload'
 
 import {
   deny,
+  ownedSensitiveFieldRead,
   ownOrSystem,
   sensitiveFieldRead,
   systemAdminHidden,
   systemAdminOnly,
 } from '@/access/roles'
-import { REALNAME_STATUSES } from '@/lib/domain'
 import { ADMIN_GROUPS } from '@/lib/admin-navigation'
-
-// D1 closes generic writes to private real-name data. Keep ownership pinning as a
-// second layer for the future /api/v1 service, which will invoke Payload with an
-// authenticated customer and explicit access semantics.
-const pinCustomerOwner: CollectionBeforeValidateHook = ({ data, operation, req }) => {
-  if (!data || operation !== 'create') return data
-  if (req.user?.collection === 'customers') data.customer = req.user.id
-  return data
-}
+import { REALNAME_STATUSES } from '@/lib/domain'
+import {
+  auditRealnameTemplateStatusChange,
+  guardRealnameTemplateChange,
+  pinRealnameTemplateOwner,
+} from '@/services/realname/templates'
 
 export const RealnameTemplates: CollectionConfig = {
   slug: 'realnameTemplates',
@@ -27,28 +24,155 @@ export const RealnameTemplates: CollectionConfig = {
     read: ownOrSystem('customer'),
     update: deny,
   },
-  admin: { group: ADMIN_GROUPS.realname, hidden: systemAdminHidden, useAsTitle: 'displayName' },
-  hooks: { beforeValidate: [pinCustomerOwner] },
+  admin: {
+    defaultColumns: ['displayName', 'type', 'status', 'safeFailureReason', 'updatedAt'],
+    group: ADMIN_GROUPS.realname,
+    hidden: systemAdminHidden,
+    useAsTitle: 'displayName',
+  },
+  defaultSort: '-updatedAt',
+  hooks: {
+    afterChange: [auditRealnameTemplateStatusChange],
+    beforeChange: [guardRealnameTemplateChange],
+    beforeValidate: [pinRealnameTemplateOwner],
+  },
+  indexes: [{ fields: ['customer', 'status'] }],
+  labels: { plural: '实名模板', singular: '实名模板' },
   fields: [
     {
       name: 'customer',
       type: 'relationship',
       relationTo: 'customers',
       index: true,
+      maxDepth: 0,
       required: true,
     },
-    { name: 'displayName', type: 'text', required: true },
-    { name: 'type', type: 'select', options: ['individual', 'organization'], required: true },
+    { name: 'displayName', type: 'text', maxLength: 64, minLength: 1, required: true },
+    {
+      name: 'type',
+      type: 'select',
+      options: [
+        { label: '个人', value: 'individual' },
+        { label: '组织', value: 'organization' },
+      ],
+      required: true,
+    },
+    { name: 'fullNameChinese', type: 'text', maxLength: 50, minLength: 2, required: true },
+    { name: 'organizationNameChinese', type: 'text', maxLength: 32, minLength: 2 },
+    { name: 'organizationNameEnglish', type: 'text', maxLength: 150, minLength: 4 },
+    { name: 'contactLastNameChinese', type: 'text', maxLength: 16, minLength: 1, required: true },
+    { name: 'contactFirstNameChinese', type: 'text', maxLength: 16, minLength: 1, required: true },
+    { name: 'contactLastNameEnglish', type: 'text', maxLength: 50, minLength: 1, required: true },
+    { name: 'contactFirstNameEnglish', type: 'text', maxLength: 50, minLength: 1, required: true },
+    { name: 'countryCode', type: 'text', maxLength: 2, minLength: 2, required: true },
+    { name: 'provinceChinese', type: 'text', maxLength: 10, minLength: 2, required: true },
+    { name: 'cityChinese', type: 'text', maxLength: 20, minLength: 1, required: true },
+    { name: 'districtChinese', type: 'text', maxLength: 20, minLength: 1, required: true },
+    { name: 'addressChinese', type: 'textarea', maxLength: 64, minLength: 4, required: true },
+    { name: 'provinceEnglish', type: 'text', maxLength: 50, minLength: 2, required: true },
+    { name: 'cityEnglish', type: 'text', maxLength: 50, minLength: 2, required: true },
+    { name: 'addressEnglish', type: 'textarea', maxLength: 150, minLength: 9, required: true },
+    { name: 'postalCode', type: 'text', maxLength: 8, minLength: 5, required: true },
+    { name: 'phoneCountryCode', type: 'text', maxLength: 5, minLength: 2, required: true },
+    {
+      name: 'phoneType',
+      type: 'select',
+      options: [
+        { label: '手机', value: 'mobile' },
+        { label: '座机', value: 'landline' },
+      ],
+      required: true,
+    },
+    {
+      name: 'phone',
+      type: 'text',
+      access: { read: ownedSensitiveFieldRead },
+      maxLength: 32,
+      minLength: 3,
+      required: true,
+    },
+    {
+      name: 'phoneAreaCode',
+      type: 'text',
+      access: { read: ownedSensitiveFieldRead },
+      maxLength: 8,
+    },
+    {
+      name: 'phoneExtension',
+      type: 'text',
+      access: { read: ownedSensitiveFieldRead },
+      maxLength: 8,
+    },
+    {
+      name: 'email',
+      type: 'email',
+      access: { read: ownedSensitiveFieldRead },
+      required: true,
+    },
+    {
+      name: 'identityDocumentType',
+      type: 'text',
+      access: { read: ownedSensitiveFieldRead },
+      maxLength: 16,
+      minLength: 2,
+      required: true,
+    },
+    {
+      name: 'identityDocumentNumber',
+      type: 'text',
+      access: { read: ownedSensitiveFieldRead },
+      maxLength: 64,
+      minLength: 3,
+      required: true,
+    },
+    {
+      name: 'applicableScopes',
+      type: 'select',
+      defaultValue: ['cg'],
+      hasMany: true,
+      options: [
+        { label: '常规域名', value: 'cg' },
+        { label: '特殊中文域名', value: 'gswl' },
+        { label: '香港域名', value: 'hk' },
+      ],
+      required: true,
+    },
     {
       name: 'status',
       type: 'select',
       defaultValue: 'draft',
+      index: true,
       options: [...REALNAME_STATUSES],
       required: true,
     },
-    { name: 'providerTemplateId', type: 'text', access: { read: sensitiveFieldRead }, index: true },
-    { name: 'safeFailureReason', type: 'textarea' },
-    { name: 'disabledAt', type: 'date' },
+    {
+      name: 'providerReviewState',
+      type: 'select',
+      defaultValue: 'unsubmitted',
+      options: ['unsubmitted', 'pending', 'approved', 'rejected', 'unknown'],
+      required: true,
+    },
+    {
+      name: 'providerTemplateId',
+      type: 'text',
+      access: { read: ownedSensitiveFieldRead },
+      index: true,
+    },
+    { name: 'providerRequestId', type: 'text', access: { read: sensitiveFieldRead }, index: true },
+    { name: 'providerConfirmedAt', type: 'date', index: true },
+    { name: 'providerLastCheckedAt', type: 'date', index: true },
+    {
+      name: 'safeFailureReason',
+      type: 'select',
+      options: [
+        'identity_mismatch',
+        'material_invalid',
+        'provider_unavailable',
+        'status_unknown',
+        'other',
+      ],
+    },
+    { name: 'disabledAt', type: 'date', index: true },
     { name: 'cleanupDueAt', type: 'date', index: true },
   ],
 }

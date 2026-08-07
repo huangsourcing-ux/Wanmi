@@ -155,6 +155,52 @@ export interface WestDigitalReadProvider extends HealthAwareProvider {
   }): Promise<ProviderResult<WestDigitalPrice>>
 }
 
+export type WestDigitalRealnameProfile = {
+  addressChinese: string
+  addressEnglish: string
+  applicableScopes: ('cg' | 'gswl' | 'hk')[]
+  cityChinese: string
+  cityEnglish: string
+  contactFirstNameChinese: string
+  contactFirstNameEnglish: string
+  contactLastNameChinese: string
+  contactLastNameEnglish: string
+  countryCode: string
+  districtChinese: string
+  email: string
+  fullNameChinese: string
+  identityDocumentNumber: string
+  identityDocumentType: string
+  organizationNameChinese?: string
+  organizationNameEnglish?: string
+  phone: string
+  phoneAreaCode?: string
+  phoneCountryCode: string
+  phoneExtension?: string
+  phoneType: 'landline' | 'mobile'
+  postalCode: string
+  provinceChinese: string
+  provinceEnglish: string
+  type: 'individual' | 'organization'
+}
+
+export type WestDigitalRealnameReviewState = 'approved' | 'pending' | 'rejected' | 'unknown'
+
+export interface WestDigitalRealnameProvider extends HealthAwareProvider {
+  createTemplate(input: { profile: WestDigitalRealnameProfile; traceId: string }): Promise<
+    ProviderResult<{
+      providerTemplateId: string
+      reviewState: 'pending'
+    }>
+  >
+  queryTemplate(input: { providerTemplateId: string; traceId: string }): Promise<
+    ProviderResult<{
+      reviewState: WestDigitalRealnameReviewState
+      safeFailureReason?: 'identity_mismatch' | 'material_invalid' | 'other'
+    }>
+  >
+}
+
 export interface PaymentProvider extends HealthAwareProvider {
   queryOrder(input: {
     merchantOrderNumber: string

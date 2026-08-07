@@ -21,6 +21,8 @@ import {
 import { reconcileSmsReceipts } from '@/services/auth/sms-receipts'
 import { runMockFulfillment } from '@/services/commerce/fulfillment'
 
+import { realnameTemplateFixture } from '../fixtures/realname'
+
 let payload: Payload
 
 beforeAll(async () => {
@@ -51,10 +53,9 @@ async function createPaidOrderFixture() {
   const template = await payload.create({
     collection: 'realnameTemplates',
     data: {
+      ...realnameTemplateFixture(),
       customer: customer.id,
       displayName: 'D0 fixture',
-      status: 'verified',
-      type: 'individual',
     },
     overrideAccess: true,
   })
@@ -382,17 +383,17 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
     })
 
     const data = {
+      ...realnameTemplateFixture(),
       customer: other.id,
       displayName: 'attempted-takeover',
       status: 'draft' as const,
-      type: 'individual' as const,
     }
     const user = { ...owner, collection: 'customers' as const }
 
     await expect(
       payload.create({
         collection: 'realnameTemplates',
-        data,
+        data: data as never,
         overrideAccess: false,
         user,
       }),
@@ -400,7 +401,7 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
 
     const template = await payload.create({
       collection: 'realnameTemplates',
-      data,
+      data: data as never,
       overrideAccess: true,
       user,
     })

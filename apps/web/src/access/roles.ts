@@ -39,6 +39,16 @@ export const adminSelfOrSystem: Access = ({ req }) => {
 }
 
 export const sensitiveFieldRead: FieldAccess = ({ req }) => hasRole(req.user, ['system_admin'])
+export const ownedSensitiveFieldRead: FieldAccess = ({ doc, req }) => {
+  if (hasRole(req.user, ['system_admin'])) return true
+  if (!isCustomerUser(req.user)) return false
+  const owner = doc?.customer
+  if (typeof owner === 'number' || typeof owner === 'string')
+    return String(owner) === String(req.user.id)
+  if (typeof owner !== 'object' || owner === null) return false
+  const ownerId = (owner as { id?: number | string }).id
+  return ownerId !== undefined && String(ownerId) === String(req.user.id)
+}
 export const systemAdminField: FieldAccess = ({ req }) => hasRole(req.user, ['system_admin'])
 export const adManagerFieldRead: FieldAccess = ({ req }) =>
   hasRole(req.user, ['ad_operator', 'system_admin'])
