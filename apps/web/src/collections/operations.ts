@@ -27,6 +27,12 @@ export const ManualReviews: CollectionConfig = {
   admin: { group: ADMIN_GROUPS.operations, hidden: systemAdminHidden },
   fields: [
     { name: 'order', type: 'relationship', relationTo: 'orders', index: true },
+    {
+      name: 'realnameTemplate',
+      type: 'relationship',
+      relationTo: 'realnameTemplates',
+      index: true,
+    },
     { name: 'reasonCode', type: 'text', index: true, required: true },
     {
       name: 'status',

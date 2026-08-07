@@ -14,6 +14,7 @@ import { AppError } from '@/lib/errors'
 import { createSmsProvider } from '@/providers/aliyunsms'
 import type { SmsRequestInput, SmsVerifyInput } from '@/schemas/auth'
 import type { Customer } from '@/payload-types'
+import { disableCustomerRealnameTemplates } from '@/services/realname/lifecycle'
 
 import { clientHashes, maskPhone, normalizeChinesePhone } from './client-facts'
 
@@ -398,6 +399,11 @@ export async function requestCustomerDeletion(
   const now = new Date().toISOString()
   const startedTransaction = await initTransaction(req)
   try {
+    const disabledTemplateCount = await disableCustomerRealnameTemplates(req, {
+      actor: { id: customer.id, type: 'customer' },
+      customerId: customer.id,
+      startedAt: now,
+    })
     const updated = await req.payload.update({
       collection: 'customers',
       data: { deletionRequestedAt: now, status: 'deletion_requested' },
@@ -416,6 +422,7 @@ export async function requestCustomerDeletion(
     })
     await recordCustomerSecurityEvent(req, customer.id, 'deletion_requested', {
       deletionRequestedAt: now,
+      disabledTemplateCount,
     })
     if (startedTransaction) await commitTransaction(req)
     return {

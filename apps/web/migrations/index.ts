@@ -15,6 +15,8 @@ import * as migration_20260807_061433_d3_form_builder_entries from './20260807_0
 import * as migration_20260807_095514_d4_customer_auth_sms from './20260807_095514_d4_customer_auth_sms'
 import * as migration_20260807_114644_d4_realname_templates from './20260807_114644_d4_realname_templates'
 import * as migration_20260807_125811_d4_private_realname_documents from './20260807_125811_d4_private_realname_documents'
+import * as migration_20260807_135646_d4_realname_lifecycle from './20260807_135646_d4_realname_lifecycle'
+import * as migration_20260807_140407_d4_realname_cleanup_completion from './20260807_140407_d4_realname_cleanup_completion'
 
 export const migrations = [
   {
@@ -101,5 +103,15 @@ export const migrations = [
     up: migration_20260807_125811_d4_private_realname_documents.up,
     down: migration_20260807_125811_d4_private_realname_documents.down,
     name: '20260807_125811_d4_private_realname_documents',
+  },
+  {
+    up: migration_20260807_135646_d4_realname_lifecycle.up,
+    down: migration_20260807_135646_d4_realname_lifecycle.down,
+    name: '20260807_135646_d4_realname_lifecycle',
+  },
+  {
+    up: migration_20260807_140407_d4_realname_cleanup_completion.up,
+    down: migration_20260807_140407_d4_realname_cleanup_completion.down,
+    name: '20260807_140407_d4_realname_cleanup_completion',
   },
 ]

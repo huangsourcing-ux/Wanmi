@@ -10,7 +10,7 @@ import { assertRealnameStatusTransition } from '@/services/realname/templates'
 import { realnameTemplateFixture } from '../fixtures/realname'
 
 describe('D4 West Digital real-name mock adapter', () => {
-  it('accepts only the frozen real-name state transitions', () => {
+  it('accepts only the real-name lifecycle and evidenced review transitions', () => {
     for (const [from, to] of [
       ['draft', 'pending_review'],
       ['draft', 'disabled'],
@@ -19,7 +19,11 @@ describe('D4 West Digital real-name mock adapter', () => {
       ['pending_review', 'manual_review'],
       ['pending_review', 'disabled'],
       ['approved', 'disabled'],
+      ['rejected', 'draft'],
       ['rejected', 'disabled'],
+      ['manual_review', 'approved'],
+      ['manual_review', 'pending_review'],
+      ['manual_review', 'rejected'],
       ['manual_review', 'disabled'],
     ] as const) {
       expect(() => assertRealnameStatusTransition(from, to)).not.toThrow()
@@ -28,7 +32,7 @@ describe('D4 West Digital real-name mock adapter', () => {
       ['draft', 'approved'],
       ['approved', 'rejected'],
       ['rejected', 'pending_review'],
-      ['manual_review', 'approved'],
+      ['manual_review', 'draft'],
       ['disabled', 'draft'],
     ] as const) {
       expect(() => assertRealnameStatusTransition(from, to)).toThrow(/实名模板状态不能从/u)

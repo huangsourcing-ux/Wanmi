@@ -38,6 +38,7 @@ describe('shared audit event service', () => {
         'realname.document.submitted',
         'realname.document.uploaded',
         'realname.document.viewed',
+        'realname.template.cleaned',
         'realname.template.status_changed',
         'redirect.create',
         'redirect.delete',

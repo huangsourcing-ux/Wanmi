@@ -35,6 +35,10 @@ export const auditEventDefinitions = {
     actorTypes: ['admin', 'customer', 'provider', 'system'],
     targetType: 'realname-template',
   },
+  'realname.template.cleaned': {
+    actorTypes: ['system'],
+    targetType: 'realname-template',
+  },
   'realname.document.deleted': {
     actorTypes: ['admin', 'customer', 'system'],
     targetType: 'realname-document',

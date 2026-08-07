@@ -207,6 +207,7 @@ export interface Config {
       backgroundProbe: WorkflowBackgroundProbe;
       advertisingMaintenance: WorkflowAdvertisingMaintenance;
       smsReceiptReconciliation: WorkflowSmsReceiptReconciliation;
+      realnameCleanup: WorkflowRealnameCleanup;
       commerceFulfillment: WorkflowCommerceFulfillment;
     };
   };
@@ -835,6 +836,7 @@ export interface RealnameTemplate {
     | null;
   disabledAt?: string | null;
   cleanupDueAt?: string | null;
+  cleanupCompletedAt?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -847,6 +849,13 @@ export interface RealnameDocument {
   customer: number | Customer;
   template: number | RealnameTemplate;
   objectKey: string;
+  backupObjects?:
+    | {
+        objectKey: string;
+        deletedAt?: string | null;
+        id?: string | null;
+      }[]
+    | null;
   encryptedDataKey: string;
   encryptionVersion: 'aes-256-gcm-v1';
   iv: string;
@@ -857,6 +866,7 @@ export interface RealnameDocument {
   sha256: string;
   storageState: 'uploading' | 'active' | 'upload_failed' | 'deleting' | 'deleted';
   submittedAt?: string | null;
+  primaryObjectDeletedAt?: string | null;
   deletedAt?: string | null;
   updatedAt: string;
   createdAt: string;
@@ -1090,6 +1100,7 @@ export interface NameserverChange {
 export interface ManualReview {
   id: number;
   order?: (number | null) | Order;
+  realnameTemplate?: (number | null) | RealnameTemplate;
   reasonCode: string;
   status: 'open' | 'resolved';
   evidence?:
@@ -1647,6 +1658,7 @@ export interface PayloadJob {
         | 'backgroundProbe'
         | 'advertisingMaintenance'
         | 'smsReceiptReconciliation'
+        | 'realnameCleanup'
         | 'commerceFulfillment'
       )
     | null;
@@ -2351,6 +2363,7 @@ export interface RealnameTemplatesSelect<T extends boolean = true> {
   safeFailureReason?: T;
   disabledAt?: T;
   cleanupDueAt?: T;
+  cleanupCompletedAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -2362,6 +2375,13 @@ export interface RealnameDocumentsSelect<T extends boolean = true> {
   customer?: T;
   template?: T;
   objectKey?: T;
+  backupObjects?:
+    | T
+    | {
+        objectKey?: T;
+        deletedAt?: T;
+        id?: T;
+      };
   encryptedDataKey?: T;
   encryptionVersion?: T;
   iv?: T;
@@ -2372,6 +2392,7 @@ export interface RealnameDocumentsSelect<T extends boolean = true> {
   sha256?: T;
   storageState?: T;
   submittedAt?: T;
+  primaryObjectDeletedAt?: T;
   deletedAt?: T;
   updatedAt?: T;
   createdAt?: T;
@@ -2532,6 +2553,7 @@ export interface NameserverChangesSelect<T extends boolean = true> {
  */
 export interface ManualReviewsSelect<T extends boolean = true> {
   order?: T;
+  realnameTemplate?: T;
   reasonCode?: T;
   status?: T;
   evidence?: T;
@@ -3012,6 +3034,13 @@ export interface WorkflowAdvertisingMaintenance {
  * via the `definition` "WorkflowSmsReceiptReconciliation".
  */
 export interface WorkflowSmsReceiptReconciliation {
+  input?: unknown;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WorkflowRealnameCleanup".
+ */
+export interface WorkflowRealnameCleanup {
   input?: unknown;
 }
 /**

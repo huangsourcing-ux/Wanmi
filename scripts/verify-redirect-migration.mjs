@@ -981,6 +981,48 @@ function verifyRealnameDocumentSchema(stage) {
   }
 }
 
+function verifyRealnameLifecycleSchema(stage) {
+  const schema = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (EXISTS (
+           SELECT 1 FROM information_schema.tables WHERE table_schema = 'public'
+             AND table_name = 'realname_documents_backup_objects'
+         ))::text || ':' ||
+         (EXISTS (
+           SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+             AND table_name = 'realname_documents' AND column_name = 'primary_object_deleted_at'
+         ))::text || ':' ||
+         (EXISTS (
+           SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+             AND table_name = 'realname_templates' AND column_name = 'cleanup_completed_at'
+         ))::text || ':' ||
+         (EXISTS (
+           SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+             AND table_name = 'manual_reviews' AND column_name = 'realname_template_id'
+         ))::text || ':' ||
+         (EXISTS (
+           SELECT 1 FROM pg_indexes WHERE schemaname = 'public'
+             AND indexname = 'manual_reviews_one_open_realname_template_unique'
+         ))::text || ':' ||
+         (array_to_string(enum_range(NULL::enum_payload_jobs_workflow_slug), ',')
+           LIKE '%realnameCleanup%')::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (schema !== 'true:true:true:true:true:true') {
+    throw new Error(`D4-04 real-name lifecycle schema invalid after ${stage}: ${schema}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -999,6 +1041,7 @@ try {
   verifyCustomerAuthSmsSchema('empty-database migration')
   verifyRealnameTemplateSchema('empty-database migration')
   verifyRealnameDocumentSchema('empty-database migration')
+  verifyRealnameLifecycleSchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -1824,8 +1867,78 @@ try {
     throw new Error(`D4-03 legacy document backfill was unsafe: ${documentBackfill}`)
   }
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 102
+     WHERE name IN (
+       '20260807_135646_d4_realname_lifecycle',
+       '20260807_140407_d4_realname_cleanup_completion'
+     )`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const lifecycleAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.tables WHERE table_schema = 'public'
+             AND table_name = 'realname_documents_backup_objects'
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+             AND table_name = 'realname_documents' AND column_name = 'primary_object_deleted_at'
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+             AND table_name = 'realname_templates' AND column_name = 'cleanup_completed_at'
+         ))::text || ':' ||
+         (array_to_string(enum_range(NULL::enum_payload_jobs_workflow_slug), ',')
+           NOT LIKE '%realnameCleanup%')::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (lifecycleAfterDown !== 'true:true:true:true') {
+    throw new Error(`D4-04 migration down was incomplete: ${lifecycleAfterDown}`)
+  }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyRealnameLifecycleSchema('D4-04 migration round trip')
+  const disabledRetention = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT COUNT(*) FILTER (WHERE disabled_at IS NULL OR cleanup_due_at IS NULL)
+       FROM realname_templates WHERE status = 'disabled'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (disabledRetention !== '0') {
+    throw new Error(
+      `D4-04 disabled-template retention backfill was incomplete: ${disabledRetention}`,
+    )
+  }
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, and the D4-03 private-document migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, and the D4-04 real-name lifecycle migration round trips.\n',
   )
 } finally {
   if (created) {

@@ -173,6 +173,7 @@ export const RealnameTemplates: CollectionConfig = {
     },
     { name: 'disabledAt', type: 'date', index: true },
     { name: 'cleanupDueAt', type: 'date', index: true },
+    { name: 'cleanupCompletedAt', type: 'date', index: true },
   ],
 }
 
@@ -206,6 +207,16 @@ export const RealnameDocuments: CollectionConfig = {
       admin: { hidden: true },
       required: true,
       unique: true,
+    },
+    {
+      name: 'backupObjects',
+      type: 'array',
+      access: { read: sensitiveFieldRead },
+      admin: { hidden: true },
+      fields: [
+        { name: 'objectKey', type: 'text', required: true },
+        { name: 'deletedAt', type: 'date' },
+      ],
     },
     {
       name: 'encryptedDataKey',
@@ -259,6 +270,7 @@ export const RealnameDocuments: CollectionConfig = {
       required: true,
     },
     { name: 'submittedAt', type: 'date', index: true },
+    { name: 'primaryObjectDeletedAt', type: 'date', index: true },
     { name: 'deletedAt', type: 'date', index: true },
   ],
 }
