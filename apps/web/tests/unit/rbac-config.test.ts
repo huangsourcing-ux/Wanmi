@@ -69,6 +69,7 @@ const customerReads = [
   'orderEvents',
   'orders',
   'quotes',
+  'realnameDocuments',
   'realnameTemplates',
   'renewals',
 ]

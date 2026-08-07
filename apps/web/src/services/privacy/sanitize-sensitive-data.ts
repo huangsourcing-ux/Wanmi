@@ -2,7 +2,7 @@ export const REDACTED_VALUE = '[REDACTED]'
 
 const safeDerivedKey = /(?:digest|hash|hashed|last4|masked|sha256)$/i
 const sensitiveKey =
-  /(?:apikey|authorization|certificateno|certificatenumber|cookie|credential|documentno|documentnumber|encryptionkey|idcard|idnumber|identitycard|identityno|identitynumber|mobile|onetimepassword|otp|passphrase|passportno|passportnumber|password|paymentkey|phone|privatekey|recoverycode|secret|sessionid|sessiontoken|setcookie|signingkey|smscode|telephone|token|totp|verificationcode)/i
+  /(?:apikey|authorization|authTag|buffer|certificateno|certificatenumber|cookie|credential|dataKey|documentBody|documentBytes|documentContent|documentno|documentnumber|encryptedDataKey|encryptionkey|fileBody|fileBytes|fileContent|idcard|idnumber|identitycard|identityno|identitynumber|mobile|objectKey|onetimepassword|otp|passphrase|passportno|passportnumber|password|paymentkey|phone|plaintext|privatekey|recoverycode|secret|sessionid|sessiontoken|setcookie|signingkey|smscode|telephone|token|totp|verificationcode)/i
 const chineseMobile = /(?:\+?86[-\s]?)?1[3-9]\d{9}/g
 const chineseIdentityNumber = /(?<![0-9A-Za-z])\d{17}[0-9Xx](?![0-9A-Za-z])/g
 const credentialHeader = /(?:authorization\s*:|cookie\s*:|set-cookie\s*:|bearer\s+)/i

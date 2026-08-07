@@ -167,7 +167,12 @@ describe('D4 real-name templates', () => {
       collection: 'auditLogs',
       overrideAccess: true,
       sort: 'createdAt',
-      where: { targetId: { equals: String(draft.id) } },
+      where: {
+        and: [
+          { targetId: { equals: String(draft.id) } },
+          { targetType: { equals: 'realname-template' } },
+        ],
+      },
     })
     expect(audits.docs.map((audit) => audit.action)).toEqual([
       'realname.template.status_changed',
