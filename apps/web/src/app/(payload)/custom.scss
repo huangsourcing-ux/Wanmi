@@ -225,3 +225,166 @@
   padding: 0 12px;
   text-decoration: none;
 }
+
+.wanmi-operations-nav {
+  border-top: 1px solid var(--theme-elevation-150);
+  display: grid;
+  gap: 2px;
+  margin-top: calc(var(--base) * 0.75);
+  padding-top: calc(var(--base) * 0.75);
+
+  &__label {
+    color: var(--theme-elevation-600);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 6px 12px;
+    text-transform: uppercase;
+  }
+
+  &__link {
+    border-radius: var(--style-radius-s);
+    color: var(--theme-text);
+    padding: 7px 12px;
+    text-decoration: none;
+
+    &:hover,
+    &[aria-current='page'] {
+      background: var(--theme-elevation-100);
+    }
+  }
+}
+
+.wanmi-operations-view {
+  display: grid;
+  gap: calc(var(--base) * 1.25);
+  margin: 0 auto;
+  max-width: 90rem;
+  padding: calc(var(--base) * 1.5);
+
+  &__header {
+    max-width: 62rem;
+
+    h1 {
+      margin: 0 0 calc(var(--base) * 0.5);
+    }
+
+    p:last-child {
+      color: var(--theme-elevation-650);
+      margin-bottom: 0;
+    }
+  }
+
+  &__eyebrow {
+    color: var(--theme-elevation-600);
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0 0 calc(var(--base) * 0.25);
+  }
+
+  &__empty,
+  &__footnote {
+    color: var(--theme-elevation-600);
+  }
+}
+
+.wanmi-operations-summary,
+.wanmi-operations-grid {
+  display: grid;
+  gap: calc(var(--base) * 0.75);
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  margin: 0;
+}
+
+.wanmi-operations-summary > div,
+.wanmi-operations-card,
+.wanmi-operations-panel {
+  background: var(--theme-elevation-50);
+  border: 1px solid var(--theme-elevation-150);
+  border-radius: var(--style-radius-m);
+  padding: calc(var(--base) * 0.9);
+}
+
+.wanmi-operations-summary {
+  dt {
+    color: var(--theme-elevation-600);
+    font-size: 13px;
+  }
+
+  dd {
+    font-size: 28px;
+    font-weight: 600;
+    margin: calc(var(--base) * 0.25) 0 0;
+  }
+}
+
+.wanmi-operations-card,
+.wanmi-operations-panel {
+  display: grid;
+  gap: calc(var(--base) * 0.75);
+
+  h2 {
+    margin: 0;
+  }
+}
+
+.wanmi-operations-card__heading,
+.wanmi-operations-panel__heading {
+  align-items: center;
+  display: flex;
+  gap: calc(var(--base) * 0.75);
+  justify-content: space-between;
+}
+
+.wanmi-operations-card__heading strong {
+  font-size: 24px;
+}
+
+.wanmi-operations-statuses {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+
+  div {
+    display: flex;
+    justify-content: space-between;
+  }
+
+  dd {
+    font-weight: 600;
+    margin: 0;
+  }
+}
+
+.wanmi-operations-link,
+.wanmi-operations-panel a {
+  color: var(--theme-success-600);
+}
+
+.wanmi-operations-table-wrap {
+  overflow-x: auto;
+
+  table {
+    border-collapse: collapse;
+    min-width: 48rem;
+    width: 100%;
+  }
+
+  th,
+  td {
+    border-bottom: 1px solid var(--theme-elevation-150);
+    padding: 10px 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    font-weight: 600;
+  }
+}
+
+@media (max-width: 700px) {
+  .wanmi-operations-view {
+    padding: var(--base);
+  }
+}

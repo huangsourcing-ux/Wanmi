@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { findAsUser, systemFindForJob } from '@/access/local-api'
+import { countAsUser, findAsUser, systemFindForJob } from '@/access/local-api'
 
 describe('Payload Local API guardrails', () => {
   it('always represents a user with overrideAccess false', async () => {
@@ -10,6 +10,24 @@ describe('Payload Local API guardrails', () => {
     await findAsUser(payload as never, { collection: 'orders', user: user as never })
     expect(find).toHaveBeenCalledWith(
       expect.objectContaining({ collection: 'orders', overrideAccess: false, user }),
+    )
+  })
+
+  it('enforces access control for user-scoped counts', async () => {
+    const count = vi.fn().mockResolvedValue({ totalDocs: 3 })
+    const payload = { count }
+    const user = { collection: 'admins', id: 42, roles: ['analyst'], status: 'active' }
+    await countAsUser(payload as never, {
+      collection: 'toolObservabilityBuckets',
+      user: user as never,
+      where: { scope: { equals: 'tool' } },
+    })
+    expect(count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        collection: 'toolObservabilityBuckets',
+        overrideAccess: false,
+        user,
+      }),
     )
   })
 

@@ -5,6 +5,7 @@ import { recordAuditEvent } from '@/services/audit/record-audit-event'
 type UserFindArgs = {
   collection: string
   depth?: number
+  draft?: boolean
   limit?: number
   page?: number
   req?: PayloadRequest
@@ -14,8 +15,24 @@ type UserFindArgs = {
   where?: Where
 }
 
+type UserCountArgs = {
+  collection: string
+  draft?: boolean
+  req?: PayloadRequest
+  user: NonNullable<PayloadRequest['user']>
+  where?: Where
+}
+
 export async function findAsUser(payload: Payload, args: UserFindArgs) {
   return payload.find({
+    ...args,
+    collection: args.collection as never,
+    overrideAccess: false,
+  } as never)
+}
+
+export async function countAsUser(payload: Payload, args: UserCountArgs) {
+  return payload.count({
     ...args,
     collection: args.collection as never,
     overrideAccess: false,

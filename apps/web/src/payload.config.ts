@@ -63,7 +63,52 @@ export default buildConfig({
   admin: {
     autoRefresh: false,
     components: {
+      afterNavLinks: ['@/components/admin/operations-navigation#OperationsNavigation'],
       settingsMenu: ['@/components/admin/security-settings-link#SecuritySettingsLink'],
+      views: {
+        operationsAdvertising: {
+          Component: '@/components/admin/operations-views#AdvertisingOperationsView',
+          exact: true,
+          meta: { title: '广告运营' },
+          path: '/operations/advertising',
+        },
+        operationsAudit: {
+          Component: '@/components/admin/operations-views#AuditOperationsView',
+          exact: true,
+          meta: { title: '审计浏览' },
+          path: '/operations/audit',
+        },
+        operationsContent: {
+          Component: '@/components/admin/operations-views#ContentOperationsView',
+          exact: true,
+          meta: { title: '内容运营' },
+          path: '/operations/content',
+        },
+        operationsFeedback: {
+          Component: '@/components/admin/operations-views#FeedbackOperationsView',
+          exact: true,
+          meta: { title: '反馈运营' },
+          path: '/operations/feedback',
+        },
+        operationsTldPricing: {
+          Component: '@/components/admin/operations-views#TldPricingOperationsView',
+          exact: true,
+          meta: { title: 'TLD / 价格' },
+          path: '/operations/tld-pricing',
+        },
+        operationsTools: {
+          Component: '@/components/admin/operations-views#ToolStatusView',
+          exact: true,
+          meta: { title: '工具状态' },
+          path: '/operations/tools',
+        },
+        operationsDashboard: {
+          Component: '@/components/admin/operations-views#OperationsDashboardView',
+          exact: true,
+          meta: { title: '运营仪表盘' },
+          path: '/operations',
+        },
+      },
     },
     importMap: {
       baseDir: appDir,

@@ -7,6 +7,7 @@ import {
   PayloadToolObservabilityStore,
   TOOL_OBSERVABILITY_BUCKET_MS,
 } from '@/services/observability/tool-observability'
+import { readToolOperationsSnapshot } from '@/services/operations/read-operations-views'
 
 let payload: Payload
 const createdIds: Array<number | string> = []
@@ -170,6 +171,42 @@ describe('D2 tool observability persistence and access', () => {
           user: user as never,
         } as never),
       ).rejects.toThrow()
+    }
+  })
+
+  it('builds the dashboard only from access-controlled hourly buckets', async () => {
+    const analyst = admin('analyst', 3110)
+    const snapshot = await readToolOperationsSnapshot(
+      payload,
+      analyst as never,
+      new Date('2098-01-02T05:00:00.000Z'),
+    )
+    expect(snapshot.toolMetrics).toEqual([
+      expect.objectContaining({
+        failureCount: 2,
+        p50Bucket: '300_999ms',
+        p95Bucket: 'gte_10000ms',
+        requestCount: 3,
+        successRateBasisPoints: 3333,
+        tool: 'idn',
+      }),
+    ])
+    expect(snapshot.providerMetrics).toEqual([
+      expect.objectContaining({
+        lastQueueDepth: 7,
+        maxQueueDepth: 8,
+        operation: 'dns',
+        provider: 'alidns',
+        requestCount: 1,
+        timeoutErrorCount: 1,
+      }),
+    ])
+    expect(JSON.stringify(snapshot)).not.toMatch(/domain|query|traceId|userId|session/i)
+
+    for (const denied of [admin('ad_operator', 3111), admin('content_editor', 3112)]) {
+      await expect(
+        readToolOperationsSnapshot(payload, denied as never, new Date('2098-01-02T05:00:00.000Z')),
+      ).rejects.toThrow('OPERATIONS_VIEW_FORBIDDEN')
     }
   })
 })
