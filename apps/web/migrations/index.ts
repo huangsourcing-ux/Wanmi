@@ -17,6 +17,7 @@ import * as migration_20260807_114644_d4_realname_templates from './20260807_114
 import * as migration_20260807_125811_d4_private_realname_documents from './20260807_125811_d4_private_realname_documents'
 import * as migration_20260807_135646_d4_realname_lifecycle from './20260807_135646_d4_realname_lifecycle'
 import * as migration_20260807_140407_d4_realname_cleanup_completion from './20260807_140407_d4_realname_cleanup_completion'
+import * as migration_20260807_145526_d5_customer_quotes from './20260807_145526_d5_customer_quotes'
 
 export const migrations = [
   {
@@ -113,5 +114,10 @@ export const migrations = [
     up: migration_20260807_140407_d4_realname_cleanup_completion.up,
     down: migration_20260807_140407_d4_realname_cleanup_completion.down,
     name: '20260807_140407_d4_realname_cleanup_completion',
+  },
+  {
+    up: migration_20260807_145526_d5_customer_quotes.up,
+    down: migration_20260807_145526_d5_customer_quotes.down,
+    name: '20260807_145526_d5_customer_quotes',
   },
 ]

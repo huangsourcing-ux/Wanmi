@@ -10,6 +10,12 @@ test('customer OTP, all-session logout, deletion, and admin isolation work end t
   const phone = `139${String(Date.now()).slice(-8)}`
   const deviceId = `e2e-customer-device-${Date.now()}`
 
+  const anonymousQuote = await request.post('/api/v1/quotes', {
+    data: { domain: 'anonymous-quote.com', years: 1 },
+  })
+  expect(anonymousQuote.status()).toBe(401)
+  expect(await anonymousQuote.json()).toMatchObject({ code: 'CUSTOMER_AUTH_REQUIRED' })
+
   async function login() {
     const requested = await request.post('/api/v1/auth/sms/request', {
       data: { deviceId, phone },
@@ -42,6 +48,35 @@ test('customer OTP, all-session logout, deletion, and admin isolation work end t
   }
 
   const firstCookie = await login()
+  const quote = await request.post('/api/v1/quotes', {
+    data: { domain: `e2e-${Date.now()}.com`, years: 3 },
+    headers: { cookie: firstCookie },
+  })
+  expect(quote.status()).toBe(200)
+  expect(quote.headers()['cache-control']).toBe('no-store')
+  const quoteBody = await quote.json()
+  expect(quoteBody).toMatchObject({
+    data: {
+      quote: {
+        currency: 'CNY',
+        domainAscii: expect.stringMatching(/\.com$/u),
+        expiresAt: expect.any(String),
+        quoteRef: expect.any(String),
+        quotedAt: expect.any(String),
+        sourcePriceSnapshotRef: expect.any(String),
+        userPriceMinor: 9_500,
+        years: 3,
+      },
+    },
+    state: 'ready',
+  })
+  expect(
+    Date.parse(quoteBody.data.quote.expiresAt) - Date.parse(quoteBody.data.quote.quotedAt),
+  ).toBe(300_000)
+  expect(quoteBody.data.quote).not.toHaveProperty('upstreamCostMinor')
+  expect(quoteBody.data.quote).not.toHaveProperty('ruleKey')
+  expect(quoteBody.data.quote).not.toHaveProperty('providerRequestId')
+
   const adminAttempt = await request.post('/api/v1/admin/auth/login', {
     data: {
       email: 'customer-cookie@example.test',

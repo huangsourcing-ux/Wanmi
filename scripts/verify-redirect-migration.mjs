@@ -1023,6 +1023,85 @@ function verifyRealnameLifecycleSchema(stage) {
   }
 }
 
+function verifyCustomerQuoteSchema(stage) {
+  const schema = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (COUNT(*) FILTER (WHERE column_name IN (
+           'availability_observed_at', 'availability_request_id', 'calculation_formula',
+           'calculation_version', 'created_trace_id', 'price_class', 'provider',
+           'provider_cache_status', 'provider_observed_at', 'provider_product_id',
+           'provider_request_id', 'quote_integrity_hash', 'quote_ref', 'quoted_at',
+           'registration_price_minor', 'renewal_price_minor', 'rounding_mode',
+           'rule_key', 'rule_mode', 'rule_source', 'rule_version', 'schema_version',
+           'source_calculation_hash', 'source_price_snapshot_ref', 'tld',
+           'upstream_registration_price_minor', 'upstream_renewal_price_minor'
+         )))::text || ':' ||
+         (COUNT(*) FILTER (WHERE column_name = 'rule_snapshot'))::text
+       FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'quotes'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (schema !== '27:0') {
+    throw new Error(`D5-01 customer quote columns invalid after ${stage}: ${schema}`)
+  }
+
+  const indexes = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(indexdef, E'\n' ORDER BY indexname)
+       FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'quotes'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    !/UNIQUE INDEX .*\(quote_ref\)/.test(indexes) ||
+    !/\(customer_id, expires_at\)/.test(indexes) ||
+    !/\(domain_ascii, quoted_at\)/.test(indexes)
+  ) {
+    throw new Error(`D5-01 customer quote indexes invalid after ${stage}: ${indexes}`)
+  }
+
+  const lockRelation = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'payload_locked_documents_rels'
+           AND column_name = 'quotes_id'
+       )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (lockRelation !== 'f') {
+    throw new Error(`D5-01 customer quotes unexpectedly enable document locking after ${stage}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -1042,6 +1121,7 @@ try {
   verifyRealnameTemplateSchema('empty-database migration')
   verifyRealnameDocumentSchema('empty-database migration')
   verifyRealnameLifecycleSchema('empty-database migration')
+  verifyCustomerQuoteSchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -1937,8 +2017,94 @@ try {
     )
   }
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 103
+     WHERE name = '20260807_145526_d5_customer_quotes'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const quoteAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'quotes'
+             AND column_name = 'rule_snapshot'
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'quotes'
+             AND column_name = 'quote_ref'
+         ))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (quoteAfterDown !== 'true:true') {
+    throw new Error(`D5-01 migration down was incomplete: ${quoteAfterDown}`)
+  }
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `WITH customer AS (
+       INSERT INTO customers (phone, phone_masked, status)
+       VALUES ('d5-legacy-customer', '***legacy', 'active')
+       RETURNING id
+     )
+     INSERT INTO quotes (
+       customer_id, domain_ascii, years, upstream_cost_minor, user_price_minor,
+       currency, rule_snapshot, expires_at
+     )
+     SELECT id, 'legacy.example.com', 1, 100, 120, 'CNY', '{"legacy":true}'::jsonb,
+       CURRENT_TIMESTAMP + interval '5 minutes'
+     FROM customer`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyCustomerQuoteSchema('D5-01 migration round trip')
+  const legacyQuote = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (expires_at <= CURRENT_TIMESTAMP)::text || ':' ||
+         (quote_ref ~ '^[0-9a-f-]{36}$')::text || ':' ||
+         (quote_integrity_hash = repeat('f', 64))::text
+       FROM quotes WHERE domain_ascii = 'legacy.example.com'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (legacyQuote !== 'true:true:true') {
+    throw new Error(`D5-01 legacy quotes were not failed closed: ${legacyQuote}`)
+  }
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, and the D4-04 real-name lifecycle migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, and the D5-01 customer quote migration round trips.\n',
   )
 } finally {
   if (created) {
