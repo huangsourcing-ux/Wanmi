@@ -53,6 +53,7 @@ const publicReads = [
   'navigation',
   'siteSettings',
   'tldPages',
+  'toolPages',
   'topics',
 ]
 const customerReads = [
@@ -96,6 +97,7 @@ const contentAdminCollections = [
   'navigation',
   'tags',
   'tldPages',
+  'toolPages',
   'topics',
 ]
 const advertisingAdminCollections = [
@@ -306,6 +308,7 @@ describe('D1 administrator navigation groups', () => {
     smsChallenges: ADMIN_GROUPS.identity,
     tags: ADMIN_GROUPS.content,
     tldPages: ADMIN_GROUPS.content,
+    toolPages: ADMIN_GROUPS.content,
     topics: ADMIN_GROUPS.content,
     toolObservabilityBuckets: ADMIN_GROUPS.operations,
     userFeedback: ADMIN_GROUPS.operations,

@@ -434,9 +434,9 @@ D2-12 验证记录（2026-08-06）：新增跨层综合降级矩阵，并仅修�
 - [x] 建立轻量 CMS：文章、专题、分类、标签、TLD 页面、帮助页；
 - [x] 实现草稿、待审核、定时发布、发布、下线、归档和修订记录；
 - [x] 实现受控 Markdown/富文本清洗、OSS 图片、预览和来源字段；
-- [ ] 实现 TLD 页面、工具与内容双向关联；
-- [ ] 使用 `@payloadcms/plugin-seo` 实现 SEO 标题、描述和 Open Graph，并完成 canonical、收录开关和 sitemap 集成；
-- [ ] 使用 `@payloadcms/plugin-redirects` 管理内容、工具和 TLD 页面改址后的 301，并验证循环和开放跳转防护；
+- [x] 实现 TLD 页面、工具与内容双向关联；
+- [x] 使用 `@payloadcms/plugin-seo` 实现 SEO 标题、描述和 Open Graph，并完成 canonical、收录开关和 sitemap 集成；
+- [x] 使用 `@payloadcms/plugin-redirects` 管理内容、工具和 TLD 页面改址后的 301，并验证循环和开放跳转防护；
 - [ ] 建立广告主、素材、广告位、排期、状态和受控跳转；
 - [ ] 所有商业内容显著显示“广告”，外部链接设置 `sponsored`、`nofollow`、`noopener`；
 - [ ] 广告只在核心结果之后或内容自然位置展示，失败时折叠或显示自有内容；
@@ -448,6 +448,8 @@ D2-12 验证记录（2026-08-06）：新增跨层综合降级矩阵，并仅修�
 - [ ] 准备首批内容模板和发布 Runbook，内容本身由项目负责人持续补充。
 
 D3-01 验证记录（2026-08-06）：在 D0 `articles`、`topics`、`tldPages` 基础上新增 `helpPages`、`categories`、`tags`，四类内容统一使用 Payload drafts/autosave/50 版本与 `draft → in_review → published → unpublished → archived` 单向状态机；已发布内容可保存草稿修订并通过 `publish_revision` 替换线上版本。管理端工作流 API 仅接受完成 TOTP 的 active `content_editor`/`system_admin`，直接 REST、Local API、Admin 字段修改均不能绕过状态机；每次状态动作记录操作者、前后状态和调度信息，版本快照保留 `revisionBy`。自定义 `publishing` Job 以内容文档为并发键，定时、替换、取消、旧任务重放、重复执行和调度人权限失效均安全，Payload 原生 `schedulePublish` 已关闭。内容只持久化受控 Lexical JSON，创建、更新、autosave 与发布前服务端递归重建白名单树；拒绝 HTML/脚本/嵌入/未知节点、事件属性、样式、危险协议、协议相对链接及外链/data 图片，图片只解析 `media` ID，外部 HTTP(S) 链接统一输出 `nofollow noopener`，公开渲染不使用 `dangerouslySetInnerHTML`。新增四类公开详情与受 TOTP/内容角色保护的私有预览；匿名读取同时要求 Payload `_status=published` 和 `workflowStatus=published`，Proxy 发布门禁保证未发布内容返回真实 404，预览输出 `noindex, nofollow` 与私有禁缓存策略，分类/标签不能被匿名直接枚举。命名 migration `20260806_141657_d3_content_cms_workflow` 已覆盖新表、版本、关系、索引、Job 枚举与旧内容回填：有来源的旧发布内容保留发布，缺来源内容回退待审核；生成类型和 import map 已同步。最终 `make check` 通过生成物/schema 漂移、空库/当前升级/down-up migration、Nginx、lint、TypeScript strict、460 个单元测试、32 个 PostgreSQL/MinIO 集成测试、安全门禁、Next.js 生产构建与 linux/amd64 同镜像；Gitleaks 无泄漏，依赖审计维持既有 2 low、2 moderate，无 high/critical。最终 `make test-e2e` 29/29 通过，覆盖创建、审核、私有预览、即时发布、公开访问、下线、归档、四类详情、匿名预览拒绝与 XSS 不落库/不渲染。本切片未实现广告、仪表盘、交易、完整 SEO/Redirect/Sitemap，未部署或执行真实 OSS/其他外部写操作。
+
+D3-02 验证记录（2026-08-06）：新增固定工具目录与内容侧 `relatedTools`、`relatedTldPages` 关系，并在工具/TLD/文章/专题/帮助页后台提供可维护的正向关系和分类型反向 Join；匿名关系读取重新查询目标且同时要求 `_status=published` 与 `workflowStatus=published`，草稿、下线和归档不能经关系旁路公开。复用官方 SEO 插件，将文章、专题、TLD、帮助页、分类和标签统一接入 SEO 标题、描述、Open Graph、同源 canonical 与 `noIndex`；分类/标签只有存在已发布文章时才公开。sitemap 每次请求动态生成并要求零 freshness/重新验证，每页读取 200 条、最多 5,000 条动态内容，只输出双重发布、未 `noIndex` 且 canonical 指向自身的详情和有效分类/标签，跨页 canonical 由公开目标自身入图；读取失败保留受控静态基线。复用 D1-04 Redirects guard/runtime，将帮助、分类、标签和固定工具纳入永久 301，目标仍受站内同源、发布门禁、循环、最大链长与开放跳转防护。命名 migration `20260807_004430_d3_content_relations_seo` 包含关系表、版本关系、SEO 字段扩展、redirect 枚举和六个固定工具种子；生成类型同步。最终 `make check` 覆盖生成物/schema 漂移、空库/当前升级/down-up migration、Nginx、lint、TypeScript strict、471 个单元测试、33 个 PostgreSQL/MinIO 集成测试、安全门禁、Next.js 生产构建与 linux/amd64 同镜像；最终 `make test-e2e` 30/30 通过。Playwright 固定为 2 workers、15 秒断言和 120 秒多步骤场景预算，避免资源紧张的 Next 开发冷编译触发系统 I/O 暂停；价格快照集成 fixture 改用每次运行唯一 TLD/规则，消除 E2E 留存数据对 D2“最新快照”断言的污染。本切片不含广告、仪表盘、交易或部署，也未调用任何真实外部写接口。
 
 ### 7.3 退出条件
 

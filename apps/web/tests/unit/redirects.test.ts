@@ -36,14 +36,38 @@ describe('managed redirects', () => {
     expect(
       referenceDocumentPath({
         relationTo: 'articles',
-        value: { _status: 'published', slug: 'domain-guide' },
+        value: { _status: 'published', slug: 'domain-guide', workflowStatus: 'published' },
       }),
     ).toBe('/articles/domain-guide')
     expect(
       referenceDocumentPath({
         relationTo: 'topics',
-        value: { _status: 'draft', slug: 'hidden' },
+        value: { _status: 'draft', slug: 'hidden', workflowStatus: 'draft' },
       }),
+    ).toBeUndefined()
+    expect(
+      referenceDocumentPath({
+        relationTo: 'helpPages',
+        value: { _status: 'published', slug: 'dns', workflowStatus: 'published' },
+      }),
+    ).toBe('/help/dns')
+    expect(
+      referenceDocumentPath({
+        relationTo: 'categories',
+        value: { publiclyAvailable: true, slug: 'guides' },
+      }),
+    ).toBe('/articles/category/guides')
+    expect(
+      referenceDocumentPath({
+        relationTo: 'tags',
+        value: { publiclyAvailable: false, slug: 'hidden' },
+      }),
+    ).toBeUndefined()
+    expect(referenceDocumentPath({ relationTo: 'toolPages', value: { slug: 'whois' } })).toBe(
+      '/tools/whois',
+    )
+    expect(
+      referenceDocumentPath({ relationTo: 'toolPages', value: { slug: 'unknown' } }),
     ).toBeUndefined()
   })
 
@@ -57,7 +81,10 @@ describe('managed redirects', () => {
       {
         from: '/draft',
         to: {
-          reference: { relationTo: 'articles', value: { _status: 'draft', slug: 'draft' } },
+          reference: {
+            relationTo: 'articles',
+            value: { _status: 'draft', slug: 'draft', workflowStatus: 'draft' },
+          },
           type: 'reference',
         },
         type: '301',
@@ -127,13 +154,50 @@ describe('managed redirects', () => {
       1,
       expect.objectContaining({
         collection: 'redirects',
-        depth: 1,
+        depth: 0,
         limit: 200,
         overrideAccess: false,
         page: 1,
       }),
     )
     expect(find).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2 }))
+  })
+
+  it('hydrates reference rules through current public access before indexing them', async () => {
+    const find = vi
+      .fn()
+      .mockResolvedValueOnce({
+        docs: [
+          {
+            from: '/old-help',
+            to: { reference: { relationTo: 'helpPages', value: 9 }, type: 'reference' },
+            type: '301',
+          },
+        ],
+        hasNextPage: false,
+      })
+      .mockResolvedValueOnce({
+        docs: [
+          {
+            _status: 'published',
+            id: 9,
+            slug: 'dns',
+            workflowStatus: 'published',
+          },
+        ],
+      })
+
+    const index = await loadRedirectIndex({ find: find as never })
+
+    expect(index.get('/old-help')).toBe('/help/dns')
+    expect(find).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        collection: 'helpPages',
+        draft: false,
+        overrideAccess: false,
+      }),
+    )
   })
 
   it('passes through when the initial cache load fails', async () => {

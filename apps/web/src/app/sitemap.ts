@@ -1,11 +1,21 @@
+import config from '@payload-config'
 import type { MetadataRoute } from 'next'
+import { getPayload } from 'payload'
 
-import { absoluteSiteUrl, PUBLIC_SEO_ROUTES } from '@/lib/seo'
+import { logger } from '@/lib/logging'
+import { readPublicSitemap, staticSitemapEntries } from '@/services/content/sitemap'
 
-export default function sitemap(): MetadataRoute.Sitemap {
-  return PUBLIC_SEO_ROUTES.map(({ changeFrequency, path, priority }) => ({
-    changeFrequency,
-    priority,
-    url: absoluteSiteUrl(path),
-  }))
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  try {
+    return await readPublicSitemap(await getPayload({ config }))
+  } catch (error) {
+    logger.warn({
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+      msg: 'Dynamic sitemap read failed; serving fixed public routes only',
+    })
+    return staticSitemapEntries()
+  }
 }

@@ -1,5 +1,8 @@
+import Link from 'next/link'
+
 import { Badge } from '@/components/ui/badge'
 import { RichTextContent } from '@/components/content/rich-text-content'
+import { PublicRelations } from '@/components/content/public-relations'
 import type { ContentViewModel } from '@/services/content/read-content'
 
 export function ContentDetail({
@@ -15,9 +18,12 @@ export function ContentDetail({
         <div className="mb-4 flex flex-wrap gap-2">
           {preview ? <Badge variant="secondary">预览 · {content.status}</Badge> : null}
           {content.categories.map((category) => (
-            <Badge key={category.id} variant="outline">
-              {category.title}
-            </Badge>
+            <Link
+              href={`/articles/category/${encodeURIComponent(category.slug)}`}
+              key={category.id}
+            >
+              <Badge variant="outline">{category.title}</Badge>
+            </Link>
           ))}
         </div>
         <h1 className="font-heading text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -41,11 +47,20 @@ export function ContentDetail({
       {content.tags.length ? (
         <footer className="mt-10 flex flex-wrap gap-2 border-t pt-6">
           {content.tags.map((tag) => (
-            <Badge key={tag.id} variant="secondary">
-              #{tag.title}
-            </Badge>
+            <Link href={`/articles/tag/${encodeURIComponent(tag.slug)}`} key={tag.id}>
+              <Badge variant="secondary">#{tag.title}</Badge>
+            </Link>
           ))}
         </footer>
+      ) : null}
+      {!preview ? (
+        <PublicRelations
+          sections={[
+            { items: content.relatedTools, title: '相关工具' },
+            { items: content.relatedTldPages, title: '相关 TLD 页面' },
+            { items: content.relatedContent, title: '相关内容' },
+          ]}
+        />
       ) : null}
     </article>
   )

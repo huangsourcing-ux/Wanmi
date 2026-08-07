@@ -80,6 +80,7 @@ export interface Config {
     helpPages: HelpPage;
     categories: Category;
     tags: Tag;
+    toolPages: ToolPage;
     media: Media;
     navigation: Navigation;
     siteSettings: SiteSetting;
@@ -116,7 +117,19 @@ export interface Config {
     'payload-preferences': PayloadPreference;
     'payload-migrations': PayloadMigration;
   };
-  collectionsJoins: {};
+  collectionsJoins: {
+    tldPages: {
+      relatedArticles: 'articles';
+      relatedTopics: 'topics';
+      relatedHelpPages: 'helpPages';
+    };
+    toolPages: {
+      relatedArticles: 'articles';
+      relatedTopics: 'topics';
+      relatedHelpPages: 'helpPages';
+      relatedTldPages: 'tldPages';
+    };
+  };
   collectionsSelect: {
     admins: AdminsSelect<false> | AdminsSelect<true>;
     adminMfaCredentials: AdminMfaCredentialsSelect<false> | AdminMfaCredentialsSelect<true>;
@@ -130,6 +143,7 @@ export interface Config {
     helpPages: HelpPagesSelect<false> | HelpPagesSelect<true>;
     categories: CategoriesSelect<false> | CategoriesSelect<true>;
     tags: TagsSelect<false> | TagsSelect<true>;
+    toolPages: ToolPagesSelect<false> | ToolPagesSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
     navigation: NavigationSelect<false> | NavigationSelect<true>;
     siteSettings: SiteSettingsSelect<false> | SiteSettingsSelect<true>;
@@ -362,6 +376,8 @@ export interface Article {
   revisionBy?: string | null;
   categories?: (number | Category)[] | null;
   tags?: (number | Tag)[] | null;
+  relatedTools?: (number | ToolPage)[] | null;
+  relatedTldPages?: (number | TldPage)[] | null;
   meta?: WanmiSeoMeta;
   updatedAt: string;
   createdAt: string;
@@ -376,18 +392,7 @@ export interface Category {
   title: string;
   slug: string;
   description?: string | null;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "tags".
- */
-export interface Tag {
-  id: number;
-  title: string;
-  slug: string;
-  description?: string | null;
+  meta?: WanmiSeoMeta;
   updatedAt: string;
   createdAt: string;
 }
@@ -435,6 +440,52 @@ export interface Media {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "tags".
+ */
+export interface Tag {
+  id: number;
+  title: string;
+  slug: string;
+  description?: string | null;
+  meta?: WanmiSeoMeta;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "toolPages".
+ */
+export interface ToolPage {
+  id: number;
+  title: string;
+  slug: string;
+  href: string;
+  description: string;
+  relatedArticles?: {
+    docs?: (number | Article)[];
+    hasNextPage?: boolean;
+    totalDocs?: number;
+  };
+  relatedTopics?: {
+    docs?: (number | Topic)[];
+    hasNextPage?: boolean;
+    totalDocs?: number;
+  };
+  relatedHelpPages?: {
+    docs?: (number | HelpPage)[];
+    hasNextPage?: boolean;
+    totalDocs?: number;
+  };
+  relatedTldPages?: {
+    docs?: (number | TldPage)[];
+    hasNextPage?: boolean;
+    totalDocs?: number;
+  };
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "topics".
  */
 export interface Topic {
@@ -462,6 +513,8 @@ export interface Topic {
   scheduledPublishAt?: string | null;
   publishedAt?: string | null;
   revisionBy?: string | null;
+  relatedTools?: (number | ToolPage)[] | null;
+  relatedTldPages?: (number | TldPage)[] | null;
   meta?: WanmiSeoMeta;
   updatedAt: string;
   createdAt: string;
@@ -496,6 +549,22 @@ export interface TldPage {
   scheduledPublishAt?: string | null;
   publishedAt?: string | null;
   revisionBy?: string | null;
+  relatedTools?: (number | ToolPage)[] | null;
+  relatedArticles?: {
+    docs?: (number | Article)[];
+    hasNextPage?: boolean;
+    totalDocs?: number;
+  };
+  relatedTopics?: {
+    docs?: (number | Topic)[];
+    hasNextPage?: boolean;
+    totalDocs?: number;
+  };
+  relatedHelpPages?: {
+    docs?: (number | HelpPage)[];
+    hasNextPage?: boolean;
+    totalDocs?: number;
+  };
   meta?: WanmiSeoMeta;
   updatedAt: string;
   createdAt: string;
@@ -530,6 +599,9 @@ export interface HelpPage {
   scheduledPublishAt?: string | null;
   publishedAt?: string | null;
   revisionBy?: string | null;
+  relatedTools?: (number | ToolPage)[] | null;
+  relatedTldPages?: (number | TldPage)[] | null;
+  meta?: WanmiSeoMeta;
   updatedAt: string;
   createdAt: string;
   _status?: ('draft' | 'published') | null;
@@ -1100,6 +1172,22 @@ export interface Redirect {
       | ({
           relationTo: 'tldPages';
           value: number | TldPage;
+        } | null)
+      | ({
+          relationTo: 'helpPages';
+          value: number | HelpPage;
+        } | null)
+      | ({
+          relationTo: 'categories';
+          value: number | Category;
+        } | null)
+      | ({
+          relationTo: 'tags';
+          value: number | Tag;
+        } | null)
+      | ({
+          relationTo: 'toolPages';
+          value: number | ToolPage;
         } | null);
     url?: string | null;
   };
@@ -1460,6 +1548,10 @@ export interface PayloadLockedDocument {
         value: number | Tag;
       } | null)
     | ({
+        relationTo: 'toolPages';
+        value: number | ToolPage;
+      } | null)
+    | ({
         relationTo: 'media';
         value: number | Media;
       } | null)
@@ -1740,6 +1832,8 @@ export interface ArticlesSelect<T extends boolean = true> {
   revisionBy?: T;
   categories?: T;
   tags?: T;
+  relatedTools?: T;
+  relatedTldPages?: T;
   meta?: T | WanmiSeoMetaSelect<T>;
   updatedAt?: T;
   createdAt?: T;
@@ -1770,6 +1864,8 @@ export interface TopicsSelect<T extends boolean = true> {
   scheduledPublishAt?: T;
   publishedAt?: T;
   revisionBy?: T;
+  relatedTools?: T;
+  relatedTldPages?: T;
   meta?: T | WanmiSeoMetaSelect<T>;
   updatedAt?: T;
   createdAt?: T;
@@ -1789,6 +1885,10 @@ export interface TldPagesSelect<T extends boolean = true> {
   scheduledPublishAt?: T;
   publishedAt?: T;
   revisionBy?: T;
+  relatedTools?: T;
+  relatedArticles?: T;
+  relatedTopics?: T;
+  relatedHelpPages?: T;
   meta?: T | WanmiSeoMetaSelect<T>;
   updatedAt?: T;
   createdAt?: T;
@@ -1808,6 +1908,9 @@ export interface HelpPagesSelect<T extends boolean = true> {
   scheduledPublishAt?: T;
   publishedAt?: T;
   revisionBy?: T;
+  relatedTools?: T;
+  relatedTldPages?: T;
+  meta?: T | WanmiSeoMetaSelect<T>;
   updatedAt?: T;
   createdAt?: T;
   _status?: T;
@@ -1820,6 +1923,7 @@ export interface CategoriesSelect<T extends boolean = true> {
   title?: T;
   slug?: T;
   description?: T;
+  meta?: T | WanmiSeoMetaSelect<T>;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -1831,6 +1935,23 @@ export interface TagsSelect<T extends boolean = true> {
   title?: T;
   slug?: T;
   description?: T;
+  meta?: T | WanmiSeoMetaSelect<T>;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "toolPages_select".
+ */
+export interface ToolPagesSelect<T extends boolean = true> {
+  title?: T;
+  slug?: T;
+  href?: T;
+  description?: T;
+  relatedArticles?: T;
+  relatedTopics?: T;
+  relatedHelpPages?: T;
+  relatedTldPages?: T;
   updatedAt?: T;
   createdAt?: T;
 }

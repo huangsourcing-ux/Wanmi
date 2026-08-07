@@ -348,6 +348,80 @@ function verifyContentCmsSchema(stage) {
   }
 }
 
+function verifyContentRelationsSeoSchema(stage) {
+  const toolDirectory = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(slug || ':' || href, ',' ORDER BY slug) FROM tool_pages`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    toolDirectory !==
+    'dns:/tools/dns,domain-search:/tools/domain-search,idn:/tools/idn,pricing:/pricing,ssl-check:/tools/ssl-check,whois:/tools/whois'
+  ) {
+    throw new Error(`D3-02 fixed tool directory is incomplete after ${stage}: ${toolDirectory}`)
+  }
+
+  const seoColumns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(table_name || '.' || column_name, ',' ORDER BY table_name, column_name)
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name IN ('categories', 'help_pages', 'tags')
+         AND column_name IN (
+           'meta_canonical', 'meta_description', 'meta_image_id', 'meta_no_index', 'meta_title'
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (seoColumns.split(',').filter(Boolean).length !== 15) {
+    throw new Error(`D3-02 SEO columns are incomplete after ${stage}: ${seoColumns}`)
+  }
+
+  const relationColumns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(table_name || '.' || column_name, ',' ORDER BY table_name, column_name)
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND (
+           (table_name IN ('articles_rels', 'help_pages_rels', 'topics_rels')
+             AND column_name IN ('tld_pages_id', 'tool_pages_id'))
+           OR (table_name = 'tld_pages_rels' AND column_name = 'tool_pages_id')
+           OR (table_name = 'redirects_rels'
+             AND column_name IN ('categories_id', 'help_pages_id', 'tags_id', 'tool_pages_id'))
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (relationColumns.split(',').filter(Boolean).length !== 11) {
+    throw new Error(`D3-02 relationship columns are incomplete after ${stage}: ${relationColumns}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -359,6 +433,7 @@ try {
   verifyPriceSnapshotSchema('empty-database migration')
   verifyToolObservabilitySchema('empty-database migration')
   verifyContentCmsSchema('empty-database migration')
+  verifyContentRelationsSeoSchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -604,7 +679,10 @@ try {
     'ON_ERROR_STOP=1',
     '--command',
     `UPDATE payload_migrations SET batch = 7
-     WHERE name = '20260806_141657_d3_content_cms_workflow'`,
+     WHERE name IN (
+       '20260806_141657_d3_content_cms_workflow',
+       '20260807_004430_d3_content_relations_seo'
+     )`,
   ])
   run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
   const cmsTableAfterDown = postgres(
@@ -664,8 +742,41 @@ try {
   }
   verifyContentCmsSchema('D3-01 migration round trip')
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 8
+     WHERE name = '20260807_004430_d3_content_relations_seo'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const relationsTableAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT to_regclass('public.tool_pages') IS NOT NULL`,
+    ],
+    { capture: true },
+  ).trim()
+  if (relationsTableAfterDown !== 'f') {
+    throw new Error('D3-02 migration down did not remove the tool directory table')
+  }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyContentRelationsSeoSchema('D3-02 migration round trip')
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, and the D3-01 content CMS backfill and round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, and the D3-02 relation/SEO migration round trips.\n',
   )
 } finally {
   if (created) {

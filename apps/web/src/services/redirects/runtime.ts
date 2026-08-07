@@ -1,8 +1,14 @@
 import config from '@payload-config'
 import { getPayload, type Payload } from 'payload'
 
-import { buildRedirectIndex, type RedirectDocument } from '@/lib/redirects'
+import {
+  buildRedirectIndex,
+  isRedirectReferenceCollection,
+  type RedirectDocument,
+  type RedirectReferenceCollection,
+} from '@/lib/redirects'
 import { logger } from '@/lib/logging'
+import { PUBLIC_TAXONOMY_CONTEXT } from '@/services/content/types'
 
 export const REDIRECT_CACHE_TTL_MS = 30_000
 const REDIRECT_PAGE_SIZE = 200
@@ -11,6 +17,93 @@ type RedirectLoader = () => Promise<ReadonlyMap<string, string>>
 
 export type RedirectResolver = {
   resolve(path: string): Promise<string | undefined>
+}
+
+function referenceIdentity(
+  document: RedirectDocument,
+): { collection: RedirectReferenceCollection; id: number | string } | undefined {
+  const reference = document.to?.reference
+  if (!reference || !isRedirectReferenceCollection(reference.relationTo)) return undefined
+  const value = reference.value
+  const id =
+    typeof value === 'object' && value !== null && 'id' in value
+      ? (value as { id?: unknown }).id
+      : value
+  if (typeof id !== 'number' && typeof id !== 'string') return undefined
+  return { collection: reference.relationTo, id }
+}
+
+async function loadPublicReference(
+  payload: Pick<Payload, 'find'>,
+  collection: RedirectReferenceCollection,
+  id: number | string,
+): Promise<Record<string, unknown> | undefined> {
+  const taxonomy = collection === 'categories' || collection === 'tags'
+  const result = await payload.find({
+    collection,
+    ...(taxonomy ? { context: { [PUBLIC_TAXONOMY_CONTEXT]: [id] } } : {}),
+    depth: 0,
+    draft: false,
+    limit: 1,
+    overrideAccess: false,
+    where:
+      taxonomy || collection === 'toolPages'
+        ? { id: { equals: id } }
+        : {
+            and: [
+              { id: { equals: id } },
+              { _status: { equals: 'published' } },
+              { workflowStatus: { equals: 'published' } },
+            ],
+          },
+  })
+  const reference = result.docs[0] as unknown as Record<string, unknown> | undefined
+  if (!reference || !taxonomy) return reference
+  const article = await payload.find({
+    collection: 'articles',
+    depth: 0,
+    draft: false,
+    limit: 1,
+    overrideAccess: false,
+    where: {
+      and: [
+        { [collection]: { equals: id } },
+        { _status: { equals: 'published' } },
+        { workflowStatus: { equals: 'published' } },
+      ],
+    },
+  })
+  return { ...reference, publiclyAvailable: article.totalDocs > 0 }
+}
+
+async function hydrateRedirectReferences(
+  payload: Pick<Payload, 'find'>,
+  documents: RedirectDocument[],
+): Promise<RedirectDocument[]> {
+  const cache = new Map<string, Promise<Record<string, unknown> | undefined>>()
+  return Promise.all(
+    documents.map(async (document) => {
+      const identity = referenceIdentity(document)
+      if (!identity || document.to?.type !== 'reference') return document
+      const key = `${identity.collection}:${identity.id}`
+      let pending = cache.get(key)
+      if (!pending) {
+        pending = loadPublicReference(payload, identity.collection, identity.id).catch(
+          () => undefined,
+        )
+        cache.set(key, pending)
+      }
+      const value = await pending
+      if (!value) return { ...document, to: { ...document.to, reference: undefined } }
+      return {
+        ...document,
+        to: {
+          ...document.to,
+          reference: { relationTo: identity.collection, value },
+        },
+      }
+    }),
+  )
 }
 
 export function createRedirectResolver(
@@ -70,7 +163,7 @@ export async function loadRedirectIndex(
   while (hasNextPage) {
     const result = await payload.find({
       collection: 'redirects',
-      depth: 1,
+      depth: 0,
       limit: REDIRECT_PAGE_SIZE,
       overrideAccess: false,
       page,
@@ -81,7 +174,7 @@ export async function loadRedirectIndex(
     page += 1
   }
 
-  const built = buildRedirectIndex(documents)
+  const built = buildRedirectIndex(await hydrateRedirectReferences(payload, documents))
   if (built.invalidRules) {
     logger.warn({
       invalidRules: built.invalidRules,

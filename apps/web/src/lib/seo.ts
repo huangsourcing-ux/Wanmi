@@ -9,7 +9,26 @@ export const SITE_TITLE = 'Wanmi.net｜中文域名工具与服务入口'
 export const SITE_DESCRIPTION = '面向中文用户的域名查询、WHOIS、DNS、SSL、IDN 与 TLD 价格工具入口。'
 export const DEFAULT_OG_IMAGE_PATH = '/opengraph-image'
 
-export type SeoContentCollection = 'articles' | 'tldPages' | 'topics'
+export type SeoContentCollection =
+  | 'articles'
+  | 'categories'
+  | 'helpPages'
+  | 'tags'
+  | 'tldPages'
+  | 'topics'
+
+export type CmsSeoMetadata = {
+  canonical?: string
+  description?: string
+  image?: {
+    alt: string
+    height?: null | number
+    url: string
+    width?: null | number
+  }
+  noIndex?: boolean
+  title?: string
+}
 
 export type PublicSeoRoute = {
   changeFrequency: NonNullable<MetadataRoute.Sitemap[number]['changeFrequency']>
@@ -113,19 +132,24 @@ function displayTitle(title: string, path: string): string {
 }
 
 export function createPageMetadata({
+  canonical: customCanonical,
   description,
+  image: customImage,
   noIndex = false,
   path,
   title,
 }: {
+  canonical?: string
   description: string
+  image?: CmsSeoMetadata['image']
   noIndex?: boolean
   path: string
   title: string
 }): Metadata {
-  const canonical = absoluteSiteUrl(path)
+  const canonical = resolveCanonicalUrl(path, customCanonical)
   const socialTitle = displayTitle(title, path)
-  const image = absoluteSiteUrl(DEFAULT_OG_IMAGE_PATH)
+  const image = customImage?.url ?? absoluteSiteUrl(DEFAULT_OG_IMAGE_PATH)
+  const imageAlt = customImage?.alt ?? `${SITE_NAME} 中文域名工具与服务入口`
 
   return {
     alternates: { canonical },
@@ -133,7 +157,12 @@ export function createPageMetadata({
     openGraph: {
       description,
       images: [
-        { alt: `${SITE_NAME} 中文域名工具与服务入口`, height: 630, url: image, width: 1200 },
+        {
+          alt: imageAlt,
+          height: customImage?.height ?? 630,
+          url: image,
+          width: customImage?.width ?? 1200,
+        },
       ],
       locale: 'zh_CN',
       siteName: SITE_NAME,
@@ -158,6 +187,27 @@ export function createPageMetadata({
   }
 }
 
+export function createCmsPageMetadata({
+  defaultDescription,
+  defaultPath,
+  defaultTitle,
+  seo,
+}: {
+  defaultDescription: string
+  defaultPath: string
+  defaultTitle: string
+  seo?: CmsSeoMetadata
+}): Metadata {
+  return createPageMetadata({
+    canonical: seo?.canonical,
+    description: seo?.description?.trim() || defaultDescription,
+    image: seo?.image,
+    noIndex: seo?.noIndex === true,
+    path: defaultPath,
+    title: seo?.title?.trim() || defaultTitle,
+  })
+}
+
 export function createStaticPageMetadata(path: string): Metadata {
   const route = getPublicSeoRoute(path)
   return createPageMetadata(route)
@@ -168,13 +218,27 @@ export function contentPath(collection: SeoContentCollection, slug: unknown): st
   if (!value) {
     if (collection === 'articles') return '/articles'
     if (collection === 'topics') return '/topics'
+    if (collection === 'helpPages') return '/help'
+    if (collection === 'categories' || collection === 'tags') return '/articles'
     return '/pricing'
   }
 
   const encodedSlug = encodeURIComponent(value)
   if (collection === 'articles') return `/articles/${encodedSlug}`
   if (collection === 'topics') return `/topics/${encodedSlug}`
+  if (collection === 'helpPages') return `/help/${encodedSlug}`
+  if (collection === 'categories') return `/articles/category/${encodedSlug}`
+  if (collection === 'tags') return `/articles/tag/${encodedSlug}`
   return `/tld/${encodedSlug}`
+}
+
+export function resolveCanonicalUrl(path: string, canonical?: string): string {
+  if (!canonical || validateSameOriginCanonical(canonical) !== true) return absoluteSiteUrl(path)
+  return new URL(canonical, getSiteOrigin()).toString()
+}
+
+export function canonicalPath(path: string, canonical?: string): string {
+  return new URL(resolveCanonicalUrl(path, canonical)).pathname
 }
 
 export function validateSameOriginCanonical(value: unknown): true | string {

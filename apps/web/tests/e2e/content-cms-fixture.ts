@@ -13,7 +13,13 @@ const fixturePrefix = 'e2e-d3-content'
 export type ContentCmsFixtureState = {
   articleId: number
   articleSlug: string
+  categoryPath: string
+  draftHelpPath: string
+  noIndexHelpPath: string
   publishedRoutes: string[]
+  relationArticlePath: string
+  relationTldPath: string
+  tagPath: string
 }
 
 const richText: Article['content'] = {
@@ -87,6 +93,17 @@ export async function createContentCmsFixture() {
       await payload.delete({ collection, id: document.id, overrideAccess: true })
     }
   }
+  for (const collection of ['categories', 'tags'] as const) {
+    const stale = await payload.find({
+      collection,
+      limit: 20,
+      overrideAccess: true,
+      where: { slug: { contains: fixturePrefix } },
+    })
+    for (const document of stale.docs) {
+      await payload.delete({ collection, id: document.id, overrideAccess: true })
+    }
+  }
 
   const req = await createLocalReq(
     { req: { headers: new Headers({ 'x-request-id': 'e2e-d3-content-create' }) } },
@@ -110,7 +127,20 @@ export async function createContentCmsFixture() {
     user: editor,
   })
 
+  const dnsTool = (
+    await payload.find({
+      collection: 'toolPages',
+      depth: 0,
+      limit: 1,
+      overrideAccess: false,
+      where: { slug: { equals: 'dns' } },
+    })
+  ).docs[0]
+  if (!dnsTool) throw new Error('D3 E2E tool directory fixture is missing')
+
   const publishedRoutes: string[] = []
+  let relationTldId: number | undefined
+  let relationTldPath = ''
   for (const item of [
     { collection: 'topics' as const, path: '/topics', suffix: 'topic', title: 'D3 公开专题' },
     { collection: 'tldPages' as const, path: '/tld', suffix: 'tld', title: 'D3 公开 TLD' },
@@ -122,6 +152,7 @@ export async function createContentCmsFixture() {
         _status: 'published',
         content: richText,
         publishedAt: new Date().toISOString(),
+        ...(item.collection === 'tldPages' ? { relatedTools: [dnsTool.id] } : {}),
         slug: `${fixturePrefix}-${item.suffix}`,
         source: 'Wanmi E2E 来源',
         summary: 'D3 公开详情路由验证',
@@ -132,12 +163,94 @@ export async function createContentCmsFixture() {
       overrideAccess: true,
     })
     publishedRoutes.push(`${item.path}/${document.slug}`)
+    if (item.collection === 'tldPages') {
+      relationTldId = document.id
+      relationTldPath = `${item.path}/${document.slug}`
+    }
   }
+  if (!relationTldId) throw new Error('D3 E2E TLD relation fixture is missing')
+
+  const category = await payload.create({
+    collection: 'categories',
+    data: {
+      description: '仅展示已发布的关联文章。',
+      meta: { noIndex: false, title: 'D3 分类 SEO' },
+      slug: `${fixturePrefix}-category`,
+      title: 'D3 域名指南分类',
+    },
+    overrideAccess: true,
+  })
+  const tag = await payload.create({
+    collection: 'tags',
+    data: {
+      meta: { noIndex: true, title: 'D3 标签 SEO' },
+      slug: `${fixturePrefix}-tag`,
+      title: 'D3 DNS 标签',
+    },
+    overrideAccess: true,
+  })
+  const relationArticle = await payload.create({
+    collection: 'articles',
+    data: {
+      _status: 'published',
+      categories: [category.id],
+      content: richText,
+      meta: {
+        canonical: `/articles/${fixturePrefix}-relations`,
+        description: 'D3 SEO 与双向关联验证',
+        noIndex: false,
+        title: 'D3 关联文章 SEO',
+      },
+      publishedAt: new Date().toISOString(),
+      relatedTldPages: [relationTldId],
+      relatedTools: [dnsTool.id],
+      slug: `${fixturePrefix}-relations`,
+      source: 'Wanmi E2E 来源',
+      tags: [tag.id],
+      title: 'D3 关联文章',
+      workflowStatus: 'published',
+    },
+    draft: false,
+    overrideAccess: true,
+  })
+  const noIndexHelp = await payload.create({
+    collection: 'helpPages',
+    data: {
+      _status: 'published',
+      content: richText,
+      meta: { noIndex: true },
+      publishedAt: new Date().toISOString(),
+      slug: `${fixturePrefix}-noindex-help`,
+      source: 'Wanmi E2E 来源',
+      title: 'D3 不收录帮助',
+      workflowStatus: 'published',
+    },
+    draft: false,
+    overrideAccess: true,
+  })
+  const draftHelp = await payload.create({
+    collection: 'helpPages',
+    data: {
+      _status: 'draft',
+      content: richText,
+      slug: `${fixturePrefix}-draft-help`,
+      title: 'D3 草稿帮助',
+      workflowStatus: 'draft',
+    },
+    draft: true,
+    overrideAccess: true,
+  })
 
   const state: ContentCmsFixtureState = {
     articleId: article.id,
     articleSlug: article.slug,
+    categoryPath: `/articles/category/${category.slug}`,
+    draftHelpPath: `/help/${draftHelp.slug}`,
+    noIndexHelpPath: `/help/${noIndexHelp.slug}`,
     publishedRoutes,
+    relationArticlePath: `/articles/${relationArticle.slug}`,
+    relationTldPath,
+    tagPath: `/articles/tag/${tag.slug}`,
   }
   await mkdir(dirname(statePath), { recursive: true })
   await writeFile(statePath, JSON.stringify(state), { encoding: 'utf8', mode: 0o600 })
@@ -173,6 +286,17 @@ export async function removeContentCmsFixture() {
       for (const audit of audits.docs) {
         await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
       }
+      await payload.delete({ collection, id: document.id, overrideAccess: true })
+    }
+  }
+  for (const collection of ['categories', 'tags'] as const) {
+    const documents = await payload.find({
+      collection,
+      limit: 20,
+      overrideAccess: true,
+      where: { slug: { contains: fixturePrefix } },
+    })
+    for (const document of documents.docs) {
       await payload.delete({ collection, id: document.id, overrideAccess: true })
     }
   }

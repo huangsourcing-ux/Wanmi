@@ -20,11 +20,13 @@ import type {
   CollectionConfig,
   Field,
   FieldAccess,
+  Where,
 } from 'payload'
 
 import {
   contentAdminHidden,
   contentManagers,
+  deny,
   hasRole,
   publishedOrContentManager,
   publicRead,
@@ -37,7 +39,9 @@ import { sanitizeRichText } from '@/services/content/rich-text'
 import {
   CONTENT_WORKFLOW_CONTEXT,
   CONTENT_WORKFLOW_STATUSES,
+  PUBLIC_CONTENT_RELATIONS_CONTEXT,
   PUBLIC_TAXONOMY_CONTEXT,
+  PUBLIC_TAXONOMY_ROUTE_CONTEXT,
   type ContentCollection,
   type ContentWorkflowStatus,
   isContentWorkflowStatus,
@@ -74,11 +78,68 @@ const workflowFieldAccess: FieldAccess = ({ req }) =>
 const taxonomyRead: Access = ({ req }) => {
   if (hasRole(req.user, ['content_editor', 'system_admin'])) return true
   const ids = req.context?.[PUBLIC_TAXONOMY_CONTEXT]
-  if (!Array.isArray(ids) || !ids.length) return false
-  return {
-    id: { in: ids.filter((id): id is number | string => ['number', 'string'].includes(typeof id)) },
+  if (Array.isArray(ids) && ids.length) {
+    const where: Where = {
+      id: {
+        in: ids.filter((id): id is number | string => ['number', 'string'].includes(typeof id)),
+      },
+    }
+    return where
   }
+  const routeSlug = req.context?.[PUBLIC_TAXONOMY_ROUTE_CONTEXT]
+  if (typeof routeSlug === 'string' && routeSlug) {
+    const where: Where = { slug: { equals: routeSlug } }
+    return where
+  }
+  return false
 }
+
+const relationRead: FieldAccess = ({ req }) =>
+  hasRole(req.user, ['content_editor', 'system_admin']) ||
+  req.context?.[PUBLIC_CONTENT_RELATIONS_CONTEXT] === true
+
+const relatedToolsField: Field = {
+  name: 'relatedTools',
+  type: 'relationship',
+  access: { read: relationRead },
+  admin: { allowCreate: false },
+  hasMany: true,
+  maxDepth: 0,
+  relationTo: 'toolPages',
+}
+
+const relatedTldPagesField: Field = {
+  name: 'relatedTldPages',
+  type: 'relationship',
+  access: { read: relationRead },
+  admin: { allowCreate: false },
+  hasMany: true,
+  maxDepth: 0,
+  relationTo: 'tldPages',
+}
+
+const relatedContentJoinFields = (
+  on: 'relatedTldPages' | 'relatedTools',
+): Field[] =>
+  ([
+    ['relatedArticles', 'articles'],
+    ['relatedTopics', 'topics'],
+    ['relatedHelpPages', 'helpPages'],
+  ] as const).map(([name, collection]) => ({
+    name,
+    type: 'join',
+    access: {
+      read: ({ req }) => hasRole(req.user, ['content_editor', 'system_admin']),
+    },
+    admin: {
+      allowCreate: true,
+      defaultColumns: ['title', 'workflowStatus', 'publishedAt', 'updatedAt'],
+    },
+    collection,
+    defaultLimit: 20,
+    maxDepth: 0,
+    on,
+  }))
 
 function currentWorkflowStatus(originalDoc: unknown): ContentWorkflowStatus {
   if (
@@ -196,6 +257,10 @@ const versionedContent = (slug: ContentCollection): CollectionConfig => ({
           { name: 'tags', type: 'relationship', hasMany: true, relationTo: 'tags' },
         ] satisfies Field[])
       : []),
+    relatedToolsField,
+    ...(slug === 'tldPages'
+      ? relatedContentJoinFields('relatedTldPages')
+      : ([relatedTldPagesField] satisfies Field[])),
   ],
   hooks: { beforeChange: [guardAndSanitizeContent] },
   versions: {
@@ -208,6 +273,44 @@ export const Articles = versionedContent('articles')
 export const Topics = versionedContent('topics')
 export const TldPages = versionedContent('tldPages')
 export const HelpPages = versionedContent('helpPages')
+
+export const ToolPages: CollectionConfig = {
+  slug: 'toolPages',
+  access: {
+    create: deny,
+    delete: deny,
+    read: publicRead,
+    update: deny,
+  },
+  admin: {
+    defaultColumns: ['title', 'slug', 'href'],
+    group: ADMIN_GROUPS.content,
+    hidden: contentAdminHidden,
+    useAsTitle: 'title',
+  },
+  fields: [
+    { name: 'title', type: 'text', required: true, unique: true },
+    { name: 'slug', type: 'text', index: true, required: true, unique: true },
+    { name: 'href', type: 'text', required: true, unique: true },
+    { name: 'description', type: 'textarea', required: true },
+    ...relatedContentJoinFields('relatedTools'),
+    {
+      name: 'relatedTldPages',
+      type: 'join',
+      access: {
+        read: ({ req }) => hasRole(req.user, ['content_editor', 'system_admin']),
+      },
+      admin: {
+        allowCreate: true,
+        defaultColumns: ['title', 'workflowStatus', 'publishedAt', 'updatedAt'],
+      },
+      collection: 'tldPages',
+      defaultLimit: 20,
+      maxDepth: 0,
+      on: 'relatedTools',
+    },
+  ],
+}
 
 const taxonomyCollection = (slug: 'categories' | 'tags'): CollectionConfig => ({
   slug,

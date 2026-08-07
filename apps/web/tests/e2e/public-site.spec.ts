@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 
+import { readContentCmsFixture } from './content-cms-fixture'
 import { redirectFixtureFrom } from './redirect-fixture'
 
 const canonicalOrigin = 'http://127.0.0.1:3100'
@@ -346,7 +347,9 @@ test('robots, sitemap and the branded Open Graph image expose only stable public
   expect(sitemapText).not.toContain('/admin')
   expect(sitemapText).not.toContain('/api/')
   expect(sitemapText).not.toContain('?q=')
-  expect(sitemapText).not.toMatch(/<loc>[^<]*\/articles\/.+<\/loc>/)
+  expect(sitemapText).toContain(`<loc>${canonicalOrigin}/articles/e2e-d3-content-relations</loc>`)
+  expect(sitemapText).not.toContain('/help/e2e-d3-content-draft-help')
+  expect(sitemapText).not.toContain('/help/e2e-d3-content-noindex-help')
 
   const image = await request.get('/opengraph-image')
   expect(image.ok()).toBe(true)
@@ -1010,13 +1013,13 @@ test('DNT and GPC stop automatic local history but allow explicit local favorite
   }
 })
 
-test('content fallback and branded not-found states work on mobile', async ({ page }) => {
+test('published content and branded not-found states work on mobile', async ({ page }) => {
+  const contentFixture = await readContentCmsFixture()
   await page.setViewportSize({ height: 844, width: 390 })
   await page.goto('/articles')
   await expect(page.getByRole('heading', { level: 1, name: '实用内容' })).toBeVisible()
-  await expect(
-    page.getByRole('heading', { level: 2, name: /暂无已发布内容|内容数据暂时不可用/ }),
-  ).toBeVisible()
+  await expect(page.locator(`a[href="${contentFixture.relationArticlePath}"]`)).toBeVisible()
+  await expect(page.getByText('D3 草稿帮助')).toHaveCount(0)
 
   await page.goto('/tools/not-a-tool')
   await expect(page).toHaveTitle(/Wanmi/)

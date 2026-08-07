@@ -77,3 +77,67 @@ test('all D3 public detail routes render only published content', async ({ page 
     await expect(page.getByText('来源：Wanmi E2E 来源')).toBeVisible()
   }
 })
+
+test('SEO, sitemap and bidirectional links expose only published related content', async ({
+  page,
+  request,
+}) => {
+  const fixture = await readContentCmsFixture()
+
+  await page.goto(fixture.relationArticlePath)
+  await expect(page).toHaveTitle(/D3 关联文章 SEO/)
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+    'content',
+    'D3 SEO 与双向关联验证',
+  )
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    'href',
+    `http://127.0.0.1:3100${fixture.relationArticlePath}`,
+  )
+  await expect(page.getByRole('link', { name: 'DNS / NS 查询' })).toHaveAttribute(
+    'href',
+    '/tools/dns',
+  )
+  await expect(page.getByRole('link', { name: 'D3 公开 TLD' })).toHaveAttribute(
+    'href',
+    fixture.relationTldPath,
+  )
+
+  await page.goto(fixture.relationTldPath)
+  await expect(page.getByRole('link', { name: 'D3 关联文章' })).toHaveAttribute(
+    'href',
+    fixture.relationArticlePath,
+  )
+
+  await page.goto('/tools/dns')
+  await expect(page.getByRole('link', { name: 'D3 关联文章' })).toHaveAttribute(
+    'href',
+    fixture.relationArticlePath,
+  )
+  await expect(page.getByRole('link', { name: 'D3 公开 TLD' })).toHaveAttribute(
+    'href',
+    fixture.relationTldPath,
+  )
+
+  await page.goto(fixture.categoryPath)
+  await expect(page.getByRole('heading', { level: 1, name: 'D3 域名指南分类' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'D3 关联文章' })).toBeVisible()
+
+  await page.goto(fixture.tagPath)
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/u)
+  await page.goto(fixture.noIndexHelpPath)
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/u)
+  expect((await request.get(fixture.draftHelpPath)).status()).toBe(404)
+
+  const sitemapResponse = await request.get('/sitemap.xml')
+  expect(sitemapResponse.headers()['cache-control']).toMatch(
+    /(?:no-store)|(?:no-cache)|(?:max-age=0.*must-revalidate)/u,
+  )
+  const sitemap = await sitemapResponse.text()
+  expect(sitemap).toContain(`<loc>http://127.0.0.1:3100${fixture.relationArticlePath}</loc>`)
+  expect(sitemap).toContain(`<loc>http://127.0.0.1:3100${fixture.relationTldPath}</loc>`)
+  expect(sitemap).toContain(`<loc>http://127.0.0.1:3100${fixture.categoryPath}</loc>`)
+  expect(sitemap).not.toContain(fixture.tagPath)
+  expect(sitemap).not.toContain(fixture.noIndexHelpPath)
+  expect(sitemap).not.toContain(fixture.draftHelpPath)
+})
