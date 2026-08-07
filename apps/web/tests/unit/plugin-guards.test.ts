@@ -18,7 +18,12 @@ function request(
       find: options.find ?? vi.fn().mockResolvedValue({ docs: [] }),
       findByID:
         options.findByID ??
-        vi.fn().mockResolvedValue({ _status: 'published', id: 1, slug: 'published' }),
+        vi.fn().mockResolvedValue({
+          _status: 'published',
+          id: 1,
+          slug: 'published',
+          workflowStatus: 'published',
+        }),
     },
     user: admin('content_editor'),
   }
@@ -67,7 +72,12 @@ describe('official plugin boundaries', () => {
 
   it('requires published references and derives their public path', async () => {
     const published = request({
-      findByID: vi.fn().mockResolvedValue({ _status: 'published', id: 7, slug: 'guide' }),
+      findByID: vi.fn().mockResolvedValue({
+        _status: 'published',
+        id: 7,
+        slug: 'guide',
+        workflowStatus: 'published',
+      }),
     })
     await expect(
       validateRedirect({
@@ -99,6 +109,59 @@ describe('official plugin boundaries', () => {
         }),
       } as never),
     ).rejects.toThrow(/必须已发布/)
+  })
+
+  it('accepts only live taxonomy and fixed tool reference targets', async () => {
+    const liveTaxonomyFind = vi
+      .fn()
+      .mockImplementation(({ collection }) =>
+        Promise.resolve(
+          collection === 'articles' ? { docs: [{ id: 3 }], totalDocs: 1 } : { docs: [] },
+        ),
+      )
+    const taxonomy = request({
+      find: liveTaxonomyFind,
+      findByID: vi.fn().mockResolvedValue({ id: 3, slug: 'guides' }),
+    })
+    await expect(
+      validateRedirect({
+        data: {
+          from: '/old-guides',
+          to: { reference: { relationTo: 'categories', value: 3 }, type: 'reference' },
+          type: '301',
+        },
+        req: taxonomy,
+      } as never),
+    ).resolves.toBeTruthy()
+    expect(taxonomy.payload.find).toHaveBeenCalledWith(
+      expect.objectContaining({ collection: 'articles', overrideAccess: false }),
+    )
+
+    const orphanTaxonomy = request({
+      find: vi.fn().mockResolvedValue({ docs: [], totalDocs: 0 }),
+      findByID: vi.fn().mockResolvedValue({ id: 4, slug: 'orphan' }),
+    })
+    await expect(
+      validateRedirect({
+        data: {
+          from: '/old-orphan',
+          to: { reference: { relationTo: 'tags', value: 4 }, type: 'reference' },
+          type: '301',
+        },
+        req: orphanTaxonomy,
+      } as never),
+    ).rejects.toThrow(/至少包含一篇已发布文章/)
+
+    await expect(
+      validateRedirect({
+        data: {
+          from: '/legacy-whois',
+          to: { reference: { relationTo: 'toolPages', value: 5 }, type: 'reference' },
+          type: '301',
+        },
+        req: request({ findByID: vi.fn().mockResolvedValue({ id: 5, slug: 'whois' }) }),
+      } as never),
+    ).resolves.toBeTruthy()
   })
 
   it('detects indirect loops and uses access control for graph reads', async () => {

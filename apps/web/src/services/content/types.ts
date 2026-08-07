@@ -23,6 +23,8 @@ export type ContentWorkflowAction = (typeof CONTENT_WORKFLOW_ACTIONS)[number]
 
 export const CONTENT_WORKFLOW_CONTEXT = 'contentWorkflowOperation'
 export const PUBLIC_TAXONOMY_CONTEXT = 'publicTaxonomyForPublishedArticle'
+export const PUBLIC_TAXONOMY_ROUTE_CONTEXT = 'publicTaxonomyRoute'
+export const PUBLIC_CONTENT_RELATIONS_CONTEXT = 'publicContentRelations'
 
 export function isContentCollection(value: unknown): value is ContentCollection {
   return CONTENT_COLLECTIONS.includes(value as ContentCollection)

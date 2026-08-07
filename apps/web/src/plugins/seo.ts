@@ -24,7 +24,14 @@ export function appendSeoFields({ defaultFields }: { defaultFields: Field[] }): 
 }
 
 export function generateSeoPreviewUrl(collection: unknown, slug: unknown): string {
-  if (collection !== 'articles' && collection !== 'topics' && collection !== 'tldPages') {
+  if (
+    collection !== 'articles' &&
+    collection !== 'topics' &&
+    collection !== 'tldPages' &&
+    collection !== 'helpPages' &&
+    collection !== 'categories' &&
+    collection !== 'tags'
+  ) {
     return absoluteSiteUrl('/')
   }
   return absoluteSiteUrl(contentPath(collection, slug))

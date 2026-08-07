@@ -16,13 +16,14 @@ import {
 import { AppError } from '@/lib/errors'
 import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 import {
-  isSeoContentCollection,
+  isRedirectReferenceCollection,
   MAX_REDIRECT_HOPS,
   normalizeRedirectPath,
   type RedirectDocument,
   type RedirectTarget,
 } from '@/lib/redirects'
 import { contentPath } from '@/lib/seo'
+import { getPublicToolDefinition, type PublicToolSlug } from '@/lib/site-config'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
 
 function normalizePath(value: unknown): string {
@@ -43,10 +44,20 @@ function normalizePath(value: unknown): string {
   }
 }
 
-function referenceIdentity(
-  reference: RedirectTarget['reference'],
-): { id: number | string; relationTo: 'articles' | 'tldPages' | 'topics' } | undefined {
-  if (!reference || !isSeoContentCollection(reference.relationTo)) return undefined
+function referenceIdentity(reference: RedirectTarget['reference']):
+  | {
+      id: number | string
+      relationTo:
+        | 'articles'
+        | 'categories'
+        | 'helpPages'
+        | 'tags'
+        | 'tldPages'
+        | 'toolPages'
+        | 'topics'
+    }
+  | undefined {
+  if (!reference || !isRedirectReferenceCollection(reference.relationTo)) return undefined
   const value = reference.value
   const id =
     typeof value === 'object' && value !== null && 'id' in value
@@ -54,6 +65,30 @@ function referenceIdentity(
       : value
   if (typeof id !== 'number' && typeof id !== 'string') return undefined
   return { id, relationTo: reference.relationTo }
+}
+
+async function taxonomyHasPublishedArticle(
+  req: PayloadRequest,
+  collection: 'categories' | 'tags',
+  id: number | string,
+): Promise<boolean> {
+  const result = await req.payload.find({
+    collection: 'articles',
+    depth: 0,
+    draft: false,
+    limit: 1,
+    overrideAccess: false,
+    req,
+    user: req.user ?? undefined,
+    where: {
+      and: [
+        { [collection]: { equals: id } },
+        { _status: { equals: 'published' } },
+        { workflowStatus: { equals: 'published' } },
+      ],
+    },
+  })
+  return result.totalDocs > 0
 }
 
 async function resolveReferenceTarget(
@@ -70,10 +105,25 @@ async function resolveReferenceTarget(
     req,
     user: req.user ?? undefined,
   })
-  if (document._status !== 'published') {
+  const targetDocument = document as unknown as Record<string, unknown>
+  if (identity.relationTo === 'toolPages') {
+    return normalizePath(getPublicToolDefinition(targetDocument.slug as PublicToolSlug).href)
+  }
+  if (identity.relationTo === 'categories' || identity.relationTo === 'tags') {
+    if (!(await taxonomyHasPublishedArticle(req, identity.relationTo, identity.id))) {
+      throw new AppError(
+        'REDIRECT_TARGET_UNPUBLISHED',
+        '分类或标签目标必须至少包含一篇已发布文章',
+        400,
+      )
+    }
+  } else if (
+    targetDocument._status !== 'published' ||
+    targetDocument.workflowStatus !== 'published'
+  ) {
     throw new AppError('REDIRECT_TARGET_UNPUBLISHED', '重定向引用目标必须已发布', 400)
   }
-  return normalizePath(contentPath(identity.relationTo, document.slug))
+  return normalizePath(contentPath(identity.relationTo, targetDocument.slug))
 }
 
 async function resolveTarget(

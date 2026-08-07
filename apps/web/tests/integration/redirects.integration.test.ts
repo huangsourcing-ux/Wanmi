@@ -10,7 +10,10 @@ let payload: Payload
 let cleanupAdmin: Admin
 const fixturePrefix = `d1-redirect-${randomUUID()}`
 const createdAdmins: number[] = []
-const createdArticles: number[] = []
+const createdContent: Array<{
+  collection: 'articles' | 'helpPages' | 'tldPages'
+  id: number | string
+}> = []
 const createdCustomers: number[] = []
 const redirectIdsForCleanup = new Set<string>()
 
@@ -131,8 +134,12 @@ afterAll(async () => {
       await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
     }
   }
-  for (const id of createdArticles) {
-    await payload.delete({ collection: 'articles', id, overrideAccess: true })
+  for (const document of createdContent.reverse()) {
+    await payload.delete({
+      collection: document.collection,
+      id: document.id,
+      overrideAccess: true,
+    })
   }
   for (const id of createdCustomers) {
     await payload.delete({ collection: 'customers', id, overrideAccess: true })
@@ -327,7 +334,10 @@ describe('D1 controlled redirects', () => {
       draft: true,
       overrideAccess: true,
     })
-    createdArticles.push(published.id, draft.id)
+    createdContent.push(
+      { collection: 'articles', id: published.id },
+      { collection: 'articles', id: draft.id },
+    )
 
     await expect(
       payload.create({
@@ -356,6 +366,69 @@ describe('D1 controlled redirects', () => {
     })
     redirectIdsForCleanup.add(String(referenceRedirect.id))
     expect(referenceRedirect.to?.type).toBe('reference')
+
+    for (const target of [
+      { collection: 'tldPages' as const, path: 'tld', slug: `${fixturePrefix}-redirect-tld` },
+      { collection: 'helpPages' as const, path: 'help', slug: `${fixturePrefix}-redirect-help` },
+    ]) {
+      const document = await payload.create({
+        collection: target.collection,
+        data: {
+          _status: 'published',
+          content,
+          source: 'D3 test fixture',
+          slug: target.slug,
+          title: target.slug,
+          workflowStatus: 'published',
+        },
+        draft: false,
+        overrideAccess: true,
+      })
+      createdContent.push({ collection: target.collection, id: document.id })
+      const redirect = await payload.create({
+        collection: 'redirects',
+        data: {
+          from: `/${fixturePrefix}-old-${target.path}`,
+          to: {
+            reference: { relationTo: target.collection, value: document.id },
+            type: 'reference',
+          },
+          type: '301',
+        },
+        overrideAccess: false,
+        req: await requestFor(contentEditor),
+        user: contentEditor,
+      })
+      redirectIdsForCleanup.add(String(redirect.id))
+      expect(redirect.to?.type).toBe('reference')
+    }
+
+    const whoisTool = (
+      await payload.find({
+        collection: 'toolPages',
+        depth: 0,
+        limit: 1,
+        overrideAccess: false,
+        where: { slug: { equals: 'whois' } },
+      })
+    ).docs[0]
+    expect(whoisTool).toBeTruthy()
+    const toolRedirect = await payload.create({
+      collection: 'redirects',
+      data: {
+        from: `/${fixturePrefix}-old-tool`,
+        to: {
+          reference: { relationTo: 'toolPages', value: whoisTool!.id },
+          type: 'reference',
+        },
+        type: '301',
+      },
+      overrideAccess: false,
+      req: await requestFor(contentEditor),
+      user: contentEditor,
+    })
+    redirectIdsForCleanup.add(String(toolRedirect.id))
+    expect(toolRedirect.to?.type).toBe('reference')
 
     const loopStart = await payload.create({
       collection: 'redirects',

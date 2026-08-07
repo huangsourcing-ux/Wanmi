@@ -19,6 +19,7 @@ import {
   SiteSettings,
   Tags,
   TldPages,
+  ToolPages,
   Topics,
 } from './content'
 import { DomainAssets, NameserverChanges, ProviderOperations, Renewals } from './fulfillment'
@@ -54,6 +55,7 @@ export const collections: CollectionConfig[] = [
   HelpPages,
   Categories,
   Tags,
+  ToolPages,
   Media,
   Navigation,
   SiteSettings,

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { parsePublicContentPath } from '@/services/content/publication-gate'
+import {
+  parsePublicContentPath,
+  parsePublicTaxonomyPath,
+} from '@/services/content/publication-gate'
 
 describe('D3 public content publication gate', () => {
   it.each([
@@ -24,5 +27,24 @@ describe('D3 public content publication gate', () => {
     '/orders/example',
   ])('does not treat %s as a public content detail', (pathname) => {
     expect(parsePublicContentPath(pathname)).toBeUndefined()
+  })
+
+  it.each([
+    ['/articles/category/guides', 'categories'],
+    ['/articles/tag/dns', 'tags'],
+  ] as const)('maps taxonomy route %s to %s', (pathname, collection) => {
+    expect(parsePublicTaxonomyPath(pathname)).toEqual({
+      collection,
+      slug: pathname.slice(pathname.lastIndexOf('/') + 1),
+    })
+  })
+
+  it.each([
+    '/articles/category',
+    '/articles/tag/a/b',
+    '/articles/category/%2Fadmin',
+    '/articles/tag/%5Cadmin',
+  ])('rejects malformed taxonomy route %s', (pathname) => {
+    expect(parsePublicTaxonomyPath(pathname)).toBeUndefined()
   })
 })

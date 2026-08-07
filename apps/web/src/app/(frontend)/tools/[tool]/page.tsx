@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 
+import { PublicRelations } from '@/components/content/public-relations'
 import { DomainQueryForm } from '@/components/forms/domain-query-form'
 import { DomainFavoriteButton } from '@/components/local-library/favorite-buttons'
 import { DnsResults } from '@/components/results/dns-results'
@@ -15,6 +16,7 @@ import { ToolActions } from '@/components/tool-actions/tool-actions'
 import { createPageMetadata } from '@/lib/seo'
 import { normalizeDomain } from '@/lib/domain-name'
 import { TOOL_DEFINITIONS, getToolDefinition, normalizeQueryParam } from '@/lib/site-config'
+import { readCachedPublicToolRelations } from '@/services/content/read-tool-relations'
 
 type ToolPageProps = {
   params: Promise<{ tool: string }>
@@ -42,6 +44,7 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
   const [{ tool: slug }, queryParams] = await Promise.all([params, searchParams])
   const tool = getToolDefinition(slug)
   if (!tool) notFound()
+  const relations = await readCachedPublicToolRelations(tool.slug)
   const query =
     slug === 'dns' ||
     slug === 'domain-search' ||
@@ -166,6 +169,12 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
           query={query}
         />
       )}
+      <PublicRelations
+        sections={[
+          { items: relations.tldPages, title: '相关 TLD 页面' },
+          { items: relations.content, title: '相关内容' },
+        ]}
+      />
     </>
   )
 }

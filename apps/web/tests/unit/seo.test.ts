@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
 import robots from '@/app/robots'
-import sitemap from '@/app/sitemap'
 import {
   absoluteSiteUrl,
   contentPath,
+  createCmsPageMetadata,
   createPageMetadata,
   createStaticPageMetadata,
   PUBLIC_SEO_ROUTES,
   validateSameOriginCanonical,
 } from '@/lib/seo'
 import { appendSeoFields, generateSeoPreviewUrl } from '@/plugins/seo'
+import { staticSitemapEntries } from '@/services/content/sitemap'
 
 describe('D1 SEO foundation', () => {
   it('uses the configured origin for absolute canonical and social metadata', () => {
@@ -55,9 +56,41 @@ describe('D1 SEO foundation', () => {
     })
   })
 
-  it('publishes only the current stable public routes in robots and sitemap', () => {
+  it('uses Payload SEO overrides for title, description, OG image, canonical and noindex', () => {
+    const metadata = createCmsPageMetadata({
+      defaultDescription: '默认描述',
+      defaultPath: '/help/default',
+      defaultTitle: '默认标题',
+      seo: {
+        canonical: '/help/canonical',
+        description: 'SEO 描述',
+        image: {
+          alt: 'SEO 图片',
+          height: 630,
+          url: 'http://127.0.0.1:3000/media/seo.png',
+          width: 1200,
+        },
+        noIndex: true,
+        title: 'SEO 标题',
+      },
+    })
+
+    expect(metadata).toMatchObject({
+      alternates: { canonical: 'http://127.0.0.1:3000/help/canonical' },
+      description: 'SEO 描述',
+      openGraph: {
+        images: [{ alt: 'SEO 图片', url: 'http://127.0.0.1:3000/media/seo.png' }],
+        title: 'SEO 标题｜Wanmi.net',
+        url: 'http://127.0.0.1:3000/help/canonical',
+      },
+      robots: { follow: false, index: false },
+      title: 'SEO 标题',
+    })
+  })
+
+  it('publishes only the current stable public routes in robots and fixed sitemap entries', () => {
     const routes = PUBLIC_SEO_ROUTES.map((route) => route.path)
-    const sitemapEntries = sitemap()
+    const sitemapEntries = staticSitemapEntries()
 
     expect(new Set(routes).size).toBe(routes.length)
     expect(routes).toEqual(
@@ -111,6 +144,11 @@ describe('D1 SEO foundation', () => {
     )
     expect(generateSeoPreviewUrl('topics', 'dns')).toBe('http://127.0.0.1:3000/topics/dns')
     expect(generateSeoPreviewUrl('tldPages', 'com')).toBe('http://127.0.0.1:3000/tld/com')
+    expect(generateSeoPreviewUrl('helpPages', 'dns')).toBe('http://127.0.0.1:3000/help/dns')
+    expect(generateSeoPreviewUrl('categories', 'guide')).toBe(
+      'http://127.0.0.1:3000/articles/category/guide',
+    )
+    expect(generateSeoPreviewUrl('tags', 'idn')).toBe('http://127.0.0.1:3000/articles/tag/idn')
     expect(generateSeoPreviewUrl('unknown', 'ignored')).toBe('http://127.0.0.1:3000/')
     expect(contentPath('articles', '')).toBe('/articles')
     expect(contentPath('tldPages', '')).toBe('/pricing')

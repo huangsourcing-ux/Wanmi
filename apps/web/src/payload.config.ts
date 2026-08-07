@@ -94,9 +94,9 @@ export default buildConfig({
   logger,
   plugins: [
     seoPlugin({
-      collections: ['articles', 'topics', 'tldPages'],
+      collections: ['articles', 'topics', 'tldPages', 'helpPages', 'categories', 'tags'],
       fields: appendSeoFields,
-      generateDescription: ({ doc }) => doc.summary ?? '',
+      generateDescription: ({ doc }) => doc.summary ?? doc.description ?? '',
       generateTitle: ({ doc }) => doc.title ?? '',
       generateURL: ({ collectionConfig, doc }) =>
         generateSeoPreviewUrl(collectionConfig?.slug, doc.slug),
@@ -105,7 +105,15 @@ export default buildConfig({
       uploadsCollection: 'media',
     }),
     redirectsPlugin({
-      collections: ['articles', 'topics', 'tldPages'],
+      collections: [
+        'articles',
+        'topics',
+        'tldPages',
+        'helpPages',
+        'categories',
+        'tags',
+        'toolPages',
+      ],
       overrides: redirectsOverrides,
       redirectTypes: ['301'],
     }),

@@ -13,6 +13,7 @@ import {
 } from '@/services/pricing/price-snapshots'
 
 const fixturePrefix = `d2-pricing-${randomUUID()}`
+const fixtureTld = fixturePrefix
 const createdIds: Array<number | string> = []
 let payload: Payload
 
@@ -27,19 +28,24 @@ function admin(role: AdminRole, id: number) {
 }
 
 function snapshotInput(overrides: Partial<PriceSnapshotInput> = {}): PriceSnapshotInput {
+  const fixtureRule = {
+    ...FIXTURE_PRICING_RULES.com!,
+    key: `${fixturePrefix}-rule`,
+    tld: fixtureTld,
+  }
   return {
     calculation: calculateTldPrice({
       registrationPriceFen: 2_000,
       renewalPriceFen: 3_000,
-      rule: FIXTURE_PRICING_RULES.com!,
+      rule: fixtureRule,
     }),
     providerCacheExpiresAt: '2026-08-06T13:00:00.000Z',
     providerCacheStatus: 'miss',
     providerObservedAt: '2026-08-06T12:00:00.000Z',
     providerProductId: `${fixturePrefix}-product`,
     providerRequestId: `${fixturePrefix}-request`,
-    representativeDomainAscii: 'wanmi.com',
-    tld: 'com',
+    representativeDomainAscii: `wanmi.${fixtureTld}`,
+    tld: fixtureTld,
     traceId: `${fixturePrefix}-trace`,
     ...overrides,
   }

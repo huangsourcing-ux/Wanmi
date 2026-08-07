@@ -1,4 +1,5 @@
 import { contentPath, type SeoContentCollection } from '@/lib/seo'
+import { getPublicToolDefinition, type PublicToolSlug } from '@/lib/site-config'
 
 export const MAX_REDIRECT_HOPS = 10
 
@@ -20,6 +21,8 @@ export type RedirectReference = {
   relationTo?: unknown
   value?: unknown
 }
+
+export type RedirectReferenceCollection = SeoContentCollection | 'toolPages'
 
 export type RedirectTarget = {
   reference?: null | RedirectReference
@@ -79,7 +82,20 @@ export function isRedirectEligiblePath(value: string): boolean {
 }
 
 export function isSeoContentCollection(value: unknown): value is SeoContentCollection {
-  return value === 'articles' || value === 'topics' || value === 'tldPages'
+  return (
+    value === 'articles' ||
+    value === 'topics' ||
+    value === 'tldPages' ||
+    value === 'helpPages' ||
+    value === 'categories' ||
+    value === 'tags'
+  )
+}
+
+export function isRedirectReferenceCollection(
+  value: unknown,
+): value is RedirectReferenceCollection {
+  return value === 'toolPages' || isSeoContentCollection(value)
 }
 
 function referenceValue(value: unknown): null | Record<string, unknown> {
@@ -88,9 +104,19 @@ function referenceValue(value: unknown): null | Record<string, unknown> {
 
 export function referenceDocumentPath(reference: unknown): string | undefined {
   const candidate = referenceValue(reference)
-  if (!candidate || !isSeoContentCollection(candidate.relationTo)) return undefined
+  if (!candidate || !isRedirectReferenceCollection(candidate.relationTo)) return undefined
   const document = referenceValue(candidate.value)
-  if (!document || document._status !== 'published' || typeof document.slug !== 'string') {
+  if (!document || typeof document.slug !== 'string') return undefined
+  if (candidate.relationTo === 'toolPages') {
+    try {
+      return normalizeRedirectPath(getPublicToolDefinition(document.slug as PublicToolSlug).href)
+    } catch {
+      return undefined
+    }
+  }
+  if (candidate.relationTo === 'categories' || candidate.relationTo === 'tags') {
+    if (document.publiclyAvailable !== true) return undefined
+  } else if (document._status !== 'published' || document.workflowStatus !== 'published') {
     return undefined
   }
   return normalizeRedirectPath(contentPath(candidate.relationTo, document.slug))

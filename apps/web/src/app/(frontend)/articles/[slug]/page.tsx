@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 import { getPayload } from 'payload'
 
 import { ContentDetail } from '@/components/content/content-detail'
-import { createPageMetadata } from '@/lib/seo'
+import { createCmsPageMetadata } from '@/lib/seo'
 import { readPublicContentBySlug } from '@/services/content/read-content'
 
 export async function generateMetadata({
@@ -15,10 +15,11 @@ export async function generateMetadata({
   const { slug } = await params
   const content = await readPublicContentBySlug(await getPayload({ config }), 'articles', slug)
   if (!content) notFound()
-  return createPageMetadata({
-    description: content.summary ?? content.title,
-    path: content.path,
-    title: content.title,
+  return createCmsPageMetadata({
+    defaultDescription: content.summary ?? content.title,
+    defaultPath: content.path,
+    defaultTitle: content.title,
+    seo: content.seo,
   })
 }
 
