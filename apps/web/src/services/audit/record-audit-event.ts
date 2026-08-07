@@ -30,6 +30,7 @@ export const auditEventDefinitions = {
   'content.publish.scheduled': { actorTypes: ['admin'], targetType: 'content' },
   'content.revision.published': { actorTypes: ['admin'], targetType: 'content' },
   'content.status.changed': { actorTypes: ['admin'], targetType: 'content' },
+  'form_submission.status_changed': { actorTypes: ['admin'], targetType: 'form-submission' },
   'redirect.create': { actorTypes: ['admin'], targetType: 'redirect' },
   'redirect.delete': { actorTypes: ['admin'], targetType: 'redirect' },
   'redirect.update': { actorTypes: ['admin'], targetType: 'redirect' },

@@ -42,6 +42,8 @@ export const sensitiveFieldRead: FieldAccess = ({ req }) => hasRole(req.user, ['
 export const systemAdminField: FieldAccess = ({ req }) => hasRole(req.user, ['system_admin'])
 export const adManagerFieldRead: FieldAccess = ({ req }) =>
   hasRole(req.user, ['ad_operator', 'system_admin'])
+export const operationalFieldRead: FieldAccess = ({ req }) =>
+  hasRole(req.user, ['ad_operator', 'analyst', 'system_admin'])
 
 export const auditReaders: Access = ({ req }) => {
   if (hasRole(req.user, ['system_admin'])) return true

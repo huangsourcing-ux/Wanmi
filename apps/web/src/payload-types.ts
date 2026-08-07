@@ -1454,6 +1454,17 @@ export interface FormSubmission {
         id?: string | null;
       }[]
     | null;
+  purpose: 'contact' | 'feedback' | 'request';
+  summary: string;
+  contactMasked?: string | null;
+  pagePath?: string | null;
+  tool?: ('domain-search' | 'whois' | 'dns' | 'ssl-check' | 'idn' | 'pricing') | null;
+  requestId?: string | null;
+  status: 'new' | 'reviewed' | 'closed';
+  traceId: string;
+  clientKeyHash: string;
+  statusUpdatedAt?: string | null;
+  statusUpdatedBy?: (number | null) | Admin;
   updatedAt: string;
   createdAt: string;
 }
@@ -2698,6 +2709,17 @@ export interface FormSubmissionsSelect<T extends boolean = true> {
         value?: T;
         id?: T;
       };
+  purpose?: T;
+  summary?: T;
+  contactMasked?: T;
+  pagePath?: T;
+  tool?: T;
+  requestId?: T;
+  status?: T;
+  traceId?: T;
+  clientKeyHash?: T;
+  statusUpdatedAt?: T;
+  statusUpdatedBy?: T;
   updatedAt?: T;
   createdAt?: T;
 }

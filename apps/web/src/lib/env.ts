@@ -25,6 +25,8 @@ const schema = z.object({
   DNS_RESPONSE_MAX_BYTES: z.coerce.number().int().positive().default(65_536),
   DNS_TIMEOUT_MS: z.coerce.number().int().positive().default(3_000),
   FIRST_PARTY_EVENT_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(1_000),
+  FORM_SUBMISSION_GLOBAL_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(500),
+  FORM_SUBMISSION_IP_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(10),
   NEXT_PUBLIC_SERVER_URL: z.url().default('http://localhost:3000'),
   MOCK_SMS_OTP_CODE: z
     .string()

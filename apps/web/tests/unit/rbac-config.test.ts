@@ -239,14 +239,15 @@ describe('D1 official plugin permission matrix', () => {
       )
 
       const contentRole = persona === 'content_editor' || persona === 'system_admin'
+      const operationalRole = ['ad_operator', 'analyst', 'system_admin'].includes(persona)
       const systemRole = persona === 'system_admin'
       expect(operations).toEqual({
-        create: sorted([...(contentRole ? ['forms', 'redirects'] : []), 'form-submissions']),
+        create: sorted(contentRole ? ['forms', 'redirects'] : []),
         delete: systemRole ? ['forms', 'redirects'] : [],
         read: sorted([
           ...(contentRole ? ['forms'] : []),
           'redirects',
-          ...(systemRole ? ['form-submissions'] : []),
+          ...(operationalRole ? ['form-submissions'] : []),
         ]),
         update: sorted([
           ...(contentRole ? ['forms', 'redirects'] : []),
@@ -260,7 +261,7 @@ describe('D1 official plugin permission matrix', () => {
       expect(sorted(visible)).toEqual(
         sorted([
           ...(contentRole ? ['forms', 'redirects'] : []),
-          ...(systemRole ? ['form-submissions'] : []),
+          ...(operationalRole ? ['form-submissions'] : []),
         ]),
       )
     },

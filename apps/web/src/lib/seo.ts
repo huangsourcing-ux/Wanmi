@@ -88,6 +88,27 @@ const fixedRoutes: PublicSeoRoute[] = [
     priority: 0.4,
     title: '帮助与合规',
   },
+  {
+    changeFrequency: 'yearly',
+    description: '联系 Wanmi.net，提交一般咨询、内容合作、广告合作和其他非交易事项。',
+    path: '/contact',
+    priority: 0.4,
+    title: '联系我们',
+  },
+  {
+    changeFrequency: 'yearly',
+    description: '向 Wanmi.net 提交工具结果、内容问题或使用体验反馈。',
+    path: '/feedback',
+    priority: 0.4,
+    title: '提交反馈',
+  },
+  {
+    changeFrequency: 'yearly',
+    description: '向 Wanmi.net 提交工具、TLD 信息、内容选题或合作需求。',
+    path: '/requests',
+    priority: 0.4,
+    title: '提交需求',
+  },
 ]
 
 const toolRoutes: PublicSeoRoute[] = TOOL_DEFINITIONS.map((tool) => ({
