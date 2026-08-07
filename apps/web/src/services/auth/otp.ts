@@ -1,6 +1,7 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import {
   commitTransaction,
+  createLocalReq,
   initTransaction,
   killTransaction,
   type Payload,
@@ -12,6 +13,7 @@ import { getEnv } from '@/lib/env'
 import { AppError } from '@/lib/errors'
 import { createSmsProvider } from '@/providers/aliyunsms'
 import type { SmsRequestInput, SmsVerifyInput } from '@/schemas/auth'
+import type { Customer } from '@/payload-types'
 
 import { clientHashes, maskPhone, normalizeChinesePhone } from './client-facts'
 
@@ -20,22 +22,104 @@ const genericRequestResult = {
   message: '如果手机号可用，验证码将很快送达',
 }
 
-async function rateCount(
+type RateDimension = 'device' | 'global' | 'ip' | 'phone'
+
+type CustomerIdentity = Customer
+
+type CustomerSessionRecord = {
+  customer: number | CustomerIdentity
+  id: number | string
+}
+
+const RATE_WINDOW_MS = 3_600_000
+
+async function consumeRateLimit(
   payload: Payload,
-  field: 'deviceHash' | 'ipHash' | 'phoneHash',
-  value: string,
+  dimension: RateDimension,
+  identityHash: string,
+  limit: number,
+): Promise<boolean> {
+  const now = new Date()
+  const cutoff = new Date(now.getTime() - RATE_WINDOW_MS)
+  const expiresAt = new Date(now.getTime() + RATE_WINDOW_MS)
+  const bucketKey = `${dimension}:${identityHash}`
+  const result = await payload.db.pool.query(
+    `INSERT INTO "sms_rate_limits" (
+       "bucket_key", "dimension", "identity_hash", "window_started_at", "count",
+       "expires_at", "updated_at", "created_at"
+     ) VALUES ($1, $2, $3, $4, 1, $5, $4, $4)
+     ON CONFLICT ("bucket_key") DO UPDATE SET
+       "count" = CASE
+         WHEN "sms_rate_limits"."window_started_at" <= $6 THEN 1
+         ELSE "sms_rate_limits"."count" + 1
+       END,
+       "window_started_at" = CASE
+         WHEN "sms_rate_limits"."window_started_at" <= $6 THEN $4
+         ELSE "sms_rate_limits"."window_started_at"
+       END,
+       "expires_at" = CASE
+         WHEN "sms_rate_limits"."window_started_at" <= $6 THEN $5
+         ELSE "sms_rate_limits"."expires_at"
+       END,
+       "updated_at" = $4
+     WHERE "sms_rate_limits"."window_started_at" <= $6
+        OR "sms_rate_limits"."count" < $7
+     RETURNING "count"`,
+    [bucketKey, dimension, identityHash, now, expiresAt, cutoff, limit],
+  )
+  return result.rowCount === 1
+}
+
+async function enforceOtpRateLimits(
+  payload: Payload,
+  hashes: { deviceHash: string; ipHash: string; phoneHash: string },
+): Promise<void> {
+  const env = getEnv()
+  const dimensions = [
+    ['phone', hashes.phoneHash, env.OTP_PHONE_LIMIT_PER_HOUR],
+    ['ip', hashes.ipHash, env.OTP_IP_LIMIT_PER_HOUR],
+    ['device', hashes.deviceHash, env.OTP_DEVICE_LIMIT_PER_HOUR],
+    ['global', hmac('sms-rate-limit:global', env.SESSION_PEPPER), env.OTP_GLOBAL_LIMIT_PER_HOUR],
+  ] as const
+  for (const [dimension, identityHash, limit] of dimensions) {
+    if (!(await consumeRateLimit(payload, dimension, identityHash, limit))) {
+      throw new AppError('AUTH_RATE_LIMITED', '请求过于频繁，请稍后再试', 429, {
+        retryAfterSeconds: 300,
+      })
+    }
+  }
+}
+
+function providerFailureCategory(code: string) {
+  const category = code.replace(/^SMS_/, '').toLowerCase()
+  return ['balance_insufficient', 'invalid_number', 'rate_limited', 'template_unapproved'].includes(
+    category,
+  )
+    ? (category as
+        | 'balance_insufficient'
+        | 'invalid_number'
+        | 'rate_limited'
+        | 'template_unapproved')
+    : 'unknown'
+}
+
+async function recordCustomerSecurityEvent(
+  req: PayloadRequest,
+  customerId: number,
+  event: string,
+  safeMetadata?: Record<string, unknown>,
 ) {
-  const result = await payload.count({
-    collection: 'smsChallenges',
-    overrideAccess: true,
-    where: {
-      and: [
-        { [field]: { equals: value } },
-        { createdAt: { greater_than: new Date(Date.now() - 3_600_000).toISOString() } },
-      ],
+  await req.payload.create({
+    collection: 'customerSecurityEvents',
+    data: {
+      customer: customerId,
+      event,
+      occurredAt: new Date().toISOString(),
+      safeMetadata,
     },
+    overrideAccess: true,
+    req,
   })
-  return result.totalDocs
 }
 
 export async function requestOtp(
@@ -53,25 +137,7 @@ export async function requestOtp(
   }
   const { deviceHash, ipHash } = clientHashes(headers, input.deviceId)
   const phoneHash = hmac(phone, env.SESSION_PEPPER)
-  const since = new Date(Date.now() - 3_600_000).toISOString()
-  const [phoneCount, ipCount, deviceCount, global] = await Promise.all([
-    rateCount(payload, 'phoneHash', phoneHash),
-    rateCount(payload, 'ipHash', ipHash),
-    rateCount(payload, 'deviceHash', deviceHash),
-    payload.count({
-      collection: 'smsChallenges',
-      overrideAccess: true,
-      where: { createdAt: { greater_than: since } },
-    }),
-  ])
-  if (
-    phoneCount >= env.OTP_PHONE_LIMIT_PER_HOUR ||
-    ipCount >= env.OTP_IP_LIMIT_PER_HOUR ||
-    deviceCount >= env.OTP_DEVICE_LIMIT_PER_HOUR ||
-    global.totalDocs >= env.OTP_GLOBAL_LIMIT_PER_HOUR
-  ) {
-    throw new AppError('AUTH_RATE_LIMITED', '请求过于频繁，请稍后再试', 429)
-  }
+  await enforceOtpRateLimits(payload, { deviceHash, ipHash, phoneHash })
 
   const challengeId = randomUUID()
   const code =
@@ -89,11 +155,46 @@ export async function requestOtp(
       ipHash,
       phone,
       phoneHash,
+      deliveryStatus: 'not_requested',
     },
     overrideAccess: true,
   })
+  const sentAt = new Date().toISOString()
   const result = await createSmsProvider().sendOtp({ code, phone, traceId })
-  if (!result.ok) throw new AppError('SMS_UNAVAILABLE', '短信服务暂时不可用', 503)
+  if (!result.ok) {
+    const failureCategory = providerFailureCategory(result.error.code)
+    await payload.update({
+      collection: 'smsChallenges',
+      data: {
+        consumedAt: sentAt,
+        deliveryFailureCategory: failureCategory,
+        deliveryProviderCode: result.error.code,
+        deliveryStatus: 'failed',
+        providerRequestId: result.requestId,
+        sentAt,
+      },
+      overrideAccess: true,
+      where: { challengeId: { equals: challengeId } },
+    })
+    if (failureCategory === 'rate_limited') {
+      throw new AppError('AUTH_RATE_LIMITED', '请求过于频繁，请稍后再试', 429, {
+        retryAfterSeconds: 300,
+      })
+    }
+    throw new AppError('SMS_UNAVAILABLE', '短信服务暂时不可用', 503)
+  }
+  await payload.update({
+    collection: 'smsChallenges',
+    data: {
+      deliveryStatus: result.data.deliveryStatus,
+      providerMessageId: result.data.providerMessageId,
+      providerRequestId: result.requestId,
+      receiptCheckedAt: result.data.deliveryStatus === 'delivered' ? sentAt : undefined,
+      sentAt,
+    },
+    overrideAccess: true,
+    where: { challengeId: { equals: challengeId } },
+  })
   return { ...genericRequestResult, challengeId }
 }
 
@@ -102,7 +203,7 @@ export async function verifyOtp(
   input: SmsVerifyInput,
   headers: Headers,
 ): Promise<{
-  customer: { id: number | string; phoneMasked: string }
+  customer: { id: number; phoneMasked: string }
   expiresAt: string
   token: string
 }> {
@@ -208,6 +309,10 @@ export async function verifyOtp(
       overrideAccess: true,
       req,
     })
+    await recordCustomerSecurityEvent(req, customer.id, 'login_succeeded', {
+      deviceHash,
+      ipHash,
+    })
     if (startedTransaction) await commitTransaction(req)
     return { customer: { id: customer.id, phoneMasked: customer.phoneMasked }, expiresAt, token }
   } catch (error) {
@@ -216,31 +321,111 @@ export async function verifyOtp(
   }
 }
 
+async function findActiveSession(req: PayloadRequest, rawToken: string | null) {
+  if (!rawToken) return null
+  const env = getEnv()
+  const sessions = await req.payload.find({
+    collection: 'customerSessions',
+    depth: 0,
+    limit: 1,
+    overrideAccess: true,
+    req,
+    where: {
+      and: [
+        { tokenHash: { equals: hmac(rawToken, env.SESSION_PEPPER) } },
+        { expiresAt: { greater_than: new Date().toISOString() } },
+        { revokedAt: { exists: false } },
+      ],
+    },
+  })
+  return (sessions.docs[0] as CustomerSessionRecord | undefined) ?? null
+}
+
 export async function revokeSessions(
-  payload: Payload,
+  req: PayloadRequest,
   rawToken: string | null,
   scope: 'all' | 'current',
 ) {
-  if (!rawToken) return
-  const env = getEnv()
-  const sessions = await payload.find({
-    collection: 'customerSessions',
-    limit: 1,
-    overrideAccess: true,
-    where: { tokenHash: { equals: hmac(rawToken, env.SESSION_PEPPER) } },
-  })
-  const session = sessions.docs[0]
+  const session = await findActiveSession(req, rawToken)
   if (!session) return
   const customerId = typeof session.customer === 'object' ? session.customer.id : session.customer
-  await payload.update({
+  const revoked = await req.payload.update({
     collection: 'customerSessions',
     data: { revokedAt: new Date().toISOString() },
     overrideAccess: true,
+    req,
     where:
       scope === 'all'
         ? { and: [{ customer: { equals: customerId } }, { revokedAt: { exists: false } }] }
         : { id: { equals: session.id } },
   })
+  await recordCustomerSecurityEvent(req, customerId, 'sessions_revoked', {
+    revokedCount: revoked.docs.length,
+    scope,
+  })
+}
+
+export async function authenticatedCustomerRequest(
+  payload: Payload,
+  request: Request,
+): Promise<{ req: PayloadRequest; user: CustomerIdentity }> {
+  const req = await createCustomerReq(payload, request.headers)
+  const session = await findActiveSession(req, rawCustomerToken(request.headers))
+  if (!session) throw new AppError('CUSTOMER_AUTH_REQUIRED', '需要用户身份验证', 401)
+  const customerId = typeof session.customer === 'object' ? session.customer.id : session.customer
+  const customer = (await payload.findByID({
+    collection: 'customers',
+    id: customerId,
+    overrideAccess: true,
+    req,
+  })) as CustomerIdentity
+  if (customer.status !== 'active') {
+    throw new AppError('CUSTOMER_AUTH_REQUIRED', '需要用户身份验证', 401)
+  }
+  const user = { ...customer, collection: 'customers' as const }
+  req.user = user
+  return { req, user }
+}
+
+async function createCustomerReq(payload: Payload, headers: Headers): Promise<PayloadRequest> {
+  return createLocalReq({ req: { headers } }, payload)
+}
+
+export async function requestCustomerDeletion(
+  req: PayloadRequest,
+  customer: CustomerIdentity,
+): Promise<{ deletionRequestedAt: string; status: 'deletion_requested' }> {
+  const now = new Date().toISOString()
+  const startedTransaction = await initTransaction(req)
+  try {
+    const updated = await req.payload.update({
+      collection: 'customers',
+      data: { deletionRequestedAt: now, status: 'deletion_requested' },
+      id: customer.id,
+      overrideAccess: true,
+      req,
+    })
+    await req.payload.update({
+      collection: 'customerSessions',
+      data: { revokedAt: now },
+      overrideAccess: true,
+      req,
+      where: {
+        and: [{ customer: { equals: customer.id } }, { revokedAt: { exists: false } }],
+      },
+    })
+    await recordCustomerSecurityEvent(req, customer.id, 'deletion_requested', {
+      deletionRequestedAt: now,
+    })
+    if (startedTransaction) await commitTransaction(req)
+    return {
+      deletionRequestedAt: updated.deletionRequestedAt ?? now,
+      status: 'deletion_requested',
+    }
+  } catch (error) {
+    if (startedTransaction) await killTransaction(req)
+    throw error
+  }
 }
 
 export function customerCookie(token: string, expiresAt: string): string {

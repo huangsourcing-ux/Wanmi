@@ -30,6 +30,7 @@ import {
   Customers,
   CustomerSessions,
   SmsChallenges,
+  SmsRateLimits,
 } from './identity'
 import {
   AuditLogs,
@@ -48,6 +49,7 @@ export const collections: CollectionConfig[] = [
   AdminInvitations,
   Customers,
   SmsChallenges,
+  SmsRateLimits,
   CustomerSessions,
   Articles,
   Topics,

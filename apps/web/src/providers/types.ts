@@ -63,12 +63,33 @@ export interface TlsHandshakeProvider extends HealthAwareProvider {
 }
 
 export interface SmsProvider extends HealthAwareProvider {
-  sendOtp(input: {
-    code: string
+  sendOtp(input: { code: string; phone: string; traceId: string }): Promise<
+    ProviderResult<{
+      accepted: true
+      deliveryStatus: 'accepted' | 'delivered'
+      providerMessageId: string
+    }>
+  >
+  queryReceipt(input: {
     phone: string
+    providerMessageId: string
+    sentAt: string
     traceId: string
-  }): Promise<ProviderResult<{ accepted: true }>>
+  }): Promise<
+    ProviderResult<{
+      failureCategory?: SmsFailureCategory
+      providerCode?: string
+      status: 'delivered' | 'failed' | 'pending'
+    }>
+  >
 }
+
+export type SmsFailureCategory =
+  | 'balance_insufficient'
+  | 'invalid_number'
+  | 'rate_limited'
+  | 'template_unapproved'
+  | 'unknown'
 
 export interface KmsProvider extends HealthAwareProvider {
   decryptDataKey(input: {

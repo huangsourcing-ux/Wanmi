@@ -1,17 +1,106 @@
-import SmsClient, { SendSmsRequest } from '@alicloud/dysmsapi20170525'
+import SmsClient, { QuerySendDetailsRequest, SendSmsRequest } from '@alicloud/dysmsapi20170525'
 import { $OpenApiUtil } from '@alicloud/openapi-core'
 
-import type { SmsProvider } from './types'
+import type { SmsFailureCategory, SmsProvider } from './types'
 import { mockFailure, mockSuccess } from './mock'
 import { getEnv } from '@/lib/env'
+
+const BALANCE_CODES = new Set([
+  'AMOUNT_NOT_ENOUGH',
+  'ISV.OUT_OF_SERVICE',
+  'REJECTED_NOT_ENOUGH_CREDITS',
+])
+const INVALID_NUMBER_CODES = new Set([
+  'ISV.MOBILE_NUMBER_ILLEGAL',
+  'MOBILE_NUMBER_ILLEGAL',
+  'REJECTED_FORBIDDEN_ACTION',
+])
+const RATE_LIMIT_CODES = new Set([
+  'FREQUENCY_LIMIT_DAY',
+  'ISV.BUSINESS_LIMIT_CONTROL',
+  'ISV.DAY_LIMIT_CONTROL',
+  'ISV.MONTH_LIMIT_CONTROL',
+  'MOBILE_SEND_LIMIT',
+  'QPS_LIMIT_CONTROL',
+  'REJECTED_FLOODING_CONTROL',
+  'REJECTED_FLOODING_CONTROL_AL',
+  'REJECTED_MOBILE_COUNT_OVER_LIMIT',
+  'SYSTEM_LIMIT_CONTROL',
+])
+const TEMPLATE_CODES = new Set([
+  'ISV.SMS_SIGNATURE_ILLEGAL',
+  'ISV.SMS_TEMPLATE_ILLEGAL',
+  'ISV.TEMPLATE_PARAMS_ILLEGAL',
+  'SIGN_NAME_ILLEGAL',
+  'SMS_SIGNATURE_ILLEGAL',
+  'SMS_TEMPLATE_ILLEGAL',
+  'TEMPLATE_NOT_EXIST',
+])
+
+function normalizedProviderCode(code: unknown): string {
+  return typeof code === 'string' && code.trim() ? code.trim().toUpperCase() : 'UNKNOWN'
+}
+
+export function classifySmsFailure(code: unknown): SmsFailureCategory {
+  const normalized = normalizedProviderCode(code)
+  if (BALANCE_CODES.has(normalized)) return 'balance_insufficient'
+  if (TEMPLATE_CODES.has(normalized)) return 'template_unapproved'
+  if (INVALID_NUMBER_CODES.has(normalized)) return 'invalid_number'
+  if (RATE_LIMIT_CODES.has(normalized)) return 'rate_limited'
+  return 'unknown'
+}
+
+export function classifySmsReceipt(sendStatus: unknown, errorCode?: unknown) {
+  if (sendStatus === 3) return { status: 'delivered' as const }
+  if (sendStatus !== 2) return { status: 'pending' as const }
+  const providerCode = normalizedProviderCode(errorCode)
+  return {
+    failureCategory: classifySmsFailure(providerCode),
+    providerCode,
+    status: 'failed' as const,
+  }
+}
+
+function exceptionCode(error: unknown): string {
+  if (!error || typeof error !== 'object') return 'UNKNOWN'
+  const candidate = error as { code?: unknown; data?: { Code?: unknown } }
+  return normalizedProviderCode(candidate.code ?? candidate.data?.Code)
+}
+
+function providerPhone(phone: string): string {
+  return phone.startsWith('+86') ? phone.slice(3) : phone
+}
+
+function aliyunSendDate(sentAt: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+  }).formatToParts(new Date(sentAt))
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((candidate) => candidate.type === type)?.value ?? ''
+  return `${part('year')}${part('month')}${part('day')}`
+}
 
 class MockSmsProvider implements SmsProvider {
   async health() {
     return mockSuccess({ healthy: true })
   }
 
-  async sendOtp() {
-    return mockSuccess({ accepted: true as const })
+  async sendOtp(input: { traceId: string }) {
+    return mockSuccess(
+      {
+        accepted: true as const,
+        deliveryStatus: 'delivered' as const,
+        providerMessageId: `mock-sms-${input.traceId}`,
+      },
+      `mock-request-${input.traceId}`,
+    )
+  }
+
+  async queryReceipt() {
+    return mockSuccess({ status: 'delivered' as const })
   }
 }
 
@@ -50,18 +139,63 @@ class LiveSmsProvider implements SmsProvider {
       const response = await this.client.sendSms(
         new SendSmsRequest({
           outId: input.traceId,
-          phoneNumbers: input.phone,
+          phoneNumbers: providerPhone(input.phone),
           signName: process.env.ALIBABA_CLOUD_SMS_SIGN_NAME,
           templateCode: process.env.ALIBABA_CLOUD_SMS_OTP_TEMPLATE_CODE,
           templateParam: JSON.stringify({ code: input.code }),
         }),
       )
       if (response.body?.code !== 'OK') {
-        return mockFailure('SMS_PROVIDER_REJECTED', { retryable: false, statusKnown: true })
+        const code = normalizedProviderCode(response.body?.code)
+        const category = classifySmsFailure(code)
+        return mockFailure(`SMS_${category.toUpperCase()}`, {
+          retryable: category === 'rate_limited',
+          statusKnown: true,
+        })
       }
-      return mockSuccess({ accepted: true as const }, response.body.requestId)
+      if (!response.body.bizId) {
+        return mockFailure('SMS_UNKNOWN', { retryable: false, statusKnown: true })
+      }
+      return mockSuccess(
+        {
+          accepted: true as const,
+          deliveryStatus: 'accepted' as const,
+          providerMessageId: response.body.bizId,
+        },
+        response.body.requestId,
+      )
+    } catch (error) {
+      const code = exceptionCode(error)
+      const category = classifySmsFailure(code)
+      return mockFailure(
+        category === 'unknown' ? 'SMS_PROVIDER_UNAVAILABLE' : `SMS_${category.toUpperCase()}`,
+        { retryable: category === 'rate_limited' || category === 'unknown', statusKnown: false },
+      )
+    }
+  }
+
+  async queryReceipt(input: { phone: string; providerMessageId: string; sentAt: string }) {
+    try {
+      const response = await this.client.querySendDetails(
+        new QuerySendDetailsRequest({
+          bizId: input.providerMessageId,
+          currentPage: 1,
+          pageSize: 1,
+          phoneNumber: providerPhone(input.phone),
+          sendDate: aliyunSendDate(input.sentAt),
+        }),
+      )
+      const body = response.body
+      if (body?.code !== 'OK') {
+        if (normalizedProviderCode(body?.code) === 'DATA_NOT_EXIST') {
+          return mockSuccess({ status: 'pending' as const }, body?.requestId)
+        }
+        return mockFailure('SMS_RECEIPT_UNAVAILABLE', { retryable: true, statusKnown: false })
+      }
+      const detail = body.smsSendDetailDTOs?.smsSendDetailDTO?.[0]
+      return mockSuccess(classifySmsReceipt(detail?.sendStatus, detail?.errCode), body.requestId)
     } catch {
-      return mockFailure('SMS_PROVIDER_UNAVAILABLE', { retryable: true, statusKnown: false })
+      return mockFailure('SMS_RECEIPT_UNAVAILABLE', { retryable: true, statusKnown: false })
     }
   }
 }

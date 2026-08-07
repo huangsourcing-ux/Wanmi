@@ -4,6 +4,7 @@ import { runMockFulfillment, type FulfillmentInput } from '@/services/commerce/f
 import { runScheduledContentPublish } from '@/services/content/workflow'
 import { CONTENT_COLLECTIONS, type ContentCollection } from '@/services/content/types'
 import { runAdvertisingMaintenance } from '@/services/advertising/maintenance'
+import { reconcileSmsReceipts } from '@/services/auth/sms-receipts'
 
 const probeInput = [{ name: 'traceId', type: 'text', required: true }] as const
 
@@ -46,6 +47,22 @@ export const advertisingMaintenance: WorkflowConfig = {
   schedule: [{ cron: '0 * * * * *', queue: 'background' }],
   handler: async ({ req }) => {
     await runAdvertisingMaintenance(req)
+  },
+}
+
+export const smsReceiptReconciliation: WorkflowConfig = {
+  slug: 'smsReceiptReconciliation',
+  concurrency: {
+    exclusive: true,
+    key: () => 'sms:delivery-receipts',
+    supersedes: true,
+  },
+  inputSchema: [],
+  queue: 'background',
+  retries: 0,
+  schedule: [{ cron: '30 * * * * *', queue: 'background' }],
+  handler: async ({ req }) => {
+    await reconcileSmsReceipts(req)
   },
 }
 
@@ -106,5 +123,6 @@ export const workflows = [
   contentScheduledPublish,
   backgroundProbe,
   advertisingMaintenance,
+  smsReceiptReconciliation,
   commerceFulfillment,
 ]

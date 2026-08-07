@@ -73,6 +73,7 @@ export interface Config {
     adminInvitations: AdminInvitation;
     customers: Customer;
     smsChallenges: SmsChallenge;
+    smsRateLimits: SmsRateLimit;
     customerSessions: CustomerSession;
     articles: Article;
     topics: Topic;
@@ -137,6 +138,7 @@ export interface Config {
     adminInvitations: AdminInvitationsSelect<false> | AdminInvitationsSelect<true>;
     customers: CustomersSelect<false> | CustomersSelect<true>;
     smsChallenges: SmsChallengesSelect<false> | SmsChallengesSelect<true>;
+    smsRateLimits: SmsRateLimitsSelect<false> | SmsRateLimitsSelect<true>;
     customerSessions: CustomerSessionsSelect<false> | CustomerSessionsSelect<true>;
     articles: ArticlesSelect<false> | ArticlesSelect<true>;
     topics: TopicsSelect<false> | TopicsSelect<true>;
@@ -204,6 +206,7 @@ export interface Config {
       contentScheduledPublish: WorkflowContentScheduledPublish;
       backgroundProbe: WorkflowBackgroundProbe;
       advertisingMaintenance: WorkflowAdvertisingMaintenance;
+      smsReceiptReconciliation: WorkflowSmsReceiptReconciliation;
       commerceFulfillment: WorkflowCommerceFulfillment;
     };
   };
@@ -314,6 +317,7 @@ export interface Customer {
   phone: string;
   phoneMasked: string;
   status: 'active' | 'disabled' | 'deletion_requested';
+  deletionRequestedAt?: string | null;
   updatedAt: string;
   createdAt: string;
   collection: 'customers';
@@ -333,6 +337,31 @@ export interface SmsChallenge {
   expiresAt: string;
   attempts: number;
   consumedAt?: string | null;
+  deliveryStatus: 'not_requested' | 'accepted' | 'pending' | 'delivered' | 'failed' | 'unknown';
+  deliveryFailureCategory?:
+    | ('balance_insufficient' | 'template_unapproved' | 'invalid_number' | 'rate_limited' | 'unknown')
+    | null;
+  deliveryProviderCode?: string | null;
+  providerMessageId?: string | null;
+  providerRequestId?: string | null;
+  receiptRequestId?: string | null;
+  sentAt?: string | null;
+  receiptCheckedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "smsRateLimits".
+ */
+export interface SmsRateLimit {
+  id: number;
+  bucketKey: string;
+  dimension: 'phone' | 'ip' | 'device' | 'global';
+  identityHash: string;
+  windowStartedAt: string;
+  count: number;
+  expiresAt: string;
   updatedAt: string;
   createdAt: string;
 }
@@ -1580,6 +1609,7 @@ export interface PayloadJob {
         | 'contentScheduledPublish'
         | 'backgroundProbe'
         | 'advertisingMaintenance'
+        | 'smsReceiptReconciliation'
         | 'commerceFulfillment'
       )
     | null;
@@ -1629,6 +1659,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'smsChallenges';
         value: number | SmsChallenge;
+      } | null)
+    | ({
+        relationTo: 'smsRateLimits';
+        value: number | SmsRateLimit;
       } | null)
     | ({
         relationTo: 'customerSessions';
@@ -1896,6 +1930,7 @@ export interface CustomersSelect<T extends boolean = true> {
   phone?: T;
   phoneMasked?: T;
   status?: T;
+  deletionRequestedAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -1913,6 +1948,28 @@ export interface SmsChallengesSelect<T extends boolean = true> {
   expiresAt?: T;
   attempts?: T;
   consumedAt?: T;
+  deliveryStatus?: T;
+  deliveryFailureCategory?: T;
+  deliveryProviderCode?: T;
+  providerMessageId?: T;
+  providerRequestId?: T;
+  receiptRequestId?: T;
+  sentAt?: T;
+  receiptCheckedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "smsRateLimits_select".
+ */
+export interface SmsRateLimitsSelect<T extends boolean = true> {
+  bucketKey?: T;
+  dimension?: T;
+  identityHash?: T;
+  windowStartedAt?: T;
+  count?: T;
+  expiresAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -2876,6 +2933,13 @@ export interface WorkflowBackgroundProbe {
  * via the `definition` "WorkflowAdvertisingMaintenance".
  */
 export interface WorkflowAdvertisingMaintenance {
+  input?: unknown;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WorkflowSmsReceiptReconciliation".
+ */
+export interface WorkflowSmsReceiptReconciliation {
   input?: unknown;
 }
 /**
