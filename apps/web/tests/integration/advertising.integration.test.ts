@@ -8,6 +8,7 @@ import {
   readPublicAdvertisement,
   resolvePublicAdTarget,
 } from '@/services/advertising/read-public-ad'
+import { runAdvertisingMaintenance } from '@/services/advertising/maintenance'
 
 const fixturePrefix = `d3-advertising-${randomUUID()}`
 const created: Array<{
@@ -38,6 +39,10 @@ async function operatorReq(traceId: string) {
   )
   req.user = adOperator as never
   return req
+}
+
+async function systemReq(traceId: string) {
+  return createLocalReq({ req: { headers: new Headers({ 'x-request-id': traceId }) } }, payload)
 }
 
 async function remember<T extends { id: number | string }>(
@@ -102,7 +107,6 @@ describe('D3 advertising model, RBAC and controlled delivery', () => {
       req: activateAdvertiserReq,
       user: adOperator as never,
     })
-
     const placement = await remember(
       'adPlacements',
       payload.create({
@@ -135,6 +139,8 @@ describe('D3 advertising model, RBAC and controlled delivery', () => {
           headline: 'D3 广告合作内容',
           name: `${fixturePrefix} creative`,
           status: 'approved',
+          targetCheckFailure: 'none',
+          targetCheckStatus: 'pending',
           targetType: 'external',
           targetUrl: 'https://ads.example.test/landing?campaign=d3',
         },
@@ -160,6 +166,16 @@ describe('D3 advertising model, RBAC and controlled delivery', () => {
       req: await operatorReq(`${fixturePrefix}-creative-approve`),
       user: adOperator as never,
     })
+    await expect(
+      payload.findByID({ collection: 'adCreatives', id: creative.id, overrideAccess: true }),
+    ).resolves.toMatchObject({ status: 'approved', targetCheckStatus: 'pending' })
+    const initialMaintenance = await runAdvertisingMaintenance(
+      await systemReq(`${fixturePrefix}-target-initial`),
+      {
+        probe: async () => ({ failure: 'none', status: 'reachable' }),
+      },
+    )
+    expect(initialMaintenance.checked).toBeGreaterThanOrEqual(1)
 
     const startsAt = new Date(Date.now() - 60_000).toISOString()
     const endsAt = new Date(Date.now() + 3_600_000).toISOString()
@@ -251,14 +267,25 @@ describe('D3 advertising model, RBAC and controlled delivery', () => {
     expect(audits.docs.map((audit) => audit.action)).toContain('advertising.change')
     expect(JSON.stringify(audits.docs)).not.toContain('ads.example.test/landing')
 
-    await payload.update({
-      collection: 'adSchedules',
-      data: { status: 'disabled' },
-      id: schedule.id,
-      overrideAccess: false,
-      req: await operatorReq(`${fixturePrefix}-schedule-disable`),
-      user: adOperator as never,
-    })
+    const expired = await runAdvertisingMaintenance(
+      await systemReq(`${fixturePrefix}-schedule-expiry`),
+      {
+        now: new Date(new Date(endsAt).getTime() + 1),
+        probe: async () => ({ failure: 'none', status: 'reachable' }),
+      },
+    )
+    expect(expired.expired).toBe(1)
+    const replay = await runAdvertisingMaintenance(
+      await systemReq(`${fixturePrefix}-schedule-expiry-replay`),
+      {
+        now: new Date(new Date(endsAt).getTime() + 2),
+        probe: async () => ({ failure: 'none', status: 'reachable' }),
+      },
+    )
+    expect(replay.expired).toBe(0)
+    await expect(
+      payload.findByID({ collection: 'adSchedules', id: schedule.id, overrideAccess: true }),
+    ).resolves.toMatchObject({ status: 'ended' })
     await expect(
       readPublicAdvertisement(payload, {
         pageType: 'tool',

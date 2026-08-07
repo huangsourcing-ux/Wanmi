@@ -11,6 +11,7 @@ import type {
 import { isAdminUser } from '@/access/roles'
 import {
   AD_CREATIVE_STATUSES,
+  AD_MAINTENANCE_CONTEXT,
   AD_PAGE_TYPES,
   AD_SCHEDULE_STATUSES,
   ADVERTISER_STATUSES,
@@ -52,6 +53,47 @@ const SCHEDULE_TRANSITIONS = {
   paused: ['active', 'ended', 'disabled'],
   scheduled: ['draft', 'active', 'paused', 'ended', 'disabled'],
 } as const
+
+function allowMaintenanceUpdate(
+  context: Record<string, unknown>,
+  data: DocumentRecord,
+  originalDoc: DocumentRecord | undefined,
+  req: PayloadRequest,
+  kind: 'expire' | 'target-check',
+): boolean {
+  const maintenance = record(context[AD_MAINTENANCE_CONTEXT])
+  if (!Object.keys(maintenance).length) return false
+  if (
+    req.user ||
+    maintenance.kind !== kind ||
+    maintenance.expectedUpdatedAt !== originalDoc?.updatedAt
+  ) {
+    throw new AppError('AD_MAINTENANCE_CONFLICT', '广告维护任务检测到并发变更', 409)
+  }
+  if (kind === 'target-check') {
+    if (
+      data.targetCheckFailure !== maintenance.targetCheckFailure ||
+      data.targetCheckedAt !== maintenance.targetCheckedAt ||
+      data.targetCheckStatus !== maintenance.targetCheckStatus
+    ) {
+      throw new AppError('AD_MAINTENANCE_INVALID', '广告维护任务字段无效', 400)
+    }
+    return true
+  }
+  const now = maintenance.now
+  const status = originalDoc?.status
+  const endsAt = originalDoc?.endsAt
+  if (
+    data.status !== 'ended' ||
+    (status !== 'active' && status !== 'scheduled') ||
+    typeof now !== 'string' ||
+    typeof endsAt !== 'string' ||
+    new Date(endsAt).getTime() > new Date(now).getTime()
+  ) {
+    throw new AppError('AD_MAINTENANCE_INVALID', '广告排期尚未到期或维护状态无效', 409)
+  }
+  return true
+}
 
 function record(value: unknown): DocumentRecord {
   return typeof value === 'object' && value !== null ? (value as DocumentRecord) : {}
@@ -164,11 +206,13 @@ export const guardAdvertiserChange: CollectionBeforeChangeHook = ({
 }
 
 export const guardAdCreativeChange: CollectionBeforeChangeHook = async ({
+  context,
   data,
   operation,
   originalDoc,
   req,
 }) => {
+  if (allowMaintenanceUpdate(context, data, originalDoc, req, 'target-check')) return data
   const original = record(originalDoc)
   data.name = nonEmptyText(data.name ?? original.name, '素材名称', 120)
   data.headline = nonEmptyText(data.headline ?? original.headline, '广告标题', 120)
@@ -245,6 +289,11 @@ export const guardAdCreativeChange: CollectionBeforeChangeHook = async ({
     }
     data.reviewedAt = new Date().toISOString()
     data.reviewedBy = req.user?.id ? String(req.user.id) : (original.reviewedBy ?? null)
+    if (current !== 'approved' || materialChange) {
+      data.targetCheckFailure = 'none'
+      data.targetCheckedAt = null
+      data.targetCheckStatus = 'pending'
+    }
   } else if (current === 'approved') {
     data.reviewedAt = null
     data.reviewedBy = null
@@ -290,11 +339,13 @@ export const initializeAdSchedule: CollectionBeforeValidateHook = ({
 }
 
 export const guardAdScheduleChange: CollectionBeforeChangeHook = async ({
+  context,
   data,
   operation,
   originalDoc,
   req,
 }) => {
+  if (allowMaintenanceUpdate(context, data, originalDoc, req, 'expire')) return data
   const original = record(originalDoc)
   data.name = nonEmptyText(data.name ?? original.name, '广告排期名称', 120)
   data.publicId = data.publicId ?? original.publicId

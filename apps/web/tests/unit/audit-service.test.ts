@@ -13,6 +13,7 @@ describe('shared audit event service', () => {
       [
         'advertising.change',
         'advertising.delete',
+        'advertising.maintenance',
         'admin.account.changed',
         'admin.account.deleted',
         'admin.auth.login_failed',

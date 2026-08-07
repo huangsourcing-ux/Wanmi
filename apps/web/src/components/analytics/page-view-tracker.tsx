@@ -7,6 +7,7 @@ import {
   classifyDevice,
   classifyPageType,
   classifySource,
+  consumePendingAdConversion,
   emitFirstPartyEvent,
 } from '@/lib/analytics'
 
@@ -24,6 +25,7 @@ export function PageViewTracker() {
         ? 'internal'
         : classifySource(document.referrer, window.location.origin),
     })
+    consumePendingAdConversion()
     hasTrackedNavigation.current = true
   }, [pathname])
 

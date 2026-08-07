@@ -1,6 +1,11 @@
 import config from '@payload-config'
 import { getPayload } from 'payload'
+import type { ReactNode } from 'react'
 
+import {
+  AdRequestTracker,
+  AdvertisingEventTracker,
+} from '@/components/advertising/advertising-event-tracker'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import {
@@ -16,17 +21,28 @@ const deviceClasses = {
 
 export async function AdvertisingSlot({
   className,
+  fallback = null,
   pageType,
   placementCode,
 }: {
   className?: string
+  fallback?: ReactNode
   pageType: 'content' | 'home' | 'tld' | 'tool'
   placementCode: string
 }) {
   const advertisement = await loadAdvertisement({ pageType, placementCode })
-  if (!advertisement) return null
+  if (!advertisement) {
+    return (
+      <>
+        <AdRequestTracker pageType={pageType} placementCode={placementCode} />
+        {fallback}
+      </>
+    )
+  }
 
-  return <AdvertisementCard advertisement={advertisement} className={className} />
+  return (
+    <AdvertisementCard advertisement={advertisement} className={className} pageType={pageType} />
+  )
 }
 
 async function loadAdvertisement({
@@ -47,20 +63,24 @@ async function loadAdvertisement({
 export function AdvertisementCard({
   advertisement,
   className,
+  pageType,
 }: {
   advertisement: PublicAdvertisement
   className?: string
+  pageType: 'content' | 'home' | 'tld' | 'tool'
 }) {
   return (
-    <aside
-      aria-label={`广告：${advertisement.headline}`}
+    <AdvertisingEventTracker
+      campaignId={advertisement.publicId}
       className={cn(
         'mx-auto my-8 w-[calc(100%-2rem)] max-w-7xl sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]',
         deviceClasses[advertisement.deviceScope],
         className,
       )}
-      data-ad-placement={advertisement.placementCode}
-      data-commercial-content="advertisement"
+      external={advertisement.external}
+      label={`广告：${advertisement.headline}`}
+      pageType={pageType}
+      placementCode={advertisement.placementCode}
     >
       <div className="rounded-xl border-2 border-dashed border-primary/30 bg-card p-4 shadow-sm sm:p-5">
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -71,6 +91,7 @@ export function AdvertisementCard({
         </div>
         <a
           className="group grid items-center gap-4 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:grid-cols-[minmax(0,220px)_1fr]"
+          data-ad-click
           href={advertisement.clickHref}
           referrerPolicy="origin"
           rel="sponsored nofollow noopener"
@@ -101,6 +122,6 @@ export function AdvertisementCard({
           </span>
         </a>
       </div>
-    </aside>
+    </AdvertisingEventTracker>
   )
 }

@@ -55,6 +55,18 @@ export const firstPartyDataSourceSchema = z.enum([
   'unknown',
 ])
 
+export const firstPartyAdPageTypeSchema = z.enum(['home', 'tool', 'content', 'tld'])
+
+export const firstPartyAdPlacementCodeSchema = z
+  .string()
+  .min(3)
+  .max(80)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+
+export const firstPartyAdCampaignIdSchema = z.uuid()
+
+export const firstPartyAdConversionTypeSchema = z.enum(['landing_viewed'])
+
 export const analyticsTldSchema = z
   .string()
   .trim()
@@ -102,11 +114,56 @@ export const toolFailedEventSchema = z.strictObject({
   tool: firstPartyToolSchema,
 })
 
+export const adRequestedEventSchema = z.strictObject({
+  event: z.literal('ad_requested'),
+  pageType: firstPartyAdPageTypeSchema,
+  placementCode: firstPartyAdPlacementCodeSchema,
+  schemaVersion: version,
+})
+
+export const adServedEventSchema = z.strictObject({
+  campaignId: firstPartyAdCampaignIdSchema,
+  event: z.literal('ad_served'),
+  pageType: firstPartyAdPageTypeSchema,
+  placementCode: firstPartyAdPlacementCodeSchema,
+  schemaVersion: version,
+})
+
+export const adViewableEventSchema = z.strictObject({
+  campaignId: firstPartyAdCampaignIdSchema,
+  event: z.literal('ad_viewable'),
+  pageType: firstPartyAdPageTypeSchema,
+  placementCode: firstPartyAdPlacementCodeSchema,
+  schemaVersion: version,
+})
+
+export const adClickedEventSchema = z.strictObject({
+  campaignId: firstPartyAdCampaignIdSchema,
+  event: z.literal('ad_clicked'),
+  pageType: firstPartyAdPageTypeSchema,
+  placementCode: firstPartyAdPlacementCodeSchema,
+  schemaVersion: version,
+})
+
+export const adConvertedEventSchema = z.strictObject({
+  campaignId: firstPartyAdCampaignIdSchema,
+  conversionType: firstPartyAdConversionTypeSchema,
+  event: z.literal('ad_converted'),
+  pageType: firstPartyAdPageTypeSchema,
+  placementCode: firstPartyAdPlacementCodeSchema,
+  schemaVersion: version,
+})
+
 export const firstPartyEventSchema = z.discriminatedUnion('event', [
   pageViewedEventSchema,
   toolSubmittedEventSchema,
   toolCompletedEventSchema,
   toolFailedEventSchema,
+  adRequestedEventSchema,
+  adServedEventSchema,
+  adViewableEventSchema,
+  adClickedEventSchema,
+  adConvertedEventSchema,
 ])
 
 export type FirstPartyEventInput = z.infer<typeof firstPartyEventSchema>
@@ -116,3 +173,5 @@ export type FirstPartyDeviceCategory = z.infer<typeof firstPartyDeviceCategorySc
 export type FirstPartyInputType = z.infer<typeof firstPartyInputTypeSchema>
 export type FirstPartyDurationBucket = z.infer<typeof firstPartyDurationBucketSchema>
 export type FirstPartyTool = z.infer<typeof firstPartyToolSchema>
+export type FirstPartyAdPageType = z.infer<typeof firstPartyAdPageTypeSchema>
+export type FirstPartyAdConversionType = z.infer<typeof firstPartyAdConversionTypeSchema>

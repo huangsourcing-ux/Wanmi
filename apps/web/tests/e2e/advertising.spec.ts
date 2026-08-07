@@ -7,6 +7,14 @@ test('commercial content is unmistakably labeled and follows the safe-link contr
 }) => {
   const fixture = await readAdvertisingFixture()
   const fixtureDomain = 'd3-advertising.net'
+  const advertisingEvents: Array<Record<string, unknown>> = []
+  await page.route('**/api/v1/events', async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>
+    if (typeof body.event === 'string' && body.event.startsWith('ad_')) {
+      advertisingEvents.push(body)
+    }
+    await route.fulfill({ json: { accepted: true }, status: 202 })
+  })
   await page.goto(`/tools/domain-search?q=${fixtureDomain}`)
   const result = page.getByRole('heading', { level: 2, name: '可注册查询结果' })
   await expect(result).toBeVisible()
@@ -29,6 +37,32 @@ test('commercial content is unmistakably labeled and follows the safe-link contr
     (element) => element.getBoundingClientRect().top,
   )
   expect(advertisementTop).toBeGreaterThan(resultTop)
+  const queryInput = page.getByLabel('输入完整域名或关键词')
+  const inputBox = await queryInput.boundingBox()
+  const advertisementBox = await advertisement.boundingBox()
+  expect(inputBox).not.toBeNull()
+  expect(advertisementBox).not.toBeNull()
+  expect(advertisementBox!.y).toBeGreaterThan(inputBox!.y + inputBox!.height)
+  await expect(advertisement).not.toHaveCSS('position', 'fixed')
+
+  await advertisement.scrollIntoViewIfNeeded()
+  await expect
+    .poll(() => advertisingEvents.map(({ event }) => event), { timeout: 5_000 })
+    .toEqual(expect.arrayContaining(['ad_requested', 'ad_served', 'ad_viewable']))
+  await link.evaluate((element) => {
+    element.addEventListener('click', (event) => event.preventDefault(), { once: true })
+    ;(element as HTMLAnchorElement).click()
+  })
+  await expect.poll(() => advertisingEvents.map(({ event }) => event)).toContain('ad_clicked')
+
+  for (const event of advertisingEvents) {
+    expect(JSON.stringify(event)).not.toMatch(/d3-advertising\.net|domain|query|user|crossSite/i)
+    expect(Object.keys(event).sort()).toEqual(
+      event.event === 'ad_requested'
+        ? ['event', 'pageType', 'placementCode', 'schemaVersion']
+        : ['campaignId', 'event', 'pageType', 'placementCode', 'schemaVersion'],
+    )
+  }
 })
 
 test('controlled ad redirects ignore query input and fail closed for inactive schedules', async ({

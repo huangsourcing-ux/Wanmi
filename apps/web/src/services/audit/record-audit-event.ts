@@ -11,6 +11,7 @@ export type AuditActorType = 'admin' | 'anonymous' | 'customer' | 'provider' | '
 export const auditEventDefinitions = {
   'advertising.change': { actorTypes: ['admin'], targetType: 'advertising' },
   'advertising.delete': { actorTypes: ['admin'], targetType: 'advertising' },
+  'advertising.maintenance': { actorTypes: ['system'], targetType: 'advertising' },
   'admin.account.changed': { actorTypes: ['admin'], targetType: 'admin' },
   'admin.account.deleted': { actorTypes: ['admin'], targetType: 'admin' },
   'admin.auth.login_failed': { actorTypes: ['anonymous'], targetType: 'admin-auth' },

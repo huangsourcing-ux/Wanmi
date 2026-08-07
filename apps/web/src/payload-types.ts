@@ -186,8 +186,12 @@ export interface Config {
     defaultIDType: number;
   };
   fallbackLocale: null;
-  globals: {};
-  globalsSelect: {};
+  globals: {
+    'payload-jobs-stats': PayloadJobsStat;
+  };
+  globalsSelect: {
+    'payload-jobs-stats': PayloadJobsStatsSelect<false> | PayloadJobsStatsSelect<true>;
+  };
   locale: null;
   widgets: {
     collections: CollectionsWidget;
@@ -199,6 +203,7 @@ export interface Config {
       publishingProbe: WorkflowPublishingProbe;
       contentScheduledPublish: WorkflowContentScheduledPublish;
       backgroundProbe: WorkflowBackgroundProbe;
+      advertisingMaintenance: WorkflowAdvertisingMaintenance;
       commerceFulfillment: WorkflowCommerceFulfillment;
     };
   };
@@ -710,6 +715,12 @@ export interface AdCreative {
   reviewNotes?: string | null;
   reviewedAt?: string | null;
   reviewedBy?: string | null;
+  /**
+   * 系统定期复检目标白名单、公共网络地址和可达性；待检或异常素材不投放。
+   */
+  targetCheckStatus: 'pending' | 'reachable' | 'unreachable' | 'unsafe';
+  targetCheckFailure: 'none' | 'not_allowlisted' | 'restricted_address' | 'unreachable' | 'http_error';
+  targetCheckedAt?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1083,8 +1094,19 @@ export interface AuditLog {
 export interface FirstPartyEvent {
   id: number;
   schemaVersion: number;
-  event: 'page_viewed' | 'tool_submitted' | 'tool_completed' | 'tool_failed';
-  pageType?: ('home' | 'tool_index' | 'tool' | 'pricing' | 'content_index' | 'help' | 'legal' | 'other') | null;
+  event:
+    | 'page_viewed'
+    | 'tool_submitted'
+    | 'tool_completed'
+    | 'tool_failed'
+    | 'ad_requested'
+    | 'ad_served'
+    | 'ad_viewable'
+    | 'ad_clicked'
+    | 'ad_converted';
+  pageType?:
+    | ('home' | 'tool_index' | 'tool' | 'pricing' | 'content_index' | 'content' | 'tld' | 'help' | 'legal' | 'other')
+    | null;
   source?: ('direct' | 'internal' | 'search' | 'social' | 'referral') | null;
   deviceCategory?: ('mobile' | 'tablet' | 'desktop') | null;
   tool?: ('domain-search' | 'whois' | 'dns' | 'ssl-check' | 'idn' | 'pricing') | null;
@@ -1096,6 +1118,9 @@ export interface FirstPartyEvent {
   durationBucket?: ('lt_100ms' | '100_299ms' | '300_999ms' | '1000_2999ms' | '3000_9999ms' | 'gte_10000ms') | null;
   dataSource?: ('local' | 'cache' | 'westdigital' | 'whodat' | 'dns' | 'tls' | 'unknown') | null;
   errorCode?: string | null;
+  campaignId?: string | null;
+  placementCode?: string | null;
+  conversionType?: 'landing_viewed' | null;
   traceId: string;
   updatedAt: string;
   createdAt: string;
@@ -1538,7 +1563,15 @@ export interface PayloadJob {
         id?: string | null;
       }[]
     | null;
-  workflowSlug?: ('publishingProbe' | 'contentScheduledPublish' | 'backgroundProbe' | 'commerceFulfillment') | null;
+  workflowSlug?:
+    | (
+        | 'publishingProbe'
+        | 'contentScheduledPublish'
+        | 'backgroundProbe'
+        | 'advertisingMaintenance'
+        | 'commerceFulfillment'
+      )
+    | null;
   taskSlug?: 'inline' | null;
   queue?: string | null;
   waitUntil?: string | null;
@@ -1547,6 +1580,15 @@ export interface PayloadJob {
    * Used for concurrency control. Jobs with the same key are subject to exclusive/supersedes rules.
    */
   concurrencyKey?: string | null;
+  meta?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2121,6 +2163,9 @@ export interface AdCreativesSelect<T extends boolean = true> {
   reviewNotes?: T;
   reviewedAt?: T;
   reviewedBy?: T;
+  targetCheckStatus?: T;
+  targetCheckFailure?: T;
+  targetCheckedAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -2403,6 +2448,9 @@ export interface FirstPartyEventsSelect<T extends boolean = true> {
   durationBucket?: T;
   dataSource?: T;
   errorCode?: T;
+  campaignId?: T;
+  placementCode?: T;
+  conversionType?: T;
   traceId?: T;
   updatedAt?: T;
   createdAt?: T;
@@ -2697,6 +2745,7 @@ export interface PayloadJobsSelect<T extends boolean = true> {
   waitUntil?: T;
   processing?: T;
   concurrencyKey?: T;
+  meta?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -2731,6 +2780,34 @@ export interface PayloadMigrationsSelect<T extends boolean = true> {
   batch?: T;
   updatedAt?: T;
   createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "payload-jobs-stats".
+ */
+export interface PayloadJobsStat {
+  id: number;
+  stats?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  updatedAt?: string | null;
+  createdAt?: string | null;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "payload-jobs-stats_select".
+ */
+export interface PayloadJobsStatsSelect<T extends boolean = true> {
+  stats?: T;
+  updatedAt?: T;
+  createdAt?: T;
+  globalType?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -2771,6 +2848,13 @@ export interface WorkflowBackgroundProbe {
   input: {
     traceId: string;
   };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WorkflowAdvertisingMaintenance".
+ */
+export interface WorkflowAdvertisingMaintenance {
+  input?: unknown;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema

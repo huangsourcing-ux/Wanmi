@@ -2,6 +2,7 @@ import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 
 import { getFixturePayload } from './redirect-fixture'
+import { AD_MAINTENANCE_CONTEXT } from '../../src/lib/advertising'
 
 const statePath = resolve(process.cwd(), 'test-results/advertising-fixture.json')
 const fixturePrefix = 'e2e-d3-advertising'
@@ -120,9 +121,31 @@ export async function createAdvertisingFixture() {
       headline: 'D3 受控广告测试',
       name: `${fixturePrefix} creative`,
       status: 'approved',
+      targetCheckFailure: 'none',
+      targetCheckStatus: 'pending',
       targetType: 'external',
       targetUrl: externalTarget,
     },
+    overrideAccess: true,
+  })
+  const targetCheckedAt = new Date().toISOString()
+  await payload.update({
+    collection: 'adCreatives',
+    context: {
+      [AD_MAINTENANCE_CONTEXT]: {
+        expectedUpdatedAt: creative.updatedAt,
+        kind: 'target-check',
+        targetCheckFailure: 'none',
+        targetCheckedAt,
+        targetCheckStatus: 'reachable',
+      },
+    },
+    data: {
+      targetCheckFailure: 'none',
+      targetCheckedAt,
+      targetCheckStatus: 'reachable',
+    },
+    id: creative.id,
     overrideAccess: true,
   })
   const schedule = await payload.create({

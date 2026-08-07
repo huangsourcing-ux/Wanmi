@@ -7,9 +7,11 @@ import {
   classifyDevice,
   classifyPageType,
   classifySource,
+  consumePendingAdConversion,
   emitFirstPartyEvent,
   inferToolInput,
   isTrackingOptedOut,
+  rememberPendingAdConversion,
 } from '@/lib/analytics'
 import {
   FIRST_PARTY_EVENT_SCHEMA_VERSION,
@@ -26,6 +28,8 @@ afterEach(() => {
   setPrivacyPreference(navigator, 'globalPrivacyControl', undefined)
   setPrivacyPreference(navigator, 'msDoNotTrack', undefined)
   setPrivacyPreference(window, 'doNotTrack', undefined)
+  window.sessionStorage.clear()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
@@ -104,9 +108,57 @@ describe('D1 first-party analytics contract', () => {
         schemaVersion: 1,
         source: 'referral',
       },
+      {
+        campaignId: '3c9cc764-74fd-4baa-94e9-48865e85efb1',
+        domain: 'private.example',
+        event: 'ad_clicked',
+        pageType: 'tool',
+        placementCode: 'tool-after-result',
+        schemaVersion: 1,
+      },
+      {
+        campaignId: '3c9cc764-74fd-4baa-94e9-48865e85efb1',
+        crossSiteId: 'forbidden',
+        event: 'ad_converted',
+        conversionType: 'landing_viewed',
+        pageType: 'content',
+        placementCode: 'content-inline',
+        schemaVersion: 1,
+      },
     ]) {
       expect(firstPartyEventSchema.safeParse(candidate).success).toBe(false)
     }
+  })
+
+  it('accepts only closed advertising event dimensions', () => {
+    for (const event of ['ad_served', 'ad_viewable', 'ad_clicked'] as const) {
+      expect(
+        firstPartyEventSchema.parse({
+          campaignId: '3c9cc764-74fd-4baa-94e9-48865e85efb1',
+          event,
+          pageType: 'tool',
+          placementCode: 'tool-after-result',
+          schemaVersion: 1,
+        }),
+      ).toMatchObject({ event, pageType: 'tool', placementCode: 'tool-after-result' })
+    }
+    expect(
+      firstPartyEventSchema.safeParse({
+        event: 'ad_requested',
+        pageType: 'tool',
+        placementCode: 'Tool Result',
+        schemaVersion: 1,
+      }).success,
+    ).toBe(false)
+    expect(
+      firstPartyEventSchema.safeParse({
+        campaignId: 'not-a-campaign',
+        event: 'ad_viewable',
+        pageType: 'tool',
+        placementCode: 'tool-after-result',
+        schemaVersion: 1,
+      }).success,
+    ).toBe(false)
   })
 
   it('classifies pages, sources, devices and domain input without returning the full query', () => {
@@ -188,5 +240,29 @@ describe('D1 first-party analytics contract', () => {
       referrerPolicy: 'origin',
     })
     expect(JSON.stringify(fetch.mock.calls)).not.toContain('wanmi.net')
+  })
+
+  it('attributes a same-tab internal landing once without creating a user or cross-site ID', () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 202 }))
+    vi.stubGlobal('fetch', fetch)
+    rememberPendingAdConversion({
+      campaignId: '3c9cc764-74fd-4baa-94e9-48865e85efb1',
+      pageType: 'content',
+      placementCode: 'content-inline',
+    })
+    expect(JSON.stringify(window.sessionStorage)).not.toContain('private.example')
+    consumePendingAdConversion()
+    consumePendingAdConversion()
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toEqual({
+      campaignId: '3c9cc764-74fd-4baa-94e9-48865e85efb1',
+      conversionType: 'landing_viewed',
+      event: 'ad_converted',
+      pageType: 'content',
+      placementCode: 'content-inline',
+      schemaVersion: 1,
+    })
+    expect(window.sessionStorage.length).toBe(0)
   })
 })

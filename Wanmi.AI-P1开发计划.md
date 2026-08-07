@@ -439,9 +439,9 @@ D2-12 验证记录（2026-08-06）：新增跨层综合降级矩阵，并仅修�
 - [x] 使用 `@payloadcms/plugin-redirects` 管理内容、工具和 TLD 页面改址后的 301，并验证循环和开放跳转防护；
 - [x] 建立广告主、素材、广告位、排期、状态和受控跳转；
 - [x] 所有商业内容显著显示“广告”，外部链接设置 `sponsored`、`nofollow`、`noopener`；
-- [ ] 广告只在核心结果之后或内容自然位置展示，失败时折叠或显示自有内容；
-- [ ] 实现广告请求、有效曝光、可见曝光、点击和基础转化事件；
-- [ ] 建立广告到期自动下线和目标链接安全检查；
+- [x] 广告只在核心结果之后或内容自然位置展示，失败时折叠或显示自有内容；
+- [x] 实现广告请求、有效曝光、可见曝光、点击和基础转化事件；
+- [x] 建立广告到期自动下线和目标链接安全检查；
 - [ ] 使用 `@payloadcms/plugin-form-builder` 建立联系、反馈和需求收集入口；只启用批准字段，不接订单、支付、实名或文件上传；
 - [ ] 建立工具状态、内容、广告、TLD/价格、反馈和审计后台；
 - [ ] 建立第一方事件聚合与基础运营仪表盘；
@@ -452,6 +452,8 @@ D3-01 验证记录（2026-08-06）：在 D0 `articles`、`topics`、`tldPages` �
 D3-02 验证记录（2026-08-06）：新增固定工具目录与内容侧 `relatedTools`、`relatedTldPages` 关系，并在工具/TLD/文章/专题/帮助页后台提供可维护的正向关系和分类型反向 Join；匿名关系读取重新查询目标且同时要求 `_status=published` 与 `workflowStatus=published`，草稿、下线和归档不能经关系旁路公开。复用官方 SEO 插件，将文章、专题、TLD、帮助页、分类和标签统一接入 SEO 标题、描述、Open Graph、同源 canonical 与 `noIndex`；分类/标签只有存在已发布文章时才公开。sitemap 每次请求动态生成并要求零 freshness/重新验证，每页读取 200 条、最多 5,000 条动态内容，只输出双重发布、未 `noIndex` 且 canonical 指向自身的详情和有效分类/标签，跨页 canonical 由公开目标自身入图；读取失败保留受控静态基线。复用 D1-04 Redirects guard/runtime，将帮助、分类、标签和固定工具纳入永久 301，目标仍受站内同源、发布门禁、循环、最大链长与开放跳转防护。命名 migration `20260807_004430_d3_content_relations_seo` 包含关系表、版本关系、SEO 字段扩展、redirect 枚举和六个固定工具种子；生成类型同步。最终 `make check` 覆盖生成物/schema 漂移、空库/当前升级/down-up migration、Nginx、lint、TypeScript strict、471 个单元测试、33 个 PostgreSQL/MinIO 集成测试、安全门禁、Next.js 生产构建与 linux/amd64 同镜像；最终 `make test-e2e` 30/30 通过。Playwright 固定为 2 workers、15 秒断言和 120 秒多步骤场景预算，避免资源紧张的 Next 开发冷编译触发系统 I/O 暂停；价格快照集成 fixture 改用每次运行唯一 TLD/规则，消除 E2E 留存数据对 D2“最新快照”断言的污染。本切片不含广告、仪表盘、交易或部署，也未调用任何真实外部写接口。
 
 D3-03 验证记录（2026-08-06）：广告主扩展法定名称、联系人、合同引用、外链主机白名单及 `draft/active/paused/disabled` 状态；素材使用独立 `adMedia` Upload Collection，支持图片/文字素材、审核字段及 `draft/pending_review/approved/rejected/disabled` 状态；广告位固定页面类型、结果后/内容位、设备范围和尺寸；排期使用服务端随机 UUID 公开 ID、优先级、起止时间及 `draft/scheduled/active/paused/ended/disabled` 状态。`ad_operator` 与 `system_admin` 可按状态机管理，`analyst` 仅能只读且合同、联系人、目标 URL、白名单、审核备注和排期备注均由字段 access 脱敏；全部变更复用统一审计且不记录目标 URL。素材内链直接复用 D1-04 `normalizeRedirectPath`，拒绝协议相对、反斜杠、查询/片段和 `/admin`、`/api`、`/go`、`/_next` 等保留路径；外链只接受广告主预先配置的精确主机、HTTPS、默认端口和无凭据/片段/动态占位符 URL。浏览器只获得 `/go/ad/<随机 UUID>`，跳转端点不接受 URL 参数，重新校验广告主、素材、广告位、排期、时间和目标后才 302，并忽略请求 query，因而不传递完整查询域名。工具/价格页只在核心结果后通过独立 Suspense 广告槽渲染；关闭、过期、关系无效、媒体缺失或读取异常均返回空槽，不影响工具；商业位使用独立 `aside`、显著“广告”和“不影响工具结果排序”说明，外链统一 `rel="sponsored nofollow noopener"`、安全新窗口及 origin referrer policy。命名 migration `20260807_025608_d3_advertising_controlled_delivery` 已覆盖独立广告媒体、关系/索引/状态扩展及遗留数据安全回填：旧外链和 `//`、反斜杠等不安全内链默认禁用；生成类型和 schema snapshot 同步。最终 `make check` 通过生成物/schema 漂移、空库/遗留升级/D3-03 down-up migration、Nginx、lint、TypeScript strict、483 个单元测试、35 个 PostgreSQL/MinIO 集成测试、安全门禁、Next.js 生产构建与 linux/amd64 同镜像；最终 `make test-e2e` 32/32 通过。本切片不实现广告曝光/点击/转化事件、到期自动下线 Job、后台仪表盘或真实广告投放，也未部署或调用任何真实外部写接口。
+
+D3-04 验证记录（2026-08-07）：公开广告读取新增页面类型到位置的一一映射，工具广告只允许 `after_core_result`，文章/专题/帮助与 TLD 详情分别只允许内容自然位；内容位位于正文之后，工具位继续位于完整核心结果之后，素材缺失、检查异常或读取失败均折叠且不遮挡输入。复用 D1-08 `POST /api/v1/events` 与 `firstPartyEvents`，以 `z.strictObject` 判别联合封闭 `ad_requested`、进入视口的 `ad_served`、连续 1 秒达到 50% 可见的 `ad_viewable`、`ad_clicked` 和一次性站内落地页 `ad_converted`；只保存随机活动 UUID、广告位、页面类型及固定转化类型，`credentials: omit`、origin-only referrer、DNT/GPC 双端门禁继续生效，不含完整查询域名、用户/会话/设备或跨站 ID。新增每分钟运行且 exclusive/supersedes 的 Payload `background` Job：到期 `active/scheduled` 排期以并发版本守卫原子收敛为 `ended`，重复执行不再写入；已批准素材在首次/每 24 小时按 50 条批次和并发 4 复检，重新规范化广告主精确白名单，外链 DNS 最多 16 个地址且任一非公网即失败关闭，请求固定 HTTPS、3 秒、固定到已验证 IP 防重绑定、HEAD 不支持时才退回有界 GET。只有 `reachable` 素材可投放，白名单、目标或审核变化会回到 `pending`；维护状态变化使用 system 审计且不记录 URL。命名 migration `20260807_042030_d3_ad_events_maintenance`、schema snapshot、Payload 类型和空库/遗留/D1-08/D3-03/D3-04 down-up verifier 已同步，旧已批准站内安全目标回填为可达，外链默认待检。最终 `make check` 通过生成物/schema 漂移、迁移往返、Nginx、lint、TypeScript strict、494 个单元测试、36 个 PostgreSQL/MinIO 集成测试、安全门禁、Next.js 生产构建和 linux/amd64 同镜像；依赖审计维持既有 2 low、2 moderate，无 high/critical，Gitleaks 无泄漏。最终原样 `make test-e2e` 32/32 通过，覆盖广告位在输入/结果之后、五类最小事件、连续可见阈值、无查询/用户/跨站字段、受控跳转和失效关闭。本切片不实现第 12 项 Form Builder、第 13～14 项后台/聚合仪表盘，不部署、不发送真实广告/provider 请求或修改生产数据。
 
 ### 7.3 退出条件
 
