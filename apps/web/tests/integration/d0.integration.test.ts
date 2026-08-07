@@ -7,8 +7,18 @@ import { createLocalReq, getPayload, type Payload } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { getEnv } from '@/lib/env'
+import { hmac, randomOpaqueToken } from '@/lib/crypto'
+import { authenticatedAdminRequest } from '@/services/auth/admin-session'
 import { customerSessionStrategy } from '@/services/auth/customer-strategy'
-import { rawCustomerToken, requestOtp, revokeSessions, verifyOtp } from '@/services/auth/otp'
+import {
+  authenticatedCustomerRequest,
+  rawCustomerToken,
+  requestCustomerDeletion,
+  requestOtp,
+  revokeSessions,
+  verifyOtp,
+} from '@/services/auth/otp'
+import { reconcileSmsReceipts } from '@/services/auth/sms-receipts'
 import { runMockFulfillment } from '@/services/commerce/fulfillment'
 
 let payload: Payload
@@ -126,7 +136,11 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
       payload,
     })
     expect(authenticated.user?.id).toBe(verified.customer.id)
-    await revokeSessions(payload, rawCustomerToken(cookieHeaders), 'all')
+    await revokeSessions(
+      await createLocalReq({ req: { headers: cookieHeaders } }, payload),
+      rawCustomerToken(cookieHeaders),
+      'all',
+    )
     expect(
       (await customerSessionStrategy.authenticate({ headers: cookieHeaders, payload })).user,
     ).toBeNull()
@@ -181,6 +195,178 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
         headers,
       ),
     ).rejects.toThrow(/无效或已过期/)
+  })
+
+  it('enforces the phone quota atomically while tracking all four dimensions independently', async () => {
+    const phone = ['+86', '188', String(randomInt(10_000_000, 99_999_999))].join('')
+    const attempts = await Promise.allSettled(
+      Array.from({ length: getEnv().OTP_PHONE_LIMIT_PER_HOUR * 2 }, (_, index) =>
+        requestOtp(
+          payload,
+          { deviceId: `quota-device-${randomUUID()}-${index}`, phone },
+          new Headers({
+            'user-agent': 'wanmi-integration-test',
+            'x-forwarded-for': `198.51.100.${index + 1}`,
+          }),
+          `trace-otp-quota-${index}`,
+        ),
+      ),
+    )
+    expect(attempts.filter((result) => result.status === 'fulfilled')).toHaveLength(
+      getEnv().OTP_PHONE_LIMIT_PER_HOUR,
+    )
+    expect(attempts.filter((result) => result.status === 'rejected')).toHaveLength(
+      getEnv().OTP_PHONE_LIMIT_PER_HOUR,
+    )
+
+    const phoneHash = hmac(phone, getEnv().SESSION_PEPPER)
+    const phoneBucket = await payload.find({
+      collection: 'smsRateLimits',
+      overrideAccess: true,
+      where: { bucketKey: { equals: `phone:${phoneHash}` } },
+    })
+    expect(phoneBucket.docs[0]?.count).toBe(getEnv().OTP_PHONE_LIMIT_PER_HOUR)
+    const dimensions = await payload.find({
+      collection: 'smsRateLimits',
+      limit: 100,
+      overrideAccess: true,
+      where: { updatedAt: { greater_than: new Date(Date.now() - 60_000).toISOString() } },
+    })
+    expect(new Set(dimensions.docs.map((bucket) => bucket.dimension))).toEqual(
+      new Set(['phone', 'ip', 'device', 'global']),
+    )
+  })
+
+  it('separates customer/admin cookies and makes deletion revoke every customer session', async () => {
+    const phone = ['+86', '177', String(randomInt(10_000_000, 99_999_999))].join('')
+    const deviceId = `deletion-device-${randomUUID()}`
+    const headers = new Headers({
+      'user-agent': 'wanmi-integration-test',
+      'x-forwarded-for': '203.0.113.70',
+    })
+    const requested = await requestOtp(payload, { deviceId, phone }, headers, 'trace-deletion')
+    const verified = await verifyOtp(
+      await createLocalReq({ req: { headers } }, payload),
+      { challengeId: requested.challengeId, code: getEnv().MOCK_SMS_OTP_CODE, deviceId },
+      headers,
+    )
+    const customerCookie = `${getEnv().CUSTOMER_SESSION_COOKIE}=${verified.token}`
+    const customerRequest = new Request('http://wanmi.local/api/v1/auth/deletion-request', {
+      headers: { cookie: customerCookie },
+    })
+    const authenticated = await authenticatedCustomerRequest(payload, customerRequest)
+
+    await payload.create({
+      collection: 'customerSessions',
+      data: {
+        customer: verified.customer.id,
+        deviceHash: hmac('secondary-device', getEnv().SESSION_PEPPER),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        ipHash: hmac('secondary-ip', getEnv().SESSION_PEPPER),
+        lastSeenAt: new Date().toISOString(),
+        tokenHash: hmac(randomOpaqueToken(), getEnv().SESSION_PEPPER),
+      },
+      overrideAccess: true,
+    })
+
+    await expect(authenticatedAdminRequest(payload, customerRequest)).rejects.toThrow(
+      /管理员身份验证/,
+    )
+    expect(
+      (
+        await customerSessionStrategy.authenticate({
+          headers: new Headers({ cookie: 'wanmi_admin-token=not-a-customer-token' }),
+          payload,
+        })
+      ).user,
+    ).toBeNull()
+
+    const deletion = await requestCustomerDeletion(authenticated.req, authenticated.user)
+    expect(deletion).toMatchObject({ status: 'deletion_requested' })
+    expect(
+      (
+        await payload.findByID({
+          collection: 'customers',
+          id: verified.customer.id,
+          overrideAccess: true,
+        })
+      ).status,
+    ).toBe('deletion_requested')
+    const sessions = await payload.find({
+      collection: 'customerSessions',
+      limit: 10,
+      overrideAccess: true,
+      where: { customer: { equals: verified.customer.id } },
+    })
+    expect(sessions.docs).toHaveLength(2)
+    expect(sessions.docs.every((session) => Boolean(session.revokedAt))).toBe(true)
+    expect(
+      (
+        await customerSessionStrategy.authenticate({
+          headers: new Headers({ cookie: customerCookie }),
+          payload,
+        })
+      ).user,
+    ).toBeNull()
+    const securityEvents = await payload.find({
+      collection: 'customerSecurityEvents',
+      overrideAccess: true,
+      where: {
+        and: [
+          { customer: { equals: verified.customer.id } },
+          { event: { equals: 'deletion_requested' } },
+        ],
+      },
+    })
+    expect(securityEvents.totalDocs).toBe(1)
+  })
+
+  it('reconciles delivery receipts and removes expired SMS quota buckets', async () => {
+    const now = new Date()
+    const challenge = await payload.create({
+      collection: 'smsChallenges',
+      data: {
+        attempts: 0,
+        challengeId: randomUUID(),
+        codeHash: hmac('receipt-fixture-code', getEnv().SESSION_PEPPER),
+        deliveryStatus: 'accepted',
+        deviceHash: hmac('receipt-fixture-device', getEnv().SESSION_PEPPER),
+        expiresAt: new Date(now.getTime() + 300_000).toISOString(),
+        ipHash: hmac('receipt-fixture-ip', getEnv().SESSION_PEPPER),
+        phone: '+8613900000000',
+        phoneHash: hmac('+8613900000000', getEnv().SESSION_PEPPER),
+        providerMessageId: `mock-message-${randomUUID()}`,
+        sentAt: now.toISOString(),
+      },
+      overrideAccess: true,
+    })
+    const expiredBucket = await payload.create({
+      collection: 'smsRateLimits',
+      data: {
+        bucketKey: `expired:${randomUUID()}`,
+        count: 1,
+        dimension: 'device',
+        expiresAt: new Date(now.getTime() - 1_000).toISOString(),
+        identityHash: hmac(randomUUID(), getEnv().SESSION_PEPPER),
+        windowStartedAt: new Date(now.getTime() - 3_601_000).toISOString(),
+      },
+      overrideAccess: true,
+    })
+
+    const result = await reconcileSmsReceipts(await createLocalReq({}, payload))
+    expect(result).toMatchObject({ checked: 1, delivered: 1, expiredRateBucketsDeleted: 1 })
+    expect(
+      (
+        await payload.findByID({
+          collection: 'smsChallenges',
+          id: challenge.id,
+          overrideAccess: true,
+        })
+      ).deliveryStatus,
+    ).toBe('delivered')
+    await expect(
+      payload.findByID({ collection: 'smsRateLimits', id: expiredBucket.id, overrideAccess: true }),
+    ).rejects.toThrow()
   })
 
   it('closes generic realname writes and keeps owner pinning on trusted service writes', async () => {

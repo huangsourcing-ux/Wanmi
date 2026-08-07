@@ -10,7 +10,11 @@ const schema = z.object({
   ALIYUN_KMS_MODE: z.enum(['mock', 'live']).default('mock'),
   ALIYUN_OSS_REALNAME_MODE: z.enum(['mock', 'live']).default('mock'),
   ALIYUN_SMS_MODE: z.enum(['mock', 'live']).default('mock'),
-  CUSTOMER_SESSION_COOKIE: z.string().min(1).default('wanmi_customer_session'),
+  CUSTOMER_SESSION_COOKIE: z
+    .string()
+    .regex(/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u)
+    .refine((value) => value !== 'wanmi_admin-token', 'customer/admin cookies must be distinct')
+    .default('wanmi_customer_session'),
   CUSTOMER_SESSION_SECONDS: z.coerce.number().int().positive().default(2_592_000),
   DATABASE_URL: z.string().min(1),
   DNS_CACHE_MAX_ENTRIES: z.coerce.number().int().positive().default(4_096),

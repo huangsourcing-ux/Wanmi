@@ -1,0 +1,80 @@
+import { afterEach, describe, expect, it } from 'vitest'
+
+import { getEnv, resetEnvForTests } from '@/lib/env'
+import { classifySmsFailure, classifySmsReceipt, createSmsProvider } from '@/providers/aliyunsms'
+
+describe('Alibaba Cloud SMS adapter', () => {
+  afterEach(() => {
+    process.env.ALIYUN_SMS_MODE = 'mock'
+    process.env.ALLOW_REAL_PROVIDER_WRITES = 'false'
+    process.env.CUSTOMER_SESSION_COOKIE = 'wanmi_customer_session'
+    resetEnvForTests()
+  })
+
+  it.each([
+    ['isv.OUT_OF_SERVICE', 'balance_insufficient'],
+    ['AMOUNT_NOT_ENOUGH', 'balance_insufficient'],
+    ['isv.SMS_TEMPLATE_ILLEGAL', 'template_unapproved'],
+    ['isv.SMS_SIGNATURE_ILLEGAL', 'template_unapproved'],
+    ['isv.MOBILE_NUMBER_ILLEGAL', 'invalid_number'],
+    ['isv.BUSINESS_LIMIT_CONTROL', 'rate_limited'],
+    ['unexpected.provider.code', 'unknown'],
+  ] as const)('classifies %s as %s', (code, category) => {
+    expect(classifySmsFailure(code)).toBe(category)
+  })
+
+  it('keeps live SMS writes disabled without calling the provider', async () => {
+    process.env.ALIYUN_SMS_MODE = 'live'
+    process.env.ALLOW_REAL_PROVIDER_WRITES = 'false'
+    resetEnvForTests()
+
+    const result = await createSmsProvider().sendOtp({
+      code: '123456',
+      phone: '+8613900000000',
+      traceId: 'unit-live-write-gate',
+    })
+
+    expect(result).toMatchObject({
+      error: { code: 'PROVIDER_WRITE_DISABLED', statusKnown: true },
+      ok: false,
+    })
+  })
+
+  it('rejects a customer cookie name that collides with the admin cookie', () => {
+    process.env.CUSTOMER_SESSION_COOKIE = 'wanmi_admin-token'
+    resetEnvForTests()
+    expect(() => getEnv()).toThrow(/customer\/admin cookies must be distinct/u)
+  })
+
+  it('maps Alibaba Cloud receipt statuses without retaining provider messages', () => {
+    expect(classifySmsReceipt(1)).toEqual({ status: 'pending' })
+    expect(classifySmsReceipt(3)).toEqual({ status: 'delivered' })
+    expect(classifySmsReceipt(2, 'isv.MOBILE_NUMBER_ILLEGAL')).toEqual({
+      failureCategory: 'invalid_number',
+      providerCode: 'ISV.MOBILE_NUMBER_ILLEGAL',
+      status: 'failed',
+    })
+  })
+
+  it('keeps mock delivery receipts deterministic and free of raw OTP data', async () => {
+    const provider = createSmsProvider()
+    const sent = await provider.sendOtp({
+      code: '123456',
+      phone: '+8613900000000',
+      traceId: 'unit-mock-sms',
+    })
+    expect(sent).toMatchObject({
+      data: { accepted: true, deliveryStatus: 'delivered' },
+      ok: true,
+    })
+    expect(JSON.stringify(sent)).not.toContain('123456')
+
+    const receipt = await provider.queryReceipt({
+      phone: '+8613900000000',
+      providerMessageId: 'mock-message',
+      sentAt: new Date().toISOString(),
+      traceId: 'unit-mock-receipt',
+    })
+    expect(receipt).toMatchObject({ data: { status: 'delivered' }, ok: true })
+  })
+})

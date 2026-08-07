@@ -12,6 +12,7 @@ import * as migration_20260807_004430_d3_content_relations_seo from './20260807_
 import * as migration_20260807_025608_d3_advertising_controlled_delivery from './20260807_025608_d3_advertising_controlled_delivery'
 import * as migration_20260807_042030_d3_ad_events_maintenance from './20260807_042030_d3_ad_events_maintenance'
 import * as migration_20260807_061433_d3_form_builder_entries from './20260807_061433_d3_form_builder_entries'
+import * as migration_20260807_095514_d4_customer_auth_sms from './20260807_095514_d4_customer_auth_sms'
 
 export const migrations = [
   {
@@ -83,5 +84,10 @@ export const migrations = [
     up: migration_20260807_061433_d3_form_builder_entries.up,
     down: migration_20260807_061433_d3_form_builder_entries.down,
     name: '20260807_061433_d3_form_builder_entries',
+  },
+  {
+    up: migration_20260807_095514_d4_customer_auth_sms.up,
+    down: migration_20260807_095514_d4_customer_auth_sms.down,
+    name: '20260807_095514_d4_customer_auth_sms',
   },
 ]

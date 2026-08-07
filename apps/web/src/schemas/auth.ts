@@ -158,5 +158,14 @@ export const logoutSchema = z.object({
   scope: z.enum(['current', 'all']).default('current'),
 })
 
+export const customerDeletionRequestSchema = z.object({
+  confirmation: z.literal('DELETE_MY_ACCOUNT'),
+})
+
+export const customerDeletionResponseSchema = z.object({
+  deletionRequestedAt: z.iso.datetime(),
+  status: z.literal('deletion_requested'),
+})
+
 export type SmsRequestInput = z.infer<typeof smsRequestSchema>
 export type SmsVerifyInput = z.infer<typeof smsVerifySchema>

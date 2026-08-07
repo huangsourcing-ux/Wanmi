@@ -479,10 +479,10 @@ D3-07 验证记录（2026-08-07）：建立文章、专题、TLD 页面和帮助
 
 ### 8.2 任务
 
-- [ ] 使用 Alibaba Cloud TypeScript SDK 实现阿里云短信验证码申请、验证、回执和失败分类；
-- [ ] 按手机号、IP、设备和全局额度限频，防短信轰炸与验证码重放；
-- [ ] 实现普通用户短信 OTP、自定义 Payload Strategy、opaque PostgreSQL Session、退出全部会话和注销申请；
-- [ ] 普通用户登录与管理员认证完全分离；
+- [x] 使用 Alibaba Cloud TypeScript SDK 实现阿里云短信验证码申请、验证、回执和失败分类；
+- [x] 按手机号、IP、设备和全局额度限频，防短信轰炸与验证码重放；
+- [x] 实现普通用户短信 OTP、自定义 Payload Strategy、opaque PostgreSQL Session、退出全部会话和注销申请；
+- [x] 普通用户登录与管理员认证完全分离；
 - [ ] 实现个人/组织实名模板领域模型和西部数码实名适配器；
 - [ ] 模板状态至少支持未提交、审核中、已通过、未通过、待人工处理和已停用；
 - [ ] 使用 `ali-oss` 实现私有 OSS 上传，并完成文件类型/大小检查和恶意文件检查；使用 Alibaba Cloud TypeScript SDK 调用 KMS 完成信封加密；
@@ -491,6 +491,8 @@ D3-07 验证记录（2026-08-07）：建立文章、专题、TLD 页面和帮助
 - [ ] 只有西部数码确认通过的模板可用于注册；
 - [ ] 实现模板删除与账号注销后的立即停用及 30 天清理任务；
 - [ ] 建立实名失败、状态不明、修改重提和项目负责人人工复核路径。
+
+D4-01 验证记录（2026-08-07）：在 ADR-0003 原型上完成可运营的客户认证切片，没有另建认证系统。短信 live 模式使用 Alibaba Cloud TypeScript SDK 的发送与回执查询接口，mock 模式保留；发送和回执统一归类为余额不足、模板未审、号码无效、限流和未知失败，provider 标识与投递状态进入受限字段并由 `background` Job 有界核对。`ALLOW_REAL_PROVIDER_WRITES=false` 全程保持关闭，测试没有发送真实短信。手机号、IP、设备和全局四维额度以仅含 HMAC 标识的 PostgreSQL 原子计数分别执行，OTP 仅保存哈希、5 分钟失效、限制错误次数并通过条件更新一次性消费；请求响应保持统一，不泄露手机号是否注册，日志和错误不包含完整手机号或验证码。沿用 `customers` 自定义 Strategy 和随机 opaque Session，登录时轮换会话，补齐退出全部会话与确认式注销申请，注销后进入 `deletion_requested` 并立即撤销全部会话；30 天账号/实名文件清理由第 8.2 节第 11 项后续实现。客户与管理员继续使用独立 Auth Collection、Strategy 和不同 Cookie，双向凭据均不能互用。新增命名 migration `20260807_095514_d4_customer_auth_sms`、Payload 类型、运维 Runbook、provider/隔离单元测试、四维并发限额及回执/注销 PostgreSQL 集成测试和完整 HTTP E2E。最终原样 `make check` 通过生成物/schema 漂移、全部 migration 往返、Nginx、lint、TypeScript strict、520 个单元测试、44 个 PostgreSQL/MinIO 集成测试、依赖/秘密门禁、Next.js 生产构建和 linux/amd64 同镜像；依赖审计维持既有 2 low、2 moderate，无 high/critical，Gitleaks 无泄漏。最终原样 `make test-e2e` 35/35 通过。本切片未实现实名模板或证件，未触碰订单、支付、部署、共享 ECS、生产数据或真实 provider 写操作。
 
 ### 8.3 退出条件
 
@@ -647,6 +649,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-03 | D0 安全基线更新 | 项目负责人批准 Next.js 16.2.11，并批准受控使用现有 OSS/RDS/ECS；Payload 与官方插件保持 3.86.0 | `make check`、2 个 Playwright E2E、Next.js 16.2.11 本地生产构建及 linux/amd64 同镜像构建通过；高危依赖审计清零，剩余 2 low、2 moderate | 当前 Aliyun CLI 身份看不到文档所列 ECS/RDS；3 个可见 OSS Bucket 均无法明确识别为 D0 测试目标；真实云验证仍未完成，批准标签须在获提交授权后建立 |
 | 2026-08-04 | D0 阿里云隔离验证 | 核对正确云资源；创建上海私有 D0 Bucket；在隔离 RDS 数据库执行 migration；未修改现有业务库和 ECS 工作负载 | 公共 `storage-s3` 与私有 `ali-oss` 均通过真实 OSS 上传、读取、ETag、60 秒签名和删除；PostgreSQL 16.10 初始 migration 成功且二次执行无变更；隧道中断后的 processing lock 已恢复，最终无可运行测试 Job | commerce 长任务经 SSH 隧道超时/断连，必须在同 VPC ECS Worker 复测；ECS 压测、重启、重建延期到部署阶段；RDS SSL 未启用；本轮披露的云凭据必须轮换；批准标签仍待提交授权 |
 | 2026-08-04 | D0 条件通过 | 项目负责人批准进入 D1；仅将共享 ECS 无法安全执行的内存、独立重启、同 VPC Jobs 恢复、节点重建和 RTO 原样转入 D7 | D0 其他任务、真实 OSS/隔离 RDS 证据、`make check`、2 个 Playwright 场景和秘密扫描均通过 | D7/生产上线前必须补齐 ECS 门槛；现有项目迁出前不得在共享 ECS 部署或压测 Wanmi；云凭据必须轮换；新批准标签待提交授权 |
+| 2026-08-07 | D4-01 客户认证与短信 | 完成 SDK 短信发送/回执/失败分类、四维原子限频、OTP/opaque Session、全部会话退出、注销申请及客户/管理员认证隔离 | `make check`：520 个单元测试、44 个 PostgreSQL/MinIO 集成测试及完整构建/安全门禁通过；`make test-e2e` 35/35 通过；未发送真实短信 | D4 仍进行中；实名模板、私有证件、30 天清理和人工复核留给 D4-02 及后续切片，生产上线门槛不变 |
 
 ## 13. 范围追踪矩阵
 
@@ -686,8 +689,8 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 
 ### 14.2 账号与实名
 
-- [ ] 短信轰炸、验证码重放、错误次数和全局额度；
-- [ ] Session 固定、轮换、撤销、退出全部会话和注销；
+- [x] 短信轰炸、验证码重放、错误次数和全局额度；
+- [x] Session 固定、轮换、撤销、退出全部会话和注销；
 - [ ] 实名模板越权、审核失败、状态不明和修改重提；
 - [ ] `ali-oss` 证件上传、恶意文件、KMS 加密、短时访问和审计；
 - [ ] 模板删除、账号注销和 30 天清理。

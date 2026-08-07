@@ -156,6 +156,7 @@ export const Customers: CollectionConfig = {
       options: ['active', 'disabled', 'deletion_requested'],
       required: true,
     },
+    { name: 'deletionRequestedAt', type: 'date', index: true },
   ],
 }
 
@@ -173,6 +174,57 @@ export const SmsChallenges: CollectionConfig = {
     { name: 'expiresAt', type: 'date', index: true, required: true },
     { name: 'attempts', type: 'number', defaultValue: 0, min: 0, required: true },
     { name: 'consumedAt', type: 'date', index: true },
+    {
+      name: 'deliveryStatus',
+      type: 'select',
+      defaultValue: 'not_requested',
+      index: true,
+      options: ['not_requested', 'accepted', 'pending', 'delivered', 'failed', 'unknown'],
+      required: true,
+    },
+    {
+      name: 'deliveryFailureCategory',
+      type: 'select',
+      options: [
+        'balance_insufficient',
+        'template_unapproved',
+        'invalid_number',
+        'rate_limited',
+        'unknown',
+      ],
+    },
+    { name: 'deliveryProviderCode', type: 'text' },
+    { name: 'providerMessageId', type: 'text', index: true },
+    { name: 'providerRequestId', type: 'text', index: true },
+    { name: 'receiptRequestId', type: 'text', index: true },
+    { name: 'sentAt', type: 'date', index: true },
+    { name: 'receiptCheckedAt', type: 'date', index: true },
+  ],
+}
+
+export const SmsRateLimits: CollectionConfig = {
+  slug: 'smsRateLimits',
+  access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
+  admin: { group: ADMIN_GROUPS.identity, hidden: true },
+  fields: [
+    { name: 'bucketKey', type: 'text', index: true, required: true, unique: true },
+    {
+      name: 'dimension',
+      type: 'select',
+      index: true,
+      options: ['phone', 'ip', 'device', 'global'],
+      required: true,
+    },
+    {
+      name: 'identityHash',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
+      required: true,
+    },
+    { name: 'windowStartedAt', type: 'date', index: true, required: true },
+    { name: 'count', type: 'number', min: 0, required: true },
+    { name: 'expiresAt', type: 'date', index: true, required: true },
   ],
 }
 

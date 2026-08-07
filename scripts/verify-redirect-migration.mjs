@@ -774,6 +774,92 @@ function verifyFormBuilderEntrySchema(stage) {
   }
 }
 
+function verifyCustomerAuthSmsSchema(stage) {
+  const columns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(column_name, ',' ORDER BY column_name)
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND (
+           (table_name = 'customers' AND column_name = 'deletion_requested_at')
+           OR (table_name = 'sms_challenges' AND column_name IN (
+             'delivery_failure_category', 'delivery_provider_code', 'delivery_status',
+             'provider_message_id', 'provider_request_id', 'receipt_checked_at',
+             'receipt_request_id', 'sent_at'
+           ))
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    columns !==
+    'deletion_requested_at,delivery_failure_category,delivery_provider_code,delivery_status,provider_message_id,provider_request_id,receipt_checked_at,receipt_request_id,sent_at'
+  ) {
+    throw new Error(`D4-01 customer auth/SMS columns incomplete after ${stage}: ${columns}`)
+  }
+
+  const quotaSchema = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (EXISTS (
+           SELECT 1 FROM pg_indexes
+           WHERE schemaname = 'public' AND tablename = 'sms_rate_limits'
+             AND indexname = 'sms_rate_limits_bucket_key_idx' AND indexdef LIKE 'CREATE UNIQUE INDEX%'
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'sms_rate_limits'
+             AND column_name IN ('phone', 'ip', 'device_id', 'otp', 'code')
+         ))::text || ':' ||
+         array_to_string(enum_range(NULL::enum_sms_rate_limits_dimension), ',') || ':' ||
+         array_to_string(enum_range(NULL::enum_sms_challenges_delivery_failure_category), ',')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    quotaSchema !==
+    'true:true:phone,ip,device,global:balance_insufficient,template_unapproved,invalid_number,rate_limited,unknown'
+  ) {
+    throw new Error(
+      `D4-01 rate-limit or failure-category schema invalid after ${stage}: ${quotaSchema}`,
+    )
+  }
+
+  const workflowValues = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT array_to_string(enum_range(NULL::enum_payload_jobs_workflow_slug), ',')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (!workflowValues.split(',').includes('smsReceiptReconciliation')) {
+    throw new Error(`D4-01 receipt workflow missing after ${stage}: ${workflowValues}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -789,6 +875,7 @@ try {
   verifyAdvertisingSchema('empty-database migration')
   verifyAdvertisingMaintenanceSchema('empty-database migration')
   verifyFormBuilderEntrySchema('empty-database migration')
+  verifyCustomerAuthSmsSchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -1408,8 +1495,55 @@ try {
     throw new Error(`D3-05 legacy form backfill was unsafe: ${formBackfill}`)
   }
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 99
+     WHERE name = '20260807_095514_d4_customer_auth_sms'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const customerAuthAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.tables
+           WHERE table_schema = 'public' AND table_name = 'sms_rate_limits'
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'customers'
+             AND column_name = 'deletion_requested_at'
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payload_locked_documents_rels'
+             AND column_name = 'sms_rate_limits_id'
+         ))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (customerAuthAfterDown !== 'true:true:true') {
+    throw new Error(`D4-01 migration down was incomplete: ${customerAuthAfterDown}`)
+  }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyCustomerAuthSmsSchema('D4-01 migration round trip')
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, and the D3-05 managed form migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, and the D4-01 customer authentication/SMS migration round trips.\n',
   )
 } finally {
   if (created) {

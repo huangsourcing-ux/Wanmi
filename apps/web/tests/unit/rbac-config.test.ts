@@ -112,6 +112,7 @@ const alwaysHiddenCollections = [
   'customerSessions',
   'realnameDocuments',
   'smsChallenges',
+  'smsRateLimits',
 ]
 
 const expected: Record<Persona, Record<Operation, string[]>> = {
@@ -305,6 +306,7 @@ describe('D1 administrator navigation groups', () => {
     renewals: ADMIN_GROUPS.fulfillment,
     siteSettings: ADMIN_GROUPS.content,
     smsChallenges: ADMIN_GROUPS.identity,
+    smsRateLimits: ADMIN_GROUPS.identity,
     tags: ADMIN_GROUPS.content,
     tldPages: ADMIN_GROUPS.content,
     toolPages: ADMIN_GROUPS.content,
