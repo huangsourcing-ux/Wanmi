@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import { readContentCmsFixture } from './content-cms-fixture'
+import { formSubmissionTracePrefix } from './form-builder-fixture'
 import { redirectFixtureFrom } from './redirect-fixture'
 
 const canonicalOrigin = 'http://127.0.0.1:3100'
@@ -316,6 +317,9 @@ test('planned public skeleton routes are available and unknown slugs return 404'
     '/legal/terms',
     '/legal/cookies',
     '/legal/advertising',
+    '/contact',
+    '/feedback',
+    '/requests',
   ]) {
     const response = await request.get(path)
     expect(response.status(), path).toBe(200)
@@ -344,6 +348,9 @@ test('robots, sitemap and the branded Open Graph image expose only stable public
   const sitemapText = await sitemap.text()
   expect(sitemapText).toContain(`<loc>${canonicalOrigin}/tools/domain-search</loc>`)
   expect(sitemapText).toContain(`<loc>${canonicalOrigin}/legal/privacy</loc>`)
+  expect(sitemapText).toContain(`<loc>${canonicalOrigin}/contact</loc>`)
+  expect(sitemapText).toContain(`<loc>${canonicalOrigin}/feedback</loc>`)
+  expect(sitemapText).toContain(`<loc>${canonicalOrigin}/requests</loc>`)
   expect(sitemapText).not.toContain('/admin')
   expect(sitemapText).not.toContain('/api/')
   expect(sitemapText).not.toContain('?q=')
@@ -355,6 +362,113 @@ test('robots, sitemap and the branded Open Graph image expose only stable public
   expect(image.ok()).toBe(true)
   expect(image.headers()['content-type']).toContain('image/png')
   expect((await image.body()).byteLength).toBeGreaterThan(1_000)
+})
+
+test('managed feedback form submits safely and renders success, failure and rate-limit states', async ({
+  page,
+}) => {
+  const successTraceId = `${formSubmissionTracePrefix}-success`
+  const observedRequests: Array<{
+    body: Record<string, unknown>
+    headers: Record<string, string>
+  }> = []
+  await page
+    .context()
+    .addCookies([{ name: 'tracking_test_cookie', url: canonicalOrigin, value: 'must-not-be-sent' }])
+  await page.route('**/api/v1/forms/submissions', async (route) => {
+    const headers = await route.request().allHeaders()
+    observedRequests.push({
+      body: route.request().postDataJSON() as Record<string, unknown>,
+      headers,
+    })
+    await route.continue({
+      headers: {
+        ...headers,
+        'x-forwarded-for': '198.51.100.205',
+        'x-request-id': successTraceId,
+      },
+    })
+  })
+  await page.goto('/feedback')
+
+  await expect(page.getByRole('heading', { level: 1, name: '提交反馈' })).toBeVisible()
+  await expect(page.getByText(/不处理订单、支付、退款、实名或文件上传/)).toBeVisible()
+  await page.getByLabel('联系方式（选填）').fill('owner@example.test')
+  await page.getByLabel(/反馈类型/).selectOption('tool_error')
+  await page.getByLabel(/相关工具/).selectOption('domain-search')
+  await page.getByLabel('相关页面路径（选填）').fill('/tools/domain-search?q=wanmi.net')
+  await page.getByLabel('请求 ID（选填）').fill('e2e-feedback-request')
+  await page.getByLabel(/反馈内容/).fill('wanmi.net 的查询结果需要复核')
+  await page.getByRole('button', { name: '提交反馈' }).click()
+
+  await expect(page.getByText('提交成功')).toBeVisible()
+  await expect(page.getByText(successTraceId)).toBeVisible()
+  expect(observedRequests).toHaveLength(1)
+  expect(observedRequests[0].body).toMatchObject({
+    purpose: 'feedback',
+    values: {
+      contact: 'owner@example.test',
+      feedbackType: 'tool_error',
+      message: 'wanmi.net 的查询结果需要复核',
+      pagePath: '/tools/domain-search?q=wanmi.net',
+      requestId: 'e2e-feedback-request',
+      tool: 'domain-search',
+    },
+  })
+  expect(observedRequests[0].headers.cookie).toBeUndefined()
+  expect(observedRequests[0].headers.referer).toBe(`${canonicalOrigin}/`)
+
+  await page.unroute('**/api/v1/forms/submissions')
+  await page.route('**/api/v1/forms/submissions', async (route) => {
+    await route.fulfill({
+      json: {
+        problem: {
+          action: '请稍后再试；若问题持续，可保留本页请求 ID',
+          code: 'FORM_RATE_LIMITED',
+          detail: '表单提交过于频繁，请稍后再试',
+          message: '表单提交过于频繁，请稍后再试',
+          retryAfterSeconds: 300,
+          retryable: true,
+          status: 429,
+          title: '表单提交过于频繁',
+          traceId: `${formSubmissionTracePrefix}-limited`,
+          type: 'urn:wanmi:problem:FORM_RATE_LIMITED',
+        },
+        state: 'rate_limited',
+      },
+      status: 429,
+    })
+  })
+  await page.getByLabel(/反馈类型/).selectOption('suggestion')
+  await page.getByLabel(/反馈内容/).fill('再次提交以验证限流状态')
+  await page.getByRole('button', { name: '提交反馈' }).click()
+  const formAlert = page.locator('[data-slot="alert"][role="alert"]')
+  await expect(formAlert).toContainText('表单提交过于频繁')
+  await expect(formAlert).toContainText(`${formSubmissionTracePrefix}-limited`)
+
+  await page.unroute('**/api/v1/forms/submissions')
+  await page.route('**/api/v1/forms/submissions', async (route) => {
+    await route.fulfill({
+      json: {
+        problem: {
+          action: '请稍后重试',
+          code: 'INTERNAL_ERROR',
+          detail: '服务暂时不可用',
+          message: '服务暂时不可用',
+          retryable: true,
+          status: 503,
+          title: '表单提交失败',
+          traceId: `${formSubmissionTracePrefix}-error`,
+          type: 'urn:wanmi:problem:INTERNAL_ERROR',
+        },
+        state: 'error',
+      },
+      status: 503,
+    })
+  })
+  await page.getByRole('button', { name: '提交反馈' }).click()
+  await expect(formAlert).toContainText('表单提交失败')
+  await expect(formAlert).toContainText(`${formSubmissionTracePrefix}-error`)
 })
 
 test('WHOIS stays separate from availability and keeps result requests and analytics private', async ({
@@ -1018,7 +1132,9 @@ test('published content and branded not-found states work on mobile', async ({ p
   await page.setViewportSize({ height: 844, width: 390 })
   await page.goto('/articles')
   await expect(page.getByRole('heading', { level: 1, name: '实用内容' })).toBeVisible()
-  await expect(page.locator(`a[href="${contentFixture.relationArticlePath}"]`).first()).toBeVisible()
+  await expect(
+    page.locator(`a[href="${contentFixture.relationArticlePath}"]`).first(),
+  ).toBeVisible()
   await expect(page.getByText('D3 草稿帮助')).toHaveCount(0)
 
   await page.goto('/tools/not-a-tool')

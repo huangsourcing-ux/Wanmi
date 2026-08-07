@@ -645,6 +645,135 @@ function verifyAdvertisingMaintenanceSchema(stage) {
   }
 }
 
+function verifyFormBuilderEntrySchema(stage) {
+  const columns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(column_name, ',' ORDER BY column_name)
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'form_submissions'
+         AND column_name IN (
+           'client_key_hash', 'contact_masked', 'page_path', 'purpose', 'request_id',
+           'status', 'status_updated_at', 'status_updated_by_id', 'summary', 'tool', 'trace_id'
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (columns.split(',').filter(Boolean).length !== 11) {
+    throw new Error(`D3-05 form submission columns incomplete after ${stage}: ${columns}`)
+  }
+
+  const indexes = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(indexdef, E'\n' ORDER BY tablename, indexname)
+       FROM pg_indexes
+       WHERE schemaname = 'public'
+         AND (
+           (tablename = 'forms' AND indexname = 'forms_purpose_idx')
+           OR (tablename = 'form_submissions' AND indexname IN (
+             'form_submissions_client_key_hash_idx', 'form_submissions_purpose_idx',
+             'form_submissions_status_idx', 'form_submissions_trace_id_idx'
+           ))
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    !/UNIQUE INDEX .*\(purpose\)/.test(indexes) ||
+    !/\(client_key_hash\)/.test(indexes) ||
+    !/\(status\)/.test(indexes) ||
+    !/\(trace_id\)/.test(indexes)
+  ) {
+    throw new Error(`D3-05 form indexes incomplete after ${stage}: ${indexes}`)
+  }
+
+  const managedForms = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `WITH managed_fields AS (
+         SELECT _parent_id AS form_id, name, 'checkbox' AS field_type FROM forms_blocks_checkbox
+         UNION ALL SELECT _parent_id, name, 'email' FROM forms_blocks_email
+         UNION ALL SELECT _parent_id, COALESCE(block_name, '__message__'), 'message'
+         FROM forms_blocks_message
+         UNION ALL SELECT _parent_id, name, 'number' FROM forms_blocks_number
+         UNION ALL SELECT _parent_id, name, 'select' FROM forms_blocks_select
+         UNION ALL SELECT _parent_id, name, 'text' FROM forms_blocks_text
+         UNION ALL SELECT _parent_id, name, 'textarea' FROM forms_blocks_textarea
+       )
+       SELECT string_agg(form_record.purpose::text || ':' || field_count::text || ':' || field_names,
+                         '|' ORDER BY form_record.purpose::text)
+       FROM forms form_record
+       JOIN LATERAL (
+         SELECT count(*) AS field_count,
+                string_agg(field.name || '=' || field.field_type, ',' ORDER BY field.name) AS field_names
+         FROM managed_fields field WHERE field.form_id = form_record.id
+       ) fields ON true
+       WHERE form_record.purpose IN ('contact', 'feedback', 'request')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    managedForms !==
+    'contact:4:contact=text,message=textarea,name=text,topic=select|feedback:6:contact=text,feedbackType=select,message=textarea,pagePath=text,requestId=text,tool=select|request:4:consent=checkbox,contact=text,message=textarea,requestType=select'
+  ) {
+    throw new Error(`D3-05 approved forms incomplete after ${stage}: ${managedForms}`)
+  }
+
+  const unsafeConfiguration = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (EXISTS (
+           SELECT 1 FROM forms form_record
+           WHERE form_record.purpose IN ('contact', 'feedback', 'request')
+             AND (form_record.confirmation_type IS DISTINCT FROM 'message'
+               OR form_record.redirect_url IS NOT NULL)
+         ))::text || ':' ||
+         (EXISTS (
+           SELECT 1 FROM forms_emails email
+           JOIN forms form_record ON form_record.id = email._parent_id
+           WHERE form_record.purpose IN ('contact', 'feedback', 'request')
+         ))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (unsafeConfiguration !== 'false:false') {
+    throw new Error(
+      `D3-05 managed forms have unsafe delivery after ${stage}: ${unsafeConfiguration}`,
+    )
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -659,6 +788,7 @@ try {
   verifyContentRelationsSeoSchema('empty-database migration')
   verifyAdvertisingSchema('empty-database migration')
   verifyAdvertisingMaintenanceSchema('empty-database migration')
+  verifyFormBuilderEntrySchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -1185,8 +1315,101 @@ try {
     throw new Error(`D3-04 safe internal target backfill was not reachable: ${safeInternalHealth}`)
   }
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 11
+     WHERE name = '20260807_061433_d3_form_builder_entries'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const formSchemaAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'form_submissions'
+             AND column_name = 'client_key_hash'
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM pg_indexes
+           WHERE schemaname = 'public' AND indexname = 'forms_purpose_idx'
+         ))::text || ':' ||
+         (SELECT count(*) FROM forms WHERE purpose IN ('contact', 'feedback', 'request'))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (formSchemaAfterDown !== 'true:true:3') {
+    throw new Error(`D3-05 migration down was incomplete or destructive: ${formSchemaAfterDown}`)
+  }
+
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `WITH legacy_submission AS (
+       INSERT INTO form_submissions (form_id, updated_at, created_at)
+       SELECT id, NOW(), NOW() FROM forms WHERE purpose = 'feedback'
+       RETURNING id
+     )
+     INSERT INTO form_submissions_submission_data (
+       _order, _parent_id, id, field, value
+     )
+     SELECT 0, id, 'd3-05-legacy-html', 'message', '<strong>legacy</strong>'
+     FROM legacy_submission
+     UNION ALL
+     SELECT 1, id, 'd3-05-legacy-domain', 'queryDomain', 'legacy.example'
+     FROM legacy_submission`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyFormBuilderEntrySchema('D3-05 migration round trip')
+  const formBackfill = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT submission.purpose::text || ':' || submission.status::text || ':' ||
+              submission.summary || ':' ||
+              string_agg(data.value, ',' ORDER BY data._order)
+       FROM form_submissions submission
+       JOIN form_submissions_submission_data data ON data._parent_id = submission.id
+       WHERE data.id IN ('d3-05-legacy-html', 'd3-05-legacy-domain')
+       GROUP BY submission.id`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    formBackfill !==
+    'feedback:new:[遗留提交，待系统管理员复核]:[遗留内容已隐藏，待人工复核],[遗留内容已隐藏，待人工复核]'
+  ) {
+    throw new Error(`D3-05 legacy form backfill was unsafe: ${formBackfill}`)
+  }
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, and the D3-04 event/maintenance migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, and the D3-05 managed form migration round trips.\n',
   )
 } finally {
   if (created) {

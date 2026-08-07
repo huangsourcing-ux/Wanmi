@@ -10,7 +10,8 @@ import {
   contentAdminHidden,
   contentManagers,
   deny,
-  systemAdminHidden,
+  operationalReaders,
+  operationsAdminHidden,
   systemAdminOnly,
 } from '@/access/roles'
 import { AppError } from '@/lib/errors'
@@ -25,6 +26,12 @@ import {
 import { contentPath } from '@/lib/seo'
 import { getPublicToolDefinition, type PublicToolSlug } from '@/lib/site-config'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
+import { assertManagedFormDefinition } from '@/services/forms/form-contracts'
+import {
+  appendFormSubmissionFields,
+  auditFormSubmissionStatus,
+  guardAndSanitizeFormSubmission,
+} from '@/services/forms/form-submissions'
 
 function normalizePath(value: unknown): string {
   try {
@@ -245,14 +252,21 @@ const allowedFormBlocks = new Set([
   'textarea',
 ])
 
-export const validateSafeForm: CollectionBeforeValidateHook = ({ data }) => {
+export const validateSafeForm: CollectionBeforeValidateHook = ({ data, originalDoc }) => {
   if (!data) return data
-  for (const field of data.fields ?? []) {
+  const fields = data.fields ?? originalDoc?.fields ?? []
+  for (const field of fields) {
     if (!allowedFormBlocks.has(field.blockType)) {
       throw new AppError('FORM_FIELD_FORBIDDEN', '表单不允许支付、实名或文件上传字段', 400)
     }
   }
   if (data.redirect?.url) data.redirect.url = normalizePath(data.redirect.url)
+  assertManagedFormDefinition({
+    ...originalDoc,
+    ...data,
+    emails: data.emails ?? originalDoc?.emails,
+    fields,
+  })
   return data
 }
 
@@ -284,12 +298,22 @@ export const formOverrides = {
 
 export const formSubmissionOverrides = {
   access: {
-    create: () => true,
+    create: deny,
     delete: deny,
-    read: systemAdminOnly,
+    read: operationalReaders,
     update: systemAdminOnly,
   },
-  admin: { group: ADMIN_GROUPS.operations, hidden: systemAdminHidden },
+  admin: {
+    defaultColumns: ['purpose', 'summary', 'contactMasked', 'status', 'traceId', 'createdAt'],
+    group: ADMIN_GROUPS.operations,
+    hidden: operationsAdminHidden,
+    useAsTitle: 'summary',
+  },
+  fields: appendFormSubmissionFields,
+  hooks: {
+    afterChange: [auditFormSubmissionStatus],
+    beforeChange: [guardAndSanitizeFormSubmission],
+  },
 }
 
 export function appendFormPurposeField({ defaultFields }: { defaultFields: Field[] }): Field[] {
@@ -299,8 +323,10 @@ export function appendFormPurposeField({ defaultFields }: { defaultFields: Field
       name: 'purpose',
       type: 'select',
       defaultValue: 'feedback',
+      index: true,
       options: ['contact', 'feedback', 'request'],
       required: true,
+      unique: true,
     },
   ]
 }

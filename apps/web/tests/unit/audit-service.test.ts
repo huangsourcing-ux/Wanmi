@@ -32,6 +32,7 @@ describe('shared audit event service', () => {
         'content.publish.scheduled',
         'content.revision.published',
         'content.status.changed',
+        'form_submission.status_changed',
         'redirect.create',
         'redirect.delete',
         'redirect.update',
