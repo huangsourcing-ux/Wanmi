@@ -19,7 +19,7 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number]
 export const REALNAME_STATUSES = [
   'draft',
   'pending_review',
-  'verified',
+  'approved',
   'rejected',
   'manual_review',
   'disabled',

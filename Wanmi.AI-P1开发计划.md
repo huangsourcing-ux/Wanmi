@@ -483,16 +483,18 @@ D3-07 验证记录（2026-08-07）：建立文章、专题、TLD 页面和帮助
 - [x] 按手机号、IP、设备和全局额度限频，防短信轰炸与验证码重放；
 - [x] 实现普通用户短信 OTP、自定义 Payload Strategy、opaque PostgreSQL Session、退出全部会话和注销申请；
 - [x] 普通用户登录与管理员认证完全分离；
-- [ ] 实现个人/组织实名模板领域模型和西部数码实名适配器；
-- [ ] 模板状态至少支持未提交、审核中、已通过、未通过、待人工处理和已停用；
+- [x] 实现个人/组织实名模板领域模型和西部数码实名适配器；
+- [x] 模板状态至少支持未提交、审核中、已通过、未通过、待人工处理和已停用；
 - [ ] 使用 `ali-oss` 实现私有 OSS 上传，并完成文件类型/大小检查和恶意文件检查；使用 Alibaba Cloud TypeScript SDK 调用 KMS 完成信封加密；
 - [ ] 实现短时签名访问、最小权限和证件查看/下载/提交/删除审计；
 - [ ] 后台列表、日志和错误不得显示证件内容；
-- [ ] 只有西部数码确认通过的模板可用于注册；
+- [x] 只有西部数码确认通过的模板可用于注册；
 - [ ] 实现模板删除与账号注销后的立即停用及 30 天清理任务；
 - [ ] 建立实名失败、状态不明、修改重提和项目负责人人工复核路径。
 
 D4-01 验证记录（2026-08-07）：在 ADR-0003 原型上完成可运营的客户认证切片，没有另建认证系统。短信 live 模式使用 Alibaba Cloud TypeScript SDK 的发送与回执查询接口，mock 模式保留；发送和回执统一归类为余额不足、模板未审、号码无效、限流和未知失败，provider 标识与投递状态进入受限字段并由 `background` Job 有界核对。`ALLOW_REAL_PROVIDER_WRITES=false` 全程保持关闭，测试没有发送真实短信。手机号、IP、设备和全局四维额度以仅含 HMAC 标识的 PostgreSQL 原子计数分别执行，OTP 仅保存哈希、5 分钟失效、限制错误次数并通过条件更新一次性消费；请求响应保持统一，不泄露手机号是否注册，日志和错误不包含完整手机号或验证码。沿用 `customers` 自定义 Strategy 和随机 opaque Session，登录时轮换会话，补齐退出全部会话与确认式注销申请，注销后进入 `deletion_requested` 并立即撤销全部会话；30 天账号/实名文件清理由第 8.2 节第 11 项后续实现。客户与管理员继续使用独立 Auth Collection、Strategy 和不同 Cookie，双向凭据均不能互用。新增命名 migration `20260807_095514_d4_customer_auth_sms`、Payload 类型、运维 Runbook、provider/隔离单元测试、四维并发限额及回执/注销 PostgreSQL 集成测试和完整 HTTP E2E。最终原样 `make check` 通过生成物/schema 漂移、全部 migration 往返、Nginx、lint、TypeScript strict、520 个单元测试、44 个 PostgreSQL/MinIO 集成测试、依赖/秘密门禁、Next.js 生产构建和 linux/amd64 同镜像；依赖审计维持既有 2 low、2 moderate，无 high/critical，Gitleaks 无泄漏。最终原样 `make test-e2e` 35/35 通过。本切片未实现实名模板或证件，未触碰订单、支付、部署、共享 ECS、生产数据或真实 provider 写操作。
+
+D4-02 验证记录（2026-08-07）：按仓库本地《西部数码业务 API 接口文档（v2）》的 `auditsub` 字段建立个人/组织实名模板模型，并在 adapter 内完成语义字段到 `c_*` 请求字段的精确映射；本切片只提供 deterministic mock/fixture，不包含 live transport，也未调用真实西部数码接口。模板状态固定为 `draft`、`pending_review`、`approved`、`rejected`、`manual_review` 和 `disabled`，非法迁移与绕过服务直接写状态均拒绝，每次合法状态变化沿用同一 `req` 写入不含证件、完整手机号或原始 provider 错误的审计。模板读取按 customer 行级隔离，后台默认列表只显示模板别名、类型、状态、安全失败分类和更新时间；provider 创建/查询不可用或返回未知状态时进入 `manual_review + unknown`，绝不映射为通过。注册前服务端门禁同时核对 customer 归属、`approved`、provider `approved`、provider 模板 ID 和确认时间；草稿、审核中、未通过、待人工处理、已停用及他人模板均拒绝。新增 migration `20260807_114644_d4_realname_templates` 和历史升级保护，旧占位模板统一安全停用，不继承旧 `verified` 可用性或任意失败文本。最终原样 `make check` 通过生成物/schema 漂移、空库/历史升级及全部 migration 往返、Nginx、lint、TypeScript strict、524 个单元测试、46 个 PostgreSQL/MinIO 集成测试、依赖/秘密门禁、Next.js 生产构建和 linux/amd64 同镜像；依赖审计维持既有 2 low、2 moderate，无 high/critical，Gitleaks 无泄漏。最终原样 `make test-e2e` 35/35 通过。本切片未实现证件文件上传、OSS/KMS、短时访问、30 天清理或人工复核恢复路径，未触碰订单、支付、部署、共享 ECS 或生产数据。
 
 ### 8.3 退出条件
 

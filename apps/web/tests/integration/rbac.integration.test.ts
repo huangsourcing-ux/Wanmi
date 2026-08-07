@@ -8,6 +8,8 @@ import type { AdminRole } from '@/lib/domain'
 import type { Article } from '@/payload-types'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
 
+import { realnameTemplateFixture } from '../fixtures/realname'
+
 type FixtureCollection =
   | 'advertisers'
   | 'articles'
@@ -291,10 +293,9 @@ describe('D1 Payload role boundaries', () => {
       payload.create({
         collection: 'realnameTemplates',
         data: {
+          ...realnameTemplateFixture(),
           customer: owner.id,
           displayName: `${fixturePrefix}-template`,
-          status: 'verified',
-          type: 'individual',
         },
         overrideAccess: true,
       }),
@@ -527,11 +528,11 @@ describe('D1 Payload role boundaries', () => {
       payload.create({
         collection: 'realnameTemplates',
         data: {
+          ...realnameTemplateFixture(),
           customer: customer.id,
           displayName: `${fixturePrefix}-generic-write`,
           status: 'draft',
-          type: 'individual',
-        },
+        } as never,
         overrideAccess: false,
         user: customerUser as never,
       }),
@@ -542,10 +543,9 @@ describe('D1 Payload role boundaries', () => {
       payload.create({
         collection: 'realnameTemplates',
         data: {
+          ...realnameTemplateFixture(),
           customer: customer.id,
           displayName: `${fixturePrefix}-trusted-write`,
-          status: 'draft',
-          type: 'individual',
         },
         overrideAccess: true,
       }),
@@ -553,18 +553,19 @@ describe('D1 Payload role boundaries', () => {
     await expect(
       payload.update({
         collection: 'realnameTemplates',
-        data: { status: 'verified' },
+        data: { status: 'approved' },
         id: trustedTemplate.id,
         overrideAccess: false,
         user: systemAdmin as never,
       }),
     ).rejects.toThrow()
-    const trustedUpdate = await payload.update({
-      collection: 'realnameTemplates',
-      data: { status: 'verified' },
-      id: trustedTemplate.id,
-      overrideAccess: true,
-    })
-    expect(trustedUpdate.status).toBe('verified')
+    await expect(
+      payload.update({
+        collection: 'realnameTemplates',
+        data: { status: 'approved' },
+        id: trustedTemplate.id,
+        overrideAccess: true,
+      }),
+    ).rejects.toThrow(/只能通过实名服务变更/u)
   })
 })

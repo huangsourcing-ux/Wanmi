@@ -860,6 +860,72 @@ function verifyCustomerAuthSmsSchema(stage) {
   }
 }
 
+function verifyRealnameTemplateSchema(stage) {
+  const columns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(column_name, ',' ORDER BY column_name)
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'realname_templates'
+         AND column_name IN (
+           'address_chinese', 'address_english', 'city_chinese', 'city_english',
+           'contact_first_name_chinese', 'contact_first_name_english',
+           'contact_last_name_chinese', 'contact_last_name_english', 'country_code',
+           'district_chinese', 'email', 'full_name_chinese',
+           'identity_document_number', 'identity_document_type',
+           'organization_name_chinese', 'organization_name_english', 'phone',
+           'phone_area_code', 'phone_country_code', 'phone_extension', 'phone_type',
+           'postal_code', 'provider_confirmed_at', 'provider_last_checked_at',
+           'provider_request_id', 'provider_review_state', 'province_chinese',
+           'province_english'
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (columns.split(',').filter(Boolean).length !== 28) {
+    throw new Error(`D4-02 real-name template columns incomplete after ${stage}: ${columns}`)
+  }
+
+  const constraints = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         array_to_string(enum_range(NULL::enum_realname_templates_status), ',') || ':' ||
+         array_to_string(enum_range(NULL::enum_realname_templates_provider_review_state), ',') || ':' ||
+         (EXISTS (
+           SELECT 1 FROM pg_indexes WHERE schemaname = 'public'
+             AND tablename = 'realname_templates' AND indexname = 'customer_status_idx'
+         ))::text || ':' ||
+         (EXISTS (
+           SELECT 1 FROM information_schema.tables WHERE table_schema = 'public'
+             AND table_name = 'realname_templates_applicable_scopes'
+         ))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    constraints !==
+    'draft,pending_review,approved,rejected,manual_review,disabled:unsubmitted,pending,approved,rejected,unknown:true:true'
+  ) {
+    throw new Error(`D4-02 real-name template constraints invalid after ${stage}: ${constraints}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -876,6 +942,7 @@ try {
   verifyAdvertisingMaintenanceSchema('empty-database migration')
   verifyFormBuilderEntrySchema('empty-database migration')
   verifyCustomerAuthSmsSchema('empty-database migration')
+  verifyRealnameTemplateSchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -1542,8 +1609,90 @@ try {
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
   verifyCustomerAuthSmsSchema('D4-01 migration round trip')
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 100
+     WHERE name = '20260807_114644_d4_realname_templates'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const realnameAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.tables WHERE table_schema = 'public'
+             AND table_name = 'realname_templates_applicable_scopes'
+         ))::text || ':' ||
+         array_to_string(enum_range(NULL::enum_realname_templates_status), ',')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (realnameAfterDown !== 'true:draft,pending_review,verified,rejected,manual_review,disabled') {
+    throw new Error(`D4-02 migration down was incomplete: ${realnameAfterDown}`)
+  }
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `WITH legacy_customer AS (
+       INSERT INTO customers (phone, phone_masked, status, updated_at, created_at)
+       VALUES ('legacy-d4-02-phone', '***legacy', 'active', NOW(), NOW())
+       RETURNING id
+     )
+     INSERT INTO realname_templates (
+       customer_id, display_name, type, status, provider_template_id,
+       safe_failure_reason, updated_at, created_at
+     )
+     SELECT id, 'legacy realname template', 'individual', 'verified', 'legacy-provider-id',
+            'legacy unsafe provider detail', NOW(), NOW()
+     FROM legacy_customer`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyRealnameTemplateSchema('D4-02 migration round trip')
+  const realnameBackfill = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT template.status::text || ':' || template.provider_review_state::text || ':' ||
+              COALESCE(template.safe_failure_reason::text, 'null') || ':' ||
+              template.phone || ':' || template.identity_document_type || ':' || scope.value::text
+       FROM realname_templates template
+       JOIN realname_templates_applicable_scopes scope ON scope.parent_id = template.id
+       WHERE template.display_name = 'legacy realname template'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (realnameBackfill !== 'disabled:unknown:null:000:UNKNOWN:cg') {
+    throw new Error(`D4-02 legacy template backfill was unsafe: ${realnameBackfill}`)
+  }
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, and the D4-01 customer authentication/SMS migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, and the D4-02 real-name template migration round trips.\n',
   )
 } finally {
   if (created) {
