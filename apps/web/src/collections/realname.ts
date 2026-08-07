@@ -6,7 +6,6 @@ import {
   ownOrSystem,
   sensitiveFieldRead,
   systemAdminHidden,
-  systemAdminOnly,
 } from '@/access/roles'
 import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 import { REALNAME_STATUSES } from '@/lib/domain'
@@ -179,8 +178,12 @@ export const RealnameTemplates: CollectionConfig = {
 
 export const RealnameDocuments: CollectionConfig = {
   slug: 'realnameDocuments',
-  access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
-  admin: { group: ADMIN_GROUPS.realname, hidden: true },
+  access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
+  admin: {
+    defaultColumns: ['id', 'storageState', 'fileKind', 'sizeBytes', 'createdAt'],
+    group: ADMIN_GROUPS.realname,
+    hidden: true,
+  },
   fields: [
     {
       name: 'customer',
@@ -200,6 +203,7 @@ export const RealnameDocuments: CollectionConfig = {
       name: 'objectKey',
       type: 'text',
       access: { read: sensitiveFieldRead },
+      admin: { hidden: true },
       required: true,
       unique: true,
     },
@@ -207,11 +211,54 @@ export const RealnameDocuments: CollectionConfig = {
       name: 'encryptedDataKey',
       type: 'text',
       access: { read: sensitiveFieldRead },
+      admin: { hidden: true },
+      required: true,
+    },
+    {
+      name: 'encryptionVersion',
+      type: 'select',
+      defaultValue: 'aes-256-gcm-v1',
+      options: ['aes-256-gcm-v1'],
+      required: true,
+    },
+    {
+      name: 'iv',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      admin: { hidden: true },
+      required: true,
+    },
+    {
+      name: 'authTag',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      admin: { hidden: true },
+      required: true,
+    },
+    {
+      name: 'fileKind',
+      type: 'select',
+      options: ['jpeg', 'png', 'pdf'],
       required: true,
     },
     { name: 'contentType', type: 'text', required: true },
     { name: 'sizeBytes', type: 'number', min: 1, required: true },
-    { name: 'sha256', type: 'text', access: { read: sensitiveFieldRead }, required: true },
+    {
+      name: 'sha256',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      admin: { hidden: true },
+      required: true,
+    },
+    {
+      name: 'storageState',
+      type: 'select',
+      defaultValue: 'uploading',
+      index: true,
+      options: ['uploading', 'active', 'upload_failed', 'deleting', 'deleted'],
+      required: true,
+    },
+    { name: 'submittedAt', type: 'date', index: true },
     { name: 'deletedAt', type: 'date', index: true },
   ],
 }

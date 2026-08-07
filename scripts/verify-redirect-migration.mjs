@@ -926,6 +926,61 @@ function verifyRealnameTemplateSchema(stage) {
   }
 }
 
+function verifyRealnameDocumentSchema(stage) {
+  const columns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(column_name, ',' ORDER BY column_name)
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'realname_documents'
+         AND column_name IN (
+           'auth_tag', 'encryption_version', 'file_kind', 'iv', 'storage_state', 'submitted_at'
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (columns.split(',').filter(Boolean).length !== 6) {
+    throw new Error(`D4-03 private document columns incomplete after ${stage}: ${columns}`)
+  }
+
+  const constraints = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         array_to_string(enum_range(NULL::enum_realname_documents_encryption_version), ',') || ':' ||
+         array_to_string(enum_range(NULL::enum_realname_documents_file_kind), ',') || ':' ||
+         array_to_string(enum_range(NULL::enum_realname_documents_storage_state), ',') || ':' ||
+         (EXISTS (
+           SELECT 1 FROM pg_indexes WHERE schemaname = 'public'
+             AND tablename = 'realname_documents'
+             AND indexname = 'realname_documents_storage_state_idx'
+         ))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    constraints !==
+    'aes-256-gcm-v1:jpeg,png,pdf:uploading,active,upload_failed,deleting,deleted:true'
+  ) {
+    throw new Error(`D4-03 private document constraints invalid after ${stage}: ${constraints}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -943,6 +998,7 @@ try {
   verifyFormBuilderEntrySchema('empty-database migration')
   verifyCustomerAuthSmsSchema('empty-database migration')
   verifyRealnameTemplateSchema('empty-database migration')
+  verifyRealnameDocumentSchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -1691,8 +1747,85 @@ try {
     throw new Error(`D4-02 legacy template backfill was unsafe: ${realnameBackfill}`)
   }
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 101
+     WHERE name = '20260807_125811_d4_private_realname_documents'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const documentAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT NOT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'realname_documents'
+           AND column_name IN (
+             'auth_tag', 'encryption_version', 'file_kind', 'iv', 'storage_state', 'submitted_at'
+           )
+       )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (documentAfterDown !== 't') {
+    throw new Error(`D4-03 migration down was incomplete: ${documentAfterDown}`)
+  }
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `INSERT INTO realname_documents (
+       customer_id, template_id, object_key, encrypted_data_key, content_type,
+       size_bytes, sha256, updated_at, created_at
+     )
+     SELECT customer_id, id, 'legacy/private/document', 'legacy-key', 'image/jpeg',
+            128, repeat('0', 64), NOW(), NOW()
+     FROM realname_templates
+     WHERE display_name = 'legacy realname template'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyRealnameDocumentSchema('D4-03 migration round trip')
+  const documentBackfill = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT storage_state::text || ':' || file_kind::text || ':' || iv || ':' || auth_tag
+       FROM realname_documents
+       WHERE object_key = 'legacy/private/document'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (documentBackfill !== 'upload_failed:jpeg:legacy-unavailable:legacy-unavailable') {
+    throw new Error(`D4-03 legacy document backfill was unsafe: ${documentBackfill}`)
+  }
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, and the D4-02 real-name template migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, and the D4-03 private-document migration round trips.\n',
   )
 } finally {
   if (created) {

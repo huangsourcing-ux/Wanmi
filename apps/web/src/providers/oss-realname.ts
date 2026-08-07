@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import OSS from 'ali-oss'
 
 import { getEnv } from '@/lib/env'
@@ -19,8 +19,12 @@ export class MockRealnameObjectProvider implements RealnameObjectProvider {
 
   async signRead(input: { expiresSeconds: number; key: string; traceId: string }) {
     if (!objects.has(input.key)) throw new Error('Mock object not found')
+    const opaqueId = createHash('sha256')
+      .update(input.key)
+      .update(randomBytes(16))
+      .digest('base64url')
     return mockSuccess({
-      url: `mock-oss://private/${encodeURIComponent(input.key)}?ttl=${input.expiresSeconds}`,
+      url: `mock-oss://private/${opaqueId}?ttl=${input.expiresSeconds}`,
     })
   }
 
@@ -36,16 +40,56 @@ export class MockRealnameObjectProvider implements RealnameObjectProvider {
   }
 }
 
+class DisabledRealnameObjectProvider implements RealnameObjectProvider {
+  async health() {
+    return mockSuccess({ healthy: false })
+  }
+
+  async upload(_input: { body: Uint8Array; key: string; traceId: string }) {
+    void _input.body
+    return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
+  }
+
+  async read(_input: { key: string; traceId: string }) {
+    void _input.key
+    void _input.traceId
+    return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
+  }
+
+  async signRead(_input: { expiresSeconds: number; key: string; traceId: string }) {
+    void _input.expiresSeconds
+    void _input.key
+    void _input.traceId
+    return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
+  }
+
+  async deleteObject(_input: { key: string; traceId: string }) {
+    void _input.key
+    void _input.traceId
+    return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
+  }
+}
+
 type AliOssClient = Pick<OSS, 'delete' | 'get' | 'put' | 'signatureUrl'>
 
 export class AliOssRealnameProvider implements RealnameObjectProvider {
-  constructor(private readonly client: AliOssClient) {}
+  constructor(
+    private readonly client: AliOssClient,
+    private readonly allowedPrefix?: string,
+  ) {}
+
+  private keyAllowed(key: string): boolean {
+    return !this.allowedPrefix || key.startsWith(`${this.allowedPrefix}/`)
+  }
 
   async health() {
     return mockSuccess({ healthy: true })
   }
 
   async upload(input: { body: Uint8Array; key: string; traceId: string }) {
+    if (!this.keyAllowed(input.key)) {
+      return mockFailure('OSS_KEY_OUT_OF_SCOPE', { statusKnown: true })
+    }
     if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
       return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
     }
@@ -59,6 +103,9 @@ export class AliOssRealnameProvider implements RealnameObjectProvider {
   }
 
   async read(input: { key: string; traceId: string }) {
+    if (!this.keyAllowed(input.key)) {
+      return mockFailure('OSS_KEY_OUT_OF_SCOPE', { statusKnown: true })
+    }
     if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
       return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
     }
@@ -79,6 +126,9 @@ export class AliOssRealnameProvider implements RealnameObjectProvider {
   }
 
   async signRead(input: { expiresSeconds: number; key: string; traceId: string }) {
+    if (!this.keyAllowed(input.key) || input.expiresSeconds < 1 || input.expiresSeconds > 120) {
+      return mockFailure('OSS_SIGN_SCOPE_INVALID', { statusKnown: true })
+    }
     if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
       return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
     }
@@ -92,6 +142,9 @@ export class AliOssRealnameProvider implements RealnameObjectProvider {
   }
 
   async deleteObject(input: { key: string; traceId: string }) {
+    if (!this.keyAllowed(input.key)) {
+      return mockFailure('OSS_KEY_OUT_OF_SCOPE', { statusKnown: true })
+    }
     if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
       return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
     }
@@ -107,14 +160,19 @@ export class AliOssRealnameProvider implements RealnameObjectProvider {
 export function createRealnameObjectProvider(): RealnameObjectProvider {
   const env = getEnv()
   if (env.ALIYUN_OSS_REALNAME_MODE === 'mock') return new MockRealnameObjectProvider()
+  if (!env.ALLOW_REAL_PROVIDER_WRITES) return new DisabledRealnameObjectProvider()
   const accessKeyId = process.env.ALIBABA_CLOUD_ACCESS_KEY_ID
   const accessKeySecret = process.env.ALIBABA_CLOUD_ACCESS_KEY_SECRET
-  const bucket = process.env.OSS_REALNAME_BUCKET
-  const endpoint = process.env.OSS_REALNAME_ENDPOINT
+  const bucket = env.OSS_REALNAME_BUCKET
+  const endpoint = env.OSS_REALNAME_ENDPOINT
   if (!accessKeyId || !accessKeySecret || !bucket || !endpoint) {
     throw new Error('Private OSS live mode is missing explicit credentials, bucket, or endpoint')
   }
+  if (bucket === env.S3_BUCKET) {
+    throw new Error('Private real-name OSS bucket must not reuse the public media bucket')
+  }
   return new AliOssRealnameProvider(
     new OSS({ accessKeyId, accessKeySecret, bucket, endpoint, secure: true }),
+    env.OSS_REALNAME_PREFIX,
   )
 }

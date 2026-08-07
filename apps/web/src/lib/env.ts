@@ -42,8 +42,21 @@ const schema = z.object({
   OTP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   OTP_PHONE_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(5),
   OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  OSS_REALNAME_BUCKET: z.string().min(3).optional(),
+  OSS_REALNAME_ENDPOINT: z.url().optional(),
+  OSS_REALNAME_PREFIX: z
+    .string()
+    .regex(/^private\/[a-z0-9][a-z0-9/_-]*$/u)
+    .default('private/realname'),
   PAYLOAD_SECRET: z.string().min(24),
   PUBLIC_STORAGE_MODE: z.enum(['local', 's3']).default('local'),
+  REALNAME_DOCUMENT_ACCESS_TTL_SECONDS: z.coerce.number().int().min(15).max(120).default(60),
+  REALNAME_DOCUMENT_MAX_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1024)
+    .max(20 * 1024 * 1024)
+    .default(10 * 1024 * 1024),
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_BUCKET: z.string().optional(),
   S3_ENDPOINT: z.url().optional(),

@@ -35,6 +35,26 @@ export const auditEventDefinitions = {
     actorTypes: ['admin', 'customer', 'provider', 'system'],
     targetType: 'realname-template',
   },
+  'realname.document.deleted': {
+    actorTypes: ['admin', 'customer', 'system'],
+    targetType: 'realname-document',
+  },
+  'realname.document.downloaded': {
+    actorTypes: ['admin', 'customer'],
+    targetType: 'realname-document',
+  },
+  'realname.document.submitted': {
+    actorTypes: ['admin', 'customer', 'provider', 'system'],
+    targetType: 'realname-document',
+  },
+  'realname.document.uploaded': {
+    actorTypes: ['admin', 'customer', 'system'],
+    targetType: 'realname-document',
+  },
+  'realname.document.viewed': {
+    actorTypes: ['admin', 'customer'],
+    targetType: 'realname-document',
+  },
   'redirect.create': { actorTypes: ['admin'], targetType: 'redirect' },
   'redirect.delete': { actorTypes: ['admin'], targetType: 'redirect' },
   'redirect.update': { actorTypes: ['admin'], targetType: 'redirect' },

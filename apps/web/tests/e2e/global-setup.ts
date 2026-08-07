@@ -4,6 +4,7 @@ import { createFirstPartyEventFixture } from './first-party-event-fixture'
 import { createContentCmsFixture } from './content-cms-fixture'
 import { createAdvertisingFixture } from './advertising-fixture'
 import { createFormBuilderFixture } from './form-builder-fixture'
+import { createRealnameDocumentFixture } from './realname-document-fixture'
 
 export default async function globalSetup() {
   await createRedirectFixture()
@@ -12,4 +13,5 @@ export default async function globalSetup() {
   await createFirstPartyEventFixture()
   await createAdvertisingFixture()
   await createFormBuilderFixture()
+  await createRealnameDocumentFixture()
 }

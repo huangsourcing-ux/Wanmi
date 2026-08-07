@@ -14,6 +14,7 @@ import * as migration_20260807_042030_d3_ad_events_maintenance from './20260807_
 import * as migration_20260807_061433_d3_form_builder_entries from './20260807_061433_d3_form_builder_entries'
 import * as migration_20260807_095514_d4_customer_auth_sms from './20260807_095514_d4_customer_auth_sms'
 import * as migration_20260807_114644_d4_realname_templates from './20260807_114644_d4_realname_templates'
+import * as migration_20260807_125811_d4_private_realname_documents from './20260807_125811_d4_private_realname_documents'
 
 export const migrations = [
   {
@@ -95,5 +96,10 @@ export const migrations = [
     up: migration_20260807_114644_d4_realname_templates.up,
     down: migration_20260807_114644_d4_realname_templates.down,
     name: '20260807_114644_d4_realname_templates',
+  },
+  {
+    up: migration_20260807_125811_d4_private_realname_documents.up,
+    down: migration_20260807_125811_d4_private_realname_documents.down,
+    name: '20260807_125811_d4_private_realname_documents',
   },
 ]
