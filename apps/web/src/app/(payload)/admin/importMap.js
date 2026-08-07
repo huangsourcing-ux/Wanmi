@@ -30,7 +30,15 @@ import { SuperscriptFeatureClient as SuperscriptFeatureClient_e70f5e05f09f93e00b
 import { SubscriptFeatureClient as SubscriptFeatureClient_e70f5e05f09f93e00b997edb1ef0c864 } from '@payloadcms/richtext-lexical/client'
 import { StrikethroughFeatureClient as StrikethroughFeatureClient_e70f5e05f09f93e00b997edb1ef0c864 } from '@payloadcms/richtext-lexical/client'
 import { SecuritySettingsLink as SecuritySettingsLink_7feae66d77b50724135c80fc6f83a1dc } from '@/components/admin/security-settings-link'
+import { OperationsNavigation as OperationsNavigation_e95352df04696ff466df7a2e20ab1519 } from '@/components/admin/operations-navigation'
 import { S3ClientUploadHandler as S3ClientUploadHandler_f97aa6c64367fa259c5bc0567239ef24 } from '@payloadcms/storage-s3/client'
+import { AdvertisingOperationsView as AdvertisingOperationsView_27dbf5fa321b9b0be45a2e634ce88810 } from '@/components/admin/operations-views'
+import { AuditOperationsView as AuditOperationsView_27dbf5fa321b9b0be45a2e634ce88810 } from '@/components/admin/operations-views'
+import { ContentOperationsView as ContentOperationsView_27dbf5fa321b9b0be45a2e634ce88810 } from '@/components/admin/operations-views'
+import { FeedbackOperationsView as FeedbackOperationsView_27dbf5fa321b9b0be45a2e634ce88810 } from '@/components/admin/operations-views'
+import { TldPricingOperationsView as TldPricingOperationsView_27dbf5fa321b9b0be45a2e634ce88810 } from '@/components/admin/operations-views'
+import { ToolStatusView as ToolStatusView_27dbf5fa321b9b0be45a2e634ce88810 } from '@/components/admin/operations-views'
+import { OperationsDashboardView as OperationsDashboardView_27dbf5fa321b9b0be45a2e634ce88810 } from '@/components/admin/operations-views'
 import { CollectionCards as CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1 } from '@payloadcms/next/rsc'
 
 /** @type import('payload').ImportMap */
@@ -67,6 +75,14 @@ export const importMap = {
   "@payloadcms/richtext-lexical/client#SubscriptFeatureClient": SubscriptFeatureClient_e70f5e05f09f93e00b997edb1ef0c864,
   "@payloadcms/richtext-lexical/client#StrikethroughFeatureClient": StrikethroughFeatureClient_e70f5e05f09f93e00b997edb1ef0c864,
   "@/components/admin/security-settings-link#SecuritySettingsLink": SecuritySettingsLink_7feae66d77b50724135c80fc6f83a1dc,
+  "@/components/admin/operations-navigation#OperationsNavigation": OperationsNavigation_e95352df04696ff466df7a2e20ab1519,
   "@payloadcms/storage-s3/client#S3ClientUploadHandler": S3ClientUploadHandler_f97aa6c64367fa259c5bc0567239ef24,
+  "@/components/admin/operations-views#AdvertisingOperationsView": AdvertisingOperationsView_27dbf5fa321b9b0be45a2e634ce88810,
+  "@/components/admin/operations-views#AuditOperationsView": AuditOperationsView_27dbf5fa321b9b0be45a2e634ce88810,
+  "@/components/admin/operations-views#ContentOperationsView": ContentOperationsView_27dbf5fa321b9b0be45a2e634ce88810,
+  "@/components/admin/operations-views#FeedbackOperationsView": FeedbackOperationsView_27dbf5fa321b9b0be45a2e634ce88810,
+  "@/components/admin/operations-views#TldPricingOperationsView": TldPricingOperationsView_27dbf5fa321b9b0be45a2e634ce88810,
+  "@/components/admin/operations-views#ToolStatusView": ToolStatusView_27dbf5fa321b9b0be45a2e634ce88810,
+  "@/components/admin/operations-views#OperationsDashboardView": OperationsDashboardView_27dbf5fa321b9b0be45a2e634ce88810,
   "@payloadcms/next/rsc#CollectionCards": CollectionCards_f9c02e79a4aed9a3924487c0cd4cafb1
 }
