@@ -11,6 +11,8 @@ describe('shared audit event service', () => {
   it('keeps the established action identifiers in one typed catalog', () => {
     expect(Object.keys(auditEventDefinitions).sort()).toEqual(
       [
+        'advertising.change',
+        'advertising.delete',
         'admin.account.changed',
         'admin.account.deleted',
         'admin.auth.login_failed',

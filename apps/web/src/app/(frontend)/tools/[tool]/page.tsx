@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { Suspense } from 'react'
 
+import { AdvertisingSlot } from '@/components/advertising/advertising-slot'
 import { PublicRelations } from '@/components/content/public-relations'
 import { DomainQueryForm } from '@/components/forms/domain-query-form'
 import { DomainFavoriteButton } from '@/components/local-library/favorite-buttons'
@@ -169,6 +171,9 @@ export default async function ToolPage({ params, searchParams }: ToolPageProps) 
           query={query}
         />
       )}
+      <Suspense fallback={null}>
+        <AdvertisingSlot pageType="tool" placementCode="tool-after-result" />
+      </Suspense>
       <PublicRelations
         sections={[
           { items: relations.tldPages, title: '相关 TLD 页面' },

@@ -69,6 +69,7 @@ test('ad operators see advertising and own-audit workspaces but no content works
   for (const slug of [
     'advertisers',
     'adCreatives',
+    'adMedia',
     'adPlacements',
     'adSchedules',
     'reconciliations',
@@ -109,6 +110,7 @@ test('analysts have safe read-only operations navigation and no audit or mutatio
   for (const slug of [
     'advertisers',
     'adCreatives',
+    'adMedia',
     'adPlacements',
     'adSchedules',
     'reconciliations',

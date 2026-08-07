@@ -33,6 +33,10 @@ const storagePlugin = s3Storage({
   alwaysInsertFields: true,
   bucket: env.S3_BUCKET ?? 'wanmi-public-schema-placeholder',
   collections: {
+    adMedia: {
+      prefix: 'public/advertising',
+      signedDownloads: { expiresIn: 300 },
+    },
     media: {
       prefix: 'public/media',
       signedDownloads: { expiresIn: 300 },

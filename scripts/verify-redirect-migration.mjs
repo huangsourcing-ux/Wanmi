@@ -422,6 +422,109 @@ function verifyContentRelationsSeoSchema(stage) {
   }
 }
 
+function verifyAdvertisingSchema(stage) {
+  const tables = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(table_name, ',' ORDER BY table_name)
+       FROM information_schema.tables
+       WHERE table_schema = 'public'
+         AND table_name IN (
+           'ad_media', 'ad_placements_page_types', 'advertisers_allowed_hosts'
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (tables !== 'ad_media,ad_placements_page_types,advertisers_allowed_hosts') {
+    throw new Error(`D3-03 advertising tables incomplete after ${stage}: ${tables}`)
+  }
+
+  const columns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(table_name || '.' || column_name, ',' ORDER BY table_name, column_name)
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND (
+           (table_name = 'advertisers'
+             AND column_name IN ('contact_email', 'contact_name', 'contract_reference', 'legal_name'))
+           OR (table_name = 'ad_creatives'
+             AND column_name IN (
+               'body', 'creative_type', 'headline', 'review_notes', 'reviewed_at',
+               'reviewed_by', 'target_type'
+             ))
+           OR (table_name = 'ad_placements'
+             AND column_name IN ('device_scope', 'height', 'name', 'position', 'width'))
+           OR (table_name = 'ad_schedules'
+             AND column_name IN ('advertiser_id', 'name', 'notes', 'priority', 'public_id'))
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (columns.split(',').filter(Boolean).length !== 21) {
+    throw new Error(`D3-03 advertising columns incomplete after ${stage}: ${columns}`)
+  }
+
+  const publicIdIndex = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT indexdef FROM pg_indexes
+       WHERE schemaname = 'public'
+         AND tablename = 'ad_schedules'
+         AND indexname = 'ad_schedules_public_id_idx'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (!/UNIQUE INDEX .*\(public_id\)/.test(publicIdIndex)) {
+    throw new Error(`D3-03 schedule public ID is not unique after ${stage}: ${publicIdIndex}`)
+  }
+
+  const enumValues = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         array_to_string(enum_range(NULL::enum_advertisers_status), ',') || ':' ||
+         array_to_string(enum_range(NULL::enum_ad_creatives_status), ',') || ':' ||
+         array_to_string(enum_range(NULL::enum_ad_schedules_status), ',')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    enumValues !==
+    'draft,active,paused,disabled:draft,pending_review,approved,rejected,disabled:draft,scheduled,active,paused,ended,disabled'
+  ) {
+    throw new Error(`D3-03 advertising statuses incomplete after ${stage}: ${enumValues}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -434,6 +537,7 @@ try {
   verifyToolObservabilitySchema('empty-database migration')
   verifyContentCmsSchema('empty-database migration')
   verifyContentRelationsSeoSchema('empty-database migration')
+  verifyAdvertisingSchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -775,8 +879,122 @@ try {
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
   verifyContentRelationsSeoSchema('D3-02 migration round trip')
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 9
+     WHERE name = '20260807_025608_d3_advertising_controlled_delivery'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const adMediaTableAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT to_regclass('public.ad_media') IS NOT NULL`,
+    ],
+    { capture: true },
+  ).trim()
+  if (adMediaTableAfterDown !== 'f') {
+    throw new Error('D3-03 migration down did not remove the independent ad media table')
+  }
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `DO $$
+     DECLARE
+       legacy_advertiser_id integer;
+       legacy_media_id integer;
+       safe_creative_id integer;
+       unsafe_creative_id integer;
+       legacy_placement_id integer;
+     BEGIN
+       INSERT INTO advertisers (name, status, updated_at, created_at)
+       VALUES ('Legacy advertiser', 'active', NOW(), NOW())
+       RETURNING id INTO legacy_advertiser_id;
+
+       INSERT INTO media (alt, source, reviewed, updated_at, created_at)
+       VALUES ('Legacy ad image', 'legacy fixture', true, NOW(), NOW())
+       RETURNING id INTO legacy_media_id;
+
+       INSERT INTO ad_creatives (
+         name, advertiser_id, image_id, alt, target_url, status, updated_at, created_at
+       ) VALUES (
+         'Legacy safe creative', legacy_advertiser_id, legacy_media_id,
+         'Safe creative', '/tools/dns', 'approved', NOW(), NOW()
+       ) RETURNING id INTO safe_creative_id;
+
+       INSERT INTO ad_creatives (
+         name, advertiser_id, image_id, alt, target_url, status, updated_at, created_at
+       ) VALUES (
+         'Legacy unsafe creative', legacy_advertiser_id, legacy_media_id,
+         'Unsafe creative', '//evil.example', 'approved', NOW(), NOW()
+       ) RETURNING id INTO unsafe_creative_id;
+
+       INSERT INTO ad_placements (code, description, enabled, updated_at, created_at)
+       VALUES ('legacy-after-result', 'Legacy placement', true, NOW(), NOW())
+       RETURNING id INTO legacy_placement_id;
+
+       INSERT INTO ad_schedules (
+         creative_id, placement_id, starts_at, ends_at, status, updated_at, created_at
+       ) VALUES
+         (safe_creative_id, legacy_placement_id, NOW() - INTERVAL '1 day',
+          NOW() + INTERVAL '1 day', 'active', NOW(), NOW()),
+         (unsafe_creative_id, legacy_placement_id, NOW() - INTERVAL '1 day',
+          NOW() + INTERVAL '1 day', 'active', NOW(), NOW());
+     END $$;`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyAdvertisingSchema('D3-03 migration round trip')
+  const advertisingBackfill = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         string_agg(creative.name || ':' || creative.status || ':' || creative.target_type,
+                    ',' ORDER BY creative.name) || ':' ||
+         COUNT(DISTINCT ad_media.id) || ':' ||
+         COUNT(DISTINCT schedule.public_id) || ':' ||
+         COUNT(DISTINCT schedule.advertiser_id)
+       FROM ad_creatives creative
+       JOIN ad_media ON ad_media.id = creative.image_id
+       JOIN ad_schedules schedule ON schedule.creative_id = creative.id
+       WHERE creative.name IN ('Legacy safe creative', 'Legacy unsafe creative')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    advertisingBackfill !==
+    'Legacy safe creative:approved:internal,Legacy unsafe creative:disabled:internal:1:2:1'
+  ) {
+    throw new Error(`D3-03 legacy advertising backfill was unsafe: ${advertisingBackfill}`)
+  }
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, and the D3-02 relation/SEO migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, and the D3-03 controlled-advertising migration round trips.\n',
   )
 } finally {
   if (created) {

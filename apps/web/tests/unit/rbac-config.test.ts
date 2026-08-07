@@ -46,7 +46,11 @@ const personas: Record<Persona, unknown> = {
 }
 
 const publicReads = [
+  'adCreatives',
+  'adMedia',
   'adPlacements',
+  'adSchedules',
+  'advertisers',
   'articles',
   'helpPages',
   'media',
@@ -78,16 +82,8 @@ const contentWrites = [
   'tldPages',
   'topics',
 ]
-const advertisingWrites = ['adCreatives', 'adPlacements', 'adSchedules', 'advertisers']
-const operationalReads = [
-  ...publicReads,
-  'adCreatives',
-  'adSchedules',
-  'admins',
-  'advertisers',
-  'reconciliations',
-  'userFeedback',
-]
+const advertisingWrites = ['adCreatives', 'adMedia', 'adPlacements', 'adSchedules', 'advertisers']
+const operationalReads = [...publicReads, 'admins', 'reconciliations', 'userFeedback']
 const analyticalReads = [...operationalReads, 'toolObservabilityBuckets']
 const contentAdminCollections = [
   'articles',
@@ -102,6 +98,7 @@ const contentAdminCollections = [
 ]
 const advertisingAdminCollections = [
   'adCreatives',
+  'adMedia',
   'adPlacements',
   'adSchedules',
   'advertisers',
@@ -273,6 +270,7 @@ describe('D1 official plugin permission matrix', () => {
 describe('D1 administrator navigation groups', () => {
   const expectedGroups: Record<string, string> = {
     adCreatives: ADMIN_GROUPS.advertising,
+    adMedia: ADMIN_GROUPS.advertising,
     adPlacements: ADMIN_GROUPS.advertising,
     adSchedules: ADMIN_GROUPS.advertising,
     adminInvitations: ADMIN_GROUPS.identity,
