@@ -5,8 +5,16 @@ permissions:
 
 on:
   pull_request:
+  # Branch pushes are covered by pull_request; keeping codex/** here ran the same
+  # job twice per pull request. main stays so merges are verified post-merge.
   push:
-    branches: [main, 'codex/**']
+    branches: [main]
+
+# A new push supersedes an in-flight run for the same ref. main is never cancelled
+# so every merged commit keeps a completed check.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   check:
