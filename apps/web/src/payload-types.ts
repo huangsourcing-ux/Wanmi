@@ -954,6 +954,9 @@ export interface Order {
     | 'cancelled';
   amountMinor: number;
   currency: 'CNY';
+  merchantOrderNumber?: string | null;
+  paymentChannel?: ('native' | 'h5') | null;
+  paymentExpiresAt?: string | null;
   quoteSnapshot:
     | {
         [k: string]: unknown;
@@ -1020,12 +1023,19 @@ export interface OrderEvent {
  */
 export interface PaymentNotification {
   id: number;
-  wechatTransactionId: string;
-  merchantOrderNumber: string;
+  notificationId: string;
+  order?: (number | null) | Order;
+  source: 'notification' | 'query';
+  wechatTransactionId?: string | null;
+  merchantOrderNumber?: string | null;
   signatureVerified: boolean;
-  amountMinor: number;
+  confirmationStatus: 'confirmed' | 'mismatch' | 'not_paid' | 'rejected' | 'unknown';
+  amountMinor?: number | null;
+  currency?: 'CNY' | null;
   receivedAt: string;
+  paidAt?: string | null;
   payloadDigest: string;
+  providerRequestId?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2485,6 +2495,9 @@ export interface OrdersSelect<T extends boolean = true> {
   status?: T;
   amountMinor?: T;
   currency?: T;
+  merchantOrderNumber?: T;
+  paymentChannel?: T;
+  paymentExpiresAt?: T;
   quoteSnapshot?: T;
   paidAt?: T;
   updatedAt?: T;
@@ -2512,12 +2525,19 @@ export interface OrderEventsSelect<T extends boolean = true> {
  * via the `definition` "paymentNotifications_select".
  */
 export interface PaymentNotificationsSelect<T extends boolean = true> {
+  notificationId?: T;
+  order?: T;
+  source?: T;
   wechatTransactionId?: T;
   merchantOrderNumber?: T;
   signatureVerified?: T;
+  confirmationStatus?: T;
   amountMinor?: T;
+  currency?: T;
   receivedAt?: T;
+  paidAt?: T;
   payloadDigest?: T;
+  providerRequestId?: T;
   updatedAt?: T;
   createdAt?: T;
 }

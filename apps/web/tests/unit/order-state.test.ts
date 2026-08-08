@@ -11,7 +11,7 @@ describe('order state machine', () => {
       fulfilling: ['succeeded', 'refund_pending', 'manual_review'],
       manual_review: ['fulfilling', 'succeeded', 'refund_pending', 'refunding', 'refunded'],
       paid: ['fulfilling', 'refund_pending', 'manual_review'],
-      pending_payment: ['paid', 'cancelled'],
+      pending_payment: ['paid', 'manual_review', 'cancelled'],
       refunded: [],
       refund_pending: ['refunding', 'manual_review'],
       refunding: ['refunded', 'manual_review'],

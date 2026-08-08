@@ -1,7 +1,7 @@
 # ADR-0004：Commerce 状态机与幂等
 
-- 状态：D0 已采用
-- 日期：2026-08-03
+- 状态：D0 已采用；D5-03 按资金安全要求澄清
+- 日期：2026-08-03（2026-08-07 修订）
 
 ## 决策
 
@@ -11,7 +11,7 @@
 
 | 当前                | 目标                                                       |
 | ------------------- | ---------------------------------------------------------- |
-| pending_payment     | paid、cancelled                                            |
+| pending_payment     | paid、cancelled、manual_review（查单状态不明或资金不一致） |
 | paid                | fulfilling、refund_pending、manual_review                  |
 | fulfilling          | succeeded、refund_pending、manual_review                   |
 | refund_pending      | refunding、manual_review                                   |

@@ -201,9 +201,58 @@ export interface WestDigitalRealnameProvider extends HealthAwareProvider {
   >
 }
 
+export type PaymentChannel = 'h5' | 'native'
+
+export type PaymentOrderState = 'closed' | 'not_paid' | 'paid' | 'refunded' | 'unknown'
+
+export type PaymentOrder = {
+  amountMinor?: number
+  currency?: 'CNY'
+  merchantOrderNumber: string
+  paidAt?: string
+  state: PaymentOrderState
+  transactionId?: string
+}
+
+export type VerifiedPaymentNotification =
+  | {
+      notificationId?: undefined
+      reason: 'invalid_resource' | 'invalid_signature' | 'malformed_headers'
+      signatureVerified: boolean
+      verified: false
+    }
+  | {
+      amountMinor: number
+      currency: 'CNY'
+      merchantOrderNumber: string
+      notificationId: string
+      paidAt: string
+      transactionId: string
+      verified: true
+    }
+
 export interface PaymentProvider extends HealthAwareProvider {
+  createPayment(input: {
+    amountMinor: number
+    channel: PaymentChannel
+    clientIp?: string
+    description: string
+    expiresAt: string
+    merchantOrderNumber: string
+    traceId: string
+  }): Promise<
+    ProviderResult<
+      | { channel: 'h5'; expiresAt: string; h5Url: string }
+      | { channel: 'native'; codeUrl: string; expiresAt: string }
+    >
+  >
   queryOrder(input: {
     merchantOrderNumber: string
     traceId: string
-  }): Promise<ProviderResult<{ paid: boolean }>>
+  }): Promise<ProviderResult<PaymentOrder>>
+  verifyNotification(input: {
+    body: string
+    headers: Headers
+    traceId: string
+  }): Promise<VerifiedPaymentNotification>
 }
