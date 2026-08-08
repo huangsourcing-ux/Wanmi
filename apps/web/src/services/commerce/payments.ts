@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 
 import { commitTransaction, initTransaction, killTransaction, type PayloadRequest } from 'payload'
 
-import { isCustomerUser } from '@/access/roles'
+import { hasRole, isActiveAdminUser, isCustomerUser } from '@/access/roles'
 import { AppError } from '@/lib/errors'
 import type { PaymentOrder, PaymentProvider, VerifiedPaymentNotification } from '@/providers/types'
 import { paymentPayloadDigest } from '@/providers/wechatpay'
@@ -14,6 +14,8 @@ import {
   type PaymentStatusResult,
 } from '@/schemas/payments'
 import { transitionOrder } from '@/services/commerce/order-state'
+import { recordAuditEvent } from '@/services/audit/record-audit-event'
+import type { ManualCommerceEvidence } from '@/schemas/admin-commerce'
 
 type CustomerIdentity = {
   collection: 'customers'
@@ -305,6 +307,117 @@ async function notificationById(req: PayloadRequest, notificationId: string) {
   return existing.docs[0]
 }
 
+type VerifiedArchive = {
+  amountMinor: number
+  currency: 'CNY'
+  id: number | string
+  merchantOrderNumber: string
+  notificationId: string
+  paidAt: string
+  payloadDigest: string
+  receivedAt: string
+  replayCount: number
+  signatureVerified: boolean
+  wechatTransactionId: string
+}
+
+async function archiveVerifiedNotification(
+  req: PayloadRequest,
+  notification: Extract<VerifiedPaymentNotification, { verified: true }>,
+  digest: string,
+  receivedAt: string,
+  orderId?: number | string,
+): Promise<VerifiedArchive> {
+  const assertMatches = (archive: VerifiedArchive): VerifiedArchive => {
+    if (
+      archive.payloadDigest !== digest ||
+      archive.merchantOrderNumber !== notification.merchantOrderNumber ||
+      archive.wechatTransactionId !== notification.transactionId ||
+      archive.amountMinor !== notification.amountMinor ||
+      archive.currency !== notification.currency ||
+      Date.parse(archive.paidAt) !== Date.parse(notification.paidAt) ||
+      archive.signatureVerified !== true
+    ) {
+      throw new AppError(
+        'PAYMENT_NOTIFICATION_ARCHIVE_CONFLICT',
+        '通知标识对应的已验签归档不一致',
+        409,
+      )
+    }
+    return archive
+  }
+  const existing = await req.payload.find({
+    collection: 'paymentNotificationArchives',
+    depth: 0,
+    limit: 1,
+    overrideAccess: true,
+    req,
+    where: { notificationId: { equals: notification.notificationId } },
+  })
+  if (existing.docs[0]) return assertMatches(existing.docs[0] as unknown as VerifiedArchive)
+  try {
+    return (await req.payload.create({
+      collection: 'paymentNotificationArchives',
+      data: {
+        amountMinor: notification.amountMinor,
+        currency: notification.currency,
+        merchantOrderNumber: notification.merchantOrderNumber,
+        notificationId: notification.notificationId,
+        ...(orderId === undefined ? {} : { order: orderId as never }),
+        paidAt: notification.paidAt,
+        payloadDigest: digest,
+        processingStatus: 'pending',
+        receivedAt,
+        replayCount: 0,
+        signatureVerified: true,
+        verifiedAt: new Date().toISOString(),
+        wechatTransactionId: notification.transactionId,
+      },
+      overrideAccess: true,
+      req,
+    })) as unknown as VerifiedArchive
+  } catch (error) {
+    const raced = await req.payload.find({
+      collection: 'paymentNotificationArchives',
+      depth: 0,
+      limit: 1,
+      overrideAccess: true,
+      req,
+      where: { notificationId: { equals: notification.notificationId } },
+    })
+    if (raced.docs[0]) return assertMatches(raced.docs[0] as unknown as VerifiedArchive)
+    throw error
+  }
+}
+
+async function markArchiveProcessed(
+  req: PayloadRequest,
+  archiveId: number | string,
+  status: 'failed' | 'processed',
+  replay = false,
+): Promise<void> {
+  const archive = (await req.payload.findByID({
+    collection: 'paymentNotificationArchives',
+    depth: 0,
+    id: archiveId,
+    overrideAccess: true,
+    req,
+  })) as unknown as VerifiedArchive
+  await req.payload.update({
+    collection: 'paymentNotificationArchives',
+    data: {
+      ...(replay
+        ? { lastReplayAt: new Date().toISOString(), replayCount: (archive.replayCount ?? 0) + 1 }
+        : {}),
+      lastProcessedAt: new Date().toISOString(),
+      processingStatus: status,
+    },
+    id: archiveId,
+    overrideAccess: true,
+    req,
+  })
+}
+
 type PaidPaymentOrder = PaymentOrder & {
   amountMinor: number
   currency: 'CNY'
@@ -567,6 +680,8 @@ export async function processWechatPaymentNotification(
     )
   }
   const order = await findOrderByMerchantNumber(req, verified.merchantOrderNumber)
+  const receivedAt = input.receivedAt ?? new Date().toISOString()
+  const archive = await archiveVerifiedNotification(req, verified, digest, receivedAt, order?.id)
   if (!order) {
     if (!(await notificationById(req, verified.notificationId))) {
       await req.payload.create({
@@ -585,18 +700,152 @@ export async function processWechatPaymentNotification(
         req,
       })
     }
+    await markArchiveProcessed(req, archive.id, 'failed')
     throw new AppError('WECHATPAY_ORDER_NOT_FOUND', '支付通知无法匹配订单', 404)
   }
-  const query = await provider.queryOrder({
-    merchantOrderNumber: verified.merchantOrderNumber,
-    traceId: input.traceId,
+  try {
+    const query = await provider.queryOrder({
+      merchantOrderNumber: verified.merchantOrderNumber,
+      traceId: input.traceId,
+    })
+    const result = await persistAndApplyConfirmation(req, order, query, {
+      digest,
+      notification: verified,
+      receivedAt,
+      source: 'notification',
+    })
+    await markArchiveProcessed(req, archive.id, 'processed')
+    return result
+  } catch (error) {
+    await markArchiveProcessed(req, archive.id, 'failed').catch(() => undefined)
+    throw error
+  }
+}
+
+function assertSystemAdmin(req: PayloadRequest): { id: number | string } {
+  if (!isActiveAdminUser(req.user) || !hasRole(req.user, ['system_admin'])) {
+    throw new AppError('ADMIN_SYSTEM_ROLE_REQUIRED', '仅系统管理员可执行支付恢复操作', 403)
+  }
+  return req.user
+}
+
+export async function replayArchivedWechatPaymentNotification(
+  req: PayloadRequest,
+  notificationId: string,
+  input: {
+    evidence: ManualCommerceEvidence
+    note: string
+    provider: PaymentProvider
+    traceId: string
+  },
+) {
+  const actor = assertSystemAdmin(req)
+  const found = await req.payload.find({
+    collection: 'paymentNotificationArchives',
+    depth: 0,
+    limit: 1,
+    overrideAccess: true,
+    req,
+    where: { notificationId: { equals: notificationId } },
   })
-  return persistAndApplyConfirmation(req, order, query, {
-    digest,
-    notification: verified,
-    receivedAt: input.receivedAt ?? new Date().toISOString(),
-    source: 'notification',
+  const archive = found.docs[0] as unknown as VerifiedArchive | undefined
+  if (!archive || archive.signatureVerified !== true) {
+    throw new AppError('VERIFIED_PAYMENT_NOTIFICATION_NOT_FOUND', '未找到已验签支付通知归档', 404)
+  }
+  if (!/^[0-9a-f]{64}$/u.test(archive.payloadDigest)) {
+    throw new AppError('PAYMENT_NOTIFICATION_ARCHIVE_INVALID', '支付通知归档完整性校验失败', 409)
+  }
+  const order = await findOrderByMerchantNumber(req, archive.merchantOrderNumber)
+  if (!order) throw new AppError('WECHATPAY_ORDER_NOT_FOUND', '支付通知无法匹配订单', 404)
+  const verified: Extract<VerifiedPaymentNotification, { verified: true }> = {
+    amountMinor: archive.amountMinor,
+    currency: archive.currency,
+    merchantOrderNumber: archive.merchantOrderNumber,
+    notificationId: archive.notificationId,
+    paidAt: archive.paidAt,
+    transactionId: archive.wechatTransactionId,
+    verified: true,
+  }
+  const startedTransaction = await initTransaction(req)
+  try {
+    const query = await input.provider.queryOrder({
+      merchantOrderNumber: archive.merchantOrderNumber,
+      traceId: input.traceId,
+    })
+    const result = await persistAndApplyConfirmation(req, order, query, {
+      digest: archive.payloadDigest,
+      notification: verified,
+      receivedAt: archive.receivedAt,
+      source: 'notification',
+    })
+    await markArchiveProcessed(req, archive.id, 'processed', true)
+    await recordAuditEvent(req, {
+      action: 'commerce.payment_notification.replayed',
+      actor: { id: actor.id, type: 'admin' },
+      metadata: { evidence: input.evidence, note: input.note, orderNumber: order.orderNumber },
+      targetId: archive.notificationId,
+    })
+    if (startedTransaction) await commitTransaction(req)
+    return { idempotentReplay: result.idempotentReplay, orderStatus: result.order.status }
+  } catch (error) {
+    if (startedTransaction) await killTransaction(req)
+    await markArchiveProcessed(req, archive.id, 'failed', true).catch(() => undefined)
+    throw error
+  }
+}
+
+export async function reconcileWechatPaymentByOrder(
+  req: PayloadRequest,
+  orderNumber: string,
+  input: {
+    evidence: ManualCommerceEvidence
+    note: string
+    provider: PaymentProvider
+    traceId: string
+  },
+) {
+  const actor = assertSystemAdmin(req)
+  const found = await req.payload.find({
+    collection: 'orders',
+    depth: 0,
+    limit: 1,
+    overrideAccess: true,
+    req,
+    where: { orderNumber: { equals: orderNumber } },
   })
+  const order = found.docs[0] as unknown as OrderRecord | undefined
+  if (!order) throw new AppError('ORDER_NOT_FOUND', '未找到订单', 404)
+  if (!order.merchantOrderNumber)
+    throw new AppError('PAYMENT_NOT_CREATED', '订单没有微信支付单', 409)
+  const startedTransaction = await initTransaction(req)
+  try {
+    const { applied, query } = await queryAndApplyPaymentState(
+      req,
+      order,
+      input.provider,
+      input.traceId,
+      new Date().toISOString(),
+    )
+    await recordAuditEvent(req, {
+      action: 'commerce.payment.reconciled',
+      actor: { id: actor.id, type: 'admin' },
+      metadata: {
+        evidence: input.evidence,
+        note: input.note,
+        providerRequestId: query.requestId,
+        providerState: query.ok ? query.data.state : 'unavailable',
+      },
+      targetId: order.id,
+    })
+    if (startedTransaction) await commitTransaction(req)
+    return {
+      orderStatus: applied.order.status,
+      providerState: query.ok ? query.data.state : 'unavailable',
+    }
+  } catch (error) {
+    if (startedTransaction) await killTransaction(req)
+    throw error
+  }
 }
 
 export async function queryAndConfirmWechatPayment(

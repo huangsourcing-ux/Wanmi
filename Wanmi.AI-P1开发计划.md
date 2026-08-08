@@ -530,10 +530,10 @@ D4-04 验证记录（2026-08-07）：模板删除端点与账号注销事务会�
 - [x] 实现支付超时关单；
 - [x] 前端只轮询/展示服务端订单状态，不以跳转结果标记支付成功；
 - [x] 实现退款任务、退款查询和失败告警；
-- [ ] 建立支付通知重放与补单工具；
+- [x] 建立支付通知重放与补单工具；
 - [x] 建立微信支付、内部订单和后续西部数码成本的对账数据结构；
-- [ ] 建立特殊退款、发票备注和人工操作审计；
-- [ ] 使用微信官方 fixture 和 mock 完成自动化测试；具备测试商户配置后再做小额联调。
+- [x] 建立特殊退款、发票备注和人工操作审计；
+- [x] 使用微信官方 fixture 和 mock 完成自动化测试；具备测试商户配置后再做小额联调。
 
 D5-01 验证记录（2026-08-07）：在 D2-07 的整数分、BigInt、舍入模式、计算链和 `priceSnapshots` 基础上新增客户报价服务，没有重写价格计算。认证客户可通过严格 4 KiB JSON 和共享 Zod 的 `POST /api/v1/quotes` 按规范化域名及 1～10 年创建报价；服务先复用既有 TLD 支持与加价配置门禁，再查询普通域名可售性和价格，并保存客户、域名、TLD、年限、币种、上游注册/续费/总成本、完整规则与舍入快照、最终注册/续费/总价、provider 取价请求与观察时间、来源价格快照引用及计算哈希、报价完整性哈希、创建时间和精确 5 分钟失效时间。公开响应仅包含客户所需价格与不透明报价引用，不暴露上游成本、加价规则或 provider 请求；报价 Collection 禁止通用创建、修改和删除，读取按 customer 行级隔离。新增的下单前复用服务先以 `user + overrideAccess: false` 验证归属，再校验失效时间和完整性哈希；他人报价、已过期报价及被篡改快照均 fail-closed，为 D5-02 创建订单重新验证预留稳定入口。未配置加价、未支持 TLD、不可注册和溢价域名不会生成报价，且未配置规则会在 provider 调用前关闭。endpoint 保持 `ready/empty/partial/degraded/error/rate_limited` 六状态契约及 `no-store`。新增命名 migration 和历史占位报价 fail-closed 升级：保留旧行但强制过期并标记为不可受信，禁止成为可用订单依据。最终原样 `make check` 通过生成物/schema 漂移、空库/升级及全部 migration 往返、Nginx、lint、TypeScript strict、537/537 单元测试、49/49 PostgreSQL/MinIO 集成测试、依赖/秘密门禁、Next.js 生产构建和 linux/amd64 同镜像；最终原样 `make test-e2e` 36/36 通过。全部 provider 查询使用本地 fixture，未调用真实西部数码接口。第 9.2 节第 1 项后台可发布加价规则及审计仍未完成；第 3 项的报价侧门禁和 D5-02 复用入口已建立，但实际下单校验须随订单创建落地后方可勾选。
 
@@ -546,6 +546,8 @@ D5-04 验证记录（2026-08-07）：新增隔离的 `commerce` 队列微信退�
 D5-05 验证记录（2026-08-08）：启用 D0 已有的 `priceRules` Collection，写入、修改、启用、停用和删除只允许 `system_admin`，生产计价、报价和订单重新校验不再读取硬编码规则，而是统一读取已启用的 Collection 规则；测试 fixture 仅通过显式依赖注入使用。规则在写入时严格拒绝负数、非安全整数、小数基点以及 `mode` 与金额/基点字段不匹配，金额继续使用整数分，比例计算继续使用 BigInt 和 half-up 到分。新增 `effectiveAt` 生效时间和命名 migration `20260808_053208_d5_price_rules`，覆盖历史数据回填、金额字段可空、来源枚举、索引及 down/up 往返。新增/修改/启用/停用/删除通过 D1-07 统一审计服务在同一请求事务中记录 TLD、模式、变更前后金额或基点、操作者和生效时间。集成测试确认规则发布后新报价采用新规则，同时旧报价保存的完整规则副本与完整性哈希不变且仍可按原快照复现；D5-02 下单门禁仍会以当前规则拒绝旧价下单。未配置或停用的 TLD 在 provider 调用前继续关闭购买。最终在同一数据库状态上连续两次原样 `make check` 均以退出码 0 通过生成物/schema 漂移、完整 migration 往返、Nginx、lint、TypeScript strict、550/550 单元测试、61/61 PostgreSQL/MinIO 集成测试、依赖/秘密门禁、Next.js 生产构建及 linux/amd64 同镜像；最终原样 `make test-e2e` 36/36 通过。未改订单状态机、支付或退款，未调用真实 provider、资金或域名写接口。
 
 D5-06 验证记录（2026-08-08）：新增 `/account/orders/[orderNumber]/payment` 支付页，桌面 Native 流程只以 `code_url` 动态生成二维码并展示服务端失效时间与重新获取入口；移动浏览器 H5 流程将站内返回地址附加到 `h5_url`，返回 `/account/orders/[orderNumber]/payment/return` 后只恢复服务端状态查询，不把扫码、跳转或返回视为支付成功。前端通过 D1-02 六状态契约按固定间隔读取同源订单支付接口，支付结果唯一取自服务端订单状态；接口以认证 customer、`user` 和 `overrideAccess: false` 限定订单归属，并用订单行上的 `paymentStatusPolledAt` 做数据库原子 3 秒限频，只返回支付展示所需字段且禁用缓存。新增命名 migration `20260808_064925_d5_payment_frontend_timeout` 及 `commerce` 队列独占 `paymentTimeoutClose` workflow：每 30 秒最多扫描 100 个已到期 `pending_payment` 订单，先主动查单；已支付复用 D5-03 确认与状态迁移，状态不明保持不关单；明确未支付时先调用微信关单，再次主动查单且仅在确认 `CLOSED` 后通过既有 `transitionOrder` 迁移到 `cancelled`。任务使用固定并发键、自限定查询和状态前置条件，重复执行不会重复关单或重复迁移；关单失败或复查仍为未支付时保持待支付并由后续扫描重试。最终在同一数据库状态上连续两次原样 `make check` 均以退出码 0 通过生成物/schema 漂移、完整 migration 往返、Nginx、lint、TypeScript strict、556/556 单元测试、65/65 PostgreSQL/MinIO 集成测试、依赖/秘密门禁、Next.js 生产构建及 linux/amd64 同镜像；最终原样 `make test-e2e` 39/39 通过。全程使用本地 fixture，保持 `ALLOW_REAL_PROVIDER_WRITES=false`；通知重放补单、特殊退款与发票审计仍留给 D5-07。
+
+D5-07 验证记录（2026-08-08）：新增只保存已通过微信平台验签内容的 `paymentNotificationArchives`，原通知入口在验签成功后归档安全标识与报文摘要，不保存完整报文；`system_admin` 重放入口只能读取 `signatureVerified=true` 的历史归档，随后重新主动查单，并复用 D5-03 的金额/标识核对、通知幂等、数据库唯一约束和 `transitionOrder`，不存在接受未验签报文或人工“已付”输入的旁路。同一通知重复重放只产生一次状态迁移。订单补单同样只接受订单号、处理备注和结构化外部证据，支付结论唯一来自服务端主动查单。新增仅限有效 MFA `system_admin` 的特殊退款/发票备注入口和追加式 `orderManualActions`：两类操作均记录操作者、订单、原因、外部证据和时间；特殊退款还记录整数分金额，复用已确认支付证据，拒绝 `succeeded` 订单和非正整数，并在同一事务内锁定订单行，把 D5-04 自动退款占用与既有人工退款一并累计，保证并发请求的累计金额也不超过原支付金额。命名 migration `20260808_074845_d5_payment_recovery_manual_audit` 覆盖两个受保护 Collection、唯一索引、空库/升级及 down/up 往返。测试补充基于微信支付官方 API v3 通知示例结构的 fixture，并用测试时生成的 RSA/AES 密钥覆盖平台 SHA256-RSA 验签、AES-256-GCM 解密和篡改拒绝；官方文档没有提供可直接复用的私钥、平台签名或密文，因此未把不可验证的静态秘密写入仓库。最终在同一数据库状态上连续两次原样 `make check`，两次均以退出码 0 完整通过生成物/schema 漂移、全部 migration 往返、Nginx、lint、TypeScript strict、557/557 单元测试、67/67 PostgreSQL/MinIO 集成测试、依赖与秘密门禁、Next.js 生产构建及 linux/amd64 同镜像；最终原样 `make test-e2e` 39/39 通过。D5 第 9.2 节实现项至此全部完成；`ALLOW_REAL_PROVIDER_WRITES=false`，未连接真实商户、未执行小额联调，测试商户配置后的联调及 D7 生产通知重放/恢复演练仍等待单独授权。
 
 ### 9.3 退出条件
 

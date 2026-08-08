@@ -36,6 +36,13 @@ export const auditEventDefinitions = {
   'pricing.rule.disabled': { actorTypes: ['admin'], targetType: 'price-rule' },
   'pricing.rule.enabled': { actorTypes: ['admin'], targetType: 'price-rule' },
   'pricing.rule.updated': { actorTypes: ['admin'], targetType: 'price-rule' },
+  'commerce.invoice_note.recorded': { actorTypes: ['admin'], targetType: 'order' },
+  'commerce.payment_notification.replayed': {
+    actorTypes: ['admin'],
+    targetType: 'payment-notification',
+  },
+  'commerce.payment.reconciled': { actorTypes: ['admin'], targetType: 'order' },
+  'commerce.special_refund.recorded': { actorTypes: ['admin'], targetType: 'order' },
   'realname.template.status_changed': {
     actorTypes: ['admin', 'customer', 'provider', 'system'],
     targetType: 'realname-template',

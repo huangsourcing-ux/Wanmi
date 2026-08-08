@@ -313,6 +313,68 @@ function verifyPaymentFrontendTimeoutSchema(stage) {
   }
 }
 
+function verifyPaymentRecoveryAuditSchema(stage) {
+  const shape = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (COUNT(*) FILTER (WHERE table_name = 'payment_notification_archives' AND column_name IN (
+           'notification_id', 'order_id', 'payload_digest', 'merchant_order_number',
+           'wechat_transaction_id', 'amount_minor', 'currency', 'paid_at', 'received_at',
+           'verified_at', 'signature_verified', 'processing_status', 'last_processed_at',
+           'last_replay_at', 'replay_count'
+         )))::text || ':' ||
+         (COUNT(*) FILTER (WHERE table_name = 'order_manual_actions' AND column_name IN (
+           'action_key', 'order_id', 'action_type', 'amount_minor', 'currency', 'reason',
+           'evidence', 'operator_id', 'recorded_at'
+         )))::text
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name IN ('payment_notification_archives', 'order_manual_actions')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (shape !== '15:9') {
+    throw new Error(`D5-07 payment recovery/audit columns invalid after ${stage}: ${shape}`)
+  }
+  const constraints = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public'
+           AND tablename = 'payment_notification_archives'
+           AND indexname = 'payment_notification_archives_notification_id_idx'
+           AND indexdef LIKE 'CREATE UNIQUE INDEX%'))::text || ':' ||
+         (EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public'
+           AND tablename = 'order_manual_actions'
+           AND indexname = 'order_manual_actions_action_key_idx'
+           AND indexdef LIKE 'CREATE UNIQUE INDEX%'))::text || ':' ||
+         array_to_string(enum_range(NULL::enum_payment_notification_archives_processing_status), ',') || ':' ||
+         array_to_string(enum_range(NULL::enum_order_manual_actions_action_type), ',')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (constraints !== 'true:true:pending,processed,failed:special_refund,invoice_note') {
+    throw new Error(
+      `D5-07 payment recovery/audit constraints invalid after ${stage}: ${constraints}`,
+    )
+  }
+}
+
 function verifyToolObservabilitySchema(stage) {
   const forbiddenColumns = postgres(
     [
@@ -1382,6 +1444,7 @@ try {
   verifyPriceSnapshotSchema('empty-database migration')
   verifyPriceRuleSchema('empty-database migration')
   verifyPaymentFrontendTimeoutSchema('empty-database migration')
+  verifyPaymentRecoveryAuditSchema('empty-database migration')
   verifyToolObservabilitySchema('empty-database migration')
   verifyContentCmsSchema('empty-database migration')
   verifyContentRelationsSeoSchema('empty-database migration')
@@ -2646,8 +2709,43 @@ try {
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
   verifyPaymentFrontendTimeoutSchema('D5-06 migration round trip')
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 109
+     WHERE name = '20260808_074845_d5_payment_recovery_manual_audit'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const paymentRecoveryAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (to_regclass('public.payment_notification_archives') IS NULL)::text || ':' ||
+         (to_regclass('public.order_manual_actions') IS NULL)::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (paymentRecoveryAfterDown !== 'true:true') {
+    throw new Error(`D5-07 migration down was incomplete: ${paymentRecoveryAfterDown}`)
+  }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyPaymentRecoveryAuditSchema('D5-07 migration round trip')
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, and the D5-06 payment front-end/timeout migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, and the D5-07 payment recovery/manual audit migration round trips.\n',
   )
 } finally {
   if (created) {

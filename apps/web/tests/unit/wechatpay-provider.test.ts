@@ -2,9 +2,48 @@ import { describe, expect, it } from 'vitest'
 
 import { createWechatPayFixture } from '@/providers/wechatpay'
 
+import {
+  officialWechatPaymentExample,
+  officialWechatPaymentNotification,
+} from '../fixtures/wechatpay-official'
+
 const now = new Date('2026-08-08T01:00:00.000Z')
 
 describe('Wechat Pay API v3 fixture adapter', () => {
+  it('verifies and decrypts the official API v3 payment-notification example shape', async () => {
+    const officialNow = new Date('2018-06-08T02:34:56.000Z')
+    const fixture = createWechatPayFixture({ now: () => officialNow })
+    const notification = officialWechatPaymentNotification(fixture)
+    const envelope = JSON.parse(notification.body) as Record<string, unknown>
+    expect(envelope).toMatchObject({
+      event_type: 'TRANSACTION.SUCCESS',
+      id: officialWechatPaymentExample.notificationId,
+      resource_type: 'encrypt-resource',
+      summary: '支付成功',
+    })
+    await expect(
+      fixture.provider.verifyNotification({
+        ...notification,
+        traceId: 'trace-wechat-official-fixture',
+      }),
+    ).resolves.toEqual({
+      amountMinor: officialWechatPaymentExample.amountMinor,
+      currency: 'CNY',
+      merchantOrderNumber: officialWechatPaymentExample.merchantOrderNumber,
+      notificationId: officialWechatPaymentExample.notificationId,
+      paidAt: officialWechatPaymentExample.paidAt,
+      transactionId: officialWechatPaymentExample.transactionId,
+      verified: true,
+    })
+    notification.headers.set('wechatpay-signature', 'tampered-official-example')
+    await expect(
+      fixture.provider.verifyNotification({
+        ...notification,
+        traceId: 'trace-wechat-official-fixture-tampered',
+      }),
+    ).resolves.toMatchObject({ signatureVerified: false, verified: false })
+  })
+
   it('creates signed Native and H5 orders with the server expiry and queries a verified response', async () => {
     const fixture = createWechatPayFixture({ now: () => now })
     const expiresAt = '2026-08-08T01:04:00.000Z'

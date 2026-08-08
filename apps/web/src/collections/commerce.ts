@@ -442,6 +442,67 @@ export const PaymentNotifications: CollectionConfig = {
   ],
 }
 
+export const PaymentNotificationArchives: CollectionConfig = {
+  slug: 'paymentNotificationArchives',
+  access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
+  admin: { group: ADMIN_GROUPS.commerce, hidden: systemAdminHidden },
+  fields: [
+    { name: 'notificationId', type: 'text', index: true, required: true, unique: true },
+    { name: 'order', type: 'relationship', relationTo: 'orders', index: true },
+    { name: 'payloadDigest', type: 'text', access: { read: sensitiveFieldRead }, required: true },
+    {
+      name: 'merchantOrderNumber',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      required: true,
+    },
+    {
+      name: 'wechatTransactionId',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      required: true,
+    },
+    { ...safeInteger('amountMinor') },
+    { name: 'currency', type: 'select', options: ['CNY'], required: true },
+    { name: 'paidAt', type: 'date', required: true },
+    { name: 'receivedAt', type: 'date', required: true },
+    { name: 'verifiedAt', type: 'date', required: true },
+    { name: 'signatureVerified', type: 'checkbox', defaultValue: true, required: true },
+    {
+      name: 'processingStatus',
+      type: 'select',
+      defaultValue: 'pending',
+      options: ['pending', 'processed', 'failed'],
+      required: true,
+    },
+    { name: 'lastProcessedAt', type: 'date' },
+    { name: 'lastReplayAt', type: 'date' },
+    { ...safeInteger('replayCount'), defaultValue: 0 },
+  ],
+}
+
+export const OrderManualActions: CollectionConfig = {
+  slug: 'orderManualActions',
+  access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
+  admin: { group: ADMIN_GROUPS.commerce, hidden: systemAdminHidden },
+  fields: [
+    { name: 'actionKey', type: 'text', index: true, required: true, unique: true },
+    { name: 'order', type: 'relationship', relationTo: 'orders', index: true, required: true },
+    {
+      name: 'actionType',
+      type: 'select',
+      options: ['special_refund', 'invoice_note'],
+      required: true,
+    },
+    { ...safeInteger('amountMinor', false) },
+    { name: 'currency', type: 'select', options: ['CNY'] },
+    { name: 'reason', type: 'textarea', access: { read: sensitiveFieldRead }, required: true },
+    { name: 'evidence', type: 'json', access: { read: sensitiveFieldRead }, required: true },
+    { name: 'operator', type: 'relationship', relationTo: 'admins', index: true, required: true },
+    { name: 'recordedAt', type: 'date', required: true },
+  ],
+}
+
 export const Refunds: CollectionConfig = {
   slug: 'refunds',
   access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },

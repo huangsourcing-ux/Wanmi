@@ -3,7 +3,9 @@ import type { CollectionConfig } from 'payload'
 import { AdCreatives, AdMedia, AdPlacements, AdSchedules, Advertisers } from './advertising'
 import {
   OrderEvents,
+  OrderManualActions,
   Orders,
+  PaymentNotificationArchives,
   PaymentNotifications,
   PriceRules,
   PriceSnapshots,
@@ -74,6 +76,8 @@ export const collections: CollectionConfig[] = [
   Orders,
   OrderEvents,
   PaymentNotifications,
+  PaymentNotificationArchives,
+  OrderManualActions,
   RefundNotifications,
   Refunds,
   ProviderOperations,
