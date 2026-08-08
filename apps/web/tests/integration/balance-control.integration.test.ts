@@ -38,6 +38,7 @@ import { submitRealnameTemplate, syncRealnameTemplateStatus } from '@/services/r
 import { fulfillmentQuoteSnapshotFixture } from '../fixtures/commerce'
 import { PRICING_RULE_FIXTURES } from '../fixtures/pricing'
 import { approvedRealnameProviderFixture, realnameTemplateFixture } from '../fixtures/realname'
+import { ensureAnchorSystemAdmin } from '../test-cleanup'
 
 const prefix = `d6-balance-control-${randomUUID()}`
 let payload: Payload
@@ -204,25 +205,7 @@ function concurrentLowBalanceProvider(callCount: number): WestDigitalBalanceProv
 
 beforeAll(async () => {
   payload = await getPayload({ config })
-  const existing = await payload.find({
-    collection: 'admins',
-    limit: 1,
-    overrideAccess: true,
-    where: { email: { equals: 'integration-system-admin-anchor@example.test' } },
-  })
-  systemAdmin =
-    existing.docs[0] ??
-    (await payload.create({
-      collection: 'admins',
-      context: { adminAccountOperation: 'bootstrap' },
-      data: {
-        email: 'integration-system-admin-anchor@example.test',
-        password: 'Integration-anchor-password-2026',
-        roles: ['system_admin'],
-        status: 'active',
-      },
-      overrideAccess: true,
-    }))
+  systemAdmin = await ensureAnchorSystemAdmin(payload)
 })
 
 afterAll(async () => {

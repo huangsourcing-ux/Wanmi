@@ -596,6 +596,8 @@ D6-02 返回语义补充验证记录（2026-08-08）：修正 `executeWestDigita
 
 集成测试审计清理隔离验证记录（2026-08-08）：`payments`、`content-cms`、`advertising` 和 `form-builder` 的审计清理改为同时按本文件全局唯一的 `traceId`/fixture 前缀与 `targetType`（必要时再加 `action`）限定，禁止仅凭跨 Collection 可碰撞的 `targetId`、全局 `targetType` 或全局 `action` 删除；所有 `afterAll` 按 ID 删除统一将 Payload 404 视为幂等已完成，其他错误仍抛出。验证前明确执行 `docker compose down -v` 删除测试卷，重建容器并运行 Payload migrate；随后不并行执行其他工作，连续三次完整 `make test-integration` 均为 22 个文件、80/80 通过。合并上述返回语义修复后，最终原样 `make check` 以退出码 0 通过生成物/schema 漂移、空库/升级与全部 migration 往返、Nginx、lint、TypeScript strict、559/559 单元测试、80/80 PostgreSQL/MinIO 集成测试、依赖与秘密门禁、Next.js 生产构建及 linux/amd64 同镜像。未修改生产业务逻辑或任何 `docs/planning/` 内容。
 
+集成测试锚点 fixture 竞态修复验证记录（2026-08-08）：PR #49 全新库 CI 的 `admins_email_idx` 唯一约束失败确认来自 5 个并行集成测试文件对固定锚点管理员执行无保护的 find-then-create。新增共享 `ensureAnchorSystemAdmin`，创建撞到 Payload 明确标注 `path=email`、`tableName=admins` 的唯一约束时才重新查询并返回竞态中已创建的记录；其他字段、其他表或普通错误全部原样重抛。`balance-control`、`payments`、`redirects`、`form-builder`、`admin-auth` 全部改用该 helper；同类审查还把 E2E 中固定管理员邮箱、客户手机号和 price rule TLD 的初始化收敛到相同的通用 raced 回退，未发现其余固定邮箱、手机号、域名或 key 存在无保护 find-then-create。新增 3 个单元测试锁定唯一冲突回退及非目标错误重抛。验证前再次明确执行 `docker compose down -v` 删除本地测试卷，从初始 migration 重建全新数据库；随后不并行执行其他工作，连续五次完整 `ALLOW_REAL_PROVIDER_WRITES=false make test-integration` 均为 23 个文件、85/85 通过。修复只涉及测试 fixture/helper 与验证文档，没有修改生产代码；用户未跟踪的 `docs/planning/` 保持未修改。合并最新 `main` 后，最终原样 `ALLOW_REAL_PROVIDER_WRITES=false make check` 以退出码 0 通过生成物/schema 漂移、空库/升级与全部 migration 往返、Nginx、lint、TypeScript strict、564/564 单元测试、85/85 PostgreSQL/MinIO 集成测试、依赖与秘密门禁、Next.js 生产构建及 linux/amd64 同镜像。
+
 ### 10.3 退出条件
 
 - 支付后服务重启、任务重复执行和上游超时不会造成重复注册或续费；

@@ -18,7 +18,7 @@ import {
 import { recordManualOrderAction } from '@/services/commerce/manual-actions'
 
 import { realnameTemplateFixture } from '../fixtures/realname'
-import { ignorePayloadNotFound } from '../test-cleanup'
+import { ensureAnchorSystemAdmin, ignorePayloadNotFound } from '../test-cleanup'
 
 const prefix = `d5-payments-${randomUUID()}`
 const now = new Date('2026-08-08T02:00:00.000Z')
@@ -39,25 +39,7 @@ async function customerRequest(customer: unknown, suffix: string): Promise<Paylo
 }
 
 async function systemAdminRequest(suffix: string): Promise<PayloadRequest> {
-  const existing = await payload.find({
-    collection: 'admins',
-    limit: 1,
-    overrideAccess: true,
-    where: { email: { equals: 'integration-system-admin-anchor@example.test' } },
-  })
-  const admin =
-    existing.docs[0] ??
-    (await payload.create({
-      collection: 'admins',
-      context: { adminAccountOperation: 'bootstrap' },
-      data: {
-        email: 'integration-system-admin-anchor@example.test',
-        password: 'Integration-anchor-password-2026',
-        roles: ['system_admin'],
-        status: 'active',
-      },
-      overrideAccess: true,
-    }))
+  const admin = await ensureAnchorSystemAdmin(payload)
   const req = await createLocalReq(
     { req: { headers: new Headers({ 'x-request-id': `${prefix}-${suffix}` }) } },
     payload,
