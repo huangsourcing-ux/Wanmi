@@ -201,6 +201,57 @@ export interface WestDigitalRealnameProvider extends HealthAwareProvider {
   >
 }
 
+export type WestDigitalDomainAsset = {
+  domainAscii: string
+  expiresAt: string
+  nameservers: string[]
+  providerAssetId: string
+  registeredAt: string
+  registrarCode: string
+}
+
+export type WestDigitalWriteConfirmation = {
+  providerClientId: string
+  state: 'accepted' | 'failed' | 'pending' | 'succeeded' | 'unknown'
+}
+
+export interface WestDigitalWriteProvider extends HealthAwareProvider {
+  changeNameservers(input: {
+    domainAscii: string
+    nameservers: string[]
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalWriteConfirmation>>
+  createRealname(input: {
+    profile: WestDigitalRealnameProfile
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalWriteConfirmation & { providerTemplateId: string }>>
+  queryAsset(input: {
+    domainAscii: string
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalDomainAsset>>
+  queryRealname(input: {
+    providerTemplateId: string
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalWriteConfirmation & { reviewState: WestDigitalRealnameReviewState }>>
+  register(input: {
+    clientPriceFen: number
+    domainAscii: string
+    nameservers: string[]
+    premium: boolean
+    providerTemplateId: string
+    traceId: string
+    years: number
+  }): Promise<ProviderResult<WestDigitalWriteConfirmation>>
+  renew(input: {
+    clientPriceFen: number
+    currentExpiresOn: string
+    domainAscii: string
+    premium: boolean
+    traceId: string
+    years: number
+  }): Promise<ProviderResult<WestDigitalWriteConfirmation>>
+}
+
 export type PaymentChannel = 'h5' | 'native'
 
 export type PaymentOrderState = 'closed' | 'not_paid' | 'paid' | 'refunded' | 'unknown'

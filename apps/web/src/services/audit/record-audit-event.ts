@@ -43,6 +43,10 @@ export const auditEventDefinitions = {
   },
   'commerce.payment.reconciled': { actorTypes: ['admin'], targetType: 'order' },
   'commerce.special_refund.recorded': { actorTypes: ['admin'], targetType: 'order' },
+  'provider.operation.recorded': {
+    actorTypes: ['admin', 'customer', 'provider', 'system'],
+    targetType: 'provider-operation',
+  },
   'realname.template.status_changed': {
     actorTypes: ['admin', 'customer', 'provider', 'system'],
     targetType: 'realname-template',

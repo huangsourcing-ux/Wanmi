@@ -15,12 +15,25 @@ export const ProviderOperations: CollectionConfig = {
   admin: { group: ADMIN_GROUPS.fulfillment, hidden: systemAdminHidden },
   fields: [
     { name: 'operationKey', type: 'text', index: true, required: true, unique: true },
-    { name: 'order', type: 'relationship', relationTo: 'orders', index: true, required: true },
+    { name: 'order', type: 'relationship', relationTo: 'orders', index: true },
+    {
+      name: 'realnameTemplate',
+      type: 'relationship',
+      relationTo: 'realnameTemplates',
+      index: true,
+    },
+    {
+      name: 'targetType',
+      type: 'select',
+      options: ['order', 'realname_template', 'domain'],
+      required: true,
+    },
+    { name: 'targetId', type: 'text', index: true, required: true },
     { name: 'provider', type: 'select', options: ['westdigital', 'wechatpay'], required: true },
     {
       name: 'operation',
       type: 'select',
-      options: ['register', 'renew', 'refund', 'nameserver', 'query'],
+      options: ['realname', 'register', 'renew', 'refund', 'nameserver', 'query'],
       required: true,
     },
     {
@@ -30,6 +43,9 @@ export const ProviderOperations: CollectionConfig = {
       required: true,
     },
     { name: 'providerRequestId', type: 'text', access: { read: sensitiveFieldRead }, index: true },
+    { name: 'attemptCount', type: 'number', defaultValue: 0, min: 0, required: true },
+    { name: 'maxAttempts', type: 'number', defaultValue: 3, min: 1, max: 3, required: true },
+    { name: 'lastErrorCode', type: 'text', index: true },
     { name: 'submittedAt', type: 'date' },
     { name: 'lastCheckedAt', type: 'date' },
     { name: 'safeResult', type: 'json' },

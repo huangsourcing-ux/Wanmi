@@ -258,11 +258,15 @@ async function providerOperation(req: PayloadRequest, refund: RefundRecord) {
     (await req.payload.create({
       collection: 'providerOperations',
       data: {
+        attemptCount: 0,
+        maxAttempts: 3,
         operation: 'refund',
         operationKey,
         order: relationId(refund.order) as never,
         provider: 'wechatpay',
         status: 'prepared',
+        targetId: String(relationId(refund.order)),
+        targetType: 'order',
       },
       overrideAccess: true,
       req,

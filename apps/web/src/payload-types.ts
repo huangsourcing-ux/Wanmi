@@ -1148,11 +1148,17 @@ export interface Refund {
 export interface ProviderOperation {
   id: number;
   operationKey: string;
-  order: number | Order;
+  order?: (number | null) | Order;
+  realnameTemplate?: (number | null) | RealnameTemplate;
+  targetType: 'order' | 'realname_template' | 'domain';
+  targetId: string;
   provider: 'westdigital' | 'wechatpay';
-  operation: 'register' | 'renew' | 'refund' | 'nameserver' | 'query';
+  operation: 'realname' | 'register' | 'renew' | 'refund' | 'nameserver' | 'query';
   status: 'prepared' | 'submitted' | 'succeeded' | 'failed' | 'unknown';
   providerRequestId?: string | null;
+  attemptCount: number;
+  maxAttempts: number;
+  lastErrorCode?: string | null;
   submittedAt?: string | null;
   lastCheckedAt?: string | null;
   safeResult?:
@@ -2738,10 +2744,16 @@ export interface RefundsSelect<T extends boolean = true> {
 export interface ProviderOperationsSelect<T extends boolean = true> {
   operationKey?: T;
   order?: T;
+  realnameTemplate?: T;
+  targetType?: T;
+  targetId?: T;
   provider?: T;
   operation?: T;
   status?: T;
   providerRequestId?: T;
+  attemptCount?: T;
+  maxAttempts?: T;
+  lastErrorCode?: T;
   submittedAt?: T;
   lastCheckedAt?: T;
   safeResult?: T;

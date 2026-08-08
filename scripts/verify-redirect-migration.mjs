@@ -375,6 +375,65 @@ function verifyPaymentRecoveryAuditSchema(stage) {
   }
 }
 
+function verifyWestdigitalProviderOperationSchema(stage) {
+  const shape = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (is_nullable = 'YES')::text || ':' ||
+         (SELECT COUNT(*)::text FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'provider_operations'
+            AND column_name IN (
+              'realname_template_id', 'target_type', 'target_id', 'attempt_count',
+              'max_attempts', 'last_error_code'
+            )) || ':' ||
+         array_to_string(enum_range(NULL::enum_provider_operations_operation), ',')
+       FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'provider_operations'
+         AND column_name = 'order_id'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (shape !== 'true:6:realname,register,renew,refund,nameserver,query') {
+    throw new Error(`D6-01 provider-operation columns invalid after ${stage}: ${shape}`)
+  }
+
+  const constraints = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public'
+           AND tablename = 'provider_operations'
+           AND indexname = 'provider_operations_operation_key_idx'
+           AND indexdef LIKE 'CREATE UNIQUE INDEX%'))::text || ':' ||
+         (EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public'
+           AND tablename = 'provider_operations'
+           AND indexname = 'provider_operations_target_id_idx'))::text || ':' ||
+         (EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public'
+           AND tablename = 'provider_operations'
+           AND indexname = 'provider_operations_last_error_code_idx'))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (constraints !== 'true:true:true') {
+    throw new Error(`D6-01 provider-operation indexes invalid after ${stage}: ${constraints}`)
+  }
+}
+
 function verifyToolObservabilitySchema(stage) {
   const forbiddenColumns = postgres(
     [
@@ -2744,8 +2803,128 @@ try {
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
   verifyPaymentRecoveryAuditSchema('D5-07 migration round trip')
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `INSERT INTO provider_operations (
+       operation_key, order_id, realname_template_id, target_type, target_id,
+       provider, operation, status, attempt_count, max_attempts, updated_at, created_at
+     )
+     SELECT
+       'd6-01-new-realname-operation', NULL, id, 'realname_template', id::text,
+       'westdigital', 'realname', 'unknown', 1, 3, NOW(), NOW()
+     FROM realname_templates
+     LIMIT 1`,
+  ])
+
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 110
+     WHERE name = '20260808_104813_d6_westdigital_provider_operations'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const providerOperationAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'provider_operations'
+             AND column_name = 'target_id'
+         ))::text || ':' ||
+         (EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'provider_operations'
+             AND column_name = 'order_id' AND is_nullable = 'NO'
+         ))::text || ':' ||
+         (array_to_string(enum_range(NULL::enum_provider_operations_operation), ',')
+           NOT LIKE '%realname%')::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM provider_operations
+           WHERE operation_key = 'd6-01-new-realname-operation'
+         ))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (providerOperationAfterDown !== 'true:true:true:true') {
+    throw new Error(`D6-01 migration down was incomplete: ${providerOperationAfterDown}`)
+  }
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `WITH legacy_order AS (
+       INSERT INTO orders (
+         order_number, customer_id, quote_id, realname_template_id, domain_ascii,
+         status, amount_minor, currency, quote_snapshot, updated_at, created_at
+       )
+       SELECT
+         'D6-01-LEGACY-ORDER', c.id, q.id, r.id, 'd6-01-legacy.example.com',
+         'paid', 120, 'CNY', '{"legacy":true}'::jsonb, NOW(), NOW()
+       FROM customers c
+       CROSS JOIN quotes q
+       CROSS JOIN realname_templates r
+       LIMIT 1
+       RETURNING id
+     )
+     INSERT INTO provider_operations (
+       operation_key, order_id, provider, operation, status, updated_at, created_at
+     )
+     SELECT 'd6-01-legacy-provider-operation', id, 'westdigital', 'query', 'prepared',
+            NOW(), NOW()
+     FROM legacy_order`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyWestdigitalProviderOperationSchema('D6-01 migration round trip')
+  const providerOperationBackfill = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         target_type::text || ':' || (target_id = order_id::text)::text || ':' ||
+         attempt_count::text || ':' || max_attempts::text
+       FROM provider_operations
+       WHERE operation_key = 'd6-01-legacy-provider-operation'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (providerOperationBackfill !== 'order:true:0:3') {
+    throw new Error(`D6-01 legacy provider-operation backfill failed: ${providerOperationBackfill}`)
+  }
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, and the D5-07 payment recovery/manual audit migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, and the D6-01 West Digital provider-operation migration round trips.\n',
   )
 } finally {
   if (created) {

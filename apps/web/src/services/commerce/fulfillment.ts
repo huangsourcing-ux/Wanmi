@@ -34,11 +34,15 @@ export async function runMockFulfillment(req: PayloadRequest, input: Fulfillment
     (await req.payload.create({
       collection: 'providerOperations',
       data: {
+        attemptCount: 0,
+        maxAttempts: 3,
         operation: 'register',
         operationKey: input.operationKey,
         order: input.orderId,
         provider: 'westdigital',
         status: 'prepared',
+        targetId: String(input.orderId),
+        targetType: 'order',
       },
       overrideAccess: true,
       req,

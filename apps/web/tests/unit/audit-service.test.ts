@@ -42,6 +42,7 @@ describe('shared audit event service', () => {
         'pricing.rule.disabled',
         'pricing.rule.enabled',
         'pricing.rule.updated',
+        'provider.operation.recorded',
         'realname.document.deleted',
         'realname.document.downloaded',
         'realname.document.submitted',
