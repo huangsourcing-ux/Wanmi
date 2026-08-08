@@ -22,6 +22,7 @@ import * as migration_20260808_015442_d5_wechat_payments from './20260808_015442
 import * as migration_20260808_031431_d5_wechat_refunds_reconciliation from './20260808_031431_d5_wechat_refunds_reconciliation'
 import * as migration_20260808_053208_d5_price_rules from './20260808_053208_d5_price_rules'
 import * as migration_20260808_064925_d5_payment_frontend_timeout from './20260808_064925_d5_payment_frontend_timeout'
+import * as migration_20260808_074845_d5_payment_recovery_manual_audit from './20260808_074845_d5_payment_recovery_manual_audit'
 
 export const migrations = [
   {
@@ -143,5 +144,10 @@ export const migrations = [
     up: migration_20260808_064925_d5_payment_frontend_timeout.up,
     down: migration_20260808_064925_d5_payment_frontend_timeout.down,
     name: '20260808_064925_d5_payment_frontend_timeout',
+  },
+  {
+    up: migration_20260808_074845_d5_payment_recovery_manual_audit.up,
+    down: migration_20260808_074845_d5_payment_recovery_manual_audit.down,
+    name: '20260808_074845_d5_payment_recovery_manual_audit',
   },
 ]

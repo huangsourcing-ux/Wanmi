@@ -97,6 +97,8 @@ export interface Config {
     orders: Order;
     orderEvents: OrderEvent;
     paymentNotifications: PaymentNotification;
+    paymentNotificationArchives: PaymentNotificationArchive;
+    orderManualActions: OrderManualAction;
     refundNotifications: RefundNotification;
     refunds: Refund;
     providerOperations: ProviderOperation;
@@ -163,6 +165,8 @@ export interface Config {
     orders: OrdersSelect<false> | OrdersSelect<true>;
     orderEvents: OrderEventsSelect<false> | OrderEventsSelect<true>;
     paymentNotifications: PaymentNotificationsSelect<false> | PaymentNotificationsSelect<true>;
+    paymentNotificationArchives: PaymentNotificationArchivesSelect<false> | PaymentNotificationArchivesSelect<true>;
+    orderManualActions: OrderManualActionsSelect<false> | OrderManualActionsSelect<true>;
     refundNotifications: RefundNotificationsSelect<false> | RefundNotificationsSelect<true>;
     refunds: RefundsSelect<false> | RefundsSelect<true>;
     providerOperations: ProviderOperationsSelect<false> | ProviderOperationsSelect<true>;
@@ -1047,6 +1051,56 @@ export interface PaymentNotification {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "paymentNotificationArchives".
+ */
+export interface PaymentNotificationArchive {
+  id: number;
+  notificationId: string;
+  order?: (number | null) | Order;
+  payloadDigest: string;
+  merchantOrderNumber: string;
+  wechatTransactionId: string;
+  amountMinor: number;
+  currency: 'CNY';
+  paidAt: string;
+  receivedAt: string;
+  verifiedAt: string;
+  signatureVerified: boolean;
+  processingStatus: 'pending' | 'processed' | 'failed';
+  lastProcessedAt?: string | null;
+  lastReplayAt?: string | null;
+  replayCount: number;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "orderManualActions".
+ */
+export interface OrderManualAction {
+  id: number;
+  actionKey: string;
+  order: number | Order;
+  actionType: 'special_refund' | 'invoice_note';
+  amountMinor?: number | null;
+  currency?: 'CNY' | null;
+  reason: string;
+  evidence:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  operator: number | Admin;
+  recordedAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "refundNotifications".
  */
 export interface RefundNotification {
@@ -1875,6 +1929,14 @@ export interface PayloadLockedDocument {
         value: number | PaymentNotification;
       } | null)
     | ({
+        relationTo: 'paymentNotificationArchives';
+        value: number | PaymentNotificationArchive;
+      } | null)
+    | ({
+        relationTo: 'orderManualActions';
+        value: number | OrderManualAction;
+      } | null)
+    | ({
         relationTo: 'refundNotifications';
         value: number | RefundNotification;
       } | null)
@@ -2586,6 +2648,46 @@ export interface PaymentNotificationsSelect<T extends boolean = true> {
   paidAt?: T;
   payloadDigest?: T;
   providerRequestId?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "paymentNotificationArchives_select".
+ */
+export interface PaymentNotificationArchivesSelect<T extends boolean = true> {
+  notificationId?: T;
+  order?: T;
+  payloadDigest?: T;
+  merchantOrderNumber?: T;
+  wechatTransactionId?: T;
+  amountMinor?: T;
+  currency?: T;
+  paidAt?: T;
+  receivedAt?: T;
+  verifiedAt?: T;
+  signatureVerified?: T;
+  processingStatus?: T;
+  lastProcessedAt?: T;
+  lastReplayAt?: T;
+  replayCount?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "orderManualActions_select".
+ */
+export interface OrderManualActionsSelect<T extends boolean = true> {
+  actionKey?: T;
+  order?: T;
+  actionType?: T;
+  amountMinor?: T;
+  currency?: T;
+  reason?: T;
+  evidence?: T;
+  operator?: T;
+  recordedAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }

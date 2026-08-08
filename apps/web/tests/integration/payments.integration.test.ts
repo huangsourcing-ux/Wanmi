@@ -11,8 +11,11 @@ import {
   createWechatPayment,
   processWechatPaymentNotification,
   queryAndConfirmWechatPayment,
+  reconcileWechatPaymentByOrder,
+  replayArchivedWechatPaymentNotification,
   runPaymentTimeoutClose,
 } from '@/services/commerce/payments'
+import { recordManualOrderAction } from '@/services/commerce/manual-actions'
 
 import { realnameTemplateFixture } from '../fixtures/realname'
 
@@ -32,6 +35,40 @@ async function customerRequest(customer: unknown, suffix: string): Promise<Paylo
   )
   req.user = customer as never
   return req
+}
+
+async function systemAdminRequest(suffix: string): Promise<PayloadRequest> {
+  const existing = await payload.find({
+    collection: 'admins',
+    limit: 1,
+    overrideAccess: true,
+    where: { email: { equals: 'integration-system-admin-anchor@example.test' } },
+  })
+  const admin =
+    existing.docs[0] ??
+    (await payload.create({
+      collection: 'admins',
+      context: { adminAccountOperation: 'bootstrap' },
+      data: {
+        email: 'integration-system-admin-anchor@example.test',
+        password: 'Integration-anchor-password-2026',
+        roles: ['system_admin'],
+        status: 'active',
+      },
+      overrideAccess: true,
+    }))
+  const req = await createLocalReq(
+    { req: { headers: new Headers({ 'x-request-id': `${prefix}-${suffix}` }) } },
+    payload,
+  )
+  req.user = { ...admin, collection: 'admins' } as never
+  return req
+}
+
+const evidence = {
+  observedAt: now.toISOString(),
+  reference: 'WECHAT-CONSOLE-D5-07',
+  source: 'provider_query' as const,
 }
 
 async function createPendingOrder(suffix: string, amountMinor = 12_300) {
@@ -123,7 +160,14 @@ afterAll(async () => {
     where: { orderNumber: { contains: prefix } },
   })
   for (const order of orders.docs) {
-    for (const collection of ['orderEvents', 'paymentNotifications', 'manualReviews'] as const) {
+    for (const collection of [
+      'orderEvents',
+      'paymentNotifications',
+      'paymentNotificationArchives',
+      'orderManualActions',
+      'refunds',
+      'manualReviews',
+    ] as const) {
       const rows = await payload.find({
         collection,
         limit: 100,
@@ -133,6 +177,15 @@ afterAll(async () => {
       for (const row of rows.docs) {
         await payload.delete({ collection, id: row.id, overrideAccess: true })
       }
+    }
+    const audits = await payload.find({
+      collection: 'auditLogs',
+      limit: 100,
+      overrideAccess: true,
+      where: { targetId: { equals: String(order.id) } },
+    })
+    for (const audit of audits.docs) {
+      await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
     }
     await payload.delete({ collection: 'orders', id: order.id, overrideAccess: true })
   }
@@ -600,5 +653,223 @@ describe('D5-03 Wechat Pay confirmation', () => {
       (await payload.findByID({ collection: 'orders', id: setup.order.id, overrideAccess: true }))
         .status,
     ).toBe('pending_payment')
+  })
+
+  it('replays only a verified archive through the existing query and idempotency path', async () => {
+    const fixture = createWechatPayFixture({ now: () => now })
+    const setup = await createPendingOrder('archive-replay')
+    const session = await createWechatPayment(
+      await customerRequest(setup.customer, 'archive-replay-create'),
+      setup.order.orderNumber,
+      { channel: 'native' },
+      {
+        customer: setup.customer,
+        now: () => now,
+        provider: fixture.provider,
+        traceId: `${prefix}-archive-create`,
+      },
+    )
+    const transactionId = '42000000000000000000000000000031'
+    fixture.setOrder({
+      amountMinor: setup.amountMinor,
+      merchantOrderNumber: session.data.merchantOrderNumber,
+      paidAt: now.toISOString(),
+      state: 'paid',
+      transactionId,
+    })
+    const notification = fixture.notification({
+      amountMinor: setup.amountMinor,
+      merchantOrderNumber: session.data.merchantOrderNumber,
+      notificationId: notificationId(),
+      paidAt: now.toISOString(),
+      transactionId,
+    })
+    const throwingProvider: PaymentProvider = {
+      closeOrder: (input) => fixture.provider.closeOrder(input),
+      createPayment: (input) => fixture.provider.createPayment(input),
+      health: () => fixture.provider.health(),
+      queryOrder: async () => {
+        throw new Error('simulated restart after verified archive')
+      },
+      verifyNotification: (input) => fixture.provider.verifyNotification(input),
+    }
+    await expect(
+      processWechatPaymentNotification(
+        await createLocalReq({}, payload),
+        { ...notification, traceId: `${prefix}-archive-interrupted` },
+        throwingProvider,
+      ),
+    ).rejects.toThrow('simulated restart')
+    const archive = await payload.find({
+      collection: 'paymentNotificationArchives',
+      overrideAccess: true,
+      where: { order: { equals: setup.order.id } },
+    })
+    expect(archive.docs[0]).toMatchObject({ processingStatus: 'failed', signatureVerified: true })
+    expect(
+      await replayArchivedWechatPaymentNotification(
+        await systemAdminRequest('archive-replay-admin'),
+        archive.docs[0]!.notificationId,
+        {
+          evidence,
+          note: '服务重启后重放已验签归档',
+          provider: fixture.provider,
+          traceId: `${prefix}-archive-replay`,
+        },
+      ),
+    ).toMatchObject({ idempotentReplay: false, orderStatus: 'paid' })
+    expect(
+      await replayArchivedWechatPaymentNotification(
+        await systemAdminRequest('archive-replay-again'),
+        archive.docs[0]!.notificationId,
+        {
+          evidence,
+          note: '验证重复重放不重复迁移',
+          provider: fixture.provider,
+          traceId: `${prefix}-archive-replay-again`,
+        },
+      ),
+    ).toMatchObject({ idempotentReplay: true, orderStatus: 'paid' })
+    const events = await payload.find({
+      collection: 'orderEvents',
+      overrideAccess: true,
+      where: { order: { equals: setup.order.id } },
+    })
+    expect(events.docs).toHaveLength(1)
+  })
+
+  it('reconciles only from an active provider query and audits bounded manual finance records', async () => {
+    const fixture = createWechatPayFixture({ now: () => now })
+    const setup = await createPendingOrder('admin-reconcile', 10_000)
+    const session = await createWechatPayment(
+      await customerRequest(setup.customer, 'admin-reconcile-create'),
+      setup.order.orderNumber,
+      { channel: 'native' },
+      {
+        customer: setup.customer,
+        now: () => now,
+        provider: fixture.provider,
+        traceId: `${prefix}-admin-create`,
+      },
+    )
+    fixture.setOrder({
+      amountMinor: setup.amountMinor,
+      merchantOrderNumber: session.data.merchantOrderNumber,
+      paidAt: now.toISOString(),
+      state: 'paid',
+      transactionId: '42000000000000000000000000000032',
+    })
+    const req = await systemAdminRequest('admin-reconcile')
+    await expect(
+      reconcileWechatPaymentByOrder(req, setup.order.orderNumber, {
+        evidence,
+        note: '主动查单补齐付款状态',
+        provider: fixture.provider,
+        traceId: `${prefix}-admin-reconcile`,
+      }),
+    ).resolves.toMatchObject({ orderStatus: 'paid', providerState: 'paid' })
+    await recordManualOrderAction(req, setup.order.orderNumber, {
+      actionType: 'invoice_note',
+      evidence,
+      reason: '已交由现有财务流程开票',
+    })
+    await recordManualOrderAction(req, setup.order.orderNumber, {
+      actionType: 'special_refund',
+      amountMinor: 4_000,
+      evidence,
+      reason: '争议订单人工财务退款记录',
+    })
+    const concurrentRefunds = await Promise.allSettled([
+      recordManualOrderAction(
+        await systemAdminRequest('admin-special-refund-race-a'),
+        setup.order.orderNumber,
+        {
+          actionType: 'special_refund',
+          amountMinor: 4_000,
+          evidence,
+          reason: '并发退款额度竞争 A',
+        },
+      ),
+      recordManualOrderAction(
+        await systemAdminRequest('admin-special-refund-race-b'),
+        setup.order.orderNumber,
+        {
+          actionType: 'special_refund',
+          amountMinor: 4_000,
+          evidence,
+          reason: '并发退款额度竞争 B',
+        },
+      ),
+    ])
+    expect(concurrentRefunds.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+    expect(concurrentRefunds.filter((result) => result.status === 'rejected')).toHaveLength(1)
+    expect(concurrentRefunds.find((result) => result.status === 'rejected')).toMatchObject({
+      reason: { code: 'REFUND_AMOUNT_EXCEEDS_PAYMENT' },
+    })
+    await expect(
+      recordManualOrderAction(
+        await systemAdminRequest('admin-special-refund-over'),
+        setup.order.orderNumber,
+        {
+          actionType: 'special_refund',
+          amountMinor: 2_001,
+          evidence,
+          reason: '不得超出剩余可记录金额',
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'REFUND_AMOUNT_EXCEEDS_PAYMENT' })
+    const actions = await payload.find({
+      collection: 'orderManualActions',
+      overrideAccess: true,
+      where: { order: { equals: setup.order.id } },
+    })
+    expect(actions.docs).toHaveLength(3)
+    expect(actions.docs.reduce((total, action) => total + (action.amountMinor ?? 0), 0)).toBe(8_000)
+    await payload.create({
+      collection: 'refunds',
+      data: {
+        amountMinor: 2_000,
+        createdTraceId: `${prefix}-reserved-refund`,
+        currency: 'CNY',
+        order: setup.order.id,
+        refundNumber: `WR${randomUUID().replaceAll('-', '')}`,
+        status: 'pending',
+      },
+      overrideAccess: true,
+    })
+    await expect(
+      recordManualOrderAction(
+        await systemAdminRequest('admin-refund-reserved'),
+        setup.order.orderNumber,
+        {
+          actionType: 'special_refund',
+          amountMinor: 1,
+          evidence,
+          reason: '自动退款已占满剩余额度',
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'REFUND_AMOUNT_EXCEEDS_PAYMENT' })
+    await payload.update({
+      collection: 'orders',
+      data: { status: 'succeeded' },
+      id: setup.order.id,
+      overrideAccess: true,
+    })
+    await expect(
+      recordManualOrderAction(req, setup.order.orderNumber, {
+        actionType: 'special_refund',
+        amountMinor: 1,
+        evidence,
+        reason: '成功订单不可退款',
+      }),
+    ).rejects.toMatchObject({ code: 'SUCCEEDED_ORDER_REFUND_FORBIDDEN' })
+    const unauthorized = await createLocalReq({}, payload)
+    await expect(
+      recordManualOrderAction(unauthorized, setup.order.orderNumber, {
+        actionType: 'invoice_note',
+        evidence,
+        reason: '无权限操作',
+      }),
+    ).rejects.toMatchObject({ code: 'ADMIN_SYSTEM_ROLE_REQUIRED' })
   })
 })
