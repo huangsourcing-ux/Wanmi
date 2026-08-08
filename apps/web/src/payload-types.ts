@@ -977,6 +977,7 @@ export interface Order {
     | boolean
     | null;
   paidAt?: string | null;
+  fulfillmentJobQueuedAt?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2616,6 +2617,7 @@ export interface OrdersSelect<T extends boolean = true> {
   paymentStatusPolledAt?: T;
   quoteSnapshot?: T;
   paidAt?: T;
+  fulfillmentJobQueuedAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -3313,7 +3315,6 @@ export interface WorkflowCommerceFulfillment {
     operationKey: string;
     orderId: number;
     traceId: string;
-    simulate?: ('success' | 'timeout-before-submit' | 'timeout-after-submit') | null;
   };
 }
 /**

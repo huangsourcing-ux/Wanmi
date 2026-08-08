@@ -187,6 +187,17 @@ afterAll(async () => {
     for (const audit of audits.docs) {
       await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
     }
+    const fulfillmentJobs = await payload.find({
+      collection: 'payload-jobs',
+      limit: 100,
+      overrideAccess: true,
+      where: { workflowSlug: { equals: 'commerceFulfillment' } },
+    })
+    for (const job of fulfillmentJobs.docs) {
+      if ((job.input as { orderId?: number }).orderId === order.id) {
+        await payload.delete({ collection: 'payload-jobs', id: job.id, overrideAccess: true })
+      }
+    }
     await payload.delete({ collection: 'orders', id: order.id, overrideAccess: true })
   }
   for (const collection of ['quotes', 'realnameTemplates', 'customers'] as const) {
@@ -302,6 +313,16 @@ describe('D5-03 Wechat Pay confirmation', () => {
       reasonCode: 'wechatpay.payment_confirmed',
       toStatus: 'paid',
     })
+    const fulfillmentJobs = await payload.find({
+      collection: 'payload-jobs',
+      overrideAccess: true,
+      where: { workflowSlug: { equals: 'commerceFulfillment' } },
+    })
+    expect(
+      fulfillmentJobs.docs.filter(
+        (job) => (job.input as { orderId?: number }).orderId === setup.order.id,
+      ),
+    ).toHaveLength(1)
 
     await expect(
       payload.create({

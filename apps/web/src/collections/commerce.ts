@@ -373,6 +373,12 @@ export const Orders: CollectionConfig = {
       required: true,
     },
     { name: 'paidAt', type: 'date' },
+    {
+      name: 'fulfillmentJobQueuedAt',
+      type: 'date',
+      access: { read: sensitiveFieldRead },
+      index: true,
+    },
   ],
 }
 

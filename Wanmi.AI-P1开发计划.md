@@ -573,12 +573,12 @@ D5-08 验证记录（2026-08-08）：补齐第 9.3 节第 4 条的 PostgreSQL �
 - [x] 实现西部数码实名、注册、续费、资产查询和 Name Server 写适配器；
 - [ ] 注册、续费和退款全部通过 Payload `commerce` 队列执行；
 - [x] provider 写操作建立唯一操作键、审计、有限重试和状态查询；
-- [ ] 履约前重新核对已支付状态、冻结报价快照完整性、实名模板、域名状态和西部数码余额；支付确认后不得因报价时间过去而重新计价；
-- [ ] 上游明确失败进入失败待退款；
-- [ ] 超时、重复响应或状态不明进入待人工处理，只允许查状态，不自动重复提交；
+- [x] 履约前重新核对已支付状态、冻结报价快照完整性、实名模板、域名状态和西部数码余额；支付确认后不得因报价时间过去而重新计价；
+- [x] 上游明确失败进入失败待退款；
+- [x] 超时、重复响应或状态不明进入待人工处理，只允许查状态，不自动重复提交；
 - [ ] 余额不足时暂停受影响 TLD 新下单；已支付订单由项目负责人恢复履约或退款；
-- [ ] 注册成功后查询确认并创建域名资产；
-- [ ] 域名资产至少保存域名、所有者模板、注册商、注册时间、到期时间、状态、Name Server 和最后同步时间；
+- [x] 注册成功后查询确认并创建域名资产；
+- [x] 域名资产至少保存域名、所有者模板、注册商、注册时间、到期时间、状态、Name Server 和最后同步时间；
 - [ ] 实现域名资产列表、详情和上游同步；
 - [ ] 实现主动续费，沿用报价、支付、履约、退款和人工处理流程；
 - [ ] 实现本人域名 Name Server 修改和变更审计；
@@ -587,6 +587,8 @@ D5-08 验证记录（2026-08-08）：补齐第 9.3 节第 4 条的 PostgreSQL �
 - [ ] 建立西部数码余额监控、阈值告警和紧急停售开关。
 
 D6-01 验证记录（2026-08-08）：依据仓库根目录只读《西部数码业务API接口文档（v2）新.md》，新增可注入的实名提交/查询、注册、续费、资产查询和 Name Server 修改 adapter，并将文档规定的动作、字段、整数分到精确元字符串转换及响应语义集中封装。运行时工厂在 `ALLOW_REAL_PROVIDER_WRITES=false` 下只提供内存 fixture transport；若尝试开启真实写入会直接拒绝，本切片没有网络 transport 或真实请求路径。复用 `providerOperations`，以服务端生成的稳定意图摘要构造唯一操作键，并继续依赖既有 PostgreSQL 唯一索引收敛并发重复提交；数据库 CAS 在调用 provider 前将操作从 `prepared` 认领为 `submitted`，进程中断、请求超时、重复响应或状态不明后均只允许主动查询，禁止再次提交写操作。只有明确标记为“提交前、可重试”且位于允许列表的限流/临时不可用错误才有限重试，最多 3 次。每次操作复用 D1-07 审计服务，在同一 Payload 请求事务中记录操作者、操作类型、目标、请求标识和脱敏结果，并沿用既有六状态 `Result` 契约。命名 migration `20260808_104813_d6_westdigital_provider_operations` 仅扩展既有 Collection，覆盖空库、历史订单操作回填及 down/up 往返；down 会明确删除旧 schema 无法表示的无订单/实名 D6 操作行，并由迁移门禁验证，不会静默错误转换。fixture 单元/集成测试覆盖成功、明确失败、超时、重复响应、状态不明、有限重试和重复提交不产生第二次写操作。关键分支变异验证分别将“状态不明”错误错误映射为 `failed`、将稳定操作键改为随机值，对应超时/幂等测试均按预期失败；恢复后聚焦集成测试 6/6 通过。最终 `ALLOW_REAL_PROVIDER_WRITES=false make check` 通过生成物/schema 漂移、完整 migration、Nginx、lint、TypeScript strict、559 个单元测试、74 个 PostgreSQL/MinIO 集成测试、依赖/秘密门禁、Next.js 生产构建和 linux/amd64 同镜像。commerce Job 履约编排、订单人工复核迁移、资产落库/页面、主动续费闭环和余额停售仍属于后续 D6 切片，未提前勾选。
+
+D6-02 验证记录（2026-08-08）：支付确认与 `commerceFulfillment` 接线在同一 Payload 事务内完成；新增 `fulfillmentJobQueuedAt` 持久标记并使用 PostgreSQL 单条 `UPDATE orders ... WHERE status='paid' AND fulfillment_job_queued_at IS NULL RETURNING` 原子认领，只有中标者落一个 Job，workflow 沿用订单级并发键、`exclusive` 与 `supersedes`，零自动重试。既有 `transitionOrder` 内部的伪 CAS 同步改为事务内原子 `UPDATE ... WHERE status = ? RETURNING`，未新增状态迁移入口或放宽矩阵。Job 在 `paid → fulfilling` 前严格核对完整冻结报价、订单金额/域名/客户/quote 关系及整数计算、实名模板归属与本地/服务商双重批准、域名可注册状态和西部数码可用余额；报价 `expiresAt` 只校验格式而不作为支付后重新计价或拒绝依据，注册价格固定取订单快照的上游整数分成本。注册写唯一复用 D6-01 `executeWestDigitalWriteOperation`；明确不可提供服务或上游明确拒绝复用 D5-04 全额退款 Job，提交后超时/重复或状态不明进入 `manual_review`，后续重放只查状态。写操作成功后再用只读资产查询确认，确认后才直接写既有 `domainAssets` 全字段并迁移成功；资产归属冲突 fail-closed。命名 migration `20260808_124245_d6_commerce_fulfillment` 增加入队标记与索引，migration verifier 覆盖空库和独立 down/up。新增 PostgreSQL 集成测试覆盖支付后单次入队、过期冻结报价不重计价、用户选择的已验证模板、服务中断恢复、重复 Job、明确失败自动退款、提交后超时仅查询、资产确认后落库及成功订单禁退。两项关键变异均被杀死：删除入队 CAS 空标记条件后 5 路并发实际产生 5 个中标者而测试失败；错误加入“报价时间已过则拒绝履约”后成功用例变为 `manual_review` 而测试失败。恢复后聚焦套件 5/5 通过；最终原样 `ALLOW_REAL_PROVIDER_WRITES=false make check` 以退出码 0 通过生成物/schema 漂移、全部 migration、Nginx、lint、TypeScript strict、559/559 单元测试、80/80 PostgreSQL/MinIO 集成测试、依赖/秘密门禁、Next.js 生产构建和 linux/amd64 同镜像。主动续费、资产列表/详情/同步、余额停售/告警和真实 provider contract test 仍属后续 D6/D7，未提前勾选。
 
 ### 10.3 退出条件
 
@@ -684,6 +686,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-07 | D5-03 微信支付确认 | 完成 Native/H5 下单、通知验签/解密、经平台签名的主动查单、金额/标识核对、幂等入库、`pending_payment → paid/manual_review` 和四项数据库唯一索引 | `make check`：547/547 单元测试、54/54 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；`make test-e2e` 36/36 通过；`ALLOW_REAL_PROVIDER_WRITES=false` | D5 进行中；前端二维码/H5 跳转、超时关单、退款、补单/对账和真实商户联调待后续切片，生产门槛不变 |
 | 2026-08-07 | D5-04 微信退款与对账 | 完成注册失败自动全额退款、退款创建/查询/验签通知、请求未知后只查不重提、失败人工复核，以及微信资金/内部订单/西部预充值独立账本和追加式三方差异 | `make check`：548/548 单元测试、59/59 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；`make test-e2e` 36/36 通过；`ALLOW_REAL_PROVIDER_WRITES=false` | D5 进行中；履约仍留给 D6；前端支付流程、支付超时关单、补单工具、特殊退款/发票审计及真实商户联调仍未完成，生产门槛不变 |
 | 2026-08-08 | D6-01 西部数码写适配器与操作键 | 完成实名、注册、续费、资产查询、Name Server 可注入 fixture adapter；复用 providerOperations 建立数据库唯一操作键、CAS 单次提交、事务审计、有限重试和状态不明仅查询 | `make check`：559/559 单元测试、74/74 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；两处关键分支变异均被对应测试杀死；`ALLOW_REAL_PROVIDER_WRITES=false` | D6 进行中；commerce Job 履约、订单/人工复核、资产落库与 UI、主动续费闭环、余额停售及真实接口联调留给后续切片；未发出真实西部数码请求 |
+| 2026-08-08 | D6-02 支付后注册履约闭环 | 支付确认事务内原子单次入队；冻结报价/实名/域名/余额预检；复用 D6-01 写操作与 D5-04 全额退款；未知只查询；确认后落域名资产 | `make check`：559/559 单元测试、80/80 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；入队 CAS 与支付后不按过期时间重计价两处变异均被测试杀死；`ALLOW_REAL_PROVIDER_WRITES=false` | D6 进行中；主动续费、资产 UI/同步、余额停售/告警、人工处理后台和真实接口联调仍待后续切片；未发出真实资金或域名请求 |
 
 ## 13. 范围追踪矩阵
 
