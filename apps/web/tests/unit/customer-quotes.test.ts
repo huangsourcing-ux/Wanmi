@@ -20,6 +20,8 @@ import type {
   StoredPriceSnapshot,
 } from '@/services/pricing/price-snapshots'
 
+import { PRICING_RULE_FIXTURES } from '../fixtures/pricing'
+
 class MemorySnapshotStore implements PriceSnapshotStore {
   readonly records: StoredPriceSnapshot[] = []
 
@@ -68,6 +70,7 @@ function fixture() {
       now: () => Date.parse('2026-08-07T15:00:00.000Z'),
       provider: new WestDigitalReadAdapter({ transport }),
       quoteStore: quotes,
+      rules: PRICING_RULE_FIXTURES,
       snapshots,
       traceId: 'trace-customer-quote',
     },

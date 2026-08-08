@@ -7,6 +7,8 @@ import { WestDigitalReadAdapter } from '@/providers/westdigital'
 import type { WestDigitalReadProvider } from '@/providers/types'
 import { PRICING_MAX_TLDS, pricingRequestSchema, pricingResultSchema } from '@/schemas/pricing'
 import { queryTldPricing } from '@/services/pricing/query-tld-pricing'
+import { loadEnabledPricingRules } from '@/services/pricing/price-rules'
+import type { PricingRule } from '@/services/pricing/price-calculation'
 import { runtimeProviderObservability } from '@/services/observability/runtime'
 import {
   PayloadPriceSnapshotStore,
@@ -22,6 +24,7 @@ const provider = new WestDigitalReadAdapter({
 })
 
 type PricingPostDependencies = {
+  getRules: () => Promise<Readonly<Record<string, PricingRule>>>
   getSnapshotStore: () => Promise<PriceSnapshotStore>
   provider: WestDigitalReadProvider
 }
@@ -76,6 +79,11 @@ async function defaultSnapshotStore(): Promise<PriceSnapshotStore> {
   return new PayloadPriceSnapshotStore(payload)
 }
 
+async function defaultRules(): Promise<Readonly<Record<string, PricingRule>>> {
+  const payload = await getPayload({ config })
+  return loadEnabledPricingRules(payload)
+}
+
 export function createPricingPostHandler(dependencies: PricingPostDependencies) {
   return async function pricingPost(request: Request): Promise<Response> {
     const traceId = getTraceId(request.headers)
@@ -83,9 +91,13 @@ export function createPricingPostHandler(dependencies: PricingPostDependencies) 
       const candidate = await readJsonBody(request)
       rejectTooManyTlds(candidate)
       const input = pricingRequestSchema.parse(candidate)
-      const snapshots = await dependencies.getSnapshotStore()
+      const [rules, snapshots] = await Promise.all([
+        dependencies.getRules(),
+        dependencies.getSnapshotStore(),
+      ])
       const result = await queryTldPricing(input, {
         provider: dependencies.provider,
+        rules,
         snapshots,
         traceId,
       })
@@ -97,6 +109,7 @@ export function createPricingPostHandler(dependencies: PricingPostDependencies) 
 }
 
 export const POST = createPricingPostHandler({
+  getRules: defaultRules,
   getSnapshotStore: defaultSnapshotStore,
   provider,
 })

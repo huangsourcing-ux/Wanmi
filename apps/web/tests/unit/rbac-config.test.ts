@@ -141,13 +141,20 @@ const expected: Record<Persona, Record<Operation, string[]>> = {
     update: ['admins'],
   },
   system_admin: {
-    create: [...advertisingWrites, ...contentWrites, 'siteSettings'],
-    delete: [...advertisingWrites, ...contentWrites, 'admins', 'siteSettings'],
+    create: [...advertisingWrites, ...contentWrites, 'priceRules', 'siteSettings'],
+    delete: [...advertisingWrites, ...contentWrites, 'admins', 'priceRules', 'siteSettings'],
     read: collections
       .map(({ slug }) => slug)
       .filter((slug) => !['adminInvitations', 'adminMfaCredentials'].includes(slug)),
     readVersions: ['articles', 'helpPages', 'tldPages', 'topics'],
-    update: [...advertisingWrites, ...contentWrites, 'admins', 'siteSettings', 'userFeedback'],
+    update: [
+      ...advertisingWrites,
+      ...contentWrites,
+      'admins',
+      'priceRules',
+      'siteSettings',
+      'userFeedback',
+    ],
   },
   disabled_admin: { create: [], delete: [], read: publicReads, readVersions: [], update: [] },
 }

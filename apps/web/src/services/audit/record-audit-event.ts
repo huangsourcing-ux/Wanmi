@@ -31,6 +31,11 @@ export const auditEventDefinitions = {
   'content.revision.published': { actorTypes: ['admin'], targetType: 'content' },
   'content.status.changed': { actorTypes: ['admin'], targetType: 'content' },
   'form_submission.status_changed': { actorTypes: ['admin'], targetType: 'form-submission' },
+  'pricing.rule.created': { actorTypes: ['admin'], targetType: 'price-rule' },
+  'pricing.rule.deleted': { actorTypes: ['admin'], targetType: 'price-rule' },
+  'pricing.rule.disabled': { actorTypes: ['admin'], targetType: 'price-rule' },
+  'pricing.rule.enabled': { actorTypes: ['admin'], targetType: 'price-rule' },
+  'pricing.rule.updated': { actorTypes: ['admin'], targetType: 'price-rule' },
   'realname.template.status_changed': {
     actorTypes: ['admin', 'customer', 'provider', 'system'],
     targetType: 'realname-template',

@@ -14,22 +14,18 @@ import {
 } from '@/schemas/pricing'
 import type { ResultMeta } from '@/schemas/api'
 import { DEFAULT_DOMAIN_SEARCH_TLDS } from '@/services/domain-search/query-availability'
-import {
-  calculateTldPrice,
-  FIXTURE_PRICING_RULES,
-  type PricingRule,
-} from '@/services/pricing/price-calculation'
+import { calculateTldPrice, type PricingRule } from '@/services/pricing/price-calculation'
 import type { PriceSnapshotStore, StoredPriceSnapshot } from '@/services/pricing/price-snapshots'
 
 export const WESTDIGITAL_PRICING_FIXTURE_SOURCE = '西部数码价格 fixture（非实时）'
-export const WANMI_PRICING_FIXTURE_SOURCE = 'Wanmi fixture 加价规则目录'
+export const WANMI_PRICING_RULE_SOURCE = 'Wanmi TLD 加价规则配置'
 
 const supportedTlds = new Set<string>(DEFAULT_DOMAIN_SEARCH_TLDS)
 
 type PricingOptions = {
   now?: () => number
   provider: WestDigitalReadProvider
-  rules?: Readonly<Record<string, PricingRule>>
+  rules: Readonly<Record<string, PricingRule>>
   snapshots: PriceSnapshotStore
   supportedTlds?: ReadonlySet<string>
   traceId: string
@@ -186,7 +182,7 @@ async function queryTarget(
   if (!target.supported) {
     return {
       cache: { status: 'not_used' },
-      dataSource: WANMI_PRICING_FIXTURE_SOURCE,
+      dataSource: WANMI_PRICING_RULE_SOURCE,
       observedAt,
       purchaseBlockCode: 'TLD_UNSUPPORTED',
       purchaseEligible: false,
@@ -197,7 +193,7 @@ async function queryTarget(
   if (!target.rule) {
     return {
       cache: { status: 'not_used' },
-      dataSource: WANMI_PRICING_FIXTURE_SOURCE,
+      dataSource: WANMI_PRICING_RULE_SOURCE,
       markupConfigured: false,
       observedAt,
       purchaseBlockCode: 'PRICE_RULE_UNCONFIGURED',
@@ -279,7 +275,7 @@ async function queryTarget(
       cache: cacheFor(result),
       calculationFormula: calculation.calculationFormula,
       currency: 'CNY',
-      dataSource: `${WESTDIGITAL_PRICING_FIXTURE_SOURCE} + ${WANMI_PRICING_FIXTURE_SOURCE}`,
+      dataSource: `${WESTDIGITAL_PRICING_FIXTURE_SOURCE} + ${WANMI_PRICING_RULE_SOURCE}`,
       markupConfigured: true,
       minimumRegistrationYears: 1,
       observedAt: result.observedAt,
@@ -404,7 +400,7 @@ export async function queryTldPricing(
   const input = pricingRequestSchema.parse(candidate)
   const tlds = normalizePricingTlds(input.tlds ?? DEFAULT_DOMAIN_SEARCH_TLDS)
   const catalog = options.supportedTlds ?? supportedTlds
-  const rules = options.rules ?? FIXTURE_PRICING_RULES
+  const rules = options.rules
   const now = options.now ?? Date.now
   const targets = tlds.map<Target>((tld) => ({
     representativeDomainAscii: `wanmi.${tld}`,

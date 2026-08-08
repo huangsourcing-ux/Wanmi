@@ -3,11 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 
 import { formatCnyFen } from '@/lib/money'
-import {
-  calculateTldPrice,
-  FIXTURE_PRICING_RULES,
-  type PricingRule,
-} from '@/services/pricing/price-calculation'
+import { calculateTldPrice, type PricingRule } from '@/services/pricing/price-calculation'
 import {
   createPriceCalculationHash,
   replayPriceSnapshot,
@@ -15,8 +11,10 @@ import {
   type StoredPriceSnapshot,
 } from '@/services/pricing/price-snapshots'
 
-const fixedRule = FIXTURE_PRICING_RULES.com as Extract<PricingRule, { mode: 'fixed' }>
-const percentageRule = FIXTURE_PRICING_RULES.xyz as Extract<PricingRule, { mode: 'percentage' }>
+import { PRICING_RULE_FIXTURES } from '../fixtures/pricing'
+
+const fixedRule = PRICING_RULE_FIXTURES.com as Extract<PricingRule, { mode: 'fixed' }>
+const percentageRule = PRICING_RULE_FIXTURES.xyz as Extract<PricingRule, { mode: 'percentage' }>
 
 function snapshotInput(): PriceSnapshotInput {
   return {

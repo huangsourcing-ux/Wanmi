@@ -882,9 +882,10 @@ export interface PriceRule {
   id: number;
   tld: string;
   mode: 'fixed' | 'percentage';
-  fixedAmountMinor: number;
+  fixedAmountMinor?: number | null;
   percentageBasisPoints?: number | null;
   enabled: boolean;
+  effectiveAt: string;
   updatedAt: string;
   createdAt: string;
 }
@@ -913,7 +914,7 @@ export interface Quote {
   providerCacheExpiresAt?: string | null;
   availabilityRequestId: string;
   availabilityObservedAt: string;
-  ruleSource: 'wanmi_fixture';
+  ruleSource: 'wanmi_fixture' | 'price_rule_collection';
   ruleKey: string;
   ruleVersion: number;
   ruleMode: 'fixed' | 'percentage';
@@ -1361,7 +1362,7 @@ export interface PriceSnapshot {
   providerObservedAt: string;
   providerCacheStatus: 'hit' | 'miss';
   providerCacheExpiresAt?: string | null;
-  ruleSource: 'wanmi_fixture';
+  ruleSource: 'wanmi_fixture' | 'price_rule_collection';
   ruleKey: string;
   ruleVersion: number;
   ruleMode: 'fixed' | 'percentage';
@@ -2476,6 +2477,7 @@ export interface PriceRulesSelect<T extends boolean = true> {
   fixedAmountMinor?: T;
   percentageBasisPoints?: T;
   enabled?: T;
+  effectiveAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }

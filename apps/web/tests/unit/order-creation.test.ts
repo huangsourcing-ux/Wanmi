@@ -2,15 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import { AppError } from '@/lib/errors'
 import { assertQuoteAmountAndRuleUsableForOrder } from '@/services/commerce/order-creation'
-import {
-  calculateTldPrice,
-  FIXTURE_PRICING_RULES,
-  type PricingRule,
-} from '@/services/pricing/price-calculation'
+import { calculateTldPrice, type PricingRule } from '@/services/pricing/price-calculation'
 import type { StoredCustomerQuote } from '@/services/pricing/customer-quotes'
 
+import { PRICING_RULE_FIXTURES } from '../fixtures/pricing'
+
 function quote(): StoredCustomerQuote {
-  const rule = FIXTURE_PRICING_RULES.com!
+  const rule = PRICING_RULE_FIXTURES.com!
   const calculation = calculateTldPrice({
     registrationPriceFen: 2_500,
     renewalPriceFen: 2_750,
@@ -43,14 +41,16 @@ function quote(): StoredCustomerQuote {
 
 describe('D5-02 order quote revalidation', () => {
   it('recomputes integer-fen totals and requires the current configured rule', () => {
-    expect(() => assertQuoteAmountAndRuleUsableForOrder(quote())).not.toThrow()
+    expect(() =>
+      assertQuoteAmountAndRuleUsableForOrder(quote(), { rules: PRICING_RULE_FIXTURES }),
+    ).not.toThrow()
 
     const missingRule = {} as Readonly<Record<string, PricingRule>>
     expect(() =>
       assertQuoteAmountAndRuleUsableForOrder(quote(), { rules: missingRule }),
     ).toThrowError(expect.objectContaining({ code: 'PRICE_RULE_UNCONFIGURED' }) as AppError)
 
-    const currentRule = FIXTURE_PRICING_RULES.com!
+    const currentRule = PRICING_RULE_FIXTURES.com!
     if (currentRule.mode !== 'fixed') throw new Error('Expected fixed fixture rule')
     const changedRule: PricingRule = {
       ...currentRule,
@@ -65,8 +65,8 @@ describe('D5-02 order quote revalidation', () => {
   it('rejects a quote whose order amount does not replay from its snapshot', () => {
     const mismatched = quote()
     mismatched.userPriceMinor += 1
-    expect(() => assertQuoteAmountAndRuleUsableForOrder(mismatched)).toThrowError(
-      expect.objectContaining({ code: 'QUOTE_AMOUNT_MISMATCH' }) as AppError,
-    )
+    expect(() =>
+      assertQuoteAmountAndRuleUsableForOrder(mismatched, { rules: PRICING_RULE_FIXTURES }),
+    ).toThrowError(expect.objectContaining({ code: 'QUOTE_AMOUNT_MISMATCH' }) as AppError)
   })
 })

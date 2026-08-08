@@ -17,6 +17,7 @@ import {
 } from '@/services/realname/templates'
 
 import { realnameTemplateFixture } from '../fixtures/realname'
+import { PRICING_RULE_FIXTURES } from '../fixtures/pricing'
 
 const fixturePrefix = `d5-orders-${randomUUID()}`
 const created: Array<{
@@ -82,6 +83,7 @@ describe('D5-02 order creation', () => {
         customer: owner,
         provider: new WestDigitalReadAdapter({ transport: new FixtureWestDigitalTransport() }),
         quoteStore: new PayloadCustomerQuoteStore(ownerReq, owner),
+        rules: PRICING_RULE_FIXTURES,
         snapshots: new PayloadPriceSnapshotStore(payload),
         traceId: `${fixturePrefix}-quote`,
       },
@@ -126,6 +128,7 @@ describe('D5-02 order creation', () => {
         customer: owner,
         orderNumber: () => `${fixturePrefix}-order`,
         provider: new WestDigitalReadAdapter({ transport: new FixtureWestDigitalTransport() }),
+        rules: PRICING_RULE_FIXTURES,
         traceId: `${fixturePrefix}-create`,
       },
     )
@@ -222,6 +225,7 @@ describe('D5-02 order creation', () => {
         {
           customer: owner,
           provider: new WestDigitalReadAdapter({ transport: new FixtureWestDigitalTransport() }),
+          rules: PRICING_RULE_FIXTURES,
           traceId: `${fixturePrefix}-draft-order`,
         },
       ),
@@ -247,6 +251,7 @@ describe('D5-02 order creation', () => {
         {
           customer: owner,
           provider: new WestDigitalReadAdapter({ transport: unavailableTransport }),
+          rules: PRICING_RULE_FIXTURES,
           traceId: `${fixturePrefix}-unavailable-order`,
         },
       ),
