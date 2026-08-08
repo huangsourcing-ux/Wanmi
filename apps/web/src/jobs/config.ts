@@ -1,6 +1,9 @@
 import type { WorkflowConfig } from 'payload'
 
-import { runMockFulfillment, type FulfillmentInput } from '@/services/commerce/fulfillment'
+import {
+  runConfiguredCommerceFulfillment,
+  type FulfillmentInput,
+} from '@/services/commerce/fulfillment'
 import { runWechatRefund } from '@/services/commerce/refunds'
 import { runPaymentTimeoutClose } from '@/services/commerce/payments'
 import { getRuntimeWechatPayProvider } from '@/providers/wechatpay'
@@ -120,21 +123,20 @@ export const contentScheduledPublish: WorkflowConfig<ScheduledContentPublishInpu
 
 export const commerceFulfillment: WorkflowConfig<FulfillmentInput> = {
   slug: 'commerceFulfillment',
-  concurrency: ({ input }) => input.operationKey,
+  concurrency: {
+    exclusive: true,
+    key: ({ input }) => input.operationKey,
+    supersedes: true,
+  },
   inputSchema: [
     { name: 'operationKey', type: 'text', required: true },
     { name: 'orderId', type: 'number', required: true },
     { name: 'traceId', type: 'text', required: true },
-    {
-      name: 'simulate',
-      type: 'select',
-      options: ['success', 'timeout-before-submit', 'timeout-after-submit'],
-    },
   ],
   queue: 'commerce',
   retries: 0,
   handler: async ({ job, req }) => {
-    await runMockFulfillment(req, job.input)
+    await runConfiguredCommerceFulfillment(req, job.input)
   },
 }
 

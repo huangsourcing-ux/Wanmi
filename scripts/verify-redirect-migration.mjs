@@ -2923,8 +2923,67 @@ try {
     throw new Error(`D6-01 legacy provider-operation backfill failed: ${providerOperationBackfill}`)
   }
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 111
+     WHERE name = '20260808_124245_d6_commerce_fulfillment'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const fulfillmentAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT (NOT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'orders'
+           AND column_name = 'fulfillment_job_queued_at'
+       ))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (fulfillmentAfterDown !== 'true') {
+    throw new Error(`D6-02 migration down was incomplete: ${fulfillmentAfterDown}`)
+  }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  const fulfillmentAfterUp = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'orders'
+             AND column_name = 'fulfillment_job_queued_at'
+         ))::text || ':' ||
+         (to_regclass('public.orders_fulfillment_job_queued_at_idx') IS NOT NULL)::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (fulfillmentAfterUp !== 'true:true') {
+    throw new Error(`D6-02 migration up was incomplete: ${fulfillmentAfterUp}`)
+  }
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, and the D6-01 West Digital provider-operation migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, and the D6-02 commerce-fulfillment migration round trips.\n',
   )
 } finally {
   if (created) {

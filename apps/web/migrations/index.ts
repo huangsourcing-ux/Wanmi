@@ -23,7 +23,8 @@ import * as migration_20260808_031431_d5_wechat_refunds_reconciliation from './2
 import * as migration_20260808_053208_d5_price_rules from './20260808_053208_d5_price_rules';
 import * as migration_20260808_064925_d5_payment_frontend_timeout from './20260808_064925_d5_payment_frontend_timeout';
 import * as migration_20260808_074845_d5_payment_recovery_manual_audit from './20260808_074845_d5_payment_recovery_manual_audit';
-import * as migration_20260808_104813_d6_westdigital_provider_operations from './20260808_104813_d6_westdigital_provider_operations'
+import * as migration_20260808_104813_d6_westdigital_provider_operations from './20260808_104813_d6_westdigital_provider_operations';
+import * as migration_20260808_124245_d6_commerce_fulfillment from './20260808_124245_d6_commerce_fulfillment';
 
 export const migrations = [
   {
@@ -155,5 +156,10 @@ export const migrations = [
     up: migration_20260808_104813_d6_westdigital_provider_operations.up,
     down: migration_20260808_104813_d6_westdigital_provider_operations.down,
     name: '20260808_104813_d6_westdigital_provider_operations',
+  },
+  {
+    up: migration_20260808_124245_d6_commerce_fulfillment.up,
+    down: migration_20260808_124245_d6_commerce_fulfillment.down,
+    name: '20260808_124245_d6_commerce_fulfillment'
   },
 ];

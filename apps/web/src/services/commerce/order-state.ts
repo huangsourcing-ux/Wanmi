@@ -1,4 +1,5 @@
 import { commitTransaction, initTransaction, killTransaction, type PayloadRequest } from 'payload'
+import { sql } from '@payloadcms/db-postgres'
 
 import type { OrderStatus } from '@/lib/domain'
 import { AppError } from '@/lib/errors'
@@ -61,21 +62,34 @@ export async function transitionOrder(
     const from = order.status as OrderStatus
     assertTransition(from, to, details)
 
-    // Compare-and-swap on `status`: two operations racing on the same order (e.g. a
-    // fulfillment job and a refund job with different provider operation keys, so job
-    // concurrency alone doesn't serialize them) can both read the same stale `from`
-    // and both pass assertTransition. Only the write that still matches `from` wins;
-    // the loser sees zero updated docs and aborts instead of silently double-applying.
-    const updated = await req.payload.update({
-      collection: 'orders',
-      data: { status: to },
-      overrideAccess: true,
-      req,
-      where: { and: [{ id: { equals: orderId } }, { status: { equals: from } }] },
-    })
-    if (!updated.docs.length) {
+    const transactionId = await req.transactionID
+    const session = transactionId ? req.payload.db.sessions?.[transactionId] : undefined
+    const database = session?.db as
+      | {
+          execute(statement: ReturnType<typeof sql>): Promise<{ rows?: Array<{ id: number | string }> }>
+        }
+      | undefined
+    if (!database) {
+      throw new AppError('ORDER_TRANSITION_CLAIM_UNAVAILABLE', '无法原子执行订单状态迁移', 503)
+    }
+    const claimed = await database.execute(sql`
+      UPDATE orders
+      SET status = ${to}, updated_at = NOW()
+      WHERE id = ${orderId}
+        AND status = ${from}
+      RETURNING id
+    `)
+    const claimedId = claimed.rows?.[0]?.id
+    if (claimedId === undefined) {
       throw new AppError('ORDER_TRANSITION_CONFLICT', '订单状态已被并发变更，请重试', 409)
     }
+    const updated = await req.payload.findByID({
+      collection: 'orders',
+      depth: 0,
+      id: claimedId,
+      overrideAccess: true,
+      req,
+    })
 
     const event = await req.payload.create({
       collection: 'orderEvents',
@@ -95,7 +109,7 @@ export async function transitionOrder(
     })
 
     if (startedTransaction) await commitTransaction(req)
-    return { event, order: updated.docs[0] }
+    return { event, order: updated }
   } catch (error) {
     if (startedTransaction) await killTransaction(req)
     throw error

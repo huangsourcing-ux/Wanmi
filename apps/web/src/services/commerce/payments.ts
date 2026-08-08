@@ -16,6 +16,7 @@ import {
 import { transitionOrder } from '@/services/commerce/order-state'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
 import type { ManualCommerceEvidence } from '@/schemas/admin-commerce'
+import { enqueueCommerceFulfillment } from '@/services/commerce/fulfillment'
 
 type CustomerIdentity = {
   collection: 'customers'
@@ -567,6 +568,10 @@ async function persistAndApplyConfirmation(
           actorType: 'provider',
           evidence,
           reasonCode: 'wechatpay.payment_confirmed',
+        })
+        await enqueueCommerceFulfillment(req, {
+          orderId: order.id,
+          traceId: queryResult.requestId,
         })
       } else if (order.status === 'cancelled') {
         await moveToManualReview(req, order, 'wechatpay.late_payment', evidence)

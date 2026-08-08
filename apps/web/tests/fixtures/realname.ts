@@ -1,3 +1,24 @@
+import { mockSuccess } from '@/providers/mock'
+import type { WestDigitalRealnameProvider } from '@/providers/types'
+
+export function approvedRealnameProviderFixture(
+  providerTemplateId = '1664777',
+): WestDigitalRealnameProvider {
+  return {
+    createTemplate: async () =>
+      mockSuccess(
+        { providerTemplateId, reviewState: 'pending' as const },
+        `realname-create-${providerTemplateId}`,
+      ),
+    health: async () => mockSuccess({ healthy: true }, `realname-health-${providerTemplateId}`),
+    queryTemplate: async () =>
+      mockSuccess(
+        { reviewState: 'approved' as const },
+        `realname-query-${providerTemplateId}`,
+      ),
+  }
+}
+
 export function realnameTemplateFixture(overrides: Record<string, unknown> = {}) {
   return {
     addressChinese: '一环路北一段99号环球广场',

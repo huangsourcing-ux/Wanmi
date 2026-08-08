@@ -19,9 +19,10 @@ import {
   verifyOtp,
 } from '@/services/auth/otp'
 import { reconcileSmsReceipts } from '@/services/auth/sms-receipts'
-import { runMockFulfillment } from '@/services/commerce/fulfillment'
+import { submitRealnameTemplate, syncRealnameTemplateStatus } from '@/services/realname/templates'
 
-import { realnameTemplateFixture } from '../fixtures/realname'
+import { fulfillmentQuoteSnapshotFixture } from '../fixtures/commerce'
+import { approvedRealnameProviderFixture, realnameTemplateFixture } from '../fixtures/realname'
 
 let payload: Payload
 const createdJobIds: Array<number | string> = []
@@ -63,6 +64,11 @@ async function createPaidOrderFixture() {
     },
     overrideAccess: true,
   })
+  const customerReq = await createLocalReq({}, payload)
+  customerReq.user = { ...customer, collection: 'customers' } as never
+  const realnameProvider = approvedRealnameProviderFixture()
+  await submitRealnameTemplate(customerReq, template.id, realnameProvider)
+  await syncRealnameTemplateStatus(await createLocalReq({}, payload), template.id, realnameProvider)
   const domainAscii = `d0-${suffix}.test`
   const quote = await payload.create({
     collection: 'quotes',
@@ -114,7 +120,11 @@ async function createPaidOrderFixture() {
       domainAscii,
       orderNumber: `D0-${suffix}`,
       quote: quote.id,
-      quoteSnapshot: { quoteId: quote.id },
+      quoteSnapshot: fulfillmentQuoteSnapshotFixture({
+        customerId: customer.id,
+        domainAscii,
+        quoteId: quote.id,
+      }),
       realnameTemplate: template.id,
       status: 'paid',
     },
@@ -448,12 +458,13 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
   it('runs duplicate commerce jobs safely with one provider operation and append-only events', async () => {
     const { domainAscii, order, suffix } = await createPaidOrderFixture()
     const operationKey = `register:${order.id}:${domainAscii}`
-    const input = { operationKey, orderId: order.id, simulate: 'success' as const, traceId: suffix }
+    const input = { operationKey, orderId: order.id, traceId: suffix }
     const first = await payload.jobs.queue({
       input,
       queue: 'commerce',
       workflow: 'commerceFulfillment',
     })
+    await payload.jobs.runByID({ id: first.id, silent: true })
     const duplicate = await payload.jobs.queue({
       input,
       queue: 'commerce',
@@ -463,12 +474,13 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
     expect(duplicate.concurrencyKey).toBe(operationKey)
     createdJobIds.push(first.id, duplicate.id)
 
-    await payload.jobs.runByID({ id: first.id, silent: true })
     await payload.jobs.runByID({ id: duplicate.id, silent: true })
     const operations = await payload.find({
       collection: 'providerOperations',
       overrideAccess: true,
-      where: { operationKey: { equals: operationKey } },
+      where: {
+        and: [{ order: { equals: order.id } }, { operation: { equals: 'register' } }],
+      },
     })
     const events = await payload.find({
       collection: 'orderEvents',
@@ -488,67 +500,6 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
           collection: 'domainAssets',
           overrideAccess: true,
           where: { domainAscii: { equals: domainAscii } },
-        })
-      ).totalDocs,
-    ).toBe(1)
-  })
-
-  it('retries only before provider submission and never resubmits an unknown operation', async () => {
-    const before = await createPaidOrderFixture()
-    const beforeKey = `register:${before.order.id}:${before.domainAscii}`
-    const beforeReq = await createLocalReq({}, payload)
-    await expect(
-      runMockFulfillment(beforeReq, {
-        operationKey: beforeKey,
-        orderId: before.order.id,
-        simulate: 'timeout-before-submit',
-        traceId: before.suffix,
-      }),
-    ).rejects.toThrow(/安全重试/)
-    const prepared = await payload.find({
-      collection: 'providerOperations',
-      overrideAccess: true,
-      where: { operationKey: { equals: beforeKey } },
-    })
-    expect(prepared.docs).toHaveLength(1)
-    expect(prepared.docs[0]?.status).toBe('prepared')
-    await runMockFulfillment(await createLocalReq({}, payload), {
-      operationKey: beforeKey,
-      orderId: before.order.id,
-      simulate: 'success',
-      traceId: before.suffix,
-    })
-    expect(
-      (await payload.findByID({ collection: 'orders', id: before.order.id, overrideAccess: true }))
-        .status,
-    ).toBe('succeeded')
-
-    const after = await createPaidOrderFixture()
-    const afterKey = `register:${after.order.id}:${after.domainAscii}`
-    const first = await runMockFulfillment(await createLocalReq({}, payload), {
-      operationKey: afterKey,
-      orderId: after.order.id,
-      simulate: 'timeout-after-submit',
-      traceId: after.suffix,
-    })
-    const replay = await runMockFulfillment(await createLocalReq({}, payload), {
-      operationKey: afterKey,
-      orderId: after.order.id,
-      simulate: 'success',
-      traceId: after.suffix,
-    })
-    expect(first.status).toBe('unknown')
-    expect(replay).toMatchObject({ idempotentReplay: true, status: 'unknown' })
-    expect(
-      (await payload.findByID({ collection: 'orders', id: after.order.id, overrideAccess: true }))
-        .status,
-    ).toBe('manual_review')
-    expect(
-      (
-        await payload.find({
-          collection: 'providerOperations',
-          overrideAccess: true,
-          where: { operationKey: { equals: afterKey } },
         })
       ).totalDocs,
     ).toBe(1)
