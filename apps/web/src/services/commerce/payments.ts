@@ -30,9 +30,13 @@ type OrderRecord = {
   orderNumber: string
   paymentChannel?: 'h5' | 'native' | null
   paymentExpiresAt?: null | string
+  paymentStatusPolledAt?: null | string
   quoteSnapshot?: unknown
   status: string
 }
+
+const PAYMENT_STATUS_POLL_INTERVAL_MS = 3_000
+const PAYMENT_TIMEOUT_BATCH_SIZE = 100
 
 type NotificationInput = {
   body: string
@@ -103,6 +107,36 @@ async function findCustomerOrder(
     req,
   })
   return trusted as unknown as OrderRecord
+}
+
+async function enforcePaymentStatusPollLimit(
+  req: PayloadRequest,
+  order: OrderRecord,
+  now: Date,
+): Promise<void> {
+  const cutoff = new Date(now.getTime() - PAYMENT_STATUS_POLL_INTERVAL_MS).toISOString()
+  const updated = await req.payload.update({
+    collection: 'orders',
+    data: { paymentStatusPolledAt: now.toISOString() },
+    overrideAccess: true,
+    req,
+    where: {
+      and: [
+        { id: { equals: order.id } },
+        {
+          or: [
+            { paymentStatusPolledAt: { exists: false } },
+            { paymentStatusPolledAt: { less_than_equal: cutoff } },
+          ],
+        },
+      ],
+    },
+  })
+  if (!updated.docs.length) {
+    throw new AppError('PAYMENT_STATUS_RATE_LIMITED', '支付状态查询过于频繁', 429, {
+      retryAfterSeconds: PAYMENT_STATUS_POLL_INTERVAL_MS / 1_000,
+    })
+  }
 }
 
 function merchantOrderNumber(): string {
@@ -568,13 +602,20 @@ export async function processWechatPaymentNotification(
 export async function queryAndConfirmWechatPayment(
   req: PayloadRequest,
   orderNumber: string,
-  options: { customer: CustomerIdentity; provider: PaymentProvider; traceId: string },
+  options: {
+    customer: CustomerIdentity
+    now?: () => Date
+    provider: PaymentProvider
+    traceId: string
+  },
 ): Promise<Extract<PaymentStatusResult, { state: 'ready' }>> {
   assertCustomer(req, options.customer)
   const order = await findCustomerOrder(req, orderNumber, options.customer)
   if (!order.merchantOrderNumber) {
     throw new AppError('PAYMENT_NOT_CREATED', '该订单尚未创建微信支付单', 409)
   }
+  const now = options.now?.() ?? new Date()
+  await enforcePaymentStatusPollLimit(req, order, now)
   const query = await options.provider.queryOrder({
     merchantOrderNumber: order.merchantOrderNumber,
     traceId: options.traceId,
@@ -585,7 +626,7 @@ export async function queryAndConfirmWechatPayment(
   const result = await persistAndApplyConfirmation(req, order, query, {
     digest,
     notificationId: `QUERY-${digest}`,
-    receivedAt: new Date().toISOString(),
+    receivedAt: now.toISOString(),
     source: 'query',
   })
   return paymentStatusResultSchema.parse({
@@ -598,4 +639,146 @@ export async function queryAndConfirmWechatPayment(
     meta: { observedAt: query.observedAt, traceId: options.traceId },
     state: 'ready',
   }) as Extract<PaymentStatusResult, { state: 'ready' }>
+}
+
+type PaymentTimeoutResult = {
+  cancelled: number
+  checked: number
+  failed: number
+  paid: number
+  unchanged: number
+}
+
+async function queryAndApplyPaymentState(
+  req: PayloadRequest,
+  order: OrderRecord,
+  provider: PaymentProvider,
+  traceId: string,
+  receivedAt: string,
+) {
+  const query = await provider.queryOrder({
+    merchantOrderNumber: order.merchantOrderNumber!,
+    traceId,
+  })
+  const digest = createHash('sha256')
+    .update(`${order.merchantOrderNumber}:${query.requestId}`)
+    .digest('hex')
+  const applied = await persistAndApplyConfirmation(req, order, query, {
+    digest,
+    notificationId: `QUERY-${digest}`,
+    receivedAt,
+    source: 'query',
+  })
+  return { applied, query }
+}
+
+export async function runPaymentTimeoutClose(
+  req: PayloadRequest,
+  options: {
+    limit?: number
+    now?: Date
+    orderId?: number | string
+    provider: PaymentProvider
+    traceId: string
+  },
+): Promise<PaymentTimeoutResult> {
+  if (req.user) {
+    throw new AppError('PAYMENT_TIMEOUT_SYSTEM_ONLY', '支付超时关单只能由后台执行', 403)
+  }
+  const now = options.now ?? new Date()
+  const due = await req.payload.find({
+    collection: 'orders',
+    depth: 0,
+    limit: Math.min(options.limit ?? PAYMENT_TIMEOUT_BATCH_SIZE, PAYMENT_TIMEOUT_BATCH_SIZE),
+    overrideAccess: true,
+    req,
+    sort: 'paymentExpiresAt',
+    where: {
+      and: [
+        { status: { equals: 'pending_payment' } },
+        { merchantOrderNumber: { exists: true } },
+        { paymentExpiresAt: { less_than_equal: now.toISOString() } },
+        ...(options.orderId === undefined ? [] : [{ id: { equals: options.orderId } }]),
+      ],
+    },
+  })
+  const result: PaymentTimeoutResult = {
+    cancelled: 0,
+    checked: due.docs.length,
+    failed: 0,
+    paid: 0,
+    unchanged: 0,
+  }
+
+  for (const rawOrder of due.docs) {
+    const order = rawOrder as unknown as OrderRecord
+    const orderTraceId = `${options.traceId}-${order.id}`
+    try {
+      const initial = await queryAndApplyPaymentState(
+        req,
+        order,
+        options.provider,
+        orderTraceId,
+        now.toISOString(),
+      )
+      if (initial.applied.order.status === 'paid') {
+        result.paid += 1
+        continue
+      }
+      if (initial.applied.order.status !== 'pending_payment') {
+        result.unchanged += 1
+        continue
+      }
+      const initialState = initial.query.ok ? initial.query.data.state : 'unknown'
+      if (initialState !== 'closed' && initialState !== 'not_paid') {
+        result.unchanged += 1
+        continue
+      }
+
+      let confirmed = initial
+      if (initialState === 'not_paid') {
+        await options.provider.closeOrder({
+          merchantOrderNumber: order.merchantOrderNumber!,
+          traceId: orderTraceId,
+        })
+        confirmed = await queryAndApplyPaymentState(
+          req,
+          initial.applied.order,
+          options.provider,
+          `${orderTraceId}-confirm-close`,
+          now.toISOString(),
+        )
+      }
+      if (confirmed.applied.order.status === 'paid') {
+        result.paid += 1
+        continue
+      }
+      if (
+        confirmed.applied.order.status !== 'pending_payment' ||
+        !confirmed.query.ok ||
+        confirmed.query.data.state !== 'closed'
+      ) {
+        result.unchanged += 1
+        continue
+      }
+      await transitionOrder(req, order.id, 'cancelled', {
+        actorType: 'system',
+        evidence: {
+          paymentExpiresAt: order.paymentExpiresAt,
+          providerRequestId: confirmed.query.requestId,
+          providerState: confirmed.query.data.state,
+        },
+        reasonCode: 'wechatpay.payment_expired_closed',
+      })
+      result.cancelled += 1
+    } catch (error) {
+      result.failed += 1
+      req.payload.logger.error({
+        err: error,
+        msg: 'Payment timeout close failed and will be retried by the next scheduled scan',
+        orderId: order.id,
+      })
+    }
+  }
+  return result
 }

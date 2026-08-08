@@ -2,6 +2,7 @@ import type { WorkflowConfig } from 'payload'
 
 import { runMockFulfillment, type FulfillmentInput } from '@/services/commerce/fulfillment'
 import { runWechatRefund } from '@/services/commerce/refunds'
+import { runPaymentTimeoutClose } from '@/services/commerce/payments'
 import { getRuntimeWechatPayProvider } from '@/providers/wechatpay'
 import { runScheduledContentPublish } from '@/services/content/workflow'
 import { CONTENT_COLLECTIONS, type ContentCollection } from '@/services/content/types'
@@ -151,6 +152,25 @@ export const wechatRefund: WorkflowConfig<{ refundId: number; traceId: string }>
   },
 }
 
+export const paymentTimeoutClose: WorkflowConfig = {
+  slug: 'paymentTimeoutClose',
+  concurrency: {
+    exclusive: true,
+    key: () => 'wechat-payment-timeout-close',
+    supersedes: true,
+  },
+  inputSchema: [],
+  queue: 'commerce',
+  retries: 0,
+  schedule: [{ cron: '*/30 * * * * *', queue: 'commerce' }],
+  handler: async ({ job, req }) => {
+    await runPaymentTimeoutClose(req, {
+      provider: getRuntimeWechatPayProvider(),
+      traceId: `payment-timeout-job-${job.id}`,
+    })
+  },
+}
+
 export const workflows = [
   publishingProbe,
   contentScheduledPublish,
@@ -160,4 +180,5 @@ export const workflows = [
   realnameCleanup,
   commerceFulfillment,
   wechatRefund,
+  paymentTimeoutClose,
 ]

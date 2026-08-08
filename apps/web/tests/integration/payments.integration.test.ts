@@ -11,6 +11,7 @@ import {
   createWechatPayment,
   processWechatPaymentNotification,
   queryAndConfirmWechatPayment,
+  runPaymentTimeoutClose,
 } from '@/services/commerce/payments'
 
 import { realnameTemplateFixture } from '../fixtures/realname'
@@ -381,6 +382,7 @@ describe('D5-03 Wechat Pay confirmation', () => {
       },
     )
     const unknownProvider: PaymentProvider = {
+      closeOrder: (input) => unknownFixture.provider.closeOrder(input),
       createPayment: (input) => unknownFixture.provider.createPayment(input),
       health: () => unknownFixture.provider.health(),
       queryOrder: async () =>
@@ -433,6 +435,167 @@ describe('D5-03 Wechat Pay confirmation', () => {
       },
     )
     expect(result.data.status).toBe('pending_payment')
+    expect(
+      (await payload.findByID({ collection: 'orders', id: setup.order.id, overrideAccess: true }))
+        .status,
+    ).toBe('pending_payment')
+  })
+
+  it('rate limits status polling and never exposes another customer order', async () => {
+    const fixture = createWechatPayFixture({ now: () => now })
+    const setup = await createPendingOrder('poll-limit')
+    await createWechatPayment(
+      await customerRequest(setup.customer, 'poll-limit-create'),
+      setup.order.orderNumber,
+      { channel: 'native' },
+      {
+        customer: setup.customer,
+        now: () => now,
+        provider: fixture.provider,
+        traceId: `${prefix}-poll-limit-create`,
+      },
+    )
+    const req = await customerRequest(setup.customer, 'poll-limit-query')
+    await queryAndConfirmWechatPayment(req, setup.order.orderNumber, {
+      customer: setup.customer,
+      now: () => now,
+      provider: fixture.provider,
+      traceId: `${prefix}-poll-limit-first`,
+    })
+    await expect(
+      queryAndConfirmWechatPayment(req, setup.order.orderNumber, {
+        customer: setup.customer,
+        now: () => now,
+        provider: fixture.provider,
+        traceId: `${prefix}-poll-limit-second`,
+      }),
+    ).rejects.toMatchObject({ code: 'PAYMENT_STATUS_RATE_LIMITED', status: 429 })
+
+    const stranger = await createPendingOrder('poll-stranger')
+    await expect(
+      queryAndConfirmWechatPayment(
+        await customerRequest(stranger.customer, 'poll-stranger-query'),
+        setup.order.orderNumber,
+        {
+          customer: stranger.customer,
+          now: () => new Date(now.getTime() + 5_000),
+          provider: fixture.provider,
+          traceId: `${prefix}-poll-stranger`,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'ORDER_NOT_FOUND', status: 404 })
+  })
+
+  it('closes an expired unpaid order only after WeChat reports CLOSED and is idempotent', async () => {
+    const fixture = createWechatPayFixture({ now: () => now })
+    const setup = await createPendingOrder('timeout-close')
+    await createWechatPayment(
+      await customerRequest(setup.customer, 'timeout-close-create'),
+      setup.order.orderNumber,
+      { channel: 'native' },
+      {
+        customer: setup.customer,
+        now: () => now,
+        provider: fixture.provider,
+        traceId: `${prefix}-timeout-close-create`,
+      },
+    )
+    const jobReq = await createLocalReq({}, payload)
+    const first = await runPaymentTimeoutClose(jobReq, {
+      now: new Date(now.getTime() + 300_000),
+      orderId: setup.order.id,
+      provider: fixture.provider,
+      traceId: `${prefix}-timeout-close`,
+    })
+    expect(first).toEqual({ cancelled: 1, checked: 1, failed: 0, paid: 0, unchanged: 0 })
+    expect(
+      (await payload.findByID({ collection: 'orders', id: setup.order.id, overrideAccess: true }))
+        .status,
+    ).toBe('cancelled')
+    const events = await payload.find({
+      collection: 'orderEvents',
+      overrideAccess: true,
+      where: { order: { equals: setup.order.id } },
+    })
+    expect(events.docs).toHaveLength(1)
+    expect(events.docs[0]).toMatchObject({
+      fromStatus: 'pending_payment',
+      reasonCode: 'wechatpay.payment_expired_closed',
+      toStatus: 'cancelled',
+    })
+    await expect(
+      runPaymentTimeoutClose(jobReq, {
+        now: new Date(now.getTime() + 300_000),
+        orderId: setup.order.id,
+        provider: fixture.provider,
+        traceId: `${prefix}-timeout-close-replay`,
+      }),
+    ).resolves.toEqual({ cancelled: 0, checked: 0, failed: 0, paid: 0, unchanged: 0 })
+  })
+
+  it('confirms a paid expired order instead of cancelling it', async () => {
+    const fixture = createWechatPayFixture({ now: () => now })
+    const setup = await createPendingOrder('timeout-paid')
+    const session = await createWechatPayment(
+      await customerRequest(setup.customer, 'timeout-paid-create'),
+      setup.order.orderNumber,
+      { channel: 'native' },
+      {
+        customer: setup.customer,
+        now: () => now,
+        provider: fixture.provider,
+        traceId: `${prefix}-timeout-paid-create`,
+      },
+    )
+    fixture.setOrder({
+      amountMinor: setup.amountMinor,
+      merchantOrderNumber: session.data.merchantOrderNumber,
+      paidAt: new Date(now.getTime() + 120_000).toISOString(),
+      state: 'paid',
+      transactionId: '42000000000000000000000000000014',
+    })
+    const result = await runPaymentTimeoutClose(await createLocalReq({}, payload), {
+      now: new Date(now.getTime() + 300_000),
+      orderId: setup.order.id,
+      provider: fixture.provider,
+      traceId: `${prefix}-timeout-paid`,
+    })
+    expect(result).toEqual({ cancelled: 0, checked: 1, failed: 0, paid: 1, unchanged: 0 })
+    expect(
+      (await payload.findByID({ collection: 'orders', id: setup.order.id, overrideAccess: true }))
+        .status,
+    ).toBe('paid')
+  })
+
+  it('does not cancel when a close request fails and the follow-up query is still NOTPAY', async () => {
+    const fixture = createWechatPayFixture({ now: () => now })
+    const setup = await createPendingOrder('closefail')
+    await createWechatPayment(
+      await customerRequest(setup.customer, 'closefail-create'),
+      setup.order.orderNumber,
+      { channel: 'native' },
+      {
+        customer: setup.customer,
+        now: () => now,
+        provider: fixture.provider,
+        traceId: `${prefix}-closefail-create`,
+      },
+    )
+    const closeFailureProvider: PaymentProvider = {
+      closeOrder: async () =>
+        mockFailure('WECHATPAY_CLOSE_TIMEOUT', { retryable: true, statusKnown: false }),
+      createPayment: (input) => fixture.provider.createPayment(input),
+      health: () => fixture.provider.health(),
+      queryOrder: (input) => fixture.provider.queryOrder(input),
+      verifyNotification: (input) => fixture.provider.verifyNotification(input),
+    }
+    const result = await runPaymentTimeoutClose(await createLocalReq({}, payload), {
+      now: new Date(now.getTime() + 300_000),
+      orderId: setup.order.id,
+      provider: closeFailureProvider,
+      traceId: `${prefix}-closefail`,
+    })
+    expect(result).toEqual({ cancelled: 0, checked: 1, failed: 0, paid: 0, unchanged: 1 })
     expect(
       (await payload.findByID({ collection: 'orders', id: setup.order.id, overrideAccess: true }))
         .status,

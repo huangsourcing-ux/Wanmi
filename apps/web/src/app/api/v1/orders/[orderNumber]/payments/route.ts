@@ -2,10 +2,14 @@ import config from '@payload-config'
 import { getPayload, type PayloadRequest } from 'payload'
 
 import { clientIp } from '@/services/auth/client-facts'
-import { AppError, getTraceId, problemResponse, successResponse } from '@/lib/errors'
+import { AppError, getTraceId, successResponse, toProblemDetails } from '@/lib/errors'
 import type { PaymentProvider } from '@/providers/types'
 import { getRuntimeWechatPayProvider } from '@/providers/wechatpay'
-import { paymentCreateRequestSchema, paymentStatusResultSchema } from '@/schemas/payments'
+import {
+  paymentCreateRequestSchema,
+  paymentSessionResultSchema,
+  paymentStatusResultSchema,
+} from '@/schemas/payments'
 import { authenticatedCustomerRequest } from '@/services/auth/otp'
 import { createWechatPayment, queryAndConfirmWechatPayment } from '@/services/commerce/payments'
 
@@ -20,6 +24,7 @@ type Context = {
 
 type Dependencies = {
   provider: PaymentProvider
+  queryPayment?: typeof queryAndConfirmWechatPayment
   resolveContext: (request: Request) => Promise<Context>
 }
 
@@ -60,14 +65,23 @@ export function createPaymentRouteHandlers(dependencies: Dependencies) {
       try {
         const { orderNumber } = await context.params
         const authenticated = await dependencies.resolveContext(request)
-        const result = await queryAndConfirmWechatPayment(authenticated.req, orderNumber, {
-          customer: authenticated.customer,
-          provider: dependencies.provider,
-          traceId,
-        })
+        const result = await (dependencies.queryPayment ?? queryAndConfirmWechatPayment)(
+          authenticated.req,
+          orderNumber,
+          {
+            customer: authenticated.customer,
+            provider: dependencies.provider,
+            traceId,
+          },
+        )
         return successResponse(paymentStatusResultSchema.parse(result), traceId)
       } catch (error) {
-        return problemResponse(error, traceId)
+        const problem = toProblemDetails(error, traceId)
+        const result = paymentStatusResultSchema.parse({
+          problem,
+          state: problem.status === 429 ? 'rate_limited' : 'error',
+        })
+        return successResponse(result, traceId, { status: problem.status })
       }
     },
     POST: async (
@@ -87,7 +101,12 @@ export function createPaymentRouteHandlers(dependencies: Dependencies) {
         })
         return successResponse(result, traceId, { status: 201 })
       } catch (error) {
-        return problemResponse(error, traceId)
+        const problem = toProblemDetails(error, traceId)
+        const result = paymentSessionResultSchema.parse({
+          problem,
+          state: problem.status === 429 ? 'rate_limited' : 'error',
+        })
+        return successResponse(result, traceId, { status: problem.status })
       }
     },
   }

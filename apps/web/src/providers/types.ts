@@ -263,6 +263,10 @@ export type VerifiedRefundNotification =
     }
 
 export interface PaymentProvider extends HealthAwareProvider {
+  closeOrder(input: {
+    merchantOrderNumber: string
+    traceId: string
+  }): Promise<ProviderResult<{ closed: true }>>
   createPayment(input: {
     amountMinor: number
     channel: PaymentChannel

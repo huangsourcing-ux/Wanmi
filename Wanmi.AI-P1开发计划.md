@@ -522,13 +522,13 @@ D4-04 验证记录（2026-08-07）：模板删除端点与账号注销事务会�
 - [x] 未配置加价、能力未验证、价格异常或报价过期时禁止下单；
 - [x] 建立订单状态机和追加式 `order_events`；
 - [x] 实现微信 API v3 Native 下单并返回 `code_url`；
-- [ ] 实现桌面二维码前端展示流程；
+- [x] 实现桌面二维码前端展示流程；
 - [x] 实现微信 API v3 H5 下单并返回 `h5_url`；
-- [ ] 实现移动浏览器跳转、返回和服务端状态展示流程；
+- [x] 实现移动浏览器跳转、返回和服务端状态展示流程；
 - [x] 发起支付前重新校验报价有效期，并使微信支付单失效时间不晚于报价失效时间；
 - [x] 实现支付通知验签、幂等入库、防重放和主动查单；
-- [ ] 实现支付超时关单；
-- [ ] 前端只轮询/展示服务端订单状态，不以跳转结果标记支付成功；
+- [x] 实现支付超时关单；
+- [x] 前端只轮询/展示服务端订单状态，不以跳转结果标记支付成功；
 - [x] 实现退款任务、退款查询和失败告警；
 - [ ] 建立支付通知重放与补单工具；
 - [x] 建立微信支付、内部订单和后续西部数码成本的对账数据结构；
@@ -544,6 +544,8 @@ D5-03 验证记录（2026-08-07）：新增可注入的 WeChat Pay API v3 adapte
 D5-04 验证记录（2026-08-07）：新增隔离的 `commerce` 队列微信退款任务、API v3 退款创建/查询及退款成功通知验签/解密。只有注册明确失败且订单为 `paid`/`fulfilling` 时可创建自动原路全额退款；`succeeded` 在任何 provider 调用前拒绝。退款服务必须同时找到 D5-03 已确认到账记录，并再次核对服务端订单、商户订单号、微信交易号、`CNY` 和整数分金额；退款金额固定等于订单金额且不得超过原支付金额。退款状态只复用 `transitionOrder` 完成 `refund_pending → refunding → refunded`；请求发出后超时或状态不明会记录 `unknown` provider operation、转入带证据的 `manual_review`，后续任务只调用退款查询，不会重复创建退款。明确失败、争议、余额不足、金额/标识不一致和状态不明均建立人工复核并输出脱敏告警。退款通知先验签再解密，并以通知号唯一约束、SHA-256 摘要、事务和服务端主动查询实现幂等防重放；伪造通知不保存可信金额或标识。`refunds.refund_number`、订单退款关系、微信退款 ID、退款通知 ID 和对账键均有 PostgreSQL 唯一索引。对账服务将微信资金、内部订单和西部数码预充值余额保存在不同 `ledger`；西部余额 fixture 按本地 API 文档 `checkbalance` 的可用/冻结余额语义记录，三方差异只追加 `difference` 和 `correctionApplied: false` 证据，不修改订单、退款或余额。命名 migration 覆盖空库、历史对账安全回填和 down/up 往返。最终原样 `make check` 以退出码 0 通过生成物/schema 漂移、完整 migration 往返、Nginx、lint、TypeScript strict、548/548 单元测试、59/59 PostgreSQL/MinIO 集成测试、依赖/秘密门禁、Next.js 生产构建及 linux/amd64 同镜像；最终原样 `make test-e2e` 36/36 通过。全程保持 `ALLOW_REAL_PROVIDER_WRITES=false`，仅使用运行时生成密钥的 mock/fixture，未执行真实资金请求、未调用西部数码接口、未实现 D6 履约。
 
 D5-05 验证记录（2026-08-08）：启用 D0 已有的 `priceRules` Collection，写入、修改、启用、停用和删除只允许 `system_admin`，生产计价、报价和订单重新校验不再读取硬编码规则，而是统一读取已启用的 Collection 规则；测试 fixture 仅通过显式依赖注入使用。规则在写入时严格拒绝负数、非安全整数、小数基点以及 `mode` 与金额/基点字段不匹配，金额继续使用整数分，比例计算继续使用 BigInt 和 half-up 到分。新增 `effectiveAt` 生效时间和命名 migration `20260808_053208_d5_price_rules`，覆盖历史数据回填、金额字段可空、来源枚举、索引及 down/up 往返。新增/修改/启用/停用/删除通过 D1-07 统一审计服务在同一请求事务中记录 TLD、模式、变更前后金额或基点、操作者和生效时间。集成测试确认规则发布后新报价采用新规则，同时旧报价保存的完整规则副本与完整性哈希不变且仍可按原快照复现；D5-02 下单门禁仍会以当前规则拒绝旧价下单。未配置或停用的 TLD 在 provider 调用前继续关闭购买。最终在同一数据库状态上连续两次原样 `make check` 均以退出码 0 通过生成物/schema 漂移、完整 migration 往返、Nginx、lint、TypeScript strict、550/550 单元测试、61/61 PostgreSQL/MinIO 集成测试、依赖/秘密门禁、Next.js 生产构建及 linux/amd64 同镜像；最终原样 `make test-e2e` 36/36 通过。未改订单状态机、支付或退款，未调用真实 provider、资金或域名写接口。
+
+D5-06 验证记录（2026-08-08）：新增 `/account/orders/[orderNumber]/payment` 支付页，桌面 Native 流程只以 `code_url` 动态生成二维码并展示服务端失效时间与重新获取入口；移动浏览器 H5 流程将站内返回地址附加到 `h5_url`，返回 `/account/orders/[orderNumber]/payment/return` 后只恢复服务端状态查询，不把扫码、跳转或返回视为支付成功。前端通过 D1-02 六状态契约按固定间隔读取同源订单支付接口，支付结果唯一取自服务端订单状态；接口以认证 customer、`user` 和 `overrideAccess: false` 限定订单归属，并用订单行上的 `paymentStatusPolledAt` 做数据库原子 3 秒限频，只返回支付展示所需字段且禁用缓存。新增命名 migration `20260808_064925_d5_payment_frontend_timeout` 及 `commerce` 队列独占 `paymentTimeoutClose` workflow：每 30 秒最多扫描 100 个已到期 `pending_payment` 订单，先主动查单；已支付复用 D5-03 确认与状态迁移，状态不明保持不关单；明确未支付时先调用微信关单，再次主动查单且仅在确认 `CLOSED` 后通过既有 `transitionOrder` 迁移到 `cancelled`。任务使用固定并发键、自限定查询和状态前置条件，重复执行不会重复关单或重复迁移；关单失败或复查仍为未支付时保持待支付并由后续扫描重试。最终在同一数据库状态上连续两次原样 `make check` 均以退出码 0 通过生成物/schema 漂移、完整 migration 往返、Nginx、lint、TypeScript strict、556/556 单元测试、65/65 PostgreSQL/MinIO 集成测试、依赖/秘密门禁、Next.js 生产构建及 linux/amd64 同镜像；最终原样 `make test-e2e` 39/39 通过。全程使用本地 fixture，保持 `ALLOW_REAL_PROVIDER_WRITES=false`；通知重放补单、特殊退款与发票审计仍留给 D5-07。
 
 ### 9.3 退出条件
 
