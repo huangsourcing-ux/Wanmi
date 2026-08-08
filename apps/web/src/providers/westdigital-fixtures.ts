@@ -119,7 +119,12 @@ function defaultHandler(request: WestDigitalTransportRequest): WestDigitalTransp
     return { body: WESTDIGITAL_PRICE_FIXTURE, status: 200 }
 
   if (request.operation === 'price' && request.body.year === '1') {
-    const fixture = WESTDIGITAL_TLD_PRICE_FIXTURES[request.body.value ?? '']
+    const value = request.body.value ?? ''
+    const fixture =
+      WESTDIGITAL_TLD_PRICE_FIXTURES[value] ??
+      Object.entries(WESTDIGITAL_TLD_PRICE_FIXTURES)
+        .sort(([left], [right]) => right.length - left.length)
+        .find(([representative]) => value.endsWith(representative.slice('wanmi'.length)))?.[1]
     if (fixture) return { body: fixture, status: 200 }
   }
 

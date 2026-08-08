@@ -891,22 +891,43 @@ export interface PriceRule {
  */
 export interface Quote {
   id: number;
+  schemaVersion: number;
+  calculationVersion: number;
+  quoteRef: string;
   customer: number | Customer;
   domainAscii: string;
+  tld: string;
   years: number;
+  priceClass: 'standard';
+  sourcePriceSnapshotRef: string;
+  sourceCalculationHash: string;
+  quoteIntegrityHash: string;
+  provider: 'westdigital_fixture';
+  providerProductId: string;
+  providerRequestId: string;
+  providerObservedAt: string;
+  providerCacheStatus: 'hit' | 'miss';
+  providerCacheExpiresAt?: string | null;
+  availabilityRequestId: string;
+  availabilityObservedAt: string;
+  ruleSource: 'wanmi_fixture';
+  ruleKey: string;
+  ruleVersion: number;
+  ruleMode: 'fixed' | 'percentage';
+  ruleFixedAmountMinor?: number | null;
+  rulePercentageBasisPoints?: number | null;
+  roundingMode: 'half_up_to_fen';
+  calculationFormula: 'registration_price_plus_annual_renewal_price';
+  upstreamRegistrationPriceMinor: number;
+  upstreamRenewalPriceMinor: number;
   upstreamCostMinor: number;
+  registrationPriceMinor: number;
+  renewalPriceMinor: number;
   userPriceMinor: number;
   currency: 'CNY';
-  ruleSnapshot:
-    | {
-        [k: string]: unknown;
-      }
-    | unknown[]
-    | string
-    | number
-    | boolean
-    | null;
+  quotedAt: string;
   expiresAt: string;
+  createdTraceId: string;
   updatedAt: string;
   createdAt: string;
 }
@@ -1790,10 +1811,6 @@ export interface PayloadLockedDocument {
         value: number | PriceRule;
       } | null)
     | ({
-        relationTo: 'quotes';
-        value: number | Quote;
-      } | null)
-    | ({
         relationTo: 'orders';
         value: number | Order;
       } | null)
@@ -2415,14 +2432,43 @@ export interface PriceRulesSelect<T extends boolean = true> {
  * via the `definition` "quotes_select".
  */
 export interface QuotesSelect<T extends boolean = true> {
+  schemaVersion?: T;
+  calculationVersion?: T;
+  quoteRef?: T;
   customer?: T;
   domainAscii?: T;
+  tld?: T;
   years?: T;
+  priceClass?: T;
+  sourcePriceSnapshotRef?: T;
+  sourceCalculationHash?: T;
+  quoteIntegrityHash?: T;
+  provider?: T;
+  providerProductId?: T;
+  providerRequestId?: T;
+  providerObservedAt?: T;
+  providerCacheStatus?: T;
+  providerCacheExpiresAt?: T;
+  availabilityRequestId?: T;
+  availabilityObservedAt?: T;
+  ruleSource?: T;
+  ruleKey?: T;
+  ruleVersion?: T;
+  ruleMode?: T;
+  ruleFixedAmountMinor?: T;
+  rulePercentageBasisPoints?: T;
+  roundingMode?: T;
+  calculationFormula?: T;
+  upstreamRegistrationPriceMinor?: T;
+  upstreamRenewalPriceMinor?: T;
   upstreamCostMinor?: T;
+  registrationPriceMinor?: T;
+  renewalPriceMinor?: T;
   userPriceMinor?: T;
   currency?: T;
-  ruleSnapshot?: T;
+  quotedAt?: T;
   expiresAt?: T;
+  createdTraceId?: T;
   updatedAt?: T;
   createdAt?: T;
 }

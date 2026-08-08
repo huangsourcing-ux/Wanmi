@@ -128,8 +128,32 @@ export const PriceSnapshots: CollectionConfig = {
 export const Quotes: CollectionConfig = {
   slug: 'quotes',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
-  admin: { group: ADMIN_GROUPS.commerce, hidden: systemAdminHidden },
+  admin: {
+    defaultColumns: ['quoteRef', 'domainAscii', 'years', 'userPriceMinor', 'expiresAt'],
+    group: ADMIN_GROUPS.commerce,
+    hidden: systemAdminHidden,
+    listSearchableFields: ['quoteRef', 'domainAscii'],
+    useAsTitle: 'quoteRef',
+  },
+  defaultSort: '-quotedAt',
+  indexes: [{ fields: ['customer', 'expiresAt'] }, { fields: ['domainAscii', 'quotedAt'] }],
+  labels: { plural: '客户报价', singular: '客户报价' },
+  lockDocuments: false,
   fields: [
+    { ...safeInteger('schemaVersion'), defaultValue: 1, max: 1, min: 1 },
+    { ...safeInteger('calculationVersion'), defaultValue: 1, max: 1, min: 1 },
+    {
+      name: 'quoteRef',
+      type: 'text',
+      index: true,
+      required: true,
+      unique: true,
+      validate: (value: null | string | undefined) =>
+        typeof value === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value)
+          ? true
+          : '报价引用必须是随机 UUID',
+    },
     {
       name: 'customer',
       type: 'relationship',
@@ -138,17 +162,111 @@ export const Quotes: CollectionConfig = {
       required: true,
     },
     { name: 'domainAscii', type: 'text', index: true, required: true },
+    { name: 'tld', type: 'text', index: true, required: true },
     { name: 'years', type: 'number', min: 1, max: 10, required: true },
-    { ...integerMoney, name: 'upstreamCostMinor', access: { read: sensitiveFieldRead } },
-    { ...integerMoney, name: 'userPriceMinor' },
-    { name: 'currency', type: 'select', defaultValue: 'CNY', options: ['CNY'], required: true },
+    { name: 'priceClass', type: 'select', options: ['standard'], required: true },
     {
-      name: 'ruleSnapshot',
-      type: 'json',
+      name: 'sourcePriceSnapshotRef',
+      type: 'text',
+      index: true,
+      required: true,
+      validate: (value: null | string | undefined) =>
+        typeof value === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value)
+          ? true
+          : '源价格快照引用必须是随机 UUID',
+    },
+    {
+      name: 'sourceCalculationHash',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      required: true,
+      validate: (value: null | string | undefined) =>
+        typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value)
+          ? true
+          : '源计算哈希必须是 SHA-256 十六进制值',
+    },
+    {
+      name: 'quoteIntegrityHash',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      required: true,
+      validate: (value: null | string | undefined) =>
+        typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value)
+          ? true
+          : '报价完整性哈希必须是 SHA-256 十六进制值',
+    },
+    { name: 'provider', type: 'select', options: ['westdigital_fixture'], required: true },
+    {
+      name: 'providerProductId',
+      type: 'text',
       access: { read: sensitiveFieldRead },
       required: true,
     },
+    {
+      name: 'providerRequestId',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      required: true,
+    },
+    { name: 'providerObservedAt', type: 'date', index: true, required: true },
+    { name: 'providerCacheStatus', type: 'select', options: ['hit', 'miss'], required: true },
+    { name: 'providerCacheExpiresAt', type: 'date' },
+    {
+      name: 'availabilityRequestId',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      required: true,
+    },
+    { name: 'availabilityObservedAt', type: 'date', required: true },
+    {
+      name: 'ruleSource',
+      type: 'select',
+      options: ['wanmi_fixture'],
+      access: { read: sensitiveFieldRead },
+      required: true,
+    },
+    { name: 'ruleKey', type: 'text', access: { read: sensitiveFieldRead }, required: true },
+    {
+      ...safeInteger('ruleVersion'),
+      access: { read: sensitiveFieldRead },
+      defaultValue: 1,
+      max: 1,
+      min: 1,
+    },
+    {
+      name: 'ruleMode',
+      type: 'select',
+      options: ['fixed', 'percentage'],
+      access: { read: sensitiveFieldRead },
+      required: true,
+    },
+    { ...safeInteger('ruleFixedAmountMinor', false), access: { read: sensitiveFieldRead } },
+    { ...safeInteger('rulePercentageBasisPoints', false), access: { read: sensitiveFieldRead } },
+    {
+      name: 'roundingMode',
+      type: 'select',
+      options: ['half_up_to_fen'],
+      access: { read: sensitiveFieldRead },
+      required: true,
+    },
+    {
+      name: 'calculationFormula',
+      type: 'select',
+      options: ['registration_price_plus_annual_renewal_price'],
+      access: { read: sensitiveFieldRead },
+      required: true,
+    },
+    { ...safeInteger('upstreamRegistrationPriceMinor'), access: { read: sensitiveFieldRead } },
+    { ...safeInteger('upstreamRenewalPriceMinor'), access: { read: sensitiveFieldRead } },
+    { ...integerMoney, name: 'upstreamCostMinor', access: { read: sensitiveFieldRead } },
+    { ...safeInteger('registrationPriceMinor') },
+    { ...safeInteger('renewalPriceMinor') },
+    { ...integerMoney, name: 'userPriceMinor' },
+    { name: 'currency', type: 'select', defaultValue: 'CNY', options: ['CNY'], required: true },
+    { name: 'quotedAt', type: 'date', index: true, required: true },
     { name: 'expiresAt', type: 'date', index: true, required: true },
+    { name: 'createdTraceId', type: 'text', access: { read: sensitiveFieldRead }, required: true },
   ],
 }
 

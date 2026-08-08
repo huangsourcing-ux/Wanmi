@@ -82,6 +82,23 @@ function toSafeMoney(value: bigint, label: string): number {
   return Number(value)
 }
 
+export function calculateRegistrationTotalFen(input: {
+  registrationPriceFen: number
+  renewalPriceFen: number
+  years: number
+}): number {
+  if (!Number.isSafeInteger(input.years) || input.years < 1 || input.years > 10) {
+    throw new AppError('PRICE_YEARS_INVALID', '注册年限必须是 1 到 10 的整数', 400, {
+      action: '请选择 1 到 10 年的注册年限',
+      retryable: false,
+      title: '注册年限无效',
+    })
+  }
+  const registration = BigInt(safeMoney(input.registrationPriceFen, '注册价'))
+  const renewal = BigInt(safeMoney(input.renewalPriceFen, '续费价'))
+  return toSafeMoney(registration + renewal * BigInt(input.years - 1), `${input.years} 年总成本`)
+}
+
 function markupFor(upstreamFen: number, rule: PricingRule): bigint {
   const upstream = BigInt(safeMoney(upstreamFen, '上游价格'))
   if (rule.mode === 'fixed') {
@@ -103,18 +120,26 @@ export function calculateTldPrice(input: {
   const upstreamRenewal = BigInt(safeMoney(input.renewalPriceFen, '上游续费价'))
   const registration = upstreamRegistration + markupFor(input.registrationPriceFen, input.rule)
   const renewal = upstreamRenewal + markupFor(input.renewalPriceFen, input.rule)
-  const oneYear = registration
-  const threeYear = registration + renewal * 2n
+  const registrationPriceFen = toSafeMoney(registration, '注册终价')
+  const renewalPriceFen = toSafeMoney(renewal, '续费终价')
 
   return {
     calculationFormula: PRICING_CALCULATION_FORMULA,
     calculationVersion: PRICE_CALCULATION_VERSION,
     currency: 'CNY',
-    oneYearTotalFen: toSafeMoney(oneYear, '1 年总成本'),
-    registrationPriceFen: toSafeMoney(registration, '注册终价'),
-    renewalPriceFen: toSafeMoney(renewal, '续费终价'),
+    oneYearTotalFen: calculateRegistrationTotalFen({
+      registrationPriceFen,
+      renewalPriceFen,
+      years: 1,
+    }),
+    registrationPriceFen,
+    renewalPriceFen,
     rule: input.rule,
-    threeYearTotalFen: toSafeMoney(threeYear, '3 年总成本'),
+    threeYearTotalFen: calculateRegistrationTotalFen({
+      registrationPriceFen,
+      renewalPriceFen,
+      years: 3,
+    }),
     upstreamRegistrationPriceFen: Number(upstreamRegistration),
     upstreamRenewalPriceFen: Number(upstreamRenewal),
   }

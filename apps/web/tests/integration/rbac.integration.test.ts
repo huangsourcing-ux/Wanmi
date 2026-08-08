@@ -305,12 +305,39 @@ describe('D1 Payload role boundaries', () => {
       payload.create({
         collection: 'quotes',
         data: {
+          availabilityObservedAt: new Date().toISOString(),
+          availabilityRequestId: `${fixturePrefix}-availability`,
+          calculationFormula: 'registration_price_plus_annual_renewal_price',
+          calculationVersion: 1,
+          createdTraceId: `${fixturePrefix}-trace`,
           currency: 'CNY',
           customer: owner.id,
           domainAscii: `${fixturePrefix}.test`,
           expiresAt: new Date(Date.now() + 300_000).toISOString(),
-          ruleSnapshot: { margin: 20 },
+          priceClass: 'standard',
+          provider: 'westdigital_fixture',
+          providerCacheStatus: 'miss',
+          providerObservedAt: new Date().toISOString(),
+          providerProductId: `${fixturePrefix}-product`,
+          providerRequestId: `${fixturePrefix}-price`,
+          quotedAt: new Date().toISOString(),
+          quoteIntegrityHash: '0'.repeat(64),
+          quoteRef: randomUUID(),
+          registrationPriceMinor: 120,
+          renewalPriceMinor: 120,
+          ruleFixedAmountMinor: 20,
+          ruleKey: `${fixturePrefix}-rule`,
+          ruleMode: 'fixed',
+          ruleSource: 'wanmi_fixture',
+          ruleVersion: 1,
+          roundingMode: 'half_up_to_fen',
+          schemaVersion: 1,
+          sourceCalculationHash: '1'.repeat(64),
+          sourcePriceSnapshotRef: randomUUID(),
+          tld: 'test',
           upstreamCostMinor: 100,
+          upstreamRegistrationPriceMinor: 100,
+          upstreamRenewalPriceMinor: 100,
           userPriceMinor: 120,
           years: 1,
         },
@@ -360,7 +387,8 @@ describe('D1 Payload role boundaries', () => {
       user: ownerUser as never,
     })
     expect(ownerQuote).not.toHaveProperty('upstreamCostMinor')
-    expect(ownerQuote).not.toHaveProperty('ruleSnapshot')
+    expect(ownerQuote).not.toHaveProperty('ruleKey')
+    expect(ownerQuote).not.toHaveProperty('upstreamRegistrationPriceMinor')
     expect(ownerQuote).toHaveProperty('userPriceMinor', 120)
 
     const ownerOrder = await payload.findByID({
