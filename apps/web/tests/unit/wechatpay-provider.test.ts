@@ -135,4 +135,78 @@ describe('Wechat Pay API v3 fixture adapter', () => {
       }),
     ).resolves.toMatchObject({ error: { code: 'WECHATPAY_CLIENT_IP_REQUIRED' }, ok: false })
   })
+
+  it('submits, queries and verifies full-refund fixtures with signed responses', async () => {
+    const fixture = createWechatPayFixture({ now: () => now })
+    const created = await fixture.provider.createRefund({
+      amountMinor: 12_300,
+      merchantOrderNumber: 'WMREFUND0001',
+      reason: '注册明确失败',
+      refundNumber: 'WRREFUND0001',
+      traceId: 'trace-refund-create',
+    })
+    expect(created).toMatchObject({
+      data: {
+        amountMinor: 12_300,
+        merchantOrderNumber: 'WMREFUND0001',
+        refundNumber: 'WRREFUND0001',
+        state: 'processing',
+      },
+      ok: true,
+    })
+
+    const refundedAt = now.toISOString()
+    fixture.setRefund({
+      amountMinor: 12_300,
+      merchantOrderNumber: 'WMREFUND0001',
+      providerRefundId: '503000000000000000000000000001',
+      refundNumber: 'WRREFUND0001',
+      refundedAt,
+      state: 'succeeded',
+    })
+    await expect(
+      fixture.provider.queryRefund({
+        refundNumber: 'WRREFUND0001',
+        traceId: 'trace-refund-query',
+      }),
+    ).resolves.toMatchObject({
+      data: {
+        amountMinor: 12_300,
+        providerRefundId: '503000000000000000000000000001',
+        state: 'succeeded',
+      },
+      ok: true,
+    })
+
+    const notification = fixture.refundNotification({
+      amountMinor: 12_300,
+      merchantOrderNumber: 'WMREFUND0001',
+      notificationId: 'REFUND-NOTIFICATION-0001',
+      providerRefundId: '503000000000000000000000000001',
+      refundNumber: 'WRREFUND0001',
+      refundedAt,
+    })
+    await expect(
+      fixture.provider.verifyRefundNotification({
+        ...notification,
+        traceId: 'trace-refund-notification',
+      }),
+    ).resolves.toEqual({
+      amountMinor: 12_300,
+      currency: 'CNY',
+      merchantOrderNumber: 'WMREFUND0001',
+      notificationId: 'REFUND-NOTIFICATION-0001',
+      providerRefundId: '503000000000000000000000000001',
+      refundNumber: 'WRREFUND0001',
+      refundedAt,
+      verified: true,
+    })
+    notification.headers.set('wechatpay-signature', 'invalid')
+    await expect(
+      fixture.provider.verifyRefundNotification({
+        ...notification,
+        traceId: 'trace-refund-forged',
+      }),
+    ).resolves.toMatchObject({ signatureVerified: false, verified: false })
+  })
 })

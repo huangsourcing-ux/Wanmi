@@ -53,12 +53,20 @@ export const Reconciliations: CollectionConfig = {
   access: { create: deny, delete: deny, read: operationalReaders, update: deny },
   admin: { group: ADMIN_GROUPS.operations, hidden: operationsAdminHidden },
   fields: [
+    { name: 'reconciliationKey', type: 'text', index: true, required: true, unique: true },
     {
       name: 'kind',
       type: 'select',
       options: ['wechat', 'westdigital', 'three_way'],
       required: true,
     },
+    {
+      name: 'ledger',
+      type: 'select',
+      options: ['wechat_funds', 'westdigital_prepaid', 'internal_orders'],
+      required: true,
+    },
+    { name: 'recordKey', type: 'text', index: true, required: true },
     { name: 'periodStart', type: 'date', required: true },
     { name: 'periodEnd', type: 'date', required: true },
     {
@@ -68,7 +76,11 @@ export const Reconciliations: CollectionConfig = {
       required: true,
     },
     { name: 'summary', type: 'json', required: true },
+    { name: 'differenceMinor', type: 'number', required: true },
+    { name: 'currency', type: 'select', options: ['CNY'], required: true },
+    { name: 'traceId', type: 'text', index: true, required: true },
   ],
+  indexes: [{ fields: ['ledger', 'periodStart', 'periodEnd'] }],
 }
 
 export const AuditLogs: CollectionConfig = {

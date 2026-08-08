@@ -8,6 +8,7 @@ import {
   PriceRules,
   PriceSnapshots,
   Quotes,
+  RefundNotifications,
   Refunds,
 } from './commerce'
 import {
@@ -73,6 +74,7 @@ export const collections: CollectionConfig[] = [
   Orders,
   OrderEvents,
   PaymentNotifications,
+  RefundNotifications,
   Refunds,
   ProviderOperations,
   DomainAssets,

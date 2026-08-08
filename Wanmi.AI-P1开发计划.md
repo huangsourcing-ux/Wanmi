@@ -529,9 +529,9 @@ D4-04 验证记录（2026-08-07）：模板删除端点与账号注销事务会�
 - [x] 实现支付通知验签、幂等入库、防重放和主动查单；
 - [ ] 实现支付超时关单；
 - [ ] 前端只轮询/展示服务端订单状态，不以跳转结果标记支付成功；
-- [ ] 实现退款任务、退款查询和失败告警；
+- [x] 实现退款任务、退款查询和失败告警；
 - [ ] 建立支付通知重放与补单工具；
-- [ ] 建立微信支付、内部订单和后续西部数码成本的对账数据结构；
+- [x] 建立微信支付、内部订单和后续西部数码成本的对账数据结构；
 - [ ] 建立特殊退款、发票备注和人工操作审计；
 - [ ] 使用微信官方 fixture 和 mock 完成自动化测试；具备测试商户配置后再做小额联调。
 
@@ -540,6 +540,8 @@ D5-01 验证记录（2026-08-07）：在 D2-07 的整数分、BigInt、舍入模
 D5-02 验证记录（2026-08-07）：新增认证客户 `POST /api/v1/orders` 与事务化 commerce 订单创建服务；请求只接受报价引用和实名模板 ID，域名、金额、币种、年限及起始状态全部取自服务端可信报价，不接受客户端金额。创建事务先调用 D5-01 `getUsableCustomerQuote` 校验报价归属、精确有效期和完整性哈希，再调用 D4-02 `assertRealnameTemplateUsableForRegistration` 校验模板归属、平台及 provider 双重批准和 provider 模板标识；随后重新核对支持 TLD、当前加价规则与报价规则完全一致，以当前规则重算注册/续费及多年总价并与报价金额一致，最后重新调用可售查询确认同一域名仍为普通可注册状态。任一门禁失败均不创建订单或事件。成功时原子写入客户、报价、实名模板、域名、服务端金额、`CNY`、完整 `quoteSnapshot` 和唯一订单号，起始状态固定为 `pending_payment`，并追加 `order.created` 事件及报价/实名/重新查询证据；客户读取不暴露内部快照，Orders 与 OrderEvents 的通用 create/update/delete 继续关闭。状态迁移未另写实现，继续唯一复用 D0 `transitionOrder` 的 ADR-0004 矩阵、事务、CAS 并发保护和追加事件；测试显式锁定完整矩阵、拒绝所有未定义迁移并保留 `manual_review` 出口证据门禁。本切片未改 Payload schema，因此没有新增 migration 或生成类型漂移。最终原样 `make check` 以退出码 0 通过生成物/schema 漂移、空库/历史升级及全部 migration 往返、Nginx、lint、TypeScript strict、544/544 单元测试、50/50 PostgreSQL/MinIO 集成测试、依赖/秘密门禁、Next.js 生产构建和 linux/amd64 同镜像；最终原样 `make test-e2e` 36/36 通过。依赖门禁发现 `nanoid` 可升级高危项及 `image-size@2.0.2` 尚无上游修复版本的 ICNS、JXL/HEIF 无限循环高危项；前者锁定到修复版，后者以最小本地补丁和恶意零尺寸输入回归测试关闭，并仅对这两个已补丁 GHSA 作精确 audit 例外。全部西部数码查询仍使用本地 fixture，未调用真实接口；微信支付和履约未实现。
 
 D5-03 验证记录（2026-08-07）：新增可注入的 WeChat Pay API v3 adapter，完成 Native/H5 下单、商户 RSA-SHA256 请求签名、微信平台响应/通知验签、AES-256-GCM 通知解密和按商户订单号主动查单；运行时只提供内存 fixture transport，且 `ALLOW_REAL_PROVIDER_WRITES=false`。支付发起在 provider 前按客户权限重读订单与报价快照，只允许 `pending_payment`，支付失效时间不超过报价失效时间，并在 provider 调用前持久化唯一商户订单号。通知 endpoint 仅将验签成功内容作为主动查单线索，最终只根据经平台签名确认的查单结果比对服务端商户号、应用号、商户订单号、微信交易号、`CNY` 和整数分金额；全部一致时才在同一数据库事务中写通知记录、到账时间并复用 `transitionOrder` 完成 `pending_payment → paid`。金额/标识不一致、查单未知和取消后迟到支付分别进入带证据的 `manual_review`；明确未支付保持待支付，伪造通知不解密、不信任其金额或标识且不迁移订单。`orders.merchant_order_number`、`payment_notifications.notification_id`、`merchant_order_number` 和 `wechat_transaction_id` 均有 PostgreSQL 唯一索引；通知仅保存验签结果、确认状态、安全标识、金额、到账/接收时间和报文摘要，不持久化完整通知。重放由唯一约束、事务和已确认支付收敛，只产生一次状态迁移。命名 migration 覆盖空库、历史行安全回填及 down/up 往返；`make check` 通过 547/547 单元测试、54/54 PostgreSQL/MinIO 集成测试、全部 migration/生成物、lint、typecheck、安全门禁、Next.js 生产构建和 linux/amd64 同镜像；`make test-e2e` 36/36 通过。全程只使用运行时生成密钥的 fixture，未连接真实商户号、未发起真实资金请求，未实现退款或履约。
+
+D5-04 验证记录（2026-08-07）：新增隔离的 `commerce` 队列微信退款任务、API v3 退款创建/查询及退款成功通知验签/解密。只有注册明确失败且订单为 `paid`/`fulfilling` 时可创建自动原路全额退款；`succeeded` 在任何 provider 调用前拒绝。退款服务必须同时找到 D5-03 已确认到账记录，并再次核对服务端订单、商户订单号、微信交易号、`CNY` 和整数分金额；退款金额固定等于订单金额且不得超过原支付金额。退款状态只复用 `transitionOrder` 完成 `refund_pending → refunding → refunded`；请求发出后超时或状态不明会记录 `unknown` provider operation、转入带证据的 `manual_review`，后续任务只调用退款查询，不会重复创建退款。明确失败、争议、余额不足、金额/标识不一致和状态不明均建立人工复核并输出脱敏告警。退款通知先验签再解密，并以通知号唯一约束、SHA-256 摘要、事务和服务端主动查询实现幂等防重放；伪造通知不保存可信金额或标识。`refunds.refund_number`、订单退款关系、微信退款 ID、退款通知 ID 和对账键均有 PostgreSQL 唯一索引。对账服务将微信资金、内部订单和西部数码预充值余额保存在不同 `ledger`；西部余额 fixture 按本地 API 文档 `checkbalance` 的可用/冻结余额语义记录，三方差异只追加 `difference` 和 `correctionApplied: false` 证据，不修改订单、退款或余额。命名 migration 覆盖空库、历史对账安全回填和 down/up 往返。最终原样 `make check` 以退出码 0 通过生成物/schema 漂移、完整 migration 往返、Nginx、lint、TypeScript strict、548/548 单元测试、59/59 PostgreSQL/MinIO 集成测试、依赖/秘密门禁、Next.js 生产构建及 linux/amd64 同镜像；最终原样 `make test-e2e` 36/36 通过。全程保持 `ALLOW_REAL_PROVIDER_WRITES=false`，仅使用运行时生成密钥的 mock/fixture，未执行真实资金请求、未调用西部数码接口、未实现 D6 履约。
 
 ### 9.3 退出条件
 
@@ -670,6 +672,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-07 | D5-01 客户报价 | 复用 D2-07 整数分计算与价格快照，完成客户归属的域名/年限报价、完整成本与规则快照、精确 5 分钟有效期、完整性校验、六状态 API 和订单复用校验入口 | `make check`：537 个单元测试、49 个 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；`make test-e2e` 36/36 通过；未连接真实西部数码 | D5 进行中；后台可发布加价规则与审计、实际订单创建及报价重新验证留给后续切片，真实 provider 联调与生产门槛不变 |
 | 2026-08-07 | D5-02 订单创建与状态机 | 完成服务端金额订单创建、报价/实名/TLD/规则/金额/可售状态完整重新验证、`pending_payment` 起始状态、完整报价快照和追加事件；复用既有 CAS 状态机 | `make check`：544 个单元测试、50 个 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；`make test-e2e` 36/36 通过；未连接真实西部数码 | D5 进行中；后台可发布加价规则与审计、微信支付、退款和对账留给后续切片，真实 provider 联调与生产门槛不变 |
 | 2026-08-07 | D5-03 微信支付确认 | 完成 Native/H5 下单、通知验签/解密、经平台签名的主动查单、金额/标识核对、幂等入库、`pending_payment → paid/manual_review` 和四项数据库唯一索引 | `make check`：547/547 单元测试、54/54 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；`make test-e2e` 36/36 通过；`ALLOW_REAL_PROVIDER_WRITES=false` | D5 进行中；前端二维码/H5 跳转、超时关单、退款、补单/对账和真实商户联调待后续切片，生产门槛不变 |
+| 2026-08-07 | D5-04 微信退款与对账 | 完成注册失败自动全额退款、退款创建/查询/验签通知、请求未知后只查不重提、失败人工复核，以及微信资金/内部订单/西部预充值独立账本和追加式三方差异 | `make check`：548/548 单元测试、59/59 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；`make test-e2e` 36/36 通过；`ALLOW_REAL_PROVIDER_WRITES=false` | D5 进行中；履约仍留给 D6；前端支付流程、支付超时关单、补单工具、特殊退款/发票审计及真实商户联调仍未完成，生产门槛不变 |
 
 ## 13. 范围追踪矩阵
 
