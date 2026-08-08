@@ -1102,6 +1102,91 @@ function verifyCustomerQuoteSchema(stage) {
   }
 }
 
+function verifyWechatPaymentSchema(stage) {
+  const columns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (COUNT(*) FILTER (WHERE table_name = 'orders' AND column_name IN (
+           'merchant_order_number', 'payment_channel', 'payment_expires_at'
+         )))::text || ':' ||
+         (COUNT(*) FILTER (WHERE table_name = 'payment_notifications' AND column_name IN (
+           'confirmation_status', 'currency', 'notification_id', 'order_id', 'paid_at',
+           'provider_request_id', 'source'
+         )))::text
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name IN ('orders', 'payment_notifications')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (columns !== '3:7') {
+    throw new Error(`D5-03 Wechat payment columns invalid after ${stage}: ${columns}`)
+  }
+
+  const indexes = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(indexdef, E'\n' ORDER BY tablename, indexname)
+       FROM pg_indexes
+       WHERE schemaname = 'public'
+         AND (
+           (tablename = 'orders' AND indexname = 'orders_merchant_order_number_idx')
+           OR (tablename = 'payment_notifications' AND indexname IN (
+             'payment_notifications_merchant_order_number_idx',
+             'payment_notifications_notification_id_idx',
+             'payment_notifications_wechat_transaction_id_idx'
+           ))
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  const uniqueIndexes = indexes.match(/CREATE UNIQUE INDEX/g) ?? []
+  if (
+    uniqueIndexes.length !== 4 ||
+    !/\(merchant_order_number\)/.test(indexes) ||
+    !/\(notification_id\)/.test(indexes) ||
+    !/\(wechat_transaction_id\)/.test(indexes)
+  ) {
+    throw new Error(`D5-03 payment uniqueness is incomplete after ${stage}: ${indexes}`)
+  }
+
+  const enums = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         array_to_string(enum_range(NULL::enum_orders_payment_channel), ',') || ':' ||
+         array_to_string(enum_range(NULL::enum_payment_notifications_source), ',') || ':' ||
+         array_to_string(enum_range(NULL::enum_payment_notifications_confirmation_status), ',')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (enums !== 'native,h5:notification,query:confirmed,mismatch,not_paid,rejected,unknown') {
+    throw new Error(`D5-03 payment enums invalid after ${stage}: ${enums}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -1122,6 +1207,7 @@ try {
   verifyRealnameDocumentSchema('empty-database migration')
   verifyRealnameLifecycleSchema('empty-database migration')
   verifyCustomerQuoteSchema('empty-database migration')
+  verifyWechatPaymentSchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -2103,8 +2189,89 @@ try {
     throw new Error(`D5-01 legacy quotes were not failed closed: ${legacyQuote}`)
   }
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 104
+     WHERE name = '20260808_015442_d5_wechat_payments'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const paymentAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'orders'
+             AND column_name = 'merchant_order_number'
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'payment_notifications'
+             AND column_name = 'notification_id'
+         ))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (paymentAfterDown !== 'true:true') {
+    throw new Error(`D5-03 migration down was incomplete: ${paymentAfterDown}`)
+  }
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `INSERT INTO payment_notifications (
+       wechat_transaction_id, merchant_order_number, signature_verified,
+       amount_minor, received_at, payload_digest, updated_at, created_at
+     ) VALUES (
+       'legacy-wechat-transaction', 'legacy-merchant-order', true,
+       120, NOW(), repeat('a', 64), NOW(), NOW()
+     )`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyWechatPaymentSchema('D5-03 migration round trip')
+  const legacyPayment = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (notification_id = 'LEGACY-' || id::text)::text || ':' ||
+         source::text || ':' || confirmation_status::text
+       FROM payment_notifications
+       WHERE merchant_order_number = 'legacy-merchant-order'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (legacyPayment !== 'true:notification:confirmed') {
+    throw new Error(`D5-03 legacy payment notification backfill failed: ${legacyPayment}`)
+  }
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, and the D5-01 customer quote migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, and the D5-03 Wechat payment migration round trips.\n',
   )
 } finally {
   if (created) {

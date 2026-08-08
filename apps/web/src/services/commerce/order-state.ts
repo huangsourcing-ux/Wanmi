@@ -4,7 +4,7 @@ import type { OrderStatus } from '@/lib/domain'
 import { AppError } from '@/lib/errors'
 
 export const ORDER_TRANSITIONS = {
-  pending_payment: ['paid', 'cancelled'],
+  pending_payment: ['paid', 'manual_review', 'cancelled'],
   paid: ['fulfilling', 'refund_pending', 'manual_review'],
   fulfilling: ['succeeded', 'refund_pending', 'manual_review'],
   succeeded: [],
