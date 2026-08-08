@@ -361,7 +361,7 @@ export async function executeWestDigitalWriteOperation(
   const operationKey = generateWestDigitalOperationKey(input)
   const prepared = await prepareOperation(req, input, operationKey)
   let operation = prepared.operation
-  const replay = !prepared.created
+  let providerWriteAttempted = false
 
   if (operation.status === 'succeeded' || operation.status === 'failed') {
     return result(operation, true, input.traceId)
@@ -425,6 +425,7 @@ export async function executeWestDigitalWriteOperation(
       break
     }
     operation = claimed
+    providerWriteAttempted = true
     const submitted = await submit(provider, input)
     const safeResult = safeProviderResult(submitted)
     if (!submitted.ok) {
@@ -493,7 +494,7 @@ export async function executeWestDigitalWriteOperation(
     )
     break
   }
-  return result(operation, replay, input.traceId)
+  return result(operation, !providerWriteAttempted, input.traceId)
 }
 
 export async function queryWestDigitalAsset(
