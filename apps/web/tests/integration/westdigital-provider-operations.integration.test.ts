@@ -203,6 +203,35 @@ describe('D6 WestDigital provider operation safety', () => {
     expect(operations.totalDocs).toBe(1)
   })
 
+  it('uses the compare-and-set claim to converge concurrent submissions to one provider write', async () => {
+    const input = registerInput('concurrent-duplicate')
+    const transport = new FixtureWestDigitalWriteTransport(async (request) => {
+      if (request.operation === 'register') {
+        await new Promise((resolve) => setTimeout(resolve, 75))
+        return successResponse(input.domainAscii, 'concurrent-provider-client-id')
+      }
+      return assetResponse(input.domainAscii, 'concurrent-provider-client-id')
+    })
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => run(input, transport)),
+    )
+
+    expect(transport.writeCount).toBe(1)
+    expect(results.every((result) => result.state !== 'error')).toBe(true)
+    expect(
+      results.filter((result) => 'data' in result && result.data.idempotentReplay),
+    ).toHaveLength(4)
+
+    const operations = await payload.find({
+      collection: 'providerOperations',
+      overrideAccess: true,
+      where: { operationKey: { equals: generateWestDigitalOperationKey(input) } },
+    })
+    expect(operations.totalDocs).toBe(1)
+    expect(operations.docs[0]).toMatchObject({ attemptCount: 1, status: 'succeeded' })
+  })
+
   it('keeps a submitted write unknown when status query is inconclusive and later only queries', async () => {
     const input = registerInput('status-unknown')
     const transport = new FixtureWestDigitalWriteTransport((request) => {
@@ -215,6 +244,40 @@ describe('D6 WestDigital provider operation safety', () => {
     expect(replay).toMatchObject({ data: { idempotentReplay: true, status: 'unknown' }, state: 'degraded' })
     expect(transport.writeCount).toBe(1)
     expect(transport.requests.filter((request) => request.operation === 'asset_query')).toHaveLength(2)
+  })
+
+  it('only queries when concurrent calls observe an unknown operation', async () => {
+    const input = registerInput('concurrent-unknown')
+    const transport = new FixtureWestDigitalWriteTransport((request) => {
+      if (request.operation === 'register') timeoutAfterSubmission()
+      throw new WestDigitalWriteTransportError('TEMPORARILY_UNAVAILABLE', 'not_submitted')
+    })
+    const initial = await run(input, transport)
+    expect(initial).toMatchObject({ data: { status: 'unknown' }, state: 'degraded' })
+    expect(transport.writeCount).toBe(1)
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => run(input, transport)),
+    )
+
+    expect(transport.writeCount).toBe(1)
+    expect(transport.requests.filter((request) => request.operation === 'asset_query')).toHaveLength(5)
+    expect(
+      results.every(
+        (result) =>
+          result.state === 'degraded' &&
+          result.data.idempotentReplay &&
+          result.data.status === 'unknown',
+      ),
+    ).toBe(true)
+
+    const operations = await payload.find({
+      collection: 'providerOperations',
+      overrideAccess: true,
+      where: { operationKey: { equals: generateWestDigitalOperationKey(input) } },
+    })
+    expect(operations.totalDocs).toBe(1)
+    expect(operations.docs[0]).toMatchObject({ attemptCount: 1, status: 'unknown' })
   })
 
   it('retries only the explicit not-submitted allowlist and stops at the finite limit', async () => {

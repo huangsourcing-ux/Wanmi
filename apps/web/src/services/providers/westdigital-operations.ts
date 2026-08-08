@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 
+import { sql } from '@payloadcms/db-postgres'
 import {
   commitTransaction,
   initTransaction,
@@ -214,21 +215,39 @@ async function claimAttempt(
   const maxAttempts = operation.maxAttempts ?? WESTDIGITAL_WRITE_MAX_ATTEMPTS
   if (attemptCount >= maxAttempts) return undefined
   return transaction(req, async () => {
-    const updated = await req.payload.update({
+    const transactionId = await req.transactionID
+    const session = transactionId ? req.payload.db.sessions?.[transactionId] : undefined
+    const database = session?.db as
+      | {
+          execute: (
+            statement: ReturnType<typeof sql>,
+          ) => Promise<{ rows?: Array<{ id: number | string }> }>
+        }
+      | undefined
+    if (!database) {
+      throw new AppError('WESTDIGITAL_OPERATION_CLAIM_UNAVAILABLE', '无法原子认领 Provider 操作', 503)
+    }
+    const updated = await database.execute(sql`
+      UPDATE provider_operations
+      SET
+        attempt_count = attempt_count + 1,
+        last_error_code = NULL,
+        status = 'submitted',
+        updated_at = NOW()
+      WHERE id = ${operation.id}
+        AND status = 'prepared'
+        AND attempt_count = ${attemptCount}
+      RETURNING id
+    `)
+    const claimedId = updated.rows?.[0]?.id
+    if (claimedId === undefined) return undefined
+    const claimed = (await req.payload.findByID({
       collection: 'providerOperations',
-      data: { attemptCount: attemptCount + 1, lastErrorCode: null, status: 'submitted' },
+      depth: 0,
+      id: claimedId,
       overrideAccess: true,
       req,
-      where: {
-        and: [
-          { id: { equals: operation.id } },
-          { status: { equals: 'prepared' } },
-          { attemptCount: { equals: attemptCount } },
-        ],
-      },
-    })
-    const claimed = updated.docs[0] as unknown as OperationRecord | undefined
-    if (!claimed) return undefined
+    })) as unknown as OperationRecord
     await recordAuditEvent(req, {
       action: 'provider.operation.recorded',
       actor: input.actor,
