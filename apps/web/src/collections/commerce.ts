@@ -362,6 +362,11 @@ export const Orders: CollectionConfig = {
     { name: 'paymentChannel', type: 'select', options: ['native', 'h5'] },
     { name: 'paymentExpiresAt', type: 'date' },
     {
+      name: 'paymentStatusPolledAt',
+      type: 'date',
+      access: { read: sensitiveFieldRead },
+    },
+    {
       name: 'quoteSnapshot',
       type: 'json',
       access: { read: sensitiveFieldRead },

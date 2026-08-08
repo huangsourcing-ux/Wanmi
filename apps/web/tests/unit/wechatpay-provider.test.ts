@@ -136,6 +136,30 @@ describe('Wechat Pay API v3 fixture adapter', () => {
     ).resolves.toMatchObject({ error: { code: 'WECHATPAY_CLIENT_IP_REQUIRED' }, ok: false })
   })
 
+  it('closes an unpaid order and requires the next signed query to report closed', async () => {
+    const fixture = createWechatPayFixture({ now: () => now })
+    await fixture.provider.createPayment({
+      amountMinor: 100,
+      channel: 'native',
+      description: 'test',
+      expiresAt: '2026-08-08T01:04:00.000Z',
+      merchantOrderNumber: 'WMCLOSE0001',
+      traceId: 'trace-close-create',
+    })
+    await expect(
+      fixture.provider.closeOrder({
+        merchantOrderNumber: 'WMCLOSE0001',
+        traceId: 'trace-close',
+      }),
+    ).resolves.toMatchObject({ data: { closed: true }, ok: true })
+    await expect(
+      fixture.provider.queryOrder({
+        merchantOrderNumber: 'WMCLOSE0001',
+        traceId: 'trace-close-query',
+      }),
+    ).resolves.toMatchObject({ data: { state: 'closed' }, ok: true })
+  })
+
   it('submits, queries and verifies full-refund fixtures with signed responses', async () => {
     const fixture = createWechatPayFixture({ now: () => now })
     const created = await fixture.provider.createRefund({

@@ -286,6 +286,33 @@ function verifyPriceRuleSchema(stage) {
   }
 }
 
+function verifyPaymentFrontendTimeoutSchema(stage) {
+  const shape = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'orders'
+             AND column_name = 'payment_status_polled_at'
+         ))::text || ':' ||
+         (array_to_string(enum_range(NULL::enum_payload_jobs_workflow_slug), ',')
+           LIKE '%paymentTimeoutClose%')::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (shape !== 'true:true') {
+    throw new Error(`D5-06 payment polling/job schema invalid after ${stage}: ${shape}`)
+  }
+}
+
 function verifyToolObservabilitySchema(stage) {
   const forbiddenColumns = postgres(
     [
@@ -1354,6 +1381,7 @@ try {
   verifyFirstPartyEventSchema('empty-database migration')
   verifyPriceSnapshotSchema('empty-database migration')
   verifyPriceRuleSchema('empty-database migration')
+  verifyPaymentFrontendTimeoutSchema('empty-database migration')
   verifyToolObservabilitySchema('empty-database migration')
   verifyContentCmsSchema('empty-database migration')
   verifyContentRelationsSeoSchema('empty-database migration')
@@ -2578,8 +2606,48 @@ try {
     throw new Error(`D5-05 effective time backfill failed: ${legacyRule}`)
   }
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 108
+     WHERE name = '20260808_064925_d5_payment_frontend_timeout'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const paymentTimeoutAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'orders'
+             AND column_name = 'payment_status_polled_at'
+         ))::text || ':' ||
+         (array_to_string(enum_range(NULL::enum_payload_jobs_workflow_slug), ',')
+           NOT LIKE '%paymentTimeoutClose%')::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (paymentTimeoutAfterDown !== 'true:true') {
+    throw new Error(`D5-06 migration down was incomplete: ${paymentTimeoutAfterDown}`)
+  }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyPaymentFrontendTimeoutSchema('D5-06 migration round trip')
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, and the D5-05 price rule migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, and the D5-06 payment front-end/timeout migration round trips.\n',
   )
 } finally {
   if (created) {

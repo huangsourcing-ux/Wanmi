@@ -21,6 +21,7 @@ import * as migration_20260807_145526_d5_customer_quotes from './20260807_145526
 import * as migration_20260808_015442_d5_wechat_payments from './20260808_015442_d5_wechat_payments'
 import * as migration_20260808_031431_d5_wechat_refunds_reconciliation from './20260808_031431_d5_wechat_refunds_reconciliation'
 import * as migration_20260808_053208_d5_price_rules from './20260808_053208_d5_price_rules'
+import * as migration_20260808_064925_d5_payment_frontend_timeout from './20260808_064925_d5_payment_frontend_timeout'
 
 export const migrations = [
   {
@@ -137,5 +138,10 @@ export const migrations = [
     up: migration_20260808_053208_d5_price_rules.up,
     down: migration_20260808_053208_d5_price_rules.down,
     name: '20260808_053208_d5_price_rules',
+  },
+  {
+    up: migration_20260808_064925_d5_payment_frontend_timeout.up,
+    down: migration_20260808_064925_d5_payment_frontend_timeout.down,
+    name: '20260808_064925_d5_payment_frontend_timeout',
   },
 ]

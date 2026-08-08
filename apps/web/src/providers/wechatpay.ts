@@ -274,6 +274,7 @@ export class WechatPayApiV3Adapter implements PaymentProvider {
       })
     }
     if (
+      response.status !== 204 &&
       !verifyWechatSignature(
         response.headers,
         response.body,
@@ -304,6 +305,9 @@ export class WechatPayApiV3Adapter implements PaymentProvider {
         retryable: response.status >= 500,
         statusKnown: response.status < 500,
       })
+    }
+    if (response.status === 204) {
+      return mockSuccess({}, header(response.headers, 'request-id'))
     }
     try {
       return mockSuccess(
@@ -376,6 +380,19 @@ export class WechatPayApiV3Adapter implements PaymentProvider {
       { channel: 'h5' as const, expiresAt, h5Url: parsed.data.h5_url },
       result.requestId,
     )
+  }
+
+  async closeOrder(input: { merchantOrderNumber: string; traceId: string }) {
+    const merchantOrderNumber = merchantOrderNumberSchema.parse(input.merchantOrderNumber)
+    const path = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(merchantOrderNumber)}/close`
+    const result = await this.request(
+      'POST',
+      path,
+      { mchid: this.options.merchantId },
+      input.traceId,
+    )
+    if (!result.ok) return result
+    return mockSuccess({ closed: true as const }, result.requestId)
   }
 
   async queryOrder(input: { merchantOrderNumber: string; traceId: string }) {
@@ -643,6 +660,20 @@ export function createWechatPayFixture(options: { now?: () => Date } = {}): Wech
   const transport: WechatPayTransport = {
     async request(request) {
       if (request.method === 'POST') {
+        const closeMatch = request.path.match(/out-trade-no\/([^/]+)\/close$/u)
+        if (closeMatch) {
+          const merchantOrderNumber = decodeURIComponent(closeMatch[1] ?? '')
+          const order = orders.get(merchantOrderNumber)
+          if (order?.state === 'paid') {
+            return signedResponse({ code: 'ORDER_PAID' })
+          }
+          if (order) orders.set(merchantOrderNumber, { ...order, state: 'closed' })
+          return {
+            body: '',
+            headers: new Headers({ 'request-id': `fixture-${randomUUID()}` }),
+            status: 204,
+          }
+        }
         if (request.path === '/v3/refund/domestic/refunds') {
           const input = z
             .object({
@@ -863,6 +894,10 @@ export class MockWechatPayProvider implements PaymentProvider, RefundProvider {
 
   async createPayment(input: Parameters<PaymentProvider['createPayment']>[0]) {
     return this.fixture.provider.createPayment(input)
+  }
+
+  async closeOrder(input: Parameters<PaymentProvider['closeOrder']>[0]) {
+    return this.fixture.provider.closeOrder(input)
   }
 
   async queryOrder(input: Parameters<PaymentProvider['queryOrder']>[0]) {

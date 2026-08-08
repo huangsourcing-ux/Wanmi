@@ -212,6 +212,7 @@ export interface Config {
       realnameCleanup: WorkflowRealnameCleanup;
       commerceFulfillment: WorkflowCommerceFulfillment;
       wechatRefund: WorkflowWechatRefund;
+      paymentTimeoutClose: WorkflowPaymentTimeoutClose;
     };
   };
 }
@@ -961,6 +962,7 @@ export interface Order {
   merchantOrderNumber?: string | null;
   paymentChannel?: ('native' | 'h5') | null;
   paymentExpiresAt?: string | null;
+  paymentStatusPolledAt?: string | null;
   quoteSnapshot:
     | {
         [k: string]: unknown;
@@ -1730,6 +1732,7 @@ export interface PayloadJob {
         | 'realnameCleanup'
         | 'commerceFulfillment'
         | 'wechatRefund'
+        | 'paymentTimeoutClose'
       )
     | null;
   taskSlug?: 'inline' | null;
@@ -2542,6 +2545,7 @@ export interface OrdersSelect<T extends boolean = true> {
   merchantOrderNumber?: T;
   paymentChannel?: T;
   paymentExpiresAt?: T;
+  paymentStatusPolledAt?: T;
   quoteSnapshot?: T;
   paidAt?: T;
   updatedAt?: T;
@@ -3207,6 +3211,13 @@ export interface WorkflowWechatRefund {
     refundId: number;
     traceId: string;
   };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WorkflowPaymentTimeoutClose".
+ */
+export interface WorkflowPaymentTimeoutClose {
+  input?: unknown;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
