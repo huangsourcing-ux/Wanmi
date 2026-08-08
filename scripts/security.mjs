@@ -24,9 +24,20 @@ function runCheck(check) {
   }
 }
 
+// The registry has not published a fixed image-size release for these two advisories.
+// Both parser loops are fixed by patches/image-size@2.0.2.patch and exercised by
+// tests/unit/dependency-security.test.ts. Keep the exceptions scoped to those exact GHSAs.
+const locallyPatchedAdvisories = ['GHSA-w3rx-r6r6-pgpr', 'GHSA-5p2g-fcmc-qvqq']
+
 runCheck({
   command: 'pnpm',
-  args: ['audit', '--prod', '--audit-level', 'high'],
+  args: [
+    'audit',
+    '--prod',
+    '--audit-level',
+    'high',
+    ...locallyPatchedAdvisories.flatMap((advisory) => ['--ignore', advisory]),
+  ],
   name: 'dependency audit',
 })
 

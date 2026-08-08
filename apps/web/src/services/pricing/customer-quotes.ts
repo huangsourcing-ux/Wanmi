@@ -62,6 +62,7 @@ export type QuoteSnapshotInput = {
 }
 
 export type StoredCustomerQuote = QuoteSnapshotInput & {
+  quoteId: number
   quoteIntegrityHash: string
   quoteRef: string
 }
@@ -197,6 +198,7 @@ function fromDocument(doc: Quote): StoredCustomerQuote {
     providerObservedAt: doc.providerObservedAt,
     providerProductId: doc.providerProductId,
     providerRequestId: doc.providerRequestId,
+    quoteId: doc.id,
     quoteIntegrityHash: doc.quoteIntegrityHash,
     quotedAt: doc.quotedAt,
     quoteRef: doc.quoteRef,

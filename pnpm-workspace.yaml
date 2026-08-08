@@ -4,11 +4,13 @@ packages:
 autoInstallPeers: false
 
 overrides:
+  nanoid: 3.3.17
   postcss: 8.5.25
   sharp: 0.35.0
   undici: 7.29.0
 
 patchedDependencies:
+  image-size@2.0.2: patches/image-size@2.0.2.patch
   sharp@0.35.0: patches/sharp@0.35.0.patch
 
 allowBuilds:
@@ -17,3 +19,8 @@ allowBuilds:
   msw: true
   sharp: true
   unrs-resolver: true
+
+auditConfig:
+  ignoreGhsas:
+    - GHSA-w3rx-r6r6-pgpr
+    - GHSA-5p2g-fcmc-qvqq
