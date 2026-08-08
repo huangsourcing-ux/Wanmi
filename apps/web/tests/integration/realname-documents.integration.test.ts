@@ -103,7 +103,9 @@ describe('D4 private real-name documents', () => {
       overrideAccess: true,
     })
     expect(protectedDocument.objectKey).toMatch(/^private\/realname\//u)
-    expect(protectedDocument.objectKey).not.toContain(String(owner.id))
+    expect(protectedDocument.objectKey).toMatch(
+      /^private\/realname\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[0-9a-f]{32}\.wrn$/u,
+    )
     const stored = await providers.objects.read({
       key: protectedDocument.objectKey,
       traceId: `${fixturePrefix}-stored`,
