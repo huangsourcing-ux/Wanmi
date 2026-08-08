@@ -97,6 +97,7 @@ export interface Config {
     orders: Order;
     orderEvents: OrderEvent;
     paymentNotifications: PaymentNotification;
+    refundNotifications: RefundNotification;
     refunds: Refund;
     providerOperations: ProviderOperation;
     domainAssets: DomainAsset;
@@ -162,6 +163,7 @@ export interface Config {
     orders: OrdersSelect<false> | OrdersSelect<true>;
     orderEvents: OrderEventsSelect<false> | OrderEventsSelect<true>;
     paymentNotifications: PaymentNotificationsSelect<false> | PaymentNotificationsSelect<true>;
+    refundNotifications: RefundNotificationsSelect<false> | RefundNotificationsSelect<true>;
     refunds: RefundsSelect<false> | RefundsSelect<true>;
     providerOperations: ProviderOperationsSelect<false> | ProviderOperationsSelect<true>;
     domainAssets: DomainAssetsSelect<false> | DomainAssetsSelect<true>;
@@ -209,6 +211,7 @@ export interface Config {
       smsReceiptReconciliation: WorkflowSmsReceiptReconciliation;
       realnameCleanup: WorkflowRealnameCleanup;
       commerceFulfillment: WorkflowCommerceFulfillment;
+      wechatRefund: WorkflowWechatRefund;
     };
   };
 }
@@ -1041,6 +1044,28 @@ export interface PaymentNotification {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "refundNotifications".
+ */
+export interface RefundNotification {
+  id: number;
+  notificationId: string;
+  refund?: (number | null) | Refund;
+  source: 'notification' | 'query';
+  confirmationStatus: 'confirmed' | 'mismatch' | 'failed' | 'rejected' | 'unknown';
+  refundNumber?: string | null;
+  providerRefundId?: string | null;
+  amountMinor?: number | null;
+  currency?: 'CNY' | null;
+  signatureVerified: boolean;
+  receivedAt: string;
+  refundedAt?: string | null;
+  payloadDigest: string;
+  providerRequestId?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "refunds".
  */
 export interface Refund {
@@ -1048,8 +1073,14 @@ export interface Refund {
   refundNumber: string;
   order: number | Order;
   amountMinor: number;
+  currency: 'CNY';
   status: 'pending' | 'submitted' | 'succeeded' | 'failed' | 'unknown';
   providerRefundId?: string | null;
+  failureCategory?: ('balance_insufficient' | 'disputed' | 'provider_rejected' | 'unknown') | null;
+  submittedAt?: string | null;
+  lastCheckedAt?: string | null;
+  refundedAt?: string | null;
+  createdTraceId: string;
   updatedAt: string;
   createdAt: string;
 }
@@ -1155,7 +1186,10 @@ export interface ManualReview {
  */
 export interface Reconciliation {
   id: number;
+  reconciliationKey: string;
   kind: 'wechat' | 'westdigital' | 'three_way';
+  ledger: 'wechat_funds' | 'westdigital_prepaid' | 'internal_orders';
+  recordKey: string;
   periodStart: string;
   periodEnd: string;
   status: 'pending' | 'matched' | 'difference' | 'reviewed';
@@ -1168,6 +1202,9 @@ export interface Reconciliation {
     | number
     | boolean
     | null;
+  differenceMinor: number;
+  currency: 'CNY';
+  traceId: string;
   updatedAt: string;
   createdAt: string;
 }
@@ -1691,6 +1728,7 @@ export interface PayloadJob {
         | 'smsReceiptReconciliation'
         | 'realnameCleanup'
         | 'commerceFulfillment'
+        | 'wechatRefund'
       )
     | null;
   taskSlug?: 'inline' | null;
@@ -1831,6 +1869,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'paymentNotifications';
         value: number | PaymentNotification;
+      } | null)
+    | ({
+        relationTo: 'refundNotifications';
+        value: number | RefundNotification;
       } | null)
     | ({
         relationTo: 'refunds';
@@ -2543,14 +2585,41 @@ export interface PaymentNotificationsSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "refundNotifications_select".
+ */
+export interface RefundNotificationsSelect<T extends boolean = true> {
+  notificationId?: T;
+  refund?: T;
+  source?: T;
+  confirmationStatus?: T;
+  refundNumber?: T;
+  providerRefundId?: T;
+  amountMinor?: T;
+  currency?: T;
+  signatureVerified?: T;
+  receivedAt?: T;
+  refundedAt?: T;
+  payloadDigest?: T;
+  providerRequestId?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "refunds_select".
  */
 export interface RefundsSelect<T extends boolean = true> {
   refundNumber?: T;
   order?: T;
   amountMinor?: T;
+  currency?: T;
   status?: T;
   providerRefundId?: T;
+  failureCategory?: T;
+  submittedAt?: T;
+  lastCheckedAt?: T;
+  refundedAt?: T;
+  createdTraceId?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -2634,11 +2703,17 @@ export interface ManualReviewsSelect<T extends boolean = true> {
  * via the `definition` "reconciliations_select".
  */
 export interface ReconciliationsSelect<T extends boolean = true> {
+  reconciliationKey?: T;
   kind?: T;
+  ledger?: T;
+  recordKey?: T;
   periodStart?: T;
   periodEnd?: T;
   status?: T;
   summary?: T;
+  differenceMinor?: T;
+  currency?: T;
+  traceId?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -3119,6 +3194,16 @@ export interface WorkflowCommerceFulfillment {
     orderId: number;
     traceId: string;
     simulate?: ('success' | 'timeout-before-submit' | 'timeout-after-submit') | null;
+  };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WorkflowWechatRefund".
+ */
+export interface WorkflowWechatRefund {
+  input: {
+    refundId: number;
+    traceId: string;
   };
 }
 /**

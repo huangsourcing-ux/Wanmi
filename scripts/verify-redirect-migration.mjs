@@ -1187,6 +1187,94 @@ function verifyWechatPaymentSchema(stage) {
   }
 }
 
+function verifyWechatRefundReconciliationSchema(stage) {
+  const columns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (COUNT(*) FILTER (WHERE table_name = 'refunds' AND column_name IN (
+           'created_trace_id', 'currency', 'failure_category', 'last_checked_at',
+           'refunded_at', 'submitted_at'
+         )))::text || ':' ||
+         (COUNT(*) FILTER (WHERE table_name = 'refund_notifications'))::text || ':' ||
+         (COUNT(*) FILTER (WHERE table_name = 'reconciliations' AND column_name IN (
+           'currency', 'difference_minor', 'ledger', 'reconciliation_key', 'record_key', 'trace_id'
+         )))::text
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name IN ('refunds', 'refund_notifications', 'reconciliations')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (columns !== '6:16:6') {
+    throw new Error(`D5-04 refund/reconciliation columns invalid after ${stage}: ${columns}`)
+  }
+
+  const indexes = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT string_agg(indexdef, E'\n' ORDER BY tablename, indexname)
+       FROM pg_indexes
+       WHERE schemaname = 'public'
+         AND (
+           (tablename = 'refunds' AND indexname IN (
+             'refunds_order_idx', 'refunds_provider_refund_id_idx', 'refunds_refund_number_idx'
+           )) OR
+           (tablename = 'refund_notifications' AND indexname = 'refund_notifications_notification_id_idx') OR
+           (tablename = 'reconciliations' AND indexname = 'reconciliations_reconciliation_key_idx')
+         )`,
+    ],
+    { capture: true },
+  ).trim()
+  const uniqueIndexes = indexes.match(/CREATE UNIQUE INDEX/g) ?? []
+  if (
+    uniqueIndexes.length !== 5 ||
+    !/refunds_refund_number_idx/.test(indexes) ||
+    !/refund_notifications_notification_id_idx/.test(indexes) ||
+    !/reconciliations_reconciliation_key_idx/.test(indexes)
+  ) {
+    throw new Error(`D5-04 uniqueness is incomplete after ${stage}: ${indexes}`)
+  }
+
+  const enums = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         array_to_string(enum_range(NULL::enum_refund_notifications_confirmation_status), ',') || ':' ||
+         array_to_string(enum_range(NULL::enum_reconciliations_ledger), ',') || ':' ||
+         ('wechatRefund' = ANY(enum_range(NULL::enum_payload_jobs_workflow_slug)::text[]))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    enums !==
+    'confirmed,mismatch,failed,rejected,unknown:wechat_funds,westdigital_prepaid,internal_orders:true'
+  ) {
+    throw new Error(`D5-04 enums invalid after ${stage}: ${enums}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -1208,6 +1296,7 @@ try {
   verifyRealnameLifecycleSchema('empty-database migration')
   verifyCustomerQuoteSchema('empty-database migration')
   verifyWechatPaymentSchema('empty-database migration')
+  verifyWechatRefundReconciliationSchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -2270,8 +2359,91 @@ try {
     throw new Error(`D5-03 legacy payment notification backfill failed: ${legacyPayment}`)
   }
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 105
+     WHERE name = '20260808_031431_d5_wechat_refunds_reconciliation'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const refundAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.tables
+           WHERE table_schema = 'public' AND table_name = 'refund_notifications'
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'reconciliations'
+             AND column_name = 'ledger'
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'refunds'
+             AND column_name = 'created_trace_id'
+         ))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (refundAfterDown !== 'true:true:true') {
+    throw new Error(`D5-04 migration down was incomplete: ${refundAfterDown}`)
+  }
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `INSERT INTO reconciliations (
+       kind, period_start, period_end, status, summary, updated_at, created_at
+     ) VALUES (
+       'wechat', NOW() - INTERVAL '1 hour', NOW(), 'difference', '{"legacy":true}', NOW(), NOW()
+     )`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyWechatRefundReconciliationSchema('D5-04 migration round trip')
+  const legacyReconciliation = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (reconciliation_key = 'LEGACY-RECONCILIATION-' || id::text)::text || ':' ||
+         ledger::text || ':' || currency::text || ':' || difference_minor::text
+       FROM reconciliations
+       WHERE summary = '{"legacy":true}'::jsonb`,
+    ],
+    { capture: true },
+  ).trim()
+  if (legacyReconciliation !== 'true:wechat_funds:CNY:0') {
+    throw new Error(`D5-04 legacy reconciliation backfill failed: ${legacyReconciliation}`)
+  }
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, and the D5-03 Wechat payment migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, and the D5-04 Wechat refund/reconciliation migration round trips.\n',
   )
 } finally {
   if (created) {

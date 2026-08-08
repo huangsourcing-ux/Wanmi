@@ -19,6 +19,7 @@ import * as migration_20260807_135646_d4_realname_lifecycle from './20260807_135
 import * as migration_20260807_140407_d4_realname_cleanup_completion from './20260807_140407_d4_realname_cleanup_completion'
 import * as migration_20260807_145526_d5_customer_quotes from './20260807_145526_d5_customer_quotes'
 import * as migration_20260808_015442_d5_wechat_payments from './20260808_015442_d5_wechat_payments'
+import * as migration_20260808_031431_d5_wechat_refunds_reconciliation from './20260808_031431_d5_wechat_refunds_reconciliation'
 
 export const migrations = [
   {
@@ -125,5 +126,10 @@ export const migrations = [
     up: migration_20260808_015442_d5_wechat_payments.up,
     down: migration_20260808_015442_d5_wechat_payments.down,
     name: '20260808_015442_d5_wechat_payments',
+  },
+  {
+    up: migration_20260808_031431_d5_wechat_refunds_reconciliation.up,
+    down: migration_20260808_031431_d5_wechat_refunds_reconciliation.down,
+    name: '20260808_031431_d5_wechat_refunds_reconciliation',
   },
 ]

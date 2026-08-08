@@ -400,8 +400,16 @@ export const Refunds: CollectionConfig = {
   },
   fields: [
     { name: 'refundNumber', type: 'text', index: true, required: true, unique: true },
-    { name: 'order', type: 'relationship', relationTo: 'orders', index: true, required: true },
+    {
+      name: 'order',
+      type: 'relationship',
+      relationTo: 'orders',
+      index: true,
+      required: true,
+      unique: true,
+    },
     { ...integerMoney },
+    { name: 'currency', type: 'select', defaultValue: 'CNY', options: ['CNY'], required: true },
     {
       name: 'status',
       type: 'select',
@@ -409,5 +417,40 @@ export const Refunds: CollectionConfig = {
       required: true,
     },
     { name: 'providerRefundId', type: 'text', access: { read: sensitiveFieldRead }, unique: true },
+    {
+      name: 'failureCategory',
+      type: 'select',
+      options: ['balance_insufficient', 'disputed', 'provider_rejected', 'unknown'],
+    },
+    { name: 'submittedAt', type: 'date' },
+    { name: 'lastCheckedAt', type: 'date' },
+    { name: 'refundedAt', type: 'date' },
+    { name: 'createdTraceId', type: 'text', access: { read: sensitiveFieldRead }, required: true },
+  ],
+}
+
+export const RefundNotifications: CollectionConfig = {
+  slug: 'refundNotifications',
+  access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
+  admin: { group: ADMIN_GROUPS.commerce, hidden: systemAdminHidden },
+  fields: [
+    { name: 'notificationId', type: 'text', index: true, required: true, unique: true },
+    { name: 'refund', type: 'relationship', relationTo: 'refunds', index: true },
+    { name: 'source', type: 'select', options: ['notification', 'query'], required: true },
+    {
+      name: 'confirmationStatus',
+      type: 'select',
+      options: ['confirmed', 'mismatch', 'failed', 'rejected', 'unknown'],
+      required: true,
+    },
+    { name: 'refundNumber', type: 'text', access: { read: sensitiveFieldRead }, index: true },
+    { name: 'providerRefundId', type: 'text', access: { read: sensitiveFieldRead }, index: true },
+    { ...safeInteger('amountMinor', false) },
+    { name: 'currency', type: 'select', options: ['CNY'] },
+    { name: 'signatureVerified', type: 'checkbox', required: true },
+    { name: 'receivedAt', type: 'date', required: true },
+    { name: 'refundedAt', type: 'date' },
+    { name: 'payloadDigest', type: 'text', access: { read: sensitiveFieldRead }, required: true },
+    { name: 'providerRequestId', type: 'text', access: { read: sensitiveFieldRead } },
   ],
 }

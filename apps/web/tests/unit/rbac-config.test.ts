@@ -303,6 +303,7 @@ describe('D1 administrator navigation groups', () => {
     realnameDocuments: ADMIN_GROUPS.realname,
     realnameTemplates: ADMIN_GROUPS.realname,
     reconciliations: ADMIN_GROUPS.operations,
+    refundNotifications: ADMIN_GROUPS.commerce,
     refunds: ADMIN_GROUPS.commerce,
     renewals: ADMIN_GROUPS.fulfillment,
     siteSettings: ADMIN_GROUPS.content,

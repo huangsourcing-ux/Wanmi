@@ -231,6 +231,37 @@ export type VerifiedPaymentNotification =
       verified: true
     }
 
+export type RefundState = 'processing' | 'succeeded' | 'failed' | 'closed' | 'unknown'
+
+export type RefundOrder = {
+  amountMinor?: number
+  currency?: 'CNY'
+  merchantOrderNumber: string
+  providerRefundId?: string
+  refundNumber: string
+  refundedAt?: string
+  state: RefundState
+  failureCategory?: 'balance_insufficient' | 'disputed' | 'provider_rejected' | 'unknown'
+}
+
+export type VerifiedRefundNotification =
+  | {
+      notificationId?: undefined
+      reason: 'invalid_resource' | 'invalid_signature' | 'malformed_headers'
+      signatureVerified: boolean
+      verified: false
+    }
+  | {
+      amountMinor: number
+      currency: 'CNY'
+      merchantOrderNumber: string
+      notificationId: string
+      providerRefundId: string
+      refundNumber: string
+      refundedAt: string
+      verified: true
+    }
+
 export interface PaymentProvider extends HealthAwareProvider {
   createPayment(input: {
     amountMinor: number
@@ -255,4 +286,23 @@ export interface PaymentProvider extends HealthAwareProvider {
     headers: Headers
     traceId: string
   }): Promise<VerifiedPaymentNotification>
+}
+
+export interface RefundProvider extends HealthAwareProvider {
+  createRefund(input: {
+    amountMinor: number
+    merchantOrderNumber: string
+    reason: string
+    refundNumber: string
+    traceId: string
+  }): Promise<ProviderResult<RefundOrder>>
+  queryRefund(input: {
+    refundNumber: string
+    traceId: string
+  }): Promise<ProviderResult<RefundOrder>>
+  verifyRefundNotification(input: {
+    body: string
+    headers: Headers
+    traceId: string
+  }): Promise<VerifiedRefundNotification>
 }

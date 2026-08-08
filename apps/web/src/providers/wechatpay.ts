@@ -20,7 +20,10 @@ import type {
   PaymentChannel,
   PaymentOrder,
   PaymentProvider,
+  RefundOrder,
+  RefundProvider,
   VerifiedPaymentNotification,
+  VerifiedRefundNotification,
 } from './types'
 
 const merchantOrderNumberSchema = z.string().regex(/^[A-Za-z0-9_*-]{1,32}$/u)
@@ -72,6 +75,35 @@ const transactionResourceSchema = z
     success_time: z.iso.datetime({ offset: true }),
     trade_state: z.literal('SUCCESS'),
     transaction_id: z.string().min(1).max(32),
+  })
+  .passthrough()
+
+const refundOrderSchema = z
+  .object({
+    amount: z.object({ currency: z.literal('CNY'), refund: z.number().int().nonnegative() }),
+    out_refund_no: z.string().regex(/^[A-Za-z0-9_*-]{1,64}$/u),
+    out_trade_no: merchantOrderNumberSchema,
+    refund_id: z.string().min(1).max(64).optional(),
+    status: z.enum(['ABNORMAL', 'CLOSED', 'PROCESSING', 'SUCCESS']),
+    success_time: z.iso.datetime({ offset: true }).optional(),
+  })
+  .passthrough()
+
+const refundNotificationEnvelopeSchema = notificationEnvelopeSchema.extend({
+  event_type: z.literal('REFUND.SUCCESS'),
+  resource: notificationEnvelopeSchema.shape.resource.extend({
+    original_type: z.literal('refund'),
+  }),
+})
+
+const refundResourceSchema = z
+  .object({
+    amount: z.object({ currency: z.literal('CNY'), refund: z.number().int().nonnegative() }),
+    out_refund_no: z.string().regex(/^[A-Za-z0-9_*-]{1,64}$/u),
+    out_trade_no: merchantOrderNumberSchema,
+    refund_id: z.string().min(1).max(64),
+    refund_status: z.literal('SUCCESS'),
+    success_time: z.iso.datetime({ offset: true }),
   })
   .passthrough()
 
@@ -158,7 +190,11 @@ function verifyWechatSignature(
 
 function decryptNotificationResource(
   key: Uint8Array,
-  resource: z.infer<typeof notificationEnvelopeSchema>['resource'],
+  resource: {
+    associated_data: string
+    ciphertext: string
+    nonce: string
+  },
 ): unknown {
   const encrypted = Buffer.from(resource.ciphertext, 'base64')
   if (encrypted.length <= 16) throw new Error('Invalid encrypted resource')
@@ -178,6 +214,14 @@ function tradeState(
   if (value === 'NOTPAY' || value === 'USERPAYING') return 'not_paid'
   if (value === 'CLOSED' || value === 'REVOKED' || value === 'PAYERROR') return 'closed'
   if (value === 'REFUND') return 'refunded'
+  return 'unknown'
+}
+
+function refundState(value: z.infer<typeof refundOrderSchema>['status']): RefundOrder['state'] {
+  if (value === 'SUCCESS') return 'succeeded'
+  if (value === 'PROCESSING') return 'processing'
+  if (value === 'CLOSED') return 'closed'
+  if (value === 'ABNORMAL') return 'failed'
   return 'unknown'
 }
 
@@ -240,7 +284,23 @@ export class WechatPayApiV3Adapter implements PaymentProvider {
       return mockFailure('WECHATPAY_RESPONSE_SIGNATURE_INVALID', { statusKnown: false })
     }
     if (response.status < 200 || response.status >= 300) {
-      return mockFailure('WECHATPAY_REQUEST_REJECTED', {
+      let providerCode: string | undefined
+      try {
+        providerCode = z
+          .object({ code: z.string().max(64) })
+          .passthrough()
+          .parse(JSON.parse(response.body) as unknown).code
+      } catch {
+        providerCode = undefined
+      }
+      const refundError = path.startsWith('/v3/refund/')
+        ? providerCode === 'NOT_ENOUGH'
+          ? 'WECHATPAY_REFUND_BALANCE_INSUFFICIENT'
+          : providerCode === 'REFUND_ABNORMAL' || providerCode === 'TRADE_STATE_ERROR'
+            ? 'WECHATPAY_REFUND_DISPUTED'
+            : 'WECHATPAY_REFUND_REJECTED'
+        : 'WECHATPAY_REQUEST_REJECTED'
+      return mockFailure(refundError, {
         retryable: response.status >= 500,
         statusKnown: response.status < 500,
       })
@@ -341,6 +401,76 @@ export class WechatPayApiV3Adapter implements PaymentProvider {
     )
   }
 
+  async createRefund(input: {
+    amountMinor: number
+    merchantOrderNumber: string
+    reason: string
+    refundNumber: string
+    traceId: string
+  }) {
+    const merchantOrderNumber = merchantOrderNumberSchema.parse(input.merchantOrderNumber)
+    const refundNumber = z
+      .string()
+      .regex(/^[A-Za-z0-9_*-]{1,64}$/u)
+      .parse(input.refundNumber)
+    if (!Number.isSafeInteger(input.amountMinor) || input.amountMinor <= 0) {
+      return mockFailure('WECHATPAY_REFUND_AMOUNT_INVALID', { statusKnown: true })
+    }
+    const result = await this.request(
+      'POST',
+      '/v3/refund/domestic/refunds',
+      {
+        amount: {
+          currency: 'CNY',
+          refund: input.amountMinor,
+          total: input.amountMinor,
+        },
+        notify_url: this.options.notifyUrl.replace('/payments/', '/refunds/'),
+        out_refund_no: refundNumber,
+        out_trade_no: merchantOrderNumber,
+        reason: input.reason.slice(0, 80),
+      },
+      input.traceId,
+    )
+    if (!result.ok) return result
+    return this.parseRefundResult(result.data, result.requestId)
+  }
+
+  async queryRefund(input: { refundNumber: string; traceId: string }) {
+    const refundNumber = z
+      .string()
+      .regex(/^[A-Za-z0-9_*-]{1,64}$/u)
+      .parse(input.refundNumber)
+    const result = await this.request(
+      'GET',
+      `/v3/refund/domestic/refunds/${encodeURIComponent(refundNumber)}`,
+      undefined,
+      input.traceId,
+    )
+    if (!result.ok) return result
+    return this.parseRefundResult(result.data, result.requestId)
+  }
+
+  private parseRefundResult(data: unknown, requestId: string) {
+    const parsed = refundOrderSchema.safeParse(data)
+    if (!parsed.success) return mockFailure('WECHATPAY_RESPONSE_INVALID', { statusKnown: false })
+    return mockSuccess(
+      {
+        amountMinor: parsed.data.amount.refund,
+        currency: parsed.data.amount.currency,
+        merchantOrderNumber: parsed.data.out_trade_no,
+        ...(parsed.data.refund_id ? { providerRefundId: parsed.data.refund_id } : {}),
+        refundNumber: parsed.data.out_refund_no,
+        ...(parsed.data.success_time ? { refundedAt: parsed.data.success_time } : {}),
+        state: refundState(parsed.data.status),
+        ...(parsed.data.status === 'ABNORMAL'
+          ? { failureCategory: 'provider_rejected' as const }
+          : {}),
+      },
+      requestId,
+    )
+  }
+
   async verifyNotification(input: {
     body: string
     headers: Headers
@@ -387,6 +517,48 @@ export class WechatPayApiV3Adapter implements PaymentProvider {
       return { reason: 'invalid_resource', signatureVerified: true, verified: false }
     }
   }
+
+  async verifyRefundNotification(input: {
+    body: string
+    headers: Headers
+    traceId: string
+  }): Promise<VerifiedRefundNotification> {
+    if (
+      !verifyWechatSignature(
+        input.headers,
+        input.body,
+        this.options.wechatPayPublicKeys,
+        this.now(),
+      )
+    ) {
+      return {
+        reason:
+          header(input.headers, 'wechatpay-signature') && header(input.headers, 'wechatpay-serial')
+            ? 'invalid_signature'
+            : 'malformed_headers',
+        signatureVerified: false,
+        verified: false,
+      }
+    }
+    try {
+      const envelope = refundNotificationEnvelopeSchema.parse(JSON.parse(input.body) as unknown)
+      const refund = refundResourceSchema.parse(
+        decryptNotificationResource(this.options.apiV3Key, envelope.resource),
+      )
+      return {
+        amountMinor: refund.amount.refund,
+        currency: refund.amount.currency,
+        merchantOrderNumber: refund.out_trade_no,
+        notificationId: envelope.id,
+        providerRefundId: refund.refund_id,
+        refundNumber: refund.out_refund_no,
+        refundedAt: refund.success_time,
+        verified: true,
+      }
+    } catch {
+      return { reason: 'invalid_resource', signatureVerified: true, verified: false }
+    }
+  }
 }
 
 type FixtureState = {
@@ -398,6 +570,16 @@ type FixtureState = {
   transactionId?: string
 }
 
+type FixtureRefundState = {
+  amountMinor: number
+  failureCategory?: RefundOrder['failureCategory']
+  merchantOrderNumber: string
+  providerRefundId?: string
+  refundNumber: string
+  refundedAt?: string
+  state: RefundOrder['state']
+}
+
 export type WechatPayFixture = {
   notification(
     input: Required<
@@ -407,7 +589,16 @@ export type WechatPayFixture = {
     },
   ): { body: string; headers: Headers }
   provider: WechatPayApiV3Adapter
+  refundNotification(
+    input: Required<
+      Pick<
+        FixtureRefundState,
+        'amountMinor' | 'merchantOrderNumber' | 'providerRefundId' | 'refundNumber' | 'refundedAt'
+      >
+    > & { notificationId?: string },
+  ): { body: string; headers: Headers }
   setOrder(input: FixtureState): void
+  setRefund(input: FixtureRefundState): void
 }
 
 function encryptFixtureResource(key: Uint8Array, plaintext: unknown, nonce: string, aad: string) {
@@ -426,6 +617,7 @@ export function createWechatPayFixture(options: { now?: () => Date } = {}): Wech
   const apiV3Key = randomBytes(32)
   const wechatSerial = 'WECHATPAY_FIXTURE_SERIAL'
   const orders = new Map<string, FixtureState>()
+  const refunds = new Map<string, FixtureRefundState>()
   const now = options.now ?? (() => new Date())
   const signedResponse = (body: unknown, requestId = `fixture-${randomUUID()}`) => {
     const rawBody = JSON.stringify(body)
@@ -451,6 +643,26 @@ export function createWechatPayFixture(options: { now?: () => Date } = {}): Wech
   const transport: WechatPayTransport = {
     async request(request) {
       if (request.method === 'POST') {
+        if (request.path === '/v3/refund/domestic/refunds') {
+          const input = z
+            .object({
+              amount: z.object({ currency: z.literal('CNY'), refund: z.number().int() }),
+              out_refund_no: z.string(),
+              out_trade_no: merchantOrderNumberSchema,
+            })
+            .passthrough()
+            .parse(JSON.parse(request.body) as unknown)
+          const existing = refunds.get(input.out_refund_no)
+          const refund = existing ?? {
+            amountMinor: input.amount.refund,
+            merchantOrderNumber: input.out_trade_no,
+            providerRefundId: `503000000000000000000000${refunds.size + 1}`,
+            refundNumber: input.out_refund_no,
+            state: 'processing' as const,
+          }
+          refunds.set(input.out_refund_no, refund)
+          return signedResponse(refundFixtureResponse(refund))
+        }
         const input = z
           .object({
             amount: z.object({ currency: z.literal('CNY'), total: z.number().int() }),
@@ -471,6 +683,20 @@ export function createWechatPayFixture(options: { now?: () => Date } = {}): Wech
               }
             : { code_url: `weixin://wxpay/bizpayurl/up?pr=${input.out_trade_no}` },
         )
+      }
+      const refundMatch = request.path.match(/refunds\/([^?]+)/u)
+      if (refundMatch) {
+        const refundNumber = decodeURIComponent(refundMatch[1] ?? '')
+        const refund = refunds.get(refundNumber)
+        if (!refund) {
+          return signedResponse({
+            amount: { currency: 'CNY', refund: 0 },
+            out_refund_no: refundNumber,
+            out_trade_no: 'UNKNOWN',
+            status: 'CLOSED',
+          })
+        }
+        return signedResponse(refundFixtureResponse(refund))
       }
       const match = request.path.match(/out-trade-no\/([^?]+)/u)
       const merchantOrderNumber = decodeURIComponent(match?.[1] ?? '')
@@ -516,6 +742,23 @@ export function createWechatPayFixture(options: { now?: () => Date } = {}): Wech
     transport,
     wechatPayPublicKeys: new Map([[wechatSerial, wechatKeys.publicKey]]),
   })
+  function signedNotification(body: string) {
+    const timestamp = String(Math.floor(now().getTime() / 1000))
+    const signatureNonce = randomBytes(8).toString('hex')
+    return {
+      body,
+      headers: new Headers({
+        'wechatpay-nonce': signatureNonce,
+        'wechatpay-serial': wechatSerial,
+        'wechatpay-signature': sign(
+          'RSA-SHA256',
+          Buffer.from(canonicalResponse(timestamp, signatureNonce, body)),
+          wechatKeys.privateKey,
+        ).toString('base64'),
+        'wechatpay-timestamp': timestamp,
+      }),
+    }
+  }
   return {
     notification(input) {
       const notificationId = input.notificationId ?? `EV-${randomUUID()}`
@@ -548,30 +791,70 @@ export function createWechatPayFixture(options: { now?: () => Date } = {}): Wech
         resource_type: 'encrypt-resource',
         summary: '支付成功',
       })
-      const timestamp = String(Math.floor(now().getTime() / 1000))
-      const signatureNonce = randomBytes(8).toString('hex')
-      return {
-        body,
-        headers: new Headers({
-          'wechatpay-nonce': signatureNonce,
-          'wechatpay-serial': wechatSerial,
-          'wechatpay-signature': sign(
-            'RSA-SHA256',
-            Buffer.from(canonicalResponse(timestamp, signatureNonce, body)),
-            wechatKeys.privateKey,
-          ).toString('base64'),
-          'wechatpay-timestamp': timestamp,
-        }),
-      }
+      return signedNotification(body)
+    },
+    refundNotification(input) {
+      const notificationId = input.notificationId ?? `REFUND-${randomUUID()}`
+      const nonce = randomBytes(12).toString('base64url').slice(0, 12)
+      const associatedData = 'refund'
+      const body = JSON.stringify({
+        create_time: now().toISOString(),
+        event_type: 'REFUND.SUCCESS',
+        id: notificationId,
+        resource: {
+          algorithm: 'AEAD_AES_256_GCM',
+          associated_data: associatedData,
+          ciphertext: encryptFixtureResource(
+            apiV3Key,
+            {
+              amount: { currency: 'CNY', refund: input.amountMinor },
+              out_refund_no: input.refundNumber,
+              out_trade_no: input.merchantOrderNumber,
+              refund_id: input.providerRefundId,
+              refund_status: 'SUCCESS',
+              success_time: input.refundedAt,
+            },
+            nonce,
+            associatedData,
+          ),
+          nonce,
+          original_type: 'refund',
+        },
+        resource_type: 'encrypt-resource',
+        summary: '退款成功',
+      })
+      return signedNotification(body)
     },
     provider,
     setOrder(input) {
       orders.set(input.merchantOrderNumber, input)
     },
+    setRefund(input) {
+      refunds.set(input.refundNumber, input)
+    },
   }
 }
 
-export class MockWechatPayProvider implements PaymentProvider {
+function refundFixtureResponse(refund: FixtureRefundState) {
+  const status =
+    refund.state === 'succeeded'
+      ? 'SUCCESS'
+      : refund.state === 'processing' || refund.state === 'unknown'
+        ? 'PROCESSING'
+        : refund.state === 'closed'
+          ? 'CLOSED'
+          : 'ABNORMAL'
+  return {
+    amount: { currency: 'CNY', refund: refund.amountMinor },
+    out_refund_no: refund.refundNumber,
+    out_trade_no: refund.merchantOrderNumber,
+    ...(refund.providerRefundId ? { refund_id: refund.providerRefundId } : {}),
+    status,
+    ...(refund.refundedAt ? { success_time: refund.refundedAt } : {}),
+  }
+}
+
+export class MockWechatPayProvider implements PaymentProvider, RefundProvider {
   private readonly fixture = createWechatPayFixture()
 
   async health() {
@@ -586,8 +869,20 @@ export class MockWechatPayProvider implements PaymentProvider {
     return this.fixture.provider.queryOrder(input)
   }
 
+  async createRefund(input: Parameters<RefundProvider['createRefund']>[0]) {
+    return this.fixture.provider.createRefund(input)
+  }
+
+  async queryRefund(input: Parameters<RefundProvider['queryRefund']>[0]) {
+    return this.fixture.provider.queryRefund(input)
+  }
+
   async verifyNotification(input: Parameters<PaymentProvider['verifyNotification']>[0]) {
     return this.fixture.provider.verifyNotification(input)
+  }
+
+  async verifyRefundNotification(input: Parameters<RefundProvider['verifyRefundNotification']>[0]) {
+    return this.fixture.provider.verifyRefundNotification(input)
   }
 }
 
@@ -597,13 +892,13 @@ export function paymentPayloadDigest(body: string): string {
 
 export function assertRealWechatPayWritesDisabled(): void {
   if (getEnv().ALLOW_REAL_PROVIDER_WRITES) {
-    throw new Error('D5-03 fixture provider cannot run with real provider writes enabled')
+    throw new Error('D5 fixture provider cannot run with real provider writes enabled')
   }
 }
 
 let runtimeFixture: WechatPayFixture | undefined
 
-export function getRuntimeWechatPayProvider(): PaymentProvider {
+export function getRuntimeWechatPayProvider(): PaymentProvider & RefundProvider {
   assertRealWechatPayWritesDisabled()
   runtimeFixture ??= createWechatPayFixture()
   return runtimeFixture.provider

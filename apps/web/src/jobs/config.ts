@@ -1,6 +1,8 @@
 import type { WorkflowConfig } from 'payload'
 
 import { runMockFulfillment, type FulfillmentInput } from '@/services/commerce/fulfillment'
+import { runWechatRefund } from '@/services/commerce/refunds'
+import { getRuntimeWechatPayProvider } from '@/providers/wechatpay'
 import { runScheduledContentPublish } from '@/services/content/workflow'
 import { CONTENT_COLLECTIONS, type ContentCollection } from '@/services/content/types'
 import { runAdvertisingMaintenance } from '@/services/advertising/maintenance'
@@ -135,6 +137,20 @@ export const commerceFulfillment: WorkflowConfig<FulfillmentInput> = {
   },
 }
 
+export const wechatRefund: WorkflowConfig<{ refundId: number; traceId: string }> = {
+  slug: 'wechatRefund',
+  concurrency: ({ input }) => `wechat-refund:${input.refundId}`,
+  inputSchema: [
+    { name: 'refundId', type: 'number', required: true },
+    { name: 'traceId', type: 'text', required: true },
+  ],
+  queue: 'commerce',
+  retries: 0,
+  handler: async ({ job, req }) => {
+    await runWechatRefund(req, job.input, getRuntimeWechatPayProvider())
+  },
+}
+
 export const workflows = [
   publishingProbe,
   contentScheduledPublish,
@@ -143,4 +159,5 @@ export const workflows = [
   smsReceiptReconciliation,
   realnameCleanup,
   commerceFulfillment,
+  wechatRefund,
 ]
