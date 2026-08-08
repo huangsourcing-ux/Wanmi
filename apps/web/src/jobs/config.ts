@@ -12,6 +12,8 @@ import { CONTENT_COLLECTIONS, type ContentCollection } from '@/services/content/
 import { runAdvertisingMaintenance } from '@/services/advertising/maintenance'
 import { reconcileSmsReceipts } from '@/services/auth/sms-receipts'
 import { runRealnameCleanup } from '@/services/realname/lifecycle'
+import { createConfiguredWestDigitalBalanceProvider } from '@/providers/westdigital-balance'
+import { monitorWestDigitalBalance } from '@/services/commerce/balance-control'
 
 const probeInput = [{ name: 'traceId', type: 'text', required: true }] as const
 
@@ -131,12 +133,32 @@ export const commerceFulfillment: WorkflowConfig<FulfillmentInput> = {
   inputSchema: [
     { name: 'operationKey', type: 'text', required: true },
     { name: 'orderId', type: 'number', required: true },
+    { name: 'salesStopReviewId', type: 'number' },
     { name: 'traceId', type: 'text', required: true },
   ],
   queue: 'commerce',
   retries: 0,
   handler: async ({ job, req }) => {
     await runConfiguredCommerceFulfillment(req, job.input)
+  },
+}
+
+export const westdigitalBalanceMonitoring: WorkflowConfig = {
+  slug: 'westdigitalBalanceMonitoring',
+  concurrency: {
+    exclusive: true,
+    key: () => 'westdigital:balance-monitoring',
+    supersedes: true,
+  },
+  inputSchema: [],
+  queue: 'background',
+  retries: 0,
+  schedule: [{ cron: '0 */5 * * * *', queue: 'background' }],
+  handler: async ({ job, req }) => {
+    await monitorWestDigitalBalance(req, {
+      provider: createConfiguredWestDigitalBalanceProvider(),
+      traceId: `westdigital-balance-job-${job.id}`,
+    })
   },
 }
 
@@ -180,6 +202,7 @@ export const workflows = [
   advertisingMaintenance,
   smsReceiptReconciliation,
   realnameCleanup,
+  westdigitalBalanceMonitoring,
   commerceFulfillment,
   wechatRefund,
   paymentTimeoutClose,

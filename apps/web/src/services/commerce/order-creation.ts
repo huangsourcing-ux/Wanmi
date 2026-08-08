@@ -27,6 +27,8 @@ import {
 import { loadEnabledPricingRules } from '@/services/pricing/price-rules'
 import { assertRealnameTemplateUsableForRegistration } from '@/services/realname/templates'
 
+import { assertTldSalesOpen } from './balance-control'
+
 type CustomerIdentity = {
   collection: 'customers'
   id: number
@@ -211,6 +213,7 @@ export async function createCustomerOrder(
     })
     const rules = options.rules ?? (await loadEnabledPricingRules(req.payload, req))
     assertQuoteAmountAndRuleUsableForOrder(quote, { ...options, rules })
+    await assertTldSalesOpen(req, quote.tld)
 
     let availability: Awaited<ReturnType<WestDigitalReadProvider['queryAvailability']>>
     try {

@@ -220,6 +220,42 @@ export async function reconcileWestdigitalPrepaidBalance(
   })
 }
 
+export async function recordWestdigitalBalanceObservation(
+  req: PayloadRequest,
+  input: {
+    availableMinor: number
+    frozenMinor: number
+    observedAt: string
+    providerRequestId: string
+    traceId: string
+  },
+) {
+  assertMinor(input.availableMinor, '西部数码可用余额')
+  assertMinor(input.frozenMinor, '西部数码冻结金额')
+  const observedAt = Date.parse(input.observedAt)
+  if (!Number.isFinite(observedAt)) {
+    throw new AppError('RECONCILIATION_PERIOD_INVALID', '余额观察时间无效', 400)
+  }
+  return persistReconciliation(req, {
+    differenceMinor: 0,
+    kind: 'westdigital',
+    ledger: 'westdigital_prepaid',
+    period: {
+      end: new Date(observedAt + 1).toISOString(),
+      start: new Date(observedAt).toISOString(),
+    },
+    recordKey: `balance-observation:${input.providerRequestId}`,
+    summary: {
+      availableMinor: input.availableMinor,
+      correctionApplied: false,
+      frozenMinor: input.frozenMinor,
+      providerRequestId: input.providerRequestId,
+      source: 'westdigital_checkbalance',
+    },
+    traceId: input.traceId,
+  })
+}
+
 export async function recordThreeWayDifference(
   req: PayloadRequest,
   input: {

@@ -127,6 +127,11 @@ export async function requestAutomaticRegistrationFailureRefund(
     note: string
     orderId: number | string
     traceId: string
+    transition?: {
+      actorId?: string
+      actorType: 'admin' | 'system'
+      reasonCode: string
+    }
   },
 ): Promise<{ idempotentReplay: boolean; refundId: number | string; refundNumber: string }> {
   const startedTransaction = await initTransaction(req)
@@ -173,10 +178,11 @@ export async function requestAutomaticRegistrationFailureRefund(
     }
     if (order.status !== 'refund_pending') {
       await transitionOrder(req, order.id, 'refund_pending', {
-        actorType: 'system',
+        actorId: input.transition?.actorId,
+        actorType: input.transition?.actorType ?? 'system',
         evidence: input.evidence,
         note: input.note,
-        reasonCode: 'registration.failed_refund_required',
+        reasonCode: input.transition?.reasonCode ?? 'registration.failed_refund_required',
       })
     }
     const created = await req.payload.create({

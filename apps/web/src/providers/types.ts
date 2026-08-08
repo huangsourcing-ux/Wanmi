@@ -155,6 +155,15 @@ export interface WestDigitalReadProvider extends HealthAwareProvider {
   }): Promise<ProviderResult<WestDigitalPrice>>
 }
 
+export interface WestDigitalBalanceProvider extends HealthAwareProvider {
+  queryBalance(input: { traceId: string }): Promise<
+    ProviderResult<{
+      availableMinor: number
+      frozenMinor: number
+    }>
+  >
+}
+
 export type WestDigitalRealnameProfile = {
   addressChinese: string
   addressEnglish: string
