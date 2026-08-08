@@ -49,6 +49,7 @@ class MemoryQuoteStore implements CustomerQuoteStore {
   async record(input: QuoteSnapshotInput): Promise<StoredCustomerQuote> {
     const stored = {
       ...input,
+      quoteId: this.records.length + 1,
       quoteIntegrityHash: createQuoteIntegrityHash(input),
       quoteRef: randomUUID(),
     }

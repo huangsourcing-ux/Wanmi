@@ -6,6 +6,17 @@ import { assertTransition, canTransition, ORDER_TRANSITIONS } from '@/services/c
 
 describe('order state machine', () => {
   it('accepts exactly the frozen transition matrix', () => {
+    expect(ORDER_TRANSITIONS).toEqual({
+      cancelled: ['manual_review'],
+      fulfilling: ['succeeded', 'refund_pending', 'manual_review'],
+      manual_review: ['fulfilling', 'succeeded', 'refund_pending', 'refunding', 'refunded'],
+      paid: ['fulfilling', 'refund_pending', 'manual_review'],
+      pending_payment: ['paid', 'cancelled'],
+      refunded: [],
+      refund_pending: ['refunding', 'manual_review'],
+      refunding: ['refunded', 'manual_review'],
+      succeeded: [],
+    })
     const expected = Object.values(ORDER_TRANSITIONS).reduce(
       (total, targets) => total + targets.length,
       0,
