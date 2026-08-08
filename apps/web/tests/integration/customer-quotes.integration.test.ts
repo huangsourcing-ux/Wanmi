@@ -13,6 +13,8 @@ import {
 } from '@/services/pricing/customer-quotes'
 import { PayloadPriceSnapshotStore } from '@/services/pricing/price-snapshots'
 
+import { PRICING_RULE_FIXTURES } from '../fixtures/pricing'
+
 const fixturePrefix = `d5-quotes-${randomUUID()}`
 const createdCustomers: Array<number | string> = []
 const createdQuotes: Array<number | string> = []
@@ -72,6 +74,7 @@ describe('D5-01 quote persistence and customer isolation', () => {
         now: () => Date.parse('2026-08-07T16:00:00.000Z'),
         provider: new WestDigitalReadAdapter({ transport: new FixtureWestDigitalTransport() }),
         quoteStore: ownerStore,
+        rules: PRICING_RULE_FIXTURES,
         snapshots: new PayloadPriceSnapshotStore(payload),
         traceId: `${fixturePrefix}-trace`,
       },

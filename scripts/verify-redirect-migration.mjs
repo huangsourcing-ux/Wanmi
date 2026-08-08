@@ -217,6 +217,75 @@ function verifyPriceSnapshotSchema(stage) {
   }
 }
 
+function verifyPriceRuleSchema(stage) {
+  const columns = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (is_nullable = 'YES')::text || ':' ||
+         (EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'price_rules'
+             AND column_name = 'effective_at' AND is_nullable = 'NO'
+         ))::text
+       FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'price_rules'
+         AND column_name = 'fixed_amount_minor'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (columns !== 'true:true') {
+    throw new Error(`D5-05 price rule amount/effective columns invalid after ${stage}: ${columns}`)
+  }
+
+  const enums = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         array_to_string(enum_range(NULL::enum_quotes_rule_source), ',') || ':' ||
+         array_to_string(enum_range(NULL::enum_price_snapshots_rule_source), ',')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (enums !== 'wanmi_fixture,price_rule_collection:wanmi_fixture,price_rule_collection') {
+    throw new Error(`D5-05 rule source enums invalid after ${stage}: ${enums}`)
+  }
+
+  const index = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT indexdef FROM pg_indexes
+       WHERE schemaname = 'public' AND tablename = 'price_rules'
+         AND indexname = 'price_rules_effective_at_idx'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (!/\(effective_at\)$/.test(index)) {
+    throw new Error(`D5-05 effective time index missing after ${stage}: ${index}`)
+  }
+}
+
 function verifyToolObservabilitySchema(stage) {
   const forbiddenColumns = postgres(
     [
@@ -1284,6 +1353,7 @@ try {
   verifyAuditReaderIndex('empty-database migration')
   verifyFirstPartyEventSchema('empty-database migration')
   verifyPriceSnapshotSchema('empty-database migration')
+  verifyPriceRuleSchema('empty-database migration')
   verifyToolObservabilitySchema('empty-database migration')
   verifyContentCmsSchema('empty-database migration')
   verifyContentRelationsSeoSchema('empty-database migration')
@@ -2442,8 +2512,74 @@ try {
     throw new Error(`D5-04 legacy reconciliation backfill failed: ${legacyReconciliation}`)
   }
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `INSERT INTO price_rules (
+       tld, mode, fixed_amount_minor, percentage_basis_points, enabled,
+       effective_at, updated_at, created_at
+     ) VALUES (
+       'd5-05-roundtrip.test', 'percentage', NULL, 1000, false,
+       NOW(), NOW(), NOW()
+     );
+     UPDATE payload_migrations SET batch = 106
+     WHERE name = '20260808_053208_d5_price_rules'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const priceRuleAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'price_rules'
+             AND column_name = 'effective_at'
+         ))::text || ':' ||
+         (fixed_amount_minor = 0)::text || ':' ||
+         array_to_string(enum_range(NULL::enum_quotes_rule_source), ',')
+       FROM price_rules WHERE tld = 'd5-05-roundtrip.test'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (priceRuleAfterDown !== 'true:true:wanmi_fixture') {
+    throw new Error(`D5-05 migration down was incomplete: ${priceRuleAfterDown}`)
+  }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyPriceRuleSchema('D5-05 migration round trip')
+  const legacyRule = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT (effective_at = updated_at)::text
+       FROM price_rules WHERE tld = 'd5-05-roundtrip.test'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (legacyRule !== 'true') {
+    throw new Error(`D5-05 effective time backfill failed: ${legacyRule}`)
+  }
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, and the D5-04 Wechat refund/reconciliation migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, and the D5-05 price rule migration round trips.\n',
   )
 } finally {
   if (created) {

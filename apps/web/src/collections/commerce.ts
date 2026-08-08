@@ -9,6 +9,12 @@ import {
 } from '@/access/roles'
 import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 import { ORDER_STATUSES } from '@/lib/domain'
+import {
+  auditPriceRuleChange,
+  auditPriceRuleDelete,
+  stampPriceRuleEffectiveAt,
+  validatePriceRuleWrite,
+} from '@/services/pricing/price-rules'
 
 const integerMoney: Field = {
   name: 'amountMinor',
@@ -22,18 +28,54 @@ const integerMoney: Field = {
 export const PriceRules: CollectionConfig = {
   slug: 'priceRules',
   access: {
-    create: deny,
-    delete: deny,
+    create: systemAdminOnly,
+    delete: systemAdminOnly,
     read: systemAdminOnly,
-    update: deny,
+    update: systemAdminOnly,
   },
-  admin: { group: ADMIN_GROUPS.commerce, hidden: systemAdminHidden, useAsTitle: 'tld' },
+  admin: {
+    defaultColumns: ['tld', 'mode', 'enabled', 'effectiveAt', 'updatedAt'],
+    group: ADMIN_GROUPS.commerce,
+    hidden: systemAdminHidden,
+    useAsTitle: 'tld',
+  },
+  hooks: {
+    afterChange: [auditPriceRuleChange],
+    afterDelete: [auditPriceRuleDelete],
+    beforeChange: [stampPriceRuleEffectiveAt],
+    beforeValidate: [validatePriceRuleWrite],
+  },
   fields: [
     { name: 'tld', type: 'text', index: true, required: true, unique: true },
     { name: 'mode', type: 'select', options: ['fixed', 'percentage'], required: true },
-    { ...integerMoney, name: 'fixedAmountMinor' },
-    { name: 'percentageBasisPoints', type: 'number', min: 0 },
+    {
+      ...integerMoney,
+      admin: { condition: (_, siblingData) => siblingData?.mode === 'fixed' },
+      name: 'fixedAmountMinor',
+      required: false,
+      validate: (value: null | number | undefined) =>
+        value === null || value === undefined || (Number.isSafeInteger(value) && value >= 0)
+          ? true
+          : '固定加价金额必须是非负安全整数分',
+    },
+    {
+      name: 'percentageBasisPoints',
+      type: 'number',
+      admin: { condition: (_, siblingData) => siblingData?.mode === 'percentage' },
+      min: 0,
+      validate: (value: null | number | undefined) =>
+        value === null || value === undefined || (Number.isSafeInteger(value) && value >= 0)
+          ? true
+          : '比例基点必须是非负安全整数',
+    },
     { name: 'enabled', type: 'checkbox', defaultValue: false, required: true },
+    {
+      name: 'effectiveAt',
+      type: 'date',
+      admin: { date: { pickerAppearance: 'dayAndTime' }, readOnly: true },
+      index: true,
+      required: true,
+    },
   ],
 }
 
@@ -102,7 +144,12 @@ export const PriceSnapshots: CollectionConfig = {
     { name: 'providerObservedAt', type: 'date', index: true, required: true },
     { name: 'providerCacheStatus', type: 'select', options: ['hit', 'miss'], required: true },
     { name: 'providerCacheExpiresAt', type: 'date' },
-    { name: 'ruleSource', type: 'select', options: ['wanmi_fixture'], required: true },
+    {
+      name: 'ruleSource',
+      type: 'select',
+      options: ['wanmi_fixture', 'price_rule_collection'],
+      required: true,
+    },
     { name: 'ruleKey', type: 'text', index: true, required: true },
     { ...safeInteger('ruleVersion'), defaultValue: 1, max: 1, min: 1 },
     { name: 'ruleMode', type: 'select', options: ['fixed', 'percentage'], required: true },
@@ -222,7 +269,7 @@ export const Quotes: CollectionConfig = {
     {
       name: 'ruleSource',
       type: 'select',
-      options: ['wanmi_fixture'],
+      options: ['wanmi_fixture', 'price_rule_collection'],
       access: { read: sensitiveFieldRead },
       required: true,
     },

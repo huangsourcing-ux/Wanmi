@@ -15,6 +15,8 @@ import type {
 } from '@/services/pricing/price-snapshots'
 import { queryTldPricing } from '@/services/pricing/query-tld-pricing'
 
+import { PRICING_RULE_FIXTURES } from '../fixtures/pricing'
+
 const traceId = 'trace-pricing-service'
 const fastConfig: WestDigitalReadConfig = {
   availabilityCacheMaxEntries: 5_000,
@@ -110,7 +112,10 @@ describe('D2-07 TLD pricing orchestration', () => {
     const { provider, transport } = fixtureProvider()
     const queryPrice = vi.spyOn(provider, 'queryPrice')
     const snapshots = new MemorySnapshotStore()
-    const first = await queryTldPricing({}, { provider, snapshots, traceId })
+    const first = await queryTldPricing(
+      {},
+      { provider, rules: PRICING_RULE_FIXTURES, snapshots, traceId },
+    )
 
     expect(first.state).toBe('ready')
     expect(dataFrom(first).tlds).toEqual(DEFAULT_DOMAIN_SEARCH_TLDS)
@@ -141,7 +146,10 @@ describe('D2-07 TLD pricing orchestration', () => {
         .items.filter((item) => item.status === 'priced')
         .map((item) => [item.tld, item.snapshotRef]),
     )
-    const second = await queryTldPricing({}, { provider, snapshots, traceId })
+    const second = await queryTldPricing(
+      {},
+      { provider, rules: PRICING_RULE_FIXTURES, snapshots, traceId },
+    )
     expect(second.state).toBe('ready')
     expect(dataFrom(second).items.filter((item) => item.status === 'priced')).toHaveLength(9)
     expect(
@@ -156,12 +164,15 @@ describe('D2-07 TLD pricing orchestration', () => {
   it('falls back to a matching historical snapshot and distinguishes all aggregate states', async () => {
     const { provider } = fixtureProvider()
     const snapshots = new MemorySnapshotStore()
-    const fresh = await queryTldPricing({ tlds: ['com'] }, { provider, snapshots, traceId })
+    const fresh = await queryTldPricing(
+      { tlds: ['com'] },
+      { provider, rules: PRICING_RULE_FIXTURES, snapshots, traceId },
+    )
     expect(fresh.state).toBe('ready')
 
     const stale = await queryTldPricing(
       { tlds: ['com'] },
-      { provider: failureProvider(), snapshots, traceId },
+      { provider: failureProvider(), rules: PRICING_RULE_FIXTURES, snapshots, traceId },
     )
     expect(stale.state).toBe('degraded')
     expect(dataFrom(stale).items[0]).toMatchObject({
@@ -172,7 +183,12 @@ describe('D2-07 TLD pricing orchestration', () => {
 
     const queueLimitedStale = await queryTldPricing(
       { tlds: ['com'] },
-      { provider: failureProvider('WESTDIGITAL_QUEUE_FULL'), snapshots, traceId },
+      {
+        provider: failureProvider('WESTDIGITAL_QUEUE_FULL'),
+        rules: PRICING_RULE_FIXTURES,
+        snapshots,
+        traceId,
+      },
     )
     expect(queueLimitedStale).toMatchObject({
       data: {
@@ -214,7 +230,12 @@ describe('D2-07 TLD pricing orchestration', () => {
       (
         await queryTldPricing(
           { tlds: ['com', 'cn'] },
-          { provider: partialProvider, snapshots: new MemorySnapshotStore(), traceId },
+          {
+            provider: partialProvider,
+            rules: PRICING_RULE_FIXTURES,
+            snapshots: new MemorySnapshotStore(),
+            traceId,
+          },
         )
       ).state,
     ).toBe('partial')
@@ -222,7 +243,12 @@ describe('D2-07 TLD pricing orchestration', () => {
       (
         await queryTldPricing(
           { tlds: ['com', 'tv'] },
-          { provider: failureProvider(), snapshots: new MemorySnapshotStore(), traceId },
+          {
+            provider: failureProvider(),
+            rules: PRICING_RULE_FIXTURES,
+            snapshots: new MemorySnapshotStore(),
+            traceId,
+          },
         )
       ).state,
     ).toBe('error')
@@ -235,6 +261,7 @@ describe('D2-07 TLD pricing orchestration', () => {
         { tlds: ['com', 'tv'] },
         {
           provider: failureProvider(code),
+          rules: PRICING_RULE_FIXTURES,
           snapshots: new MemorySnapshotStore(),
           traceId,
         },
@@ -255,7 +282,12 @@ describe('D2-07 TLD pricing orchestration', () => {
       (
         await queryTldPricing(
           { tlds: ['tv'] },
-          { provider, snapshots: new MemorySnapshotStore(), traceId },
+          {
+            provider,
+            rules: PRICING_RULE_FIXTURES,
+            snapshots: new MemorySnapshotStore(),
+            traceId,
+          },
         )
       ).state,
     ).toBe('empty')
@@ -273,7 +305,10 @@ describe('D2-07 TLD pricing orchestration', () => {
         return memory.record(input)
       },
     }
-    const result = await queryTldPricing({ tlds: ['com', 'cn'] }, { provider, snapshots, traceId })
+    const result = await queryTldPricing(
+      { tlds: ['com', 'cn'] },
+      { provider, rules: PRICING_RULE_FIXTURES, snapshots, traceId },
+    )
     expect(result.state).toBe('partial')
     const failed = dataFrom(result).items.find((item) => item.tld === 'com')
     expect(failed).toMatchObject({
@@ -287,10 +322,16 @@ describe('D2-07 TLD pricing orchestration', () => {
     const { provider } = fixtureProvider()
     const snapshots = new MemorySnapshotStore()
     await expect(
-      queryTldPricing({ tlds: ['com', '.COM'] }, { provider, snapshots, traceId }),
+      queryTldPricing(
+        { tlds: ['com', '.COM'] },
+        { provider, rules: PRICING_RULE_FIXTURES, snapshots, traceId },
+      ),
     ).rejects.toMatchObject({ code: 'PRICING_DUPLICATE_TLD' })
     await expect(
-      queryTldPricing({ tlds: ['com/evil'] }, { provider, snapshots, traceId }),
+      queryTldPricing(
+        { tlds: ['com/evil'] },
+        { provider, rules: PRICING_RULE_FIXTURES, snapshots, traceId },
+      ),
     ).rejects.toMatchObject({ code: expect.any(String) })
   })
 })

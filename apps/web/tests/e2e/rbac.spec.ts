@@ -53,6 +53,7 @@ test('content editors see content only and cannot open or write advertising coll
   await expect(collectionLink(page, 'forms')).toBeVisible()
   await expect(collectionLink(page, 'redirects')).toBeVisible()
   await expect(collectionLink(page, 'advertisers')).toHaveCount(0)
+  await expect(collectionLink(page, 'priceRules')).toHaveCount(0)
   await expect(collectionLink(page, 'auditLogs')).toHaveCount(0)
   await expect(collectionLink(page, 'firstPartyEvents')).toHaveCount(0)
   await expect(collectionLink(page, 'toolObservabilityBuckets')).toHaveCount(0)
@@ -198,6 +199,7 @@ test('system administrators can use every operations view and see the full audit
   page,
 }) => {
   await loginAs(page, 'system_admin')
+  await expect(collectionLink(page, 'priceRules')).toBeVisible()
   for (const path of [
     '/admin/operations',
     '/admin/operations/tools',

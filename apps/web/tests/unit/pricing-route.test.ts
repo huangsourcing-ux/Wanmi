@@ -13,6 +13,8 @@ import type {
   StoredPriceSnapshot,
 } from '@/services/pricing/price-snapshots'
 
+import { PRICING_RULE_FIXTURES } from '../fixtures/pricing'
+
 class MemorySnapshotStore implements PriceSnapshotStore {
   readonly records: StoredPriceSnapshot[] = []
 
@@ -52,6 +54,7 @@ function fixtureHandler() {
   const snapshots = new MemorySnapshotStore()
   const getSnapshotStore = vi.fn(async () => snapshots)
   const handler = createPricingPostHandler({
+    getRules: async () => PRICING_RULE_FIXTURES,
     getSnapshotStore,
     provider: new WestDigitalReadAdapter({ transport: new FixtureWestDigitalTransport() }),
   })

@@ -5,12 +5,14 @@ import { getPayload, type Payload } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { AdminRole } from '@/lib/domain'
-import { calculateTldPrice, FIXTURE_PRICING_RULES } from '@/services/pricing/price-calculation'
+import { calculateTldPrice } from '@/services/pricing/price-calculation'
 import {
   createPriceCalculationHash,
   PayloadPriceSnapshotStore,
   type PriceSnapshotInput,
 } from '@/services/pricing/price-snapshots'
+
+import { PRICING_RULE_FIXTURES } from '../fixtures/pricing'
 
 const fixturePrefix = `d2-pricing-${randomUUID()}`
 const fixtureTld = fixturePrefix
@@ -29,7 +31,7 @@ function admin(role: AdminRole, id: number) {
 
 function snapshotInput(overrides: Partial<PriceSnapshotInput> = {}): PriceSnapshotInput {
   const fixtureRule = {
-    ...FIXTURE_PRICING_RULES.com!,
+    ...PRICING_RULE_FIXTURES.com!,
     key: `${fixturePrefix}-rule`,
     tld: fixtureTld,
   }
@@ -97,10 +99,7 @@ describe('D2-07 price snapshot persistence and access', () => {
       collection: 'priceSnapshots',
       overrideAccess: true,
       where: {
-        and: [
-          { snapshotRef: { equals: newer.snapshotRef } },
-          { tld: { equals: fixtureTld } },
-        ],
+        and: [{ snapshotRef: { equals: newer.snapshotRef } }, { tld: { equals: fixtureTld } }],
       },
     })
     createdIds.push(newerRow.docs[0]!.id)

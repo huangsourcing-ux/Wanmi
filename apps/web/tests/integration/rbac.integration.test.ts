@@ -87,6 +87,7 @@ afterAll(async () => {
     await payload
       .delete({
         collection: fixture.collection,
+        ...(fixture.collection === 'priceRules' ? { context: { skipPriceRuleAudit: true } } : {}),
         id: fixture.id,
         overrideAccess: true,
       } as never)
@@ -162,10 +163,12 @@ describe('D1 Payload role boundaries', () => {
         user: analyst as never,
       }),
     ).rejects.toThrow()
-    await expect(
+    await remember(
+      'priceRules',
       payload.create({
         collection: 'priceRules',
         data: {
+          effectiveAt: new Date().toISOString(),
           enabled: false,
           fixedAmountMinor: 100,
           mode: 'fixed',
@@ -173,6 +176,20 @@ describe('D1 Payload role boundaries', () => {
         },
         overrideAccess: false,
         user: systemAdmin as never,
+      }),
+    )
+    await expect(
+      payload.create({
+        collection: 'priceRules',
+        data: {
+          effectiveAt: new Date().toISOString(),
+          enabled: false,
+          fixedAmountMinor: 100,
+          mode: 'fixed',
+          tld: `${fixturePrefix}-forbidden.test`,
+        },
+        overrideAccess: false,
+        user: contentEditor as never,
       }),
     ).rejects.toThrow()
   })

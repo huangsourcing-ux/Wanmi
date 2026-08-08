@@ -5,10 +5,13 @@ import { AppError, toProblemDetails } from '@/lib/errors'
 import type { WestDigitalReadProvider } from '@/providers/types'
 import { quoteCreationResultSchema, type QuoteCreationResult } from '@/schemas/quotes'
 
+import { PRICING_RULE_FIXTURES } from '../fixtures/pricing'
+
 const provider = {} as WestDigitalReadProvider
 const context = {
   customer: { collection: 'customers' as const, id: 7 },
   quoteStore: {} as never,
+  rules: PRICING_RULE_FIXTURES,
   snapshots: {} as never,
 }
 

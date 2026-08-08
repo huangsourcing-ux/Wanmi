@@ -24,7 +24,6 @@ import { DEFAULT_DOMAIN_SEARCH_TLDS } from '@/services/domain-search/query-avail
 import {
   calculateRegistrationTotalFen,
   calculateTldPrice,
-  FIXTURE_PRICING_RULES,
   PRICE_CALCULATION_VERSION,
   PRICE_SNAPSHOT_SCHEMA_VERSION,
   type PricingRule,
@@ -145,7 +144,7 @@ function ruleFromQuote(doc: Quote): PricingRule {
       fixedAmountFen: doc.ruleFixedAmountMinor,
       key: doc.ruleKey,
       mode: 'fixed',
-      source: 'wanmi_fixture',
+      source: doc.ruleSource,
       tld: doc.tld,
       version: 1,
     }
@@ -157,7 +156,7 @@ function ruleFromQuote(doc: Quote): PricingRule {
     key: doc.ruleKey,
     mode: 'percentage',
     percentageBasisPoints: doc.rulePercentageBasisPoints,
-    source: 'wanmi_fixture',
+    source: doc.ruleSource,
     tld: doc.tld,
     version: 1,
   }
@@ -378,7 +377,7 @@ export async function createCustomerQuote(
     now?: () => number
     provider: WestDigitalReadProvider
     quoteStore: CustomerQuoteStore
-    rules?: Readonly<Record<string, PricingRule>>
+    rules: Readonly<Record<string, PricingRule>>
     snapshots: PriceSnapshotStore
     supportedTlds?: ReadonlySet<string>
     traceId: string
@@ -392,7 +391,7 @@ export async function createCustomerQuote(
   const supportedTlds = options.supportedTlds ?? new Set(DEFAULT_DOMAIN_SEARCH_TLDS)
   const tld = resolveTld(normalized.value.ascii, supportedTlds)
   if (!tld) return blocked('TLD_UNSUPPORTED', options.traceId)
-  const rule = (options.rules ?? FIXTURE_PRICING_RULES)[tld]
+  const rule = options.rules[tld]
   if (!rule) return blocked('PRICE_RULE_UNCONFIGURED', options.traceId)
 
   let availability: ProviderResult<WestDigitalAvailability>

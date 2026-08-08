@@ -101,7 +101,7 @@ function ruleFromDocument(doc: PriceSnapshot): PricingRule {
       fixedAmountFen: doc.ruleFixedAmountMinor,
       key: doc.ruleKey,
       mode: 'fixed',
-      source: 'wanmi_fixture',
+      source: doc.ruleSource,
       tld: doc.tld,
       version: 1,
     }
@@ -113,7 +113,7 @@ function ruleFromDocument(doc: PriceSnapshot): PricingRule {
     key: doc.ruleKey,
     mode: 'percentage',
     percentageBasisPoints: doc.rulePercentageBasisPoints,
-    source: 'wanmi_fixture',
+    source: doc.ruleSource,
     tld: doc.tld,
     version: 1,
   }
@@ -214,7 +214,7 @@ export class PayloadPriceSnapshotStore implements PriceSnapshotStore {
             : { rulePercentageBasisPoints: rule.percentageBasisPoints }),
           ruleKey: rule.key,
           ruleMode: rule.mode,
-          ruleSource: 'wanmi_fixture',
+          ruleSource: rule.source,
           ruleVersion: rule.version,
           roundingMode: 'half_up_to_fen',
           schemaVersion: PRICE_SNAPSHOT_SCHEMA_VERSION,

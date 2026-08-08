@@ -6,7 +6,7 @@ export const PRICE_SNAPSHOT_SCHEMA_VERSION = 1 as const
 
 type RuleBase = {
   key: string
-  source: 'wanmi_fixture'
+  source: 'price_rule_collection' | 'wanmi_fixture'
   tld: string
   version: 1
 }
@@ -27,38 +27,6 @@ export type PriceCalculation = {
   upstreamRegistrationPriceFen: number
   upstreamRenewalPriceFen: number
 }
-
-const fixedRuleTlds = ['com', 'cn', 'net', 'org', 'top'] as const
-const percentageRuleTlds = ['xyz', 'vip', 'cc', 'com.cn'] as const
-
-export const FIXTURE_PRICING_RULES: Readonly<Record<string, PricingRule>> = Object.freeze({
-  ...Object.fromEntries(
-    fixedRuleTlds.map((tld) => [
-      tld,
-      {
-        fixedAmountFen: 500,
-        key: `fixture-${tld.replaceAll('.', '-')}-fixed-v1`,
-        mode: 'fixed' as const,
-        source: 'wanmi_fixture' as const,
-        tld,
-        version: 1 as const,
-      },
-    ]),
-  ),
-  ...Object.fromEntries(
-    percentageRuleTlds.map((tld) => [
-      tld,
-      {
-        key: `fixture-${tld.replaceAll('.', '-')}-percentage-v1`,
-        mode: 'percentage' as const,
-        percentageBasisPoints: 1_000,
-        source: 'wanmi_fixture' as const,
-        tld,
-        version: 1 as const,
-      },
-    ]),
-  ),
-})
 
 function safeMoney(value: number, label: string): number {
   if (!Number.isSafeInteger(value) || value < 0) {

@@ -22,9 +22,9 @@ import {
 import {
   calculateRegistrationTotalFen,
   calculateTldPrice,
-  FIXTURE_PRICING_RULES,
   type PricingRule,
 } from '@/services/pricing/price-calculation'
+import { loadEnabledPricingRules } from '@/services/pricing/price-rules'
 import { assertRealnameTemplateUsableForRegistration } from '@/services/realname/templates'
 
 type CustomerIdentity = {
@@ -74,15 +74,15 @@ function sameRule(left: PricingRule, right: PricingRule): boolean {
 export function assertQuoteAmountAndRuleUsableForOrder(
   quote: StoredCustomerQuote,
   options: {
-    rules?: Readonly<Record<string, PricingRule>>
+    rules: Readonly<Record<string, PricingRule>>
     supportedTlds?: ReadonlySet<string>
-  } = {},
+  },
 ): void {
   const supportedTlds = options.supportedTlds ?? new Set(DEFAULT_DOMAIN_SEARCH_TLDS)
   if (!supportedTlds.has(quote.tld)) {
     throw new AppError('TLD_UNSUPPORTED', '该域名后缀当前不支持下单', 409)
   }
-  const rule = (options.rules ?? FIXTURE_PRICING_RULES)[quote.tld]
+  const rule = options.rules[quote.tld]
   if (!rule) {
     throw new AppError('PRICE_RULE_UNCONFIGURED', '该域名后缀尚未配置加价规则', 409)
   }
@@ -209,7 +209,8 @@ export async function createCustomerOrder(
       customerId: options.customer.id,
       templateId: input.realnameTemplateId,
     })
-    assertQuoteAmountAndRuleUsableForOrder(quote, options)
+    const rules = options.rules ?? (await loadEnabledPricingRules(req.payload, req))
+    assertQuoteAmountAndRuleUsableForOrder(quote, { ...options, rules })
 
     let availability: Awaited<ReturnType<WestDigitalReadProvider['queryAvailability']>>
     try {

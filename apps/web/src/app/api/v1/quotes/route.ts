@@ -13,6 +13,8 @@ import {
   PayloadPriceSnapshotStore,
   type PriceSnapshotStore,
 } from '@/services/pricing/price-snapshots'
+import { loadEnabledPricingRules } from '@/services/pricing/price-rules'
+import type { PricingRule } from '@/services/pricing/price-calculation'
 
 export const runtime = 'nodejs'
 
@@ -28,6 +30,7 @@ type QuotePostDependencies = {
   resolveContext: (request: Request) => Promise<{
     customer: { collection: 'customers'; id: number }
     quoteStore: import('@/services/pricing/customer-quotes').CustomerQuoteStore
+    rules: Readonly<Record<string, PricingRule>>
     snapshots: PriceSnapshotStore
   }>
 }
@@ -55,6 +58,7 @@ async function readJsonBody(request: Request): Promise<unknown> {
 async function defaultContext(request: Request): Promise<{
   customer: { collection: 'customers'; id: number }
   quoteStore: PayloadCustomerQuoteStore
+  rules: Readonly<Record<string, PricingRule>>
   snapshots: PriceSnapshotStore
 }> {
   const payload = await getPayload({ config })
@@ -63,6 +67,7 @@ async function defaultContext(request: Request): Promise<{
   return {
     customer,
     quoteStore: new PayloadCustomerQuoteStore(req, customer),
+    rules: await loadEnabledPricingRules(payload, req),
     snapshots: new PayloadPriceSnapshotStore(payload),
   }
 }

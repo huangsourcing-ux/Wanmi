@@ -517,7 +517,7 @@ D4-04 验证记录（2026-08-07）：模板删除端点与账号注销事务会�
 
 ### 9.2 任务
 
-- [ ] 建立按 TLD 配置的固定金额/比例加价规则和发布审计；
+- [x] 建立按 TLD 配置的固定金额/比例加价规则和发布审计；
 - [x] 建立 5 分钟报价快照：域名、年限、上游成本、规则、用户价、币种和失效时间；
 - [x] 未配置加价、能力未验证、价格异常或报价过期时禁止下单；
 - [x] 建立订单状态机和追加式 `order_events`；
@@ -542,6 +542,8 @@ D5-02 验证记录（2026-08-07）：新增认证客户 `POST /api/v1/orders` �
 D5-03 验证记录（2026-08-07）：新增可注入的 WeChat Pay API v3 adapter，完成 Native/H5 下单、商户 RSA-SHA256 请求签名、微信平台响应/通知验签、AES-256-GCM 通知解密和按商户订单号主动查单；运行时只提供内存 fixture transport，且 `ALLOW_REAL_PROVIDER_WRITES=false`。支付发起在 provider 前按客户权限重读订单与报价快照，只允许 `pending_payment`，支付失效时间不超过报价失效时间，并在 provider 调用前持久化唯一商户订单号。通知 endpoint 仅将验签成功内容作为主动查单线索，最终只根据经平台签名确认的查单结果比对服务端商户号、应用号、商户订单号、微信交易号、`CNY` 和整数分金额；全部一致时才在同一数据库事务中写通知记录、到账时间并复用 `transitionOrder` 完成 `pending_payment → paid`。金额/标识不一致、查单未知和取消后迟到支付分别进入带证据的 `manual_review`；明确未支付保持待支付，伪造通知不解密、不信任其金额或标识且不迁移订单。`orders.merchant_order_number`、`payment_notifications.notification_id`、`merchant_order_number` 和 `wechat_transaction_id` 均有 PostgreSQL 唯一索引；通知仅保存验签结果、确认状态、安全标识、金额、到账/接收时间和报文摘要，不持久化完整通知。重放由唯一约束、事务和已确认支付收敛，只产生一次状态迁移。命名 migration 覆盖空库、历史行安全回填及 down/up 往返；`make check` 通过 547/547 单元测试、54/54 PostgreSQL/MinIO 集成测试、全部 migration/生成物、lint、typecheck、安全门禁、Next.js 生产构建和 linux/amd64 同镜像；`make test-e2e` 36/36 通过。全程只使用运行时生成密钥的 fixture，未连接真实商户号、未发起真实资金请求，未实现退款或履约。
 
 D5-04 验证记录（2026-08-07）：新增隔离的 `commerce` 队列微信退款任务、API v3 退款创建/查询及退款成功通知验签/解密。只有注册明确失败且订单为 `paid`/`fulfilling` 时可创建自动原路全额退款；`succeeded` 在任何 provider 调用前拒绝。退款服务必须同时找到 D5-03 已确认到账记录，并再次核对服务端订单、商户订单号、微信交易号、`CNY` 和整数分金额；退款金额固定等于订单金额且不得超过原支付金额。退款状态只复用 `transitionOrder` 完成 `refund_pending → refunding → refunded`；请求发出后超时或状态不明会记录 `unknown` provider operation、转入带证据的 `manual_review`，后续任务只调用退款查询，不会重复创建退款。明确失败、争议、余额不足、金额/标识不一致和状态不明均建立人工复核并输出脱敏告警。退款通知先验签再解密，并以通知号唯一约束、SHA-256 摘要、事务和服务端主动查询实现幂等防重放；伪造通知不保存可信金额或标识。`refunds.refund_number`、订单退款关系、微信退款 ID、退款通知 ID 和对账键均有 PostgreSQL 唯一索引。对账服务将微信资金、内部订单和西部数码预充值余额保存在不同 `ledger`；西部余额 fixture 按本地 API 文档 `checkbalance` 的可用/冻结余额语义记录，三方差异只追加 `difference` 和 `correctionApplied: false` 证据，不修改订单、退款或余额。命名 migration 覆盖空库、历史对账安全回填和 down/up 往返。最终原样 `make check` 以退出码 0 通过生成物/schema 漂移、完整 migration 往返、Nginx、lint、TypeScript strict、548/548 单元测试、59/59 PostgreSQL/MinIO 集成测试、依赖/秘密门禁、Next.js 生产构建及 linux/amd64 同镜像；最终原样 `make test-e2e` 36/36 通过。全程保持 `ALLOW_REAL_PROVIDER_WRITES=false`，仅使用运行时生成密钥的 mock/fixture，未执行真实资金请求、未调用西部数码接口、未实现 D6 履约。
+
+D5-05 验证记录（2026-08-08）：启用 D0 已有的 `priceRules` Collection，写入、修改、启用、停用和删除只允许 `system_admin`，生产计价、报价和订单重新校验不再读取硬编码规则，而是统一读取已启用的 Collection 规则；测试 fixture 仅通过显式依赖注入使用。规则在写入时严格拒绝负数、非安全整数、小数基点以及 `mode` 与金额/基点字段不匹配，金额继续使用整数分，比例计算继续使用 BigInt 和 half-up 到分。新增 `effectiveAt` 生效时间和命名 migration `20260808_053208_d5_price_rules`，覆盖历史数据回填、金额字段可空、来源枚举、索引及 down/up 往返。新增/修改/启用/停用/删除通过 D1-07 统一审计服务在同一请求事务中记录 TLD、模式、变更前后金额或基点、操作者和生效时间。集成测试确认规则发布后新报价采用新规则，同时旧报价保存的完整规则副本与完整性哈希不变且仍可按原快照复现；D5-02 下单门禁仍会以当前规则拒绝旧价下单。未配置或停用的 TLD 在 provider 调用前继续关闭购买。最终在同一数据库状态上连续两次原样 `make check` 均以退出码 0 通过生成物/schema 漂移、完整 migration 往返、Nginx、lint、TypeScript strict、550/550 单元测试、61/61 PostgreSQL/MinIO 集成测试、依赖/秘密门禁、Next.js 生产构建及 linux/amd64 同镜像；最终原样 `make test-e2e` 36/36 通过。未改订单状态机、支付或退款，未调用真实 provider、资金或域名写接口。
 
 ### 9.3 退出条件
 
