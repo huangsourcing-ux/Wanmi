@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+
 import config from '@payload-config'
 import { getPayload, type Payload } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -105,6 +107,7 @@ describe('D1 first-party event persistence and access', () => {
 
   it('rejects generic mutations and complete-domain attempts before persistence', async () => {
     const systemAdmin = admin('system_admin', 2201)
+    const rejectedTld = `${randomUUID()}.wanmi.net`
     await expect(
       payload.create({
         collection: 'firstPartyEvents',
@@ -119,19 +122,28 @@ describe('D1 first-party event persistence and access', () => {
       }),
     ).rejects.toThrow()
 
-    const before = await payload.count({ collection: 'firstPartyEvents', overrideAccess: true })
+    const before = await payload.count({
+      collection: 'firstPartyEvents',
+      overrideAccess: true,
+      where: { tld: { equals: rejectedTld } },
+    })
+    expect(before.totalDocs).toBe(0)
     await expect(
       recordFirstPartyEvent(payload, {
         event: 'tool_submitted',
         fromLocalHistory: false,
         inputType: 'full_domain',
         schemaVersion: 1,
-        tld: 'wanmi.net',
+        tld: rejectedTld,
         tool: 'domain-search',
       }),
     ).rejects.toThrow()
-    const after = await payload.count({ collection: 'firstPartyEvents', overrideAccess: true })
-    expect(after.totalDocs).toBe(before.totalDocs)
+    const after = await payload.count({
+      collection: 'firstPartyEvents',
+      overrideAccess: true,
+      where: { tld: { equals: rejectedTld } },
+    })
+    expect(after.totalDocs).toBe(0)
   })
 
   it('stores closed advertising dimensions without a query, account or cross-site identifier', async () => {

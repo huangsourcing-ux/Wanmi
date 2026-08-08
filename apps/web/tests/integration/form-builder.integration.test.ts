@@ -218,7 +218,13 @@ describe('D3-05 Form Builder entries', () => {
   })
 
   it('rejects raw HTML, unapproved fields and generic REST/Local API creation', async () => {
-    const before = await payload.count({ collection: 'form-submissions', overrideAccess: true })
+    const rejectedTraceIds = [`${fixturePrefix}-html`, `${fixturePrefix}-order`]
+    const before = await payload.count({
+      collection: 'form-submissions',
+      overrideAccess: true,
+      where: { traceId: { in: rejectedTraceIds } },
+    })
+    expect(before.totalDocs).toBe(0)
     await expect(
       submitPublicForm(
         payload,
@@ -231,7 +237,7 @@ describe('D3-05 Form Builder entries', () => {
           },
         },
         new Headers({ 'x-forwarded-for': '192.0.2.52' }),
-        `${fixturePrefix}-html`,
+        rejectedTraceIds[0]!,
       ),
     ).rejects.toThrow(/纯文本/u)
     await expect(
@@ -247,7 +253,7 @@ describe('D3-05 Form Builder entries', () => {
           },
         },
         new Headers({ 'x-forwarded-for': '192.0.2.52' }),
-        `${fixturePrefix}-order`,
+        rejectedTraceIds[1]!,
       ),
     ).rejects.toThrow(/未批准字段/u)
     const form = await payload.find({
@@ -264,8 +270,12 @@ describe('D3-05 Form Builder entries', () => {
         overrideAccess: false,
       }),
     ).rejects.toThrow()
-    const after = await payload.count({ collection: 'form-submissions', overrideAccess: true })
-    expect(after.totalDocs).toBe(before.totalDocs)
+    const after = await payload.count({
+      collection: 'form-submissions',
+      overrideAccess: true,
+      where: { traceId: { in: rejectedTraceIds } },
+    })
+    expect(after.totalDocs).toBe(0)
   })
 
   it('rate limits by HMAC client key and returns a stable 429 error', async () => {
