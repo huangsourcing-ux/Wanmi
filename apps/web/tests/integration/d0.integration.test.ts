@@ -24,6 +24,7 @@ import { runMockFulfillment } from '@/services/commerce/fulfillment'
 import { realnameTemplateFixture } from '../fixtures/realname'
 
 let payload: Payload
+const createdJobIds: Array<number | string> = []
 
 beforeAll(async () => {
   payload = await getPayload({ config })
@@ -40,6 +41,9 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
+  for (const id of createdJobIds) {
+    await payload.delete({ collection: 'payload-jobs', id, overrideAccess: true }).catch(() => {})
+  }
   await payload.db.destroy?.()
 })
 
@@ -382,7 +386,9 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
     })
 
     const result = await reconcileSmsReceipts(await createLocalReq({}, payload))
-    expect(result).toMatchObject({ checked: 1, delivered: 1 })
+    expect(result.checked).toBeGreaterThanOrEqual(1)
+    expect(result.delivered).toBe(result.checked)
+    expect(result.failed).toBe(0)
     expect(result.expiredRateBucketsDeleted).toBeGreaterThanOrEqual(1)
     expect(
       (
@@ -455,8 +461,10 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
     })
     expect(first.concurrencyKey).toBe(operationKey)
     expect(duplicate.concurrencyKey).toBe(operationKey)
+    createdJobIds.push(first.id, duplicate.id)
 
-    await payload.jobs.run({ limit: 2, queue: 'commerce', sequential: true, silent: true })
+    await payload.jobs.runByID({ id: first.id, silent: true })
+    await payload.jobs.runByID({ id: duplicate.id, silent: true })
     const operations = await payload.find({
       collection: 'providerOperations',
       overrideAccess: true,

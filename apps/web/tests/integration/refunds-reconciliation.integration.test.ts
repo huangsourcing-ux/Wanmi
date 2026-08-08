@@ -139,11 +139,18 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  await payload.delete({
+  const refundJobs = await payload.find({
     collection: 'payload-jobs',
+    limit: 100,
     overrideAccess: true,
     where: { workflowSlug: { equals: 'wechatRefund' } },
   })
+  for (const job of refundJobs.docs) {
+    const input = job.input as { traceId?: unknown } | null | undefined
+    if (typeof input?.traceId === 'string' && input.traceId.startsWith(prefix)) {
+      await payload.delete({ collection: 'payload-jobs', id: job.id, overrideAccess: true })
+    }
+  }
   for (const id of rejectedRefundNotificationIds) {
     await payload.delete({ collection: 'refundNotifications', id, overrideAccess: true })
   }

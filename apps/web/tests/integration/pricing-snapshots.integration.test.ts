@@ -75,7 +75,13 @@ describe('D2-07 price snapshot persistence and access', () => {
     const firstRows = await payload.find({
       collection: 'priceSnapshots',
       overrideAccess: true,
-      where: { calculationHash: { equals: concurrent[0]!.calculationHash } },
+      where: {
+        and: [
+          { calculationHash: { equals: concurrent[0]!.calculationHash } },
+          { snapshotRef: { equals: concurrent[0]!.snapshotRef } },
+          { tld: { equals: fixtureTld } },
+        ],
+      },
     })
     expect(firstRows.totalDocs).toBe(1)
     createdIds.push(firstRows.docs[0]!.id)
@@ -90,7 +96,12 @@ describe('D2-07 price snapshot persistence and access', () => {
     const newerRow = await payload.find({
       collection: 'priceSnapshots',
       overrideAccess: true,
-      where: { snapshotRef: { equals: newer.snapshotRef } },
+      where: {
+        and: [
+          { snapshotRef: { equals: newer.snapshotRef } },
+          { tld: { equals: fixtureTld } },
+        ],
+      },
     })
     createdIds.push(newerRow.docs[0]!.id)
 

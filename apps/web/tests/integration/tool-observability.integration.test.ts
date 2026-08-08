@@ -11,6 +11,10 @@ import { readToolOperationsSnapshot } from '@/services/operations/read-operation
 
 let payload: Payload
 const createdIds: Array<number | string> = []
+const fixtureBucketKeys = [
+  'v1:2098-01-02T03:00:00.000Z:tool:idn',
+  'v1:2098-01-02T04:00:00.000Z:provider:alidns:dns',
+]
 
 function admin(role: AdminRole, id: number, status: 'active' | 'disabled' = 'active') {
   return {
@@ -24,6 +28,11 @@ function admin(role: AdminRole, id: number, status: 'active' | 'disabled' = 'act
 
 beforeAll(async () => {
   payload = await getPayload({ config })
+  await payload.delete({
+    collection: 'toolObservabilityBuckets',
+    overrideAccess: true,
+    where: { bucketKey: { in: fixtureBucketKeys } },
+  })
 })
 
 afterAll(async () => {
@@ -88,10 +97,7 @@ describe('D2 tool observability persistence and access', () => {
       overrideAccess: true,
       sort: 'bucketStart',
       where: {
-        or: [
-          { bucketStart: { equals: '2098-01-02T03:00:00.000Z' } },
-          { bucketStart: { equals: '2098-01-02T04:00:00.000Z' } },
-        ],
+        bucketKey: { in: fixtureBucketKeys },
       },
     })
     createdIds.push(...aggregate.docs.map((document) => document.id))
@@ -133,7 +139,7 @@ describe('D2 tool observability persistence and access', () => {
         collection: 'toolObservabilityBuckets',
         overrideAccess: false,
         user: user as never,
-        where: { bucketStart: { equals: '2098-01-02T03:00:00.000Z' } },
+        where: { bucketKey: { equals: fixtureBucketKeys[0] } },
       })
       expect(result.docs).toHaveLength(1)
     }
