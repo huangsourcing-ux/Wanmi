@@ -25,6 +25,8 @@ import {
 } from '@/services/auth/admin-invitations'
 import { createTotp, createTotpSecret, hashRecoveryCodes } from '@/services/auth/totp'
 
+import { ignorePayloadNotFound } from '../test-cleanup'
+
 const anchorEmail = 'integration-system-admin-anchor@example.test'
 const anchorPassword = 'Integration-anchor-password-2026'
 const fixturePrefix = `d1-admin-auth-${randomUUID()}`
@@ -207,11 +209,13 @@ afterAll(async () => {
     where: { email: { contains: fixturePrefix } },
   })
   for (const invitation of invitations.docs) {
-    await payload.delete({
-      collection: 'adminInvitations',
-      id: invitation.id,
-      overrideAccess: true,
-    })
+    await ignorePayloadNotFound(() =>
+      payload.delete({
+        collection: 'adminInvitations',
+        id: invitation.id,
+        overrideAccess: true,
+      }),
+    )
   }
   for (const id of createdAdminIds) {
     const credentials = await payload.find({
@@ -220,13 +224,17 @@ afterAll(async () => {
       where: { admin: { equals: id } },
     })
     for (const credential of credentials.docs) {
-      await payload.delete({
-        collection: 'adminMfaCredentials',
-        id: credential.id,
-        overrideAccess: true,
-      })
+      await ignorePayloadNotFound(() =>
+        payload.delete({
+          collection: 'adminMfaCredentials',
+          id: credential.id,
+          overrideAccess: true,
+        }),
+      )
     }
-    await payload.delete({ collection: 'admins', id, overrideAccess: true, req: cleanupReq })
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: 'admins', id, overrideAccess: true, req: cleanupReq }),
+    )
   }
   if (traceIds.size) {
     const audits = await payload.find({
@@ -236,7 +244,9 @@ afterAll(async () => {
       where: { traceId: { in: [...traceIds] } },
     })
     for (const audit of audits.docs) {
-      await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
+      await ignorePayloadNotFound(() =>
+        payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true }),
+      )
     }
   }
   await payload.db.destroy?.()

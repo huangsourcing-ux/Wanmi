@@ -8,6 +8,8 @@ import type { Admin, Article } from '@/payload-types'
 import { readPublicContentBySlug } from '@/services/content/read-content'
 import { executeContentWorkflow, runScheduledContentPublish } from '@/services/content/workflow'
 
+import { ignorePayloadNotFound } from '../test-cleanup'
+
 const fixture = `d3-content-${randomUUID()}`
 const richText: Article['content'] = {
   root: {
@@ -72,22 +74,35 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const id of cleanupJobIds) {
-    await payload.delete({ collection: 'payload-jobs', id, overrideAccess: true })
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: 'payload-jobs', id, overrideAccess: true }),
+    )
   }
   const audits = await payload.find({
     collection: 'auditLogs',
     limit: 100,
     overrideAccess: true,
-    where: { targetId: { in: cleanup.map((item) => String(item.id)) } },
+    where: {
+      and: [
+        { targetType: { equals: 'content' } },
+        { traceId: { equals: `${fixture}-trace` } },
+      ],
+    },
   })
   for (const audit of audits.docs) {
-    await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true }),
+    )
   }
   for (const item of cleanup.reverse()) {
-    await payload.delete({ collection: item.collection, id: item.id, overrideAccess: true })
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: item.collection, id: item.id, overrideAccess: true }),
+    )
   }
   if (editor) {
-    await payload.delete({ collection: 'admins', id: editor.id, overrideAccess: true, req })
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: 'admins', id: editor.id, overrideAccess: true, req }),
+    )
   }
   await payload.db.destroy?.()
 })
