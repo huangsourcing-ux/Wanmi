@@ -210,7 +210,7 @@ afterAll(async () => {
     await payload.delete({ collection: 'paymentNotifications', id, overrideAccess: true })
   }
   await payload.db.destroy?.()
-})
+}, 30_000)
 
 describe('D5-03 Wechat Pay confirmation', () => {
   it('uses the quote expiry, confirms by server query and replays one notification idempotently', async () => {
@@ -584,6 +584,134 @@ describe('D5-03 Wechat Pay confirmation', () => {
         traceId: `${prefix}-timeout-close-replay`,
       }),
     ).resolves.toEqual({ cancelled: 0, checked: 0, failed: 0, paid: 0, unchanged: 0 })
+  })
+
+  it('moves a cancelled order with a confirmed late payment to manual review exactly once', async () => {
+    const fixture = createWechatPayFixture({ now: () => now })
+    const setup = await createPendingOrder('late-payment')
+    const session = await createWechatPayment(
+      await customerRequest(setup.customer, 'late-payment-create'),
+      setup.order.orderNumber,
+      { channel: 'native' },
+      {
+        customer: setup.customer,
+        now: () => now,
+        provider: fixture.provider,
+        traceId: `${prefix}-late-payment-create`,
+      },
+    )
+    const jobReq = await createLocalReq({}, payload)
+    await expect(
+      runPaymentTimeoutClose(jobReq, {
+        now: new Date(now.getTime() + 300_000),
+        orderId: setup.order.id,
+        provider: fixture.provider,
+        traceId: `${prefix}-late-payment-close`,
+      }),
+    ).resolves.toEqual({ cancelled: 1, checked: 1, failed: 0, paid: 0, unchanged: 0 })
+
+    const paidAt = new Date(now.getTime() + 360_000).toISOString()
+    const transactionId = '42000000000000000000000000000015'
+    fixture.setOrder({
+      amountMinor: setup.amountMinor,
+      merchantOrderNumber: session.data.merchantOrderNumber,
+      paidAt,
+      state: 'paid',
+      transactionId,
+    })
+    const notification = fixture.notification({
+      amountMinor: setup.amountMinor,
+      merchantOrderNumber: session.data.merchantOrderNumber,
+      notificationId: notificationId(),
+      paidAt,
+      transactionId,
+    })
+    const first = await processWechatPaymentNotification(
+      await createLocalReq({}, payload),
+      { ...notification, traceId: `${prefix}-late-payment-notify` },
+      fixture.provider,
+    )
+    const replay = await processWechatPaymentNotification(
+      await createLocalReq({}, payload),
+      { ...notification, traceId: `${prefix}-late-payment-replay` },
+      fixture.provider,
+    )
+    expect(first.idempotentReplay).toBe(false)
+    expect(replay.idempotentReplay).toBe(true)
+
+    const storedOrder = await payload.findByID({
+      collection: 'orders',
+      id: setup.order.id,
+      overrideAccess: true,
+    })
+    expect(storedOrder).toMatchObject({ paidAt, status: 'manual_review' })
+    const events = await payload.find({
+      collection: 'orderEvents',
+      overrideAccess: true,
+      sort: 'createdAt',
+      where: { order: { equals: setup.order.id } },
+    })
+    expect(events.docs).toHaveLength(2)
+    expect(events.docs).toEqual([
+      expect.objectContaining({
+        fromStatus: 'pending_payment',
+        reasonCode: 'wechatpay.payment_expired_closed',
+        toStatus: 'cancelled',
+      }),
+      expect.objectContaining({
+        evidence: expect.objectContaining({ queryState: 'paid', source: 'notification' }),
+        fromStatus: 'cancelled',
+        reasonCode: 'wechatpay.late_payment',
+        toStatus: 'manual_review',
+      }),
+    ])
+    const reviews = await payload.find({
+      collection: 'manualReviews',
+      overrideAccess: true,
+      where: { order: { equals: setup.order.id } },
+    })
+    expect(reviews.docs).toHaveLength(1)
+    expect(reviews.docs[0]).toMatchObject({
+      evidence: expect.objectContaining({ queryState: 'paid', source: 'notification' }),
+      reasonCode: 'wechatpay.late_payment',
+      status: 'open',
+    })
+    const notifications = await payload.find({
+      collection: 'paymentNotifications',
+      overrideAccess: true,
+      where: {
+        and: [{ order: { equals: setup.order.id } }, { source: { equals: 'notification' } }],
+      },
+    })
+    expect(notifications.docs).toHaveLength(1)
+    expect(notifications.docs[0]).toMatchObject({
+      amountMinor: setup.amountMinor,
+      confirmationStatus: 'confirmed',
+      merchantOrderNumber: session.data.merchantOrderNumber,
+      wechatTransactionId: transactionId,
+    })
+    const fulfillmentJobs = await payload.find({
+      collection: 'payload-jobs',
+      overrideAccess: true,
+      where: { workflowSlug: { equals: 'commerceFulfillment' } },
+    })
+    expect(
+      fulfillmentJobs.docs.filter(
+        (job) =>
+          typeof job.input === 'object' &&
+          job.input !== null &&
+          !Array.isArray(job.input) &&
+          job.input.orderId === setup.order.id,
+      ),
+    ).toHaveLength(0)
+    const fulfillmentOperations = await payload.find({
+      collection: 'providerOperations',
+      overrideAccess: true,
+      where: {
+        and: [{ order: { equals: setup.order.id } }, { operation: { equals: 'register' } }],
+      },
+    })
+    expect(fulfillmentOperations.docs).toHaveLength(0)
   })
 
   it('confirms a paid expired order instead of cancelling it', async () => {
