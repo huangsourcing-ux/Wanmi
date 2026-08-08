@@ -10,6 +10,8 @@ import {
 } from '@/services/advertising/read-public-ad'
 import { runAdvertisingMaintenance } from '@/services/advertising/maintenance'
 
+import { ignorePayloadNotFound } from '../test-cleanup'
+
 const fixturePrefix = `d3-advertising-${randomUUID()}`
 const created: Array<{
   collection: 'adCreatives' | 'adPlacements' | 'adSchedules' | 'advertisers'
@@ -60,20 +62,25 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const fixture of created.reverse()) {
-    await payload
-      .delete({ collection: fixture.collection, id: fixture.id, overrideAccess: true })
-      .catch(() => undefined)
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: fixture.collection, id: fixture.id, overrideAccess: true }),
+    )
   }
   const audits = await payload.find({
     collection: 'auditLogs',
     limit: 100,
     overrideAccess: true,
-    where: { targetType: { equals: 'advertising' } },
+    where: {
+      and: [
+        { targetType: { equals: 'advertising' } },
+        { traceId: { contains: fixturePrefix } },
+      ],
+    },
   })
-  for (const audit of audits.docs.filter((document) =>
-    document.traceId.startsWith(fixturePrefix),
-  )) {
-    await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
+  for (const audit of audits.docs) {
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true }),
+    )
   }
   await payload.db.destroy?.()
 })

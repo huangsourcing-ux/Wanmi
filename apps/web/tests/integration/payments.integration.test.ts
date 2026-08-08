@@ -18,6 +18,7 @@ import {
 import { recordManualOrderAction } from '@/services/commerce/manual-actions'
 
 import { realnameTemplateFixture } from '../fixtures/realname'
+import { ignorePayloadNotFound } from '../test-cleanup'
 
 const prefix = `d5-payments-${randomUUID()}`
 const now = new Date('2026-08-08T02:00:00.000Z')
@@ -175,17 +176,26 @@ afterAll(async () => {
         where: { order: { equals: order.id } },
       })
       for (const row of rows.docs) {
-        await payload.delete({ collection, id: row.id, overrideAccess: true })
+        await ignorePayloadNotFound(() =>
+          payload.delete({ collection, id: row.id, overrideAccess: true }),
+        )
       }
     }
     const audits = await payload.find({
       collection: 'auditLogs',
       limit: 100,
       overrideAccess: true,
-      where: { targetId: { equals: String(order.id) } },
+      where: {
+        and: [
+          { traceId: { contains: prefix } },
+          { targetType: { in: ['order', 'payment-notification'] } },
+        ],
+      },
     })
     for (const audit of audits.docs) {
-      await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
+      await ignorePayloadNotFound(() =>
+        payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true }),
+      )
     }
     const fulfillmentJobs = await payload.find({
       collection: 'payload-jobs',
@@ -195,10 +205,14 @@ afterAll(async () => {
     })
     for (const job of fulfillmentJobs.docs) {
       if ((job.input as { orderId?: number }).orderId === order.id) {
-        await payload.delete({ collection: 'payload-jobs', id: job.id, overrideAccess: true })
+        await ignorePayloadNotFound(() =>
+          payload.delete({ collection: 'payload-jobs', id: job.id, overrideAccess: true }),
+        )
       }
     }
-    await payload.delete({ collection: 'orders', id: order.id, overrideAccess: true })
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: 'orders', id: order.id, overrideAccess: true }),
+    )
   }
   for (const collection of ['quotes', 'realnameTemplates', 'customers'] as const) {
     const field =
@@ -214,11 +228,15 @@ afterAll(async () => {
       where: { [field]: { contains: prefix } },
     })
     for (const row of rows.docs) {
-      await payload.delete({ collection, id: row.id, overrideAccess: true })
+      await ignorePayloadNotFound(() =>
+        payload.delete({ collection, id: row.id, overrideAccess: true }),
+      )
     }
   }
   for (const id of rejectedNotificationIds) {
-    await payload.delete({ collection: 'paymentNotifications', id, overrideAccess: true })
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: 'paymentNotifications', id, overrideAccess: true }),
+    )
   }
   await payload.db.destroy?.()
 }, 30_000)

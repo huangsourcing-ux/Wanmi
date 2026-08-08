@@ -308,7 +308,7 @@ describe('D6-02 commerce fulfillment', () => {
       { operationKey: `commerce-fulfillment:${fixture.order.id}`, orderId: Number(fixture.order.id), traceId: `${prefix}-success` },
       dependencies(new WestDigitalWriteAdapter({ transport })),
     )
-    expect(result.status).toBe('succeeded')
+    expect(result).toMatchObject({ idempotentReplay: false, status: 'succeeded' })
     expect(transport.writeCount).toBe(1)
     const register = transport.requests.find((item) => item.operation === 'register')
     expect(register?.body).toMatchObject({

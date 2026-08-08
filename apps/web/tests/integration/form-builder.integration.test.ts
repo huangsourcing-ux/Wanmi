@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import config from '@payload-config'
-import { getPayload, type Payload } from 'payload'
+import { createLocalReq, getPayload, type Payload, type PayloadRequest } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { AdminRole } from '@/lib/domain'
@@ -11,10 +11,13 @@ import { PUBLIC_FORM_CONTRACTS } from '@/services/forms/form-contracts'
 import { submitPublicForm } from '@/services/forms/form-submissions'
 import { readManagedPublicForm } from '@/services/forms/read-public-form'
 
+import { ignorePayloadNotFound } from '../test-cleanup'
+
 const fixturePrefix = `d3-form-${randomUUID()}`
 const createdSubmissionIds: Array<number | string> = []
 let payload: Payload
 let systemAdmin: Admin
+let systemAdminReq: PayloadRequest
 
 function admin(role: AdminRole, id: number) {
   return {
@@ -75,25 +78,36 @@ beforeAll(async () => {
       systemAdmin = raced.docs[0]
     }
   }
+  systemAdminReq = await createLocalReq(
+    { req: { headers: new Headers({ 'x-request-id': `${fixturePrefix}-status` }) } },
+    payload,
+  )
+  systemAdminReq.user = { ...systemAdmin, collection: 'admins' }
 })
 
 afterAll(async () => {
   for (const id of createdSubmissionIds.reverse()) {
-    await payload
-      .delete({ collection: 'form-submissions', id, overrideAccess: true })
-      .catch(() => undefined)
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: 'form-submissions', id, overrideAccess: true }),
+    )
   }
   const audits = await payload.find({
     collection: 'auditLogs',
     depth: 0,
     limit: 1_000,
     overrideAccess: true,
-    where: { action: { equals: 'form_submission.status_changed' } },
+    where: {
+      and: [
+        { action: { equals: 'form_submission.status_changed' } },
+        { targetType: { equals: 'form-submission' } },
+        { traceId: { equals: `${fixturePrefix}-status` } },
+      ],
+    },
   })
   for (const audit of audits.docs) {
-    if (createdSubmissionIds.map(String).includes(audit.targetId ?? '')) {
-      await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
-    }
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true }),
+    )
   }
   await payload.db.destroy?.()
 })
@@ -176,6 +190,7 @@ describe('D3-05 Form Builder entries', () => {
       data: { status: 'reviewed', summary: 'must-not-overwrite' },
       id: submission.id,
       overrideAccess: false,
+      req: systemAdminReq,
       user: systemAdminUser,
     })
     expect(reviewed.status).toBe('reviewed')
@@ -189,6 +204,7 @@ describe('D3-05 Form Builder entries', () => {
       data: { status: 'closed' },
       id: submission.id,
       overrideAccess: false,
+      req: systemAdminReq,
       user: systemAdminUser,
     })
     await expect(
@@ -197,6 +213,7 @@ describe('D3-05 Form Builder entries', () => {
         data: { status: 'reviewed' },
         id: submission.id,
         overrideAccess: false,
+        req: systemAdminReq,
         user: systemAdminUser,
       }),
     ).rejects.toThrow(/状态迁移/u)
