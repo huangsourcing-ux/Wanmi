@@ -214,6 +214,7 @@ export interface Config {
       advertisingMaintenance: WorkflowAdvertisingMaintenance;
       smsReceiptReconciliation: WorkflowSmsReceiptReconciliation;
       realnameCleanup: WorkflowRealnameCleanup;
+      westdigitalBalanceMonitoring: WorkflowWestdigitalBalanceMonitoring;
       commerceFulfillment: WorkflowCommerceFulfillment;
       wechatRefund: WorkflowWechatRefund;
       paymentTimeoutClose: WorkflowPaymentTimeoutClose;
@@ -1791,6 +1792,7 @@ export interface PayloadJob {
         | 'advertisingMaintenance'
         | 'smsReceiptReconciliation'
         | 'realnameCleanup'
+        | 'westdigitalBalanceMonitoring'
         | 'commerceFulfillment'
         | 'wechatRefund'
         | 'paymentTimeoutClose'
@@ -3308,12 +3310,20 @@ export interface WorkflowRealnameCleanup {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WorkflowWestdigitalBalanceMonitoring".
+ */
+export interface WorkflowWestdigitalBalanceMonitoring {
+  input?: unknown;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "WorkflowCommerceFulfillment".
  */
 export interface WorkflowCommerceFulfillment {
   input: {
     operationKey: string;
     orderId: number;
+    salesStopReviewId?: number | null;
     traceId: string;
   };
 }

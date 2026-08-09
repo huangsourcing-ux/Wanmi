@@ -2,6 +2,7 @@ import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 
 import { realnameTemplateFixture } from '../fixtures/realname'
+import { findOrCreateUniqueFixture } from '../test-cleanup'
 import { getFixturePayload } from './redirect-fixture'
 
 export const realnameDocumentFixturePhone = '13900004303'
@@ -12,23 +13,29 @@ type FixtureState = { customerId: number | string; templateId: number | string }
 
 export async function createRealnameDocumentFixture() {
   const payload = await getFixturePayload()
-  const existing = await payload.find({
-    collection: 'customers',
-    limit: 1,
-    overrideAccess: true,
-    where: { phone: { equals: normalizedFixturePhone } },
+  const { value: customer } = await findOrCreateUniqueFixture({
+    create: () =>
+      payload.create({
+        collection: 'customers',
+        data: {
+          phone: normalizedFixturePhone,
+          phoneMasked: '+86139****4303',
+          status: 'active',
+        },
+        overrideAccess: true,
+      }),
+    find: async () => {
+      const existing = await payload.find({
+        collection: 'customers',
+        limit: 1,
+        overrideAccess: true,
+        where: { phone: { equals: normalizedFixturePhone } },
+      })
+      return existing.docs[0]
+    },
+    path: 'phone',
+    tableName: 'customers',
   })
-  const customer =
-    existing.docs[0] ??
-    (await payload.create({
-      collection: 'customers',
-      data: {
-        phone: normalizedFixturePhone,
-        phoneMasked: '+86139****4303',
-        status: 'active',
-      },
-      overrideAccess: true,
-    }))
   const template = await payload.create({
     collection: 'realnameTemplates',
     data: {

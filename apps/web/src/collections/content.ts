@@ -34,6 +34,10 @@ import {
   systemAdminOnly,
 } from '@/access/roles'
 import { ADMIN_GROUPS } from '@/lib/admin-navigation'
+import {
+  guardBalanceControlSettingChange,
+  guardBalanceControlSettingDelete,
+} from '@/services/commerce/balance-control'
 import { AppError } from '@/lib/errors'
 import { sanitizeRichText } from '@/services/content/rich-text'
 import {
@@ -381,6 +385,10 @@ export const SiteSettings: CollectionConfig = {
     update: systemAdminOnly,
   },
   admin: { group: ADMIN_GROUPS.content, hidden: systemAdminHidden, useAsTitle: 'key' },
+  hooks: {
+    beforeChange: [guardBalanceControlSettingChange],
+    beforeDelete: [guardBalanceControlSettingDelete],
+  },
   fields: [
     { name: 'key', type: 'text', index: true, required: true, unique: true },
     { name: 'value', type: 'json', required: true },

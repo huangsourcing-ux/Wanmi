@@ -9,6 +9,7 @@ import { getEnv } from '../../src/lib/env'
 import type { Admin } from '../../src/payload-types'
 import { recordAuditEvent } from '../../src/services/audit/record-audit-event'
 import { createTotpSecret, hashRecoveryCodes } from '../../src/services/auth/totp'
+import { findOrCreateUniqueFixture } from '../test-cleanup'
 import { getFixturePayload } from './redirect-fixture'
 
 const statePath = resolve(process.cwd(), 'test-results/admin-auth-fixture.json')
@@ -104,27 +105,36 @@ async function findOrCreateAdmin(
   status: 'active' | 'disabled',
 ) {
   const payload = await getFixturePayload()
-  const existing = await payload.find({
-    collection: 'admins',
-    limit: 1,
-    overrideAccess: true,
-    where: { email: { equals: email } },
+  const ensured = await findOrCreateUniqueFixture({
+    create: () =>
+      payload.create({
+        collection: 'admins',
+        context: { adminAccountOperation: 'bootstrap' },
+        data: { email, password, roles, status },
+        overrideAccess: true,
+      }),
+    find: async () => {
+      const existing = await payload.find({
+        collection: 'admins',
+        limit: 1,
+        overrideAccess: true,
+        where: { email: { equals: email } },
+      })
+      return existing.docs[0]
+    },
+    path: 'email',
+    tableName: 'admins',
   })
-  if (existing.docs[0]) {
+  if (!ensured.created) {
     return payload.update({
       collection: 'admins',
       context: { adminAccountOperation: 'mfa-reset', suppressAdminAccountAudit: true },
       data: { password, roles, status },
-      id: existing.docs[0].id,
+      id: ensured.value.id,
       overrideAccess: true,
     })
   }
-  return payload.create({
-    collection: 'admins',
-    context: { adminAccountOperation: 'bootstrap' },
-    data: { email, password, roles, status },
-    overrideAccess: true,
-  })
+  return ensured.value
 }
 
 export async function createAdminAuthFixture() {

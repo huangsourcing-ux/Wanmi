@@ -23,10 +23,16 @@ import {
 
 import { transitionOrder } from './order-state'
 import { requestAutomaticRegistrationFailureRefund } from './refunds'
+import {
+  assertSalesStopResumeAuthorized,
+  getTldSalesStopState,
+  holdPaidOrderForSalesStop,
+} from './balance-control'
 
 export type FulfillmentInput = {
   operationKey: string
   orderId: number
+  salesStopReviewId?: number
   traceId: string
 }
 
@@ -394,6 +400,19 @@ export async function runCommerceFulfillment(
   if (order.status === 'succeeded') return { idempotentReplay: true, status: 'succeeded' as const }
   if (!['paid', 'fulfilling', 'manual_review'].includes(order.status)) {
     throw new AppError('ORDER_NOT_FULFILLABLE', '订单当前状态不能履约', 409)
+  }
+
+  if (order.status === 'paid') {
+    if (input.salesStopReviewId !== undefined) {
+      await assertSalesStopResumeAuthorized(req, order.id, input.salesStopReviewId)
+    } else {
+      const tld = order.domainAscii.split('.').at(-1) ?? ''
+      const salesStop = await getTldSalesStopState(req, tld)
+      if (salesStop.stopped) {
+        await holdPaidOrderForSalesStop(req, order)
+        return { idempotentReplay: true, status: 'paid' as const }
+      }
+    }
   }
 
   let snapshot: z.infer<typeof quoteSnapshotSchema>

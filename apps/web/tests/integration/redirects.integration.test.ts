@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { Admin, Article, Customer } from '@/payload-types'
 
+import { ensureAnchorSystemAdmin } from '../test-cleanup'
+
 let payload: Payload
 let cleanupAdmin: Admin
 const fixturePrefix = `d1-redirect-${randomUUID()}`
@@ -76,28 +78,7 @@ async function requestFor(user: Admin | Customer | undefined, traceId: string = 
 
 beforeAll(async () => {
   payload = await getPayload({ config })
-  const bootstrapEmail = 'integration-system-admin-anchor@example.test'
-  const existing = await payload.find({
-    collection: 'admins',
-    limit: 1,
-    overrideAccess: true,
-    where: { email: { equals: bootstrapEmail } },
-  })
-  if (existing.docs[0]) {
-    cleanupAdmin = existing.docs[0]
-  } else {
-    cleanupAdmin = await payload.create({
-      collection: 'admins',
-      context: { adminAccountOperation: 'bootstrap' },
-      data: {
-        email: bootstrapEmail,
-        password: 'Integration-anchor-password-2026',
-        roles: ['system_admin'],
-        status: 'active',
-      },
-      overrideAccess: true,
-    })
-  }
+  cleanupAdmin = await ensureAnchorSystemAdmin(payload)
 })
 
 afterAll(async () => {

@@ -25,10 +25,15 @@ import {
 } from '@/services/auth/admin-invitations'
 import { createTotp, createTotpSecret, hashRecoveryCodes } from '@/services/auth/totp'
 
-import { ignorePayloadNotFound } from '../test-cleanup'
+import {
+  ANCHOR_SYSTEM_ADMIN_EMAIL,
+  ANCHOR_SYSTEM_ADMIN_PASSWORD,
+  ensureAnchorSystemAdmin,
+  ignorePayloadNotFound,
+} from '../test-cleanup'
 
-const anchorEmail = 'integration-system-admin-anchor@example.test'
-const anchorPassword = 'Integration-anchor-password-2026'
+const anchorEmail = ANCHOR_SYSTEM_ADMIN_EMAIL
+const anchorPassword = ANCHOR_SYSTEM_ADMIN_PASSWORD
 const fixturePrefix = `d1-admin-auth-${randomUUID()}`
 const createdAdminIds = new Set<number>()
 const traceIds = new Set<string>()
@@ -168,27 +173,7 @@ function routeArgs(id: number, sessionId?: string) {
 
 beforeAll(async () => {
   payload = await getPayload({ config })
-  const existing = await payload.find({
-    collection: 'admins',
-    limit: 1,
-    overrideAccess: true,
-    where: { email: { equals: anchorEmail } },
-  })
-  if (existing.docs[0]) {
-    anchor = existing.docs[0]
-  } else {
-    anchor = await payload.create({
-      collection: 'admins',
-      context: { adminAccountOperation: 'bootstrap' },
-      data: {
-        email: anchorEmail,
-        password: anchorPassword,
-        roles: ['system_admin'],
-        status: 'active',
-      },
-      overrideAccess: true,
-    })
-  }
+  anchor = await ensureAnchorSystemAdmin(payload)
   const replaced = await replaceCredential(anchor.id)
   anchorSecret = replaced.secret
   anchor = await payload.update({
