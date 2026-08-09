@@ -3193,8 +3193,96 @@ try {
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
   verifyDomainAssetOperationsSchema('D6-04 migration round trip')
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 114
+     WHERE name = '20260809_053302_d6_active_renewals'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const activeRenewalsAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'renewals'
+             AND column_name = 'previous_expires_at'
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'orders'
+             AND column_name = 'operation'
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'quotes'
+             AND column_name = 'domain_asset_id'
+         ))::text || ':' ||
+         (to_regclass('public.domain_expiry_reminders') IS NOT NULL)::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (activeRenewalsAfterDown !== 'true:true:true:true') {
+    throw new Error(`D6-05 migration down was incomplete: ${activeRenewalsAfterDown}`)
+  }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  const activeRenewalsAfterUp = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'renewals'
+             AND column_name = 'previous_expires_at' AND is_nullable = 'NO'
+         ))::text || ':' ||
+         (EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'orders'
+             AND column_name = 'operation'
+         ))::text || ':' ||
+         (EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'quotes'
+             AND column_name = 'domain_asset_id'
+         ))::text || ':' ||
+         (EXISTS (
+           SELECT 1 FROM pg_indexes
+           WHERE schemaname = 'public' AND tablename = 'renewals'
+             AND indexname = 'renewals_order_idx'
+             AND indexdef ILIKE '%UNIQUE%'
+         ))::text || ':' ||
+         (to_regclass('public.domain_expiry_reminders') IS NOT NULL)::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (activeRenewalsAfterUp !== 'true:true:true:true:true') {
+    throw new Error(`D6-05 migration up was incomplete: ${activeRenewalsAfterUp}`)
+  }
+  verifyDomainAssetOperationsSchema('D6-05 migration round trip dependency')
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, the D6-02 commerce-fulfillment migration, the D6-03 West Digital balance-monitoring workflow migration, and the D6-04 domain-asset operations migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, the D6-02 commerce-fulfillment migration, the D6-03 West Digital balance-monitoring workflow migration, the D6-04 domain-asset operations migration, and the D6-05 active-renewal migration round trips.\n',
   )
 } finally {
   if (created) {

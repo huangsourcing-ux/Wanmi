@@ -11334,6 +11334,355 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.domain_expiry_reminders": {
+      "name": "domain_expiry_reminders",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "reminder_key": {
+          "name": "reminder_key",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "customer_id": {
+          "name": "customer_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "asset_id": {
+          "name": "asset_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "enum_domain_expiry_reminders_channel",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "threshold_days": {
+          "name": "threshold_days",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at_snapshot": {
+          "name": "expires_at_snapshot",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "enum_domain_expiry_reminders_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempted_at": {
+          "name": "attempted_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delivered_at": {
+          "name": "delivered_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure_category": {
+          "name": "failure_category",
+          "type": "enum_domain_expiry_reminders_failure_category",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_code": {
+          "name": "provider_code",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_message_id": {
+          "name": "provider_message_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_request_id": {
+          "name": "provider_request_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_trace_id": {
+          "name": "created_trace_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "domain_expiry_reminders_reminder_key_idx": {
+          "name": "domain_expiry_reminders_reminder_key_idx",
+          "columns": [
+            {
+              "expression": "reminder_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_expiry_reminders_customer_idx": {
+          "name": "domain_expiry_reminders_customer_idx",
+          "columns": [
+            {
+              "expression": "customer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_expiry_reminders_asset_idx": {
+          "name": "domain_expiry_reminders_asset_idx",
+          "columns": [
+            {
+              "expression": "asset_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_expiry_reminders_expires_at_snapshot_idx": {
+          "name": "domain_expiry_reminders_expires_at_snapshot_idx",
+          "columns": [
+            {
+              "expression": "expires_at_snapshot",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_expiry_reminders_status_idx": {
+          "name": "domain_expiry_reminders_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_expiry_reminders_attempted_at_idx": {
+          "name": "domain_expiry_reminders_attempted_at_idx",
+          "columns": [
+            {
+              "expression": "attempted_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_expiry_reminders_delivered_at_idx": {
+          "name": "domain_expiry_reminders_delivered_at_idx",
+          "columns": [
+            {
+              "expression": "delivered_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_expiry_reminders_provider_message_id_idx": {
+          "name": "domain_expiry_reminders_provider_message_id_idx",
+          "columns": [
+            {
+              "expression": "provider_message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_expiry_reminders_provider_request_id_idx": {
+          "name": "domain_expiry_reminders_provider_request_id_idx",
+          "columns": [
+            {
+              "expression": "provider_request_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_expiry_reminders_created_trace_id_idx": {
+          "name": "domain_expiry_reminders_created_trace_id_idx",
+          "columns": [
+            {
+              "expression": "created_trace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_expiry_reminders_updated_at_idx": {
+          "name": "domain_expiry_reminders_updated_at_idx",
+          "columns": [
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_expiry_reminders_created_at_idx": {
+          "name": "domain_expiry_reminders_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "asset_expiresAtSnapshot_idx": {
+          "name": "asset_expiresAtSnapshot_idx",
+          "columns": [
+            {
+              "expression": "asset_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at_snapshot",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "domain_expiry_reminders_customer_id_customers_id_fk": {
+          "name": "domain_expiry_reminders_customer_id_customers_id_fk",
+          "tableFrom": "domain_expiry_reminders",
+          "tableTo": "customers",
+          "columnsFrom": [
+            "customer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "domain_expiry_reminders_asset_id_domain_assets_id_fk": {
+          "name": "domain_expiry_reminders_asset_id_domain_assets_id_fk",
+          "tableFrom": "domain_expiry_reminders",
+          "tableTo": "domain_assets",
+          "columnsFrom": [
+            "asset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.renewals": {
       "name": "renewals",
       "schema": "",
@@ -11557,6 +11906,12 @@
           "primaryKey": true,
           "notNull": true
         },
+        "change_key": {
+          "name": "change_key",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
         "customer_id": {
           "name": "customer_id",
           "type": "integer",
@@ -11568,6 +11923,67 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "requested_by_type": {
+          "name": "requested_by_type",
+          "type": "enum_nameserver_changes_requested_by_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "requested_by_id": {
+          "name": "requested_by_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "requested_at": {
+          "name": "requested_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "job_queued_at": {
+          "name": "job_queued_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "review_job_queued_at": {
+          "name": "review_job_queued_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_checked_at": {
+          "name": "last_checked_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_operation_id": {
+          "name": "provider_operation_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure_code": {
+          "name": "failure_code",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_trace_id": {
+          "name": "created_trace_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
         },
         "status": {
           "name": "status",
@@ -11592,6 +12008,21 @@
         }
       },
       "indexes": {
+        "nameserver_changes_change_key_idx": {
+          "name": "nameserver_changes_change_key_idx",
+          "columns": [
+            {
+              "expression": "change_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "nameserver_changes_customer_idx": {
           "name": "nameserver_changes_customer_idx",
           "columns": [
@@ -11612,6 +12043,126 @@
           "columns": [
             {
               "expression": "asset_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "nameserver_changes_requested_at_idx": {
+          "name": "nameserver_changes_requested_at_idx",
+          "columns": [
+            {
+              "expression": "requested_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "nameserver_changes_job_queued_at_idx": {
+          "name": "nameserver_changes_job_queued_at_idx",
+          "columns": [
+            {
+              "expression": "job_queued_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "nameserver_changes_review_job_queued_at_idx": {
+          "name": "nameserver_changes_review_job_queued_at_idx",
+          "columns": [
+            {
+              "expression": "review_job_queued_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "nameserver_changes_last_checked_at_idx": {
+          "name": "nameserver_changes_last_checked_at_idx",
+          "columns": [
+            {
+              "expression": "last_checked_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "nameserver_changes_completed_at_idx": {
+          "name": "nameserver_changes_completed_at_idx",
+          "columns": [
+            {
+              "expression": "completed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "nameserver_changes_provider_operation_idx": {
+          "name": "nameserver_changes_provider_operation_idx",
+          "columns": [
+            {
+              "expression": "provider_operation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "nameserver_changes_failure_code_idx": {
+          "name": "nameserver_changes_failure_code_idx",
+          "columns": [
+            {
+              "expression": "failure_code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "nameserver_changes_created_trace_id_idx": {
+          "name": "nameserver_changes_created_trace_id_idx",
+          "columns": [
+            {
+              "expression": "created_trace_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -11673,6 +12224,19 @@
           "tableTo": "domain_assets",
           "columnsFrom": [
             "asset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "nameserver_changes_provider_operation_id_provider_operations_id_fk": {
+          "name": "nameserver_changes_provider_operation_id_provider_operations_id_fk",
+          "tableFrom": "nameserver_changes",
+          "tableTo": "provider_operations",
+          "columnsFrom": [
+            "provider_operation_id"
           ],
           "columnsTo": [
             "id"
@@ -11788,6 +12352,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "domain_asset_id": {
+          "name": "domain_asset_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nameserver_change_id": {
+          "name": "nameserver_change_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "reason_code": {
           "name": "reason_code",
           "type": "varchar",
@@ -11862,6 +12438,36 @@
           "columns": [
             {
               "expression": "realname_template_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "manual_reviews_domain_asset_idx": {
+          "name": "manual_reviews_domain_asset_idx",
+          "columns": [
+            {
+              "expression": "domain_asset_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "manual_reviews_nameserver_change_idx": {
+          "name": "manual_reviews_nameserver_change_idx",
+          "columns": [
+            {
+              "expression": "nameserver_change_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -11953,6 +12559,32 @@
           "tableTo": "realname_templates",
           "columnsFrom": [
             "realname_template_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "manual_reviews_domain_asset_id_domain_assets_id_fk": {
+          "name": "manual_reviews_domain_asset_id_domain_assets_id_fk",
+          "tableFrom": "manual_reviews",
+          "tableTo": "domain_assets",
+          "columnsFrom": [
+            "domain_asset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "manual_reviews_nameserver_change_id_nameserver_changes_id_fk": {
+          "name": "manual_reviews_nameserver_change_id_nameserver_changes_id_fk",
+          "tableFrom": "manual_reviews",
+          "tableTo": "nameserver_changes",
+          "columnsFrom": [
+            "nameserver_change_id"
           ],
           "columnsTo": [
             "id"
@@ -16575,6 +17207,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "domain_expiry_reminders_id": {
+          "name": "domain_expiry_reminders_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "renewals_id": {
           "name": "renewals_id",
           "type": "integer",
@@ -17188,6 +17826,21 @@
           "columns": [
             {
               "expression": "domain_assets_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "payload_locked_documents_rels_domain_expiry_reminders_id_idx": {
+          "name": "payload_locked_documents_rels_domain_expiry_reminders_id_idx",
+          "columns": [
+            {
+              "expression": "domain_expiry_reminders_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -17813,6 +18466,19 @@
           "tableTo": "domain_assets",
           "columnsFrom": [
             "domain_assets_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "payload_locked_documents_rels_domain_expiry_reminders_fk": {
+          "name": "payload_locked_documents_rels_domain_expiry_reminders_fk",
+          "tableFrom": "payload_locked_documents_rels",
+          "tableTo": "domain_expiry_reminders",
+          "columnsFrom": [
+            "domain_expiry_reminders_id"
           ],
           "columnsTo": [
             "id"
@@ -19070,6 +19736,36 @@
         "unknown"
       ]
     },
+    "public.enum_domain_expiry_reminders_channel": {
+      "name": "enum_domain_expiry_reminders_channel",
+      "schema": "public",
+      "values": [
+        "in_app",
+        "sms"
+      ]
+    },
+    "public.enum_domain_expiry_reminders_status": {
+      "name": "enum_domain_expiry_reminders_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "sending",
+        "delivered",
+        "failed",
+        "unknown"
+      ]
+    },
+    "public.enum_domain_expiry_reminders_failure_category": {
+      "name": "enum_domain_expiry_reminders_failure_category",
+      "schema": "public",
+      "values": [
+        "balance_insufficient",
+        "template_unapproved",
+        "invalid_number",
+        "rate_limited",
+        "unknown"
+      ]
+    },
     "public.enum_renewals_status": {
       "name": "enum_renewals_status",
       "schema": "public",
@@ -19078,6 +19774,13 @@
         "succeeded",
         "failed",
         "manual_review"
+      ]
+    },
+    "public.enum_nameserver_changes_requested_by_type": {
+      "name": "enum_nameserver_changes_requested_by_type",
+      "schema": "public",
+      "values": [
+        "customer"
       ]
     },
     "public.enum_nameserver_changes_status": {
@@ -19503,7 +20206,9 @@
         "smsReceiptReconciliation",
         "realnameCleanup",
         "westdigitalBalanceMonitoring",
+        "domainExpiryReminders",
         "commerceFulfillment",
+        "nameserverChange",
         "wechatRefund",
         "paymentTimeoutClose"
       ]
@@ -19526,6 +20231,6 @@
     "tables": {},
     "columns": {}
   },
-  "id": "f83c82a0-e74d-4e1b-a52f-a60c8065ff06",
+  "id": "be59196b-2955-4b3b-8680-d9c2ac8bdca0",
   "prevId": "00000000-0000-0000-0000-000000000000"
 }
