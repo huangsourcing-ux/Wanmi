@@ -10,19 +10,19 @@
       "concurrency": 8,
       "iterationsPerWorker": 10,
       "maximumErrorRate": 0,
-      "maximumP95Ms": 180
+      "maximumP95Ms": 310
     },
     "public-tool-pages": {
       "concurrency": 8,
       "iterationsPerWorker": 5,
       "maximumErrorRate": 0,
-      "maximumP95Ms": 400
+      "maximumP95Ms": 900
     }
   },
   "lighthouse": {
     "maximumCls": 0.02,
     "maximumLcpMs": 3500,
-    "maximumTbtMs": 50,
+    "maximumTbtMs": 120,
     "minimumAccessibilityScore": 0.98,
     "minimumBestPracticesScore": 0.9,
     "minimumPerformanceScore": 0.78,

@@ -1,9 +1,11 @@
 import { spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { setTimeout as delay } from 'node:timers/promises'
 
 import { chromium } from '@playwright/test'
 import lighthouse from 'lighthouse'
@@ -102,6 +104,17 @@ async function ensureWebServer() {
     )
   }
   return child
+}
+
+async function stopChild(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  const exited = once(child, 'exit')
+  child.kill('SIGTERM')
+  const stopped = await Promise.race([exited.then(() => true), delay(5_000, false)])
+  if (!stopped && child.exitCode === null && child.signalCode === null) {
+    child.kill('SIGKILL')
+    await exited
+  }
 }
 
 async function verifyLocalPageDependencies() {
@@ -344,8 +357,8 @@ try {
   }
 } finally {
   if (chrome) {
-    chrome.child.kill('SIGTERM')
-    await rm(chrome.profile, { force: true, recursive: true })
+    await stopChild(chrome.child)
+    await rm(chrome.profile, { force: true, maxRetries: 5, recursive: true, retryDelay: 100 })
   }
-  if (web) web.kill('SIGTERM')
+  if (web) await stopChild(web)
 }
