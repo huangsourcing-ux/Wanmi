@@ -66,7 +66,9 @@ const envelopeSchema = z
   })
   .passthrough()
 
-const templateCreateDataSchema = z.object({ c_sysid: z.union([z.string(), z.number()]).transform(String) })
+const templateCreateDataSchema = z.object({
+  c_sysid: z.union([z.string(), z.number()]).transform(String),
+})
 const templateQueryDataSchema = z
   .object({
     c_status: z.union([z.string(), z.number()]).transform(Number).optional(),
@@ -128,17 +130,32 @@ function asciiDomain(value: string): string {
 }
 
 function nameservers(values: string[]): string[] {
-  if (values.length < 2 || values.length > 15) throw new Error('Two to fifteen name servers required')
+  if (values.length < 2 || values.length > 15)
+    throw new Error('Two to fifteen name servers required')
   const normalized = values.map(asciiDomain)
   if (new Set(normalized).size !== normalized.length) throw new Error('Duplicate name servers')
   return normalized
 }
 
-function reviewState(data: z.infer<typeof templateQueryDataSchema>): WestDigitalRealnameReviewState {
+function providerDate(value: string): string {
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u.test(value)
+    ? `${value.replace(' ', 'T')}+08:00`
+    : value
+  const parsed = new Date(normalized)
+  if (!Number.isFinite(parsed.getTime())) throw new Error('Invalid provider date')
+  return parsed.toISOString()
+}
+
+function reviewState(
+  data: z.infer<typeof templateQueryDataSchema>,
+): WestDigitalRealnameReviewState {
   const label = `${data.r_statusname ?? ''} ${data.status_name ?? ''}`
-  if (/通过|已实名|审核成功/u.test(label) || data.r_status === 1 || data.c_status === 1) return 'approved'
-  if (/失败|拒绝|不通过/u.test(label) || data.r_status === -1 || data.c_status === -1) return 'rejected'
-  if (/待|审核|未实名|未传图片/u.test(label) || data.r_status === 0 || data.c_status === 0) return 'pending'
+  if (/通过|已实名|审核成功/u.test(label) || data.r_status === 1 || data.c_status === 1)
+    return 'approved'
+  if (/失败|拒绝|不通过/u.test(label) || data.r_status === -1 || data.c_status === -1)
+    return 'rejected'
+  if (/待|审核|未实名|未传图片/u.test(label) || data.r_status === 0 || data.c_status === 0)
+    return 'pending'
   return 'unknown'
 }
 
@@ -208,7 +225,9 @@ export class WestDigitalWriteAdapter implements WestDigitalWriteProvider {
       input,
       operation: 'register',
       parse: (envelope) => {
-        const value = z.record(z.string(), z.union([z.number(), z.string()])).parse(envelope.data)[domain]
+        const value = z.record(z.string(), z.union([z.number(), z.string()])).parse(envelope.data)[
+          domain
+        ]
         if (Number(value) !== 200) throw new Error('Domain registration explicitly rejected')
         return { providerClientId: envelope.clientid!, state: 'accepted' as const }
       },
@@ -272,13 +291,17 @@ export class WestDigitalWriteAdapter implements WestDigitalWriteProvider {
       parse: (envelope) => {
         const data = assetDataSchema.parse(envelope.data)
         if (asciiDomain(data.domain) !== expected) throw new Error('Mismatched asset domain')
+        const expiresAt = providerDate(data.expdate)
         return {
           domainAscii: expected,
-          expiresAt: data.expdate,
-          nameservers: [data.dns1, data.dns2, data.dns3, data.dns4, data.dns5, data.dns6].filter(Boolean),
+          expiresAt,
+          nameservers: [data.dns1, data.dns2, data.dns3, data.dns4, data.dns5, data.dns6].filter(
+            Boolean,
+          ),
           providerAssetId: data.id,
-          registeredAt: data.regdate,
+          registeredAt: providerDate(data.regdate),
           registrarCode: data.registrars ?? 'westdigital',
+          status: Date.parse(expiresAt) <= this.now().getTime() ? 'expired' : 'active',
         }
       },
       path: '/v2/domain/',
@@ -286,13 +309,17 @@ export class WestDigitalWriteAdapter implements WestDigitalWriteProvider {
     })
   }
 
-  async queryRealname(input: { providerTemplateId: string; traceId: string }): Promise<
-    ProviderResult<
-      WestDigitalWriteConfirmation & { reviewState: WestDigitalRealnameReviewState }
-    >
+  async queryRealname(input: {
+    providerTemplateId: string
+    traceId: string
+  }): Promise<
+    ProviderResult<WestDigitalWriteConfirmation & { reviewState: WestDigitalRealnameReviewState }>
   > {
     return this.request({
-      body: { act: 'auditinfo', c_sysid: z.string().regex(/^\d+$/u).parse(input.providerTemplateId) },
+      body: {
+        act: 'auditinfo',
+        c_sysid: z.string().regex(/^\d+$/u).parse(input.providerTemplateId),
+      },
       input,
       operation: 'realname_query',
       parse: (envelope) => {
@@ -380,7 +407,8 @@ export class WestDigitalWriteAdapter implements WestDigitalWriteProvider {
                 ? 'WESTDIGITAL_QUERY_TIMEOUT'
                 : 'WESTDIGITAL_QUERY_UNAVAILABLE'
       return failure(code, '西部数码请求未能安全完成', observedAt(), requestId, {
-        retryable: transportError.submission === 'not_submitted' && RETRYABLE_NOT_SUBMITTED_CODES.has(code),
+        retryable:
+          transportError.submission === 'not_submitted' && RETRYABLE_NOT_SUBMITTED_CODES.has(code),
         statusKnown: transportError.submission === 'not_submitted',
       })
     } finally {

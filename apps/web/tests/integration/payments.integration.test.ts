@@ -138,11 +138,12 @@ beforeAll(async () => {
 afterAll(async () => {
   const orders = await payload.find({
     collection: 'orders',
-    limit: 100,
+    limit: 500,
     overrideAccess: true,
     where: { orderNumber: { contains: prefix } },
   })
-  for (const order of orders.docs) {
+  const orderIds = orders.docs.map((order) => order.id)
+  if (orderIds.length) {
     for (const collection of [
       'orderEvents',
       'paymentNotifications',
@@ -153,9 +154,9 @@ afterAll(async () => {
     ] as const) {
       const rows = await payload.find({
         collection,
-        limit: 100,
+        limit: 500,
         overrideAccess: true,
-        where: { order: { equals: order.id } },
+        where: { order: { in: orderIds } },
       })
       for (const row of rows.docs) {
         await ignorePayloadNotFound(() =>
@@ -163,35 +164,38 @@ afterAll(async () => {
         )
       }
     }
-    const audits = await payload.find({
-      collection: 'auditLogs',
-      limit: 100,
-      overrideAccess: true,
-      where: {
-        and: [
-          { traceId: { contains: prefix } },
-          { targetType: { in: ['order', 'payment-notification'] } },
-        ],
-      },
-    })
-    for (const audit of audits.docs) {
-      await ignorePayloadNotFound(() =>
-        payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true }),
-      )
-    }
+    const orderIdSet = new Set(orderIds.map(String))
     const fulfillmentJobs = await payload.find({
       collection: 'payload-jobs',
-      limit: 100,
+      limit: 500,
       overrideAccess: true,
       where: { workflowSlug: { equals: 'commerceFulfillment' } },
     })
     for (const job of fulfillmentJobs.docs) {
-      if ((job.input as { orderId?: number }).orderId === order.id) {
+      if (orderIdSet.has(String((job.input as { orderId?: number }).orderId))) {
         await ignorePayloadNotFound(() =>
           payload.delete({ collection: 'payload-jobs', id: job.id, overrideAccess: true }),
         )
       }
     }
+  }
+  const audits = await payload.find({
+    collection: 'auditLogs',
+    limit: 500,
+    overrideAccess: true,
+    where: {
+      and: [
+        { traceId: { contains: prefix } },
+        { targetType: { in: ['order', 'payment-notification'] } },
+      ],
+    },
+  })
+  for (const audit of audits.docs) {
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true }),
+    )
+  }
+  for (const order of orders.docs) {
     await ignorePayloadNotFound(() =>
       payload.delete({ collection: 'orders', id: order.id, overrideAccess: true }),
     )

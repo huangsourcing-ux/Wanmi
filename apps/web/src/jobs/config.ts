@@ -14,6 +14,11 @@ import { reconcileSmsReceipts } from '@/services/auth/sms-receipts'
 import { runRealnameCleanup } from '@/services/realname/lifecycle'
 import { createConfiguredWestDigitalBalanceProvider } from '@/providers/westdigital-balance'
 import { monitorWestDigitalBalance } from '@/services/commerce/balance-control'
+import {
+  runConfiguredNameserverChange,
+  type NameserverChangeJobInput,
+} from '@/services/domains/nameserver-changes'
+import { runConfiguredDomainExpiryReminders } from '@/services/domains/expiry-reminders'
 
 const probeInput = [{ name: 'traceId', type: 'text', required: true }] as const
 
@@ -143,6 +148,26 @@ export const commerceFulfillment: WorkflowConfig<FulfillmentInput> = {
   },
 }
 
+export const nameserverChange: WorkflowConfig<NameserverChangeJobInput> = {
+  slug: 'nameserverChange',
+  concurrency: {
+    exclusive: true,
+    key: ({ input }) => input.operationKey,
+    supersedes: true,
+  },
+  inputSchema: [
+    { name: 'assetId', type: 'number', required: true },
+    { name: 'changeId', type: 'number', required: true },
+    { name: 'operationKey', type: 'text', required: true },
+    { name: 'traceId', type: 'text', required: true },
+  ],
+  queue: 'commerce',
+  retries: 0,
+  handler: async ({ job, req }) => {
+    await runConfiguredNameserverChange(req, job.input)
+  },
+}
+
 export const westdigitalBalanceMonitoring: WorkflowConfig = {
   slug: 'westdigitalBalanceMonitoring',
   concurrency: {
@@ -159,6 +184,22 @@ export const westdigitalBalanceMonitoring: WorkflowConfig = {
       provider: createConfiguredWestDigitalBalanceProvider(),
       traceId: `westdigital-balance-job-${job.id}`,
     })
+  },
+}
+
+export const domainExpiryReminders: WorkflowConfig = {
+  slug: 'domainExpiryReminders',
+  concurrency: {
+    exclusive: true,
+    key: () => 'domain:expiry-reminders',
+    supersedes: true,
+  },
+  inputSchema: [],
+  queue: 'background',
+  retries: 0,
+  schedule: [{ cron: '0 5 * * * *', queue: 'background' }],
+  handler: async ({ job, req }) => {
+    await runConfiguredDomainExpiryReminders(req, `domain-expiry-reminders-${job.id}`)
   },
 }
 
@@ -203,7 +244,9 @@ export const workflows = [
   smsReceiptReconciliation,
   realnameCleanup,
   westdigitalBalanceMonitoring,
+  domainExpiryReminders,
   commerceFulfillment,
+  nameserverChange,
   wechatRefund,
   paymentTimeoutClose,
 ]

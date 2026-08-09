@@ -28,6 +28,10 @@ const schema = z.object({
   DNS_READ_RATE_PER_SECOND: z.coerce.number().positive().default(20),
   DNS_RESPONSE_MAX_BYTES: z.coerce.number().int().positive().default(65_536),
   DNS_TIMEOUT_MS: z.coerce.number().int().positive().default(3_000),
+  DOMAIN_EXPIRY_REMINDER_DAYS: z
+    .string()
+    .regex(/^\d{1,3}(?:,\d{1,3})*$/u)
+    .default('30,7,1'),
   FIRST_PARTY_EVENT_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(1_000),
   FORM_SUBMISSION_GLOBAL_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(500),
   FORM_SUBMISSION_IP_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(10),

@@ -33,6 +33,18 @@ export const ManualReviews: CollectionConfig = {
       relationTo: 'realnameTemplates',
       index: true,
     },
+    {
+      name: 'domainAsset',
+      type: 'relationship',
+      relationTo: 'domainAssets',
+      index: true,
+    },
+    {
+      name: 'nameserverChange',
+      type: 'relationship',
+      relationTo: 'nameserverChanges',
+      index: true,
+    },
     { name: 'reasonCode', type: 'text', index: true, required: true },
     {
       name: 'status',

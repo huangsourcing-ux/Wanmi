@@ -8,7 +8,11 @@ import type { Admin, Article } from '@/payload-types'
 import { readPublicContentBySlug } from '@/services/content/read-content'
 import { executeContentWorkflow, runScheduledContentPublish } from '@/services/content/workflow'
 
-import { ignorePayloadNotFound } from '../test-cleanup'
+import {
+  ensureAnchorSystemAdmin,
+  findOrCreateUniqueFixture,
+  ignorePayloadNotFound,
+} from '../test-cleanup'
 
 const fixture = `d3-content-${randomUUID()}`
 const richText: Article['content'] = {
@@ -45,6 +49,7 @@ const richText: Article['content'] = {
 
 let payload: Payload
 let editor: Admin
+let editorCreated = false
 let req: PayloadRequest
 const cleanup: Array<{
   collection: 'articles' | 'categories' | 'helpPages' | 'tags'
@@ -54,17 +59,34 @@ const cleanupJobIds: Array<number | string> = []
 
 beforeAll(async () => {
   payload = await getPayload({ config })
-  editor = await payload.create({
-    collection: 'admins',
-    context: { adminAccountOperation: 'bootstrap' },
-    data: {
-      email: `${fixture}@example.test`,
-      password: `D3-${randomUUID()}-safe-password`,
-      roles: ['content_editor'],
-      status: 'active',
+  await ensureAnchorSystemAdmin(payload)
+  const editorFixture = await findOrCreateUniqueFixture({
+    create: () =>
+      payload.create({
+        collection: 'admins',
+        context: { adminAccountOperation: 'bootstrap' },
+        data: {
+          email: `${fixture}@example.test`,
+          password: `D3-${randomUUID()}-safe-password`,
+          roles: ['content_editor'],
+          status: 'active',
+        },
+        overrideAccess: true,
+      }),
+    find: async () => {
+      const found = await payload.find({
+        collection: 'admins',
+        limit: 1,
+        overrideAccess: true,
+        where: { email: { equals: `${fixture}@example.test` } },
+      })
+      return found.docs[0]
     },
-    overrideAccess: true,
+    path: 'email',
+    tableName: 'admins',
   })
+  editor = editorFixture.value
+  editorCreated = editorFixture.created
   req = await createLocalReq(
     { req: { headers: new Headers({ 'x-request-id': `${fixture}-trace` }) } },
     payload,
@@ -83,10 +105,7 @@ afterAll(async () => {
     limit: 100,
     overrideAccess: true,
     where: {
-      and: [
-        { targetType: { equals: 'content' } },
-        { traceId: { equals: `${fixture}-trace` } },
-      ],
+      and: [{ targetType: { equals: 'content' } }, { traceId: { equals: `${fixture}-trace` } }],
     },
   })
   for (const audit of audits.docs) {
@@ -99,7 +118,7 @@ afterAll(async () => {
       payload.delete({ collection: item.collection, id: item.id, overrideAccess: true }),
     )
   }
-  if (editor) {
+  if (editorCreated) {
     await ignorePayloadNotFound(() =>
       payload.delete({ collection: 'admins', id: editor.id, overrideAccess: true, req }),
     )

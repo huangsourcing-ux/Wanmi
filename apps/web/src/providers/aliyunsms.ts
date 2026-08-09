@@ -99,6 +99,17 @@ class MockSmsProvider implements SmsProvider {
     )
   }
 
+  async sendDomainExpiry(input: { traceId: string }) {
+    return mockSuccess(
+      {
+        accepted: true as const,
+        deliveryStatus: 'delivered' as const,
+        providerMessageId: `mock-expiry-sms-${input.traceId}`,
+      },
+      `mock-expiry-request-${input.traceId}`,
+    )
+  }
+
   async queryReceipt() {
     return mockSuccess({ status: 'delivered' as const })
   }
@@ -143,6 +154,59 @@ class LiveSmsProvider implements SmsProvider {
           signName: process.env.ALIBABA_CLOUD_SMS_SIGN_NAME,
           templateCode: process.env.ALIBABA_CLOUD_SMS_OTP_TEMPLATE_CODE,
           templateParam: JSON.stringify({ code: input.code }),
+        }),
+      )
+      if (response.body?.code !== 'OK') {
+        const code = normalizedProviderCode(response.body?.code)
+        const category = classifySmsFailure(code)
+        return mockFailure(`SMS_${category.toUpperCase()}`, {
+          retryable: category === 'rate_limited',
+          statusKnown: true,
+        })
+      }
+      if (!response.body.bizId) {
+        return mockFailure('SMS_UNKNOWN', { retryable: false, statusKnown: true })
+      }
+      return mockSuccess(
+        {
+          accepted: true as const,
+          deliveryStatus: 'accepted' as const,
+          providerMessageId: response.body.bizId,
+        },
+        response.body.requestId,
+      )
+    } catch (error) {
+      const code = exceptionCode(error)
+      const category = classifySmsFailure(code)
+      return mockFailure(
+        category === 'unknown' ? 'SMS_PROVIDER_UNAVAILABLE' : `SMS_${category.toUpperCase()}`,
+        { retryable: category === 'rate_limited' || category === 'unknown', statusKnown: false },
+      )
+    }
+  }
+
+  async sendDomainExpiry(input: {
+    daysRemaining: number
+    domainAscii: string
+    expiresOn: string
+    phone: string
+    traceId: string
+  }) {
+    if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
+      return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
+    }
+    try {
+      const response = await this.client.sendSms(
+        new SendSmsRequest({
+          outId: input.traceId,
+          phoneNumbers: providerPhone(input.phone),
+          signName: process.env.ALIBABA_CLOUD_SMS_SIGN_NAME,
+          templateCode: process.env.ALIBABA_CLOUD_SMS_DOMAIN_EXPIRY_TEMPLATE_CODE,
+          templateParam: JSON.stringify({
+            days: input.daysRemaining,
+            domain: input.domainAscii,
+            expires: input.expiresOn,
+          }),
         }),
       )
       if (response.body?.code !== 'OK') {
