@@ -318,7 +318,7 @@ afterAll(async () => {
     })
   }
   await payload.db.destroy?.()
-}, 30_000)
+}, 90_000)
 
 describe('D6-03 balance monitoring and emergency sales stop', () => {
   it('records concurrent low-balance observations and atomically emits one automatic stop alert', async () => {

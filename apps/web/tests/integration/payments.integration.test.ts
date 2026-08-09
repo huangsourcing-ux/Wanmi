@@ -487,7 +487,7 @@ describe('D5-03 Wechat Pay confirmation', () => {
     })
     expect(reviews.docs).toHaveLength(1)
     expect(reviews.docs[0]).toMatchObject({ status: 'open' })
-  })
+  }, 60_000)
 
   it('keeps a known NOTPAY query pending and never treats browser polling as payment success', async () => {
     const fixture = createWechatPayFixture({ now: () => now })

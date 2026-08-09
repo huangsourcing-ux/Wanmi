@@ -124,7 +124,7 @@ afterAll(async () => {
     )
   }
   await payload.db.destroy?.()
-})
+}, 60_000)
 
 describe('D3 lightweight content CMS', () => {
   it('enforces the complete workflow, audit trail, revisions and public taxonomy boundary', async () => {

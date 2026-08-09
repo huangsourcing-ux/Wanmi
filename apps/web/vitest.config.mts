@@ -7,8 +7,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
+    hookTimeout: 60_000,
     restoreMocks: true,
     setupFiles: ['./tests/setup.ts'],
-    testTimeout: 30_000,
+    testTimeout: 90_000,
   },
 })

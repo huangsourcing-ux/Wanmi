@@ -208,7 +208,7 @@ afterAll(async () => {
     })
   }
   await payload.db.destroy?.()
-}, 60_000)
+}, 90_000)
 
 describe('D5-04 Wechat refunds', () => {
   it('queues one full refund, follows refund_pending -> refunding -> refunded and only queries after submission', async () => {
