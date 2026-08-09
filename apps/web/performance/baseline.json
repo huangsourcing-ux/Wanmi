@@ -16,7 +16,7 @@
       "concurrency": 8,
       "iterationsPerWorker": 5,
       "maximumErrorRate": 0,
-      "maximumP95Ms": 900
+      "maximumP95Ms": 990
     }
   },
   "lighthouse": {

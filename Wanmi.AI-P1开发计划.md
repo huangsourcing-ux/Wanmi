@@ -653,6 +653,8 @@ PR #54 第四轮 Linux 证明清理修复生效，报告后约 5 秒退出；接
 
 并行 CI 后本机 Playwright Chromium 145 连续返回 Lighthouse `NO_FCP`，未被误判通过；新增 `runtimeError`/非数值指标页面与轮次诊断。CLI 对照在同一生产页以系统 Chrome 151 得到 Performance 0.89、FCP 1121.2 ms，显式使用 macOS Playwright Chromium 145 则停在导航。最终固定 `chrome-launcher@1.2.1`，macOS 优先系统 Chrome、Linux CI 保留 Playwright Chromium，并支持显式路径覆盖。本机最终门禁 p95 218.4/3981.3/92.7 ms、三页 Performance 0.81/0.81/0.82、最差 LCP 3310.5 ms，退出 0。
 
+PR #54 复审收尾（2026-08-09）：公开工具页 900 ms 门槛原按首轮 Linux p95 810.9 ms 定档，漏纳入第四轮 898.9 ms。现一致应用 8%～15% 规则，将该项改为 990 ms，保留 91.1 ms（约 10.1%）有限余量；域名 4300 ms、IDN 350 ms、TBT 150 ms、LCP 3500 ms、Performance 0.78 及其余门槛均不变。接口汇总表同步校正后续有效轮次极值；完整 `ALLOW_REAL_PROVIDER_WRITES=false make performance` 复测三组接口 p50/p95 为 236.0/236.9、984.1/3982.5、100.8/136.3 ms，错误率均为 0，三页 Performance 0.81/0.81/0.82，最差 LCP 3312.1 ms、TBT 5 ms，退出码 0。未修改 E2E、proxy 或性能脚本逻辑，3.16～3.32 秒 LCP 已知基线结论不变。
+
 ### 11.2 D8 P1 开发验收
 
 开发完成必须满足：
