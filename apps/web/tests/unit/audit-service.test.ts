@@ -47,6 +47,7 @@ describe('shared audit event service', () => {
         'domain.expiry_reminder.recorded',
         'domain.nameserver.change_recorded',
         'form_submission.status_changed',
+        'operations.monitoring.alerted',
         'pricing.rule.created',
         'pricing.rule.deleted',
         'pricing.rule.disabled',

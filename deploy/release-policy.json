@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "migrationBaseline": "20260809_053302_d6_active_renewals",
+  "rules": {
+    "allowExpandAndContractInSameRelease": false,
+    "allowRenameColumn": false,
+    "expandRollback": "retain",
+    "contractRollback": "down"
+  },
+  "migrations": {}
+}

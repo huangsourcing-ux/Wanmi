@@ -622,14 +622,20 @@ D6-02 返回语义补充验证记录（2026-08-08）：修正 `executeWestDigita
 - [ ] 完成 DNS/TLS SSRF、开放跳转、CSRF、CORS、CSP、上传和越权安全测试；
 - [ ] 完成 Gitleaks、Trivy 和 Node 依赖安全检查；
 - [ ] 完成 k6/Lighthouse 或等价性能基线；
-- [ ] 建立工具、短信、支付、订单、履约、退款、余额、证件访问和对账监控；
-- [ ] 建立异常订单、退款失败、余额不足、实名泄露、provider 故障和紧急停售 Runbook；
-- [ ] 完成静态资源先上传后发布、镜像 digest、数据库兼容迁移和回滚流程；
+- [x] 建立工具、短信、支付、订单、履约、退款、余额、证件访问和对账监控；
+- [x] 建立异常订单、退款失败、余额不足、实名泄露、provider 故障和紧急停售 Runbook；
+- [x] 完成静态资源先上传后发布、镜像 digest、数据库兼容迁移和回滚流程；
 - [ ] 验证支付通知重放、ECS 重建、RDS 恢复、OSS 误删恢复和密钥轮换；
 - [ ] 在 2 vCPU/4 GiB 生产 Linux 环境验证 Web、Worker、Who-Dat 内存、日志轮转和 2 小时重建目标；
 - [ ] 验证 Web/Worker 独立重启，以及 ECS 与 RDS 同 VPC 的 `commerce` Job 强制中断恢复；
 - [ ] 验证广告关闭、分析失败或 CMS 故障时工具仍完整可用；
 - [ ] 完成微信、西部数码和内部订单三方对账演练。
+
+D7-02 验证记录（2026-08-09）：复用既有 `westdigitalBalanceMonitoring` workflow、`background` 队列和固定排他并发键，把 D6-03 余额检查扩展为统一运营监控编排，没有新增 workflow slug、Collection、字段、指标库或 migration。工具监控读取 `toolObservabilityBuckets` 与批准维度的 `firstPartyEvents`；短信读取既有 OTP challenge 与到期提醒状态；支付/订单读取 `manualReviews`；履约/退款读取 `providerOperations`；余额与对账读取 `reconciliations`；证件访问读取 `auditLogs`。九类阈值都有明确 count/rate/age 条件，完整配置通过 `siteSettings` key `operations.monitoring.thresholds.v1` 覆盖默认值；告警只写类别、条件、计数/比例、阈值和闭合时间窗，不复制手机号、证件、完整域名、customer ID、上游成本、加价规则或 provider 凭据。`operations.monitoring.state.v1` 只保存完成水位，并在同一事务使用 `UPDATE site_settings ... WHERE value = old_value RETURNING` 原子认领；5 路 `Promise.all` 重放只产生一个执行者和一条告警。证件访问调查继续从 `realname.document.viewed/downloaded` 审计还原 actor、时间、document ID、动作和 trace ID，不暴露文件内容、对象 key 或加密材料。
+
+新增异常订单、退款失败、余额不足、实名泄露、provider 故障和紧急停售六份 Runbook；每份固定包含具体告警/日志/查询、影响判定、真实处置入口、禁止操作和事后审计。永久门禁实际检查六份文档的五个必需章节、14 个 HTTP method/route 以及 D5-04/D5-07/D6-01/D6-03 等实现 symbol，防止引用不存在的接口。发布契约使用 release-scoped `_next/static/<releaseId>/` 不可变前缀和 manifest SHA-256，要求上传、读回验证都早于应用切流；当前/回滚镜像都必须是 `repository@sha256`。迁移 policy 以批准 snapshot 为 baseline，后续 migration 必须声明 expand/data/contract、旧/新代码兼容和 retain/down；门禁拒绝同一 migration 同时 add/drop、rename column、危险的 `SET NOT NULL`/类型变更，并拒绝同一 release 同时 expand/contract，落实“先加后用、后清理”。回滚流程明确 expand 可保留，contract 必须先 down 再启动旧代码。`make verify-operations` 与 `make verify-release` 均纳入 `make check`，现有 CI 执行同一目标；本切片没有部署脚本、凭据、真实静态上传、registry push 或生产变更授权。
+
+关键变异均被杀死并恢复：先预置相同旧监控水位，避免唯一 key 串行化掩盖 CAS；临时删除 `site_settings.value = old_value` 条件后，5 路执行全部返回非幂等并实际写出 5 条同窗告警，断言期望 4 个 replay 而实际 0；恢复后监控集成 2/2。临时把当前镜像改为 `:latest`，`make verify-release` 实际失败 `mutable tags are forbidden`；恢复后再把静态验证时间改到应用切流之后，实际失败 `static assets must be uploaded and verified before application promotion`；全部恢复后发布门禁通过。完整集成套件 26 个文件、98/98 通过；最终原样 `ALLOW_REAL_PROVIDER_WRITES=false make check` 通过生成物/schema 漂移、全部 migration 往返、Nginx、Runbook/发布门禁、lint、TypeScript strict、572/572 单元测试、98/98 PostgreSQL/MinIO 集成测试、依赖/秘密安全门禁、Next.js 生产构建和 linux/amd64 同镜像。本切片未新增 migration，因此没有从 D7-01 合并前的旧累计 snapshot 生成迁移。staging contract test、真实告警渠道验证、实际生产发布/回滚、2 vCPU/4 GiB、RDS/OSS 恢复、密钥轮换和真实三方对账仍等待单独授权并保持未勾选。
 
 ### 11.2 D8 P1 开发验收
 
@@ -704,6 +710,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-08 | D6-05 主动续费闭环 | 复用报价、订单、支付、commerce 履约、自动退款和人工复核；续费写复用 D6-01，既有 renewals 与 domainAssets 以 PostgreSQL CAS 幂等落库 | `make check`：564/564 单元测试、91/91 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；全新卷连续三轮 91/91；续费落库 CAS 与支付后过期报价两处变异均被杀死；`ALLOW_REAL_PROVIDER_WRITES=false` | D6 进行中；D6-04 资产读侧、NS、提醒和越权门禁位于独立 PR；真实续费 contract test、资金/域名写联调和 D7 强制中断恢复仍未授权，生产门槛不变 |
 | 2026-08-08 | D6-04 域名资产、NS 与提醒 | 本人资产列表/详情/同步；NS commerce 写入、人工只查复核与事务审计；站内/短信到期提醒及原子去重；用户/订单/资产越权门禁 | `make check`：567/567 单元测试、90/90 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；全新卷后三轮完整集成均 90/90；归属门禁与提醒 CAS 两处变异均被杀死；`ALLOW_REAL_PROVIDER_WRITES=false` | D6 进行中；主动续费及第 10.2 第 2 项仍待 D6-05；真实短信模板、provider contract test 与生产门槛不变 |
 | 2026-08-09 | D6-05 累计迁移快照基线修复 | 普通 merge `main` 后删除旧 D6-05 migration，并基于含 D6-04 表结构的最新快照重新生成 `20260809_053302_d6_active_renewals`；新增累计快照门禁与 D6-05 独立往返验证 | 新快照命中 `domain_expiry_reminders=4`、`provider_operations=5`、`renewals=5`、`domain_assets=11`；全新卷连续两轮 96/96、整链 migrate、整批 down/up 与 `make check` 通过，最终 569/569 单元测试、96/96 集成测试；审计跨表 ID 碰撞变异稳定复现期望 4、实际 5 | 未修改 D6-05 业务逻辑；只调整测试审计/fixture 隔离与负载时限，只使用 fixture，真实 provider 联调和全部生产门槛不变 |
+| 2026-08-09 | D7-02 监控、Runbook 与发布回滚 | 复用既有聚合、审计、账本、provider operation、人工复核和 background workflow 建立九类可配置阈值监控与原子单次告警；六份可执行 Runbook；静态先行、digest 镜像、兼容迁移与回滚门禁 | `make check`：572/572 单元测试、98/98 PostgreSQL/MinIO 集成测试及完整迁移/Runbook/发布/安全/构建门禁通过；监控 CAS、mutable tag、静态晚于切流三处变异均被杀死；`ALLOW_REAL_PROVIDER_WRITES=false` | 不新增 migration；没有部署或真实 provider/OSS/KMS/registry 写入；staging、生产告警渠道、真实发布/回滚和全部基础设施演练仍待授权 |
 
 ## 13. 范围追踪矩阵
 
