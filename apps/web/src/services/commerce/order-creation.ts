@@ -101,16 +101,22 @@ export function assertQuoteAmountAndRuleUsableForOrder(
     renewalPriceFen: quote.calculation.upstreamRenewalPriceFen,
     rule,
   })
-  const upstreamCostMinor = calculateRegistrationTotalFen({
-    registrationPriceFen: calculation.upstreamRegistrationPriceFen,
-    renewalPriceFen: calculation.upstreamRenewalPriceFen,
-    years: quote.years,
-  })
-  const userPriceMinor = calculateRegistrationTotalFen({
-    registrationPriceFen: calculation.registrationPriceFen,
-    renewalPriceFen: calculation.renewalPriceFen,
-    years: quote.years,
-  })
+  const upstreamCostMinor =
+    quote.operation === 'renewal'
+      ? calculation.upstreamRenewalPriceFen * quote.years
+      : calculateRegistrationTotalFen({
+          registrationPriceFen: calculation.upstreamRegistrationPriceFen,
+          renewalPriceFen: calculation.upstreamRenewalPriceFen,
+          years: quote.years,
+        })
+  const userPriceMinor =
+    quote.operation === 'renewal'
+      ? calculation.renewalPriceFen * quote.years
+      : calculateRegistrationTotalFen({
+          registrationPriceFen: calculation.registrationPriceFen,
+          renewalPriceFen: calculation.renewalPriceFen,
+          years: quote.years,
+        })
   if (
     calculation.registrationPriceFen !== quote.calculation.registrationPriceFen ||
     calculation.renewalPriceFen !== quote.calculation.renewalPriceFen ||
@@ -162,15 +168,18 @@ function quoteSnapshot(
   orderAvailability: { observedAt: string; requestId: string },
 ) {
   return {
+    ...(quote.assetExpiresAt ? { assetExpiresAt: quote.assetExpiresAt } : {}),
     availabilityObservedAt: quote.availabilityObservedAt,
     availabilityRequestId: quote.availabilityRequestId,
     calculation: quote.calculation,
     createdTraceId: quote.traceId,
     currency: 'CNY' as const,
     customerId: String(quote.customerId),
+    ...(quote.domainAssetId ? { domainAssetId: quote.domainAssetId } : {}),
     domainAscii: quote.domainAscii,
     expiresAt: quote.expiresAt,
     orderAvailability,
+    operation: quote.operation ?? 'registration',
     ...(quote.providerCacheExpiresAt
       ? { providerCacheExpiresAt: quote.providerCacheExpiresAt }
       : {}),
@@ -207,29 +216,79 @@ export async function createCustomerOrder(
       quoteRef: input.quoteRef,
       store: options.quoteStore ?? new PayloadCustomerQuoteStore(req, options.customer),
     })
-    await assertRealnameTemplateUsableForRegistration(req, {
-      customerId: options.customer.id,
-      templateId: input.realnameTemplateId,
-    })
+    let realnameTemplateId: number
+    let orderAvailability: { observedAt: string; requestId: string }
+    if (quote.operation === 'registration') {
+      if (!input.realnameTemplateId) {
+        throw new AppError('REALNAME_TEMPLATE_REQUIRED', '注册订单必须选择实名模板', 400)
+      }
+      await assertRealnameTemplateUsableForRegistration(req, {
+        customerId: options.customer.id,
+        templateId: input.realnameTemplateId,
+      })
+      realnameTemplateId = input.realnameTemplateId
+    } else {
+      if (!quote.domainAssetId || !quote.assetExpiresAt) {
+        throw new AppError('QUOTE_SNAPSHOT_INCOMPLETE', '续费报价缺少域名资产快照', 500)
+      }
+      const assets = await req.payload.find({
+        collection: 'domainAssets',
+        depth: 0,
+        limit: 1,
+        overrideAccess: false,
+        req,
+        user: options.customer,
+        where: { id: { equals: quote.domainAssetId } },
+      })
+      const asset = assets.docs[0]
+      if (!asset) throw new AppError('DOMAIN_ASSET_NOT_FOUND', '未找到可续费的域名资产', 404)
+      const assetCustomer = typeof asset.customer === 'object' ? asset.customer.id : asset.customer
+      const assetTemplate =
+        typeof asset.realnameTemplate === 'object'
+          ? asset.realnameTemplate.id
+          : asset.realnameTemplate
+      if (
+        String(assetCustomer) !== String(options.customer.id) ||
+        asset.domainAscii !== quote.domainAscii ||
+        asset.status !== 'active' ||
+        asset.expiresAt !== quote.assetExpiresAt ||
+        (input.realnameTemplateId !== undefined &&
+          String(input.realnameTemplateId) !== String(assetTemplate))
+      ) {
+        throw new AppError('DOMAIN_ASSET_CHANGED', '域名资产状态已变化，请重新获取续费报价', 409)
+      }
+      realnameTemplateId = Number(assetTemplate)
+    }
     const rules = options.rules ?? (await loadEnabledPricingRules(req.payload, req))
     assertQuoteAmountAndRuleUsableForOrder(quote, { ...options, rules })
     await assertTldSalesOpen(req, quote.tld)
 
-    let availability: Awaited<ReturnType<WestDigitalReadProvider['queryAvailability']>>
-    try {
-      availability = await options.provider.queryAvailability({
-        domain: quote.domainAscii,
-        traceId: options.traceId,
-      })
-    } catch {
-      throw new AppError(
-        'ORDER_DOMAIN_REVALIDATION_UNAVAILABLE',
-        '暂时无法确认域名是否仍可注册',
-        503,
-      )
+    if (quote.operation === 'registration') {
+      let availability: Awaited<ReturnType<WestDigitalReadProvider['queryAvailability']>>
+      try {
+        availability = await options.provider.queryAvailability({
+          domain: quote.domainAscii,
+          traceId: options.traceId,
+        })
+      } catch {
+        throw new AppError(
+          'ORDER_DOMAIN_REVALIDATION_UNAVAILABLE',
+          '暂时无法确认域名是否仍可注册',
+          503,
+        )
+      }
+      if (!availability.ok) availabilityFailure(availability)
+      assertDomainStillAvailable(quote, availability.data)
+      orderAvailability = {
+        observedAt: availability.observedAt,
+        requestId: availability.requestId,
+      }
+    } else {
+      orderAvailability = {
+        observedAt: new Date((options.now ?? Date.now)()).toISOString(),
+        requestId: `${options.traceId}-owned-asset-revalidated`,
+      }
     }
-    if (!availability.ok) availabilityFailure(availability)
-    assertDomainStillAvailable(quote, availability.data)
 
     const orderNumber = (options.orderNumber ?? (() => `WM-${randomUUID()}`))()
     const order = await req.payload.create({
@@ -238,14 +297,13 @@ export async function createCustomerOrder(
         amountMinor: quote.userPriceMinor,
         currency: 'CNY',
         customer: options.customer.id,
+        domainAsset: quote.domainAssetId,
         domainAscii: quote.domainAscii,
+        operation: quote.operation ?? 'registration',
         orderNumber,
         quote: quote.quoteId,
-        quoteSnapshot: quoteSnapshot(quote, {
-          observedAt: availability.observedAt,
-          requestId: availability.requestId,
-        }),
-        realnameTemplate: input.realnameTemplateId,
+        quoteSnapshot: quoteSnapshot(quote, orderAvailability),
+        realnameTemplate: realnameTemplateId,
         status: 'pending_payment',
       },
       overrideAccess: true,
@@ -258,11 +316,13 @@ export async function createCustomerOrder(
         actorType: 'customer',
         customer: options.customer.id,
         evidence: {
-          availabilityObservedAt: availability.observedAt,
-          availabilityRequestId: availability.requestId,
+          availabilityObservedAt: orderAvailability.observedAt,
+          availabilityRequestId: orderAvailability.requestId,
+          domainAssetId: quote.domainAssetId,
+          operation: quote.operation ?? 'registration',
           quoteIntegrityHash: quote.quoteIntegrityHash,
           quoteRef: quote.quoteRef,
-          realnameTemplateId: input.realnameTemplateId,
+          realnameTemplateId,
         },
         order: order.id,
         reasonCode: 'order.created',
@@ -278,13 +338,15 @@ export async function createCustomerOrder(
         amountMinor: quote.userPriceMinor,
         currency: 'CNY',
         domainAscii: quote.domainAscii,
+        ...(quote.domainAssetId ? { domainAssetId: quote.domainAssetId } : {}),
+        operation: quote.operation ?? 'registration',
         orderNumber,
         quoteExpiresAt: quote.expiresAt,
         quoteRef: quote.quoteRef,
         status: 'pending_payment',
         years: quote.years,
       },
-      meta: { observedAt: availability.observedAt, traceId: options.traceId },
+      meta: { observedAt: orderAvailability.observedAt, traceId: options.traceId },
       state: 'ready',
     })
   } catch (error) {

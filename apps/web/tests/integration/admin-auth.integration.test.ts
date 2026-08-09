@@ -235,7 +235,7 @@ afterAll(async () => {
     }
   }
   await payload.db.destroy?.()
-})
+}, 60_000)
 
 describe('D1-05 administrator authentication', () => {
   it('uses hidden credential collections, fixed sessions and disabled GraphQL', async () => {

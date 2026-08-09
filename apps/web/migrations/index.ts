@@ -26,6 +26,7 @@ import * as migration_20260808_074845_d5_payment_recovery_manual_audit from './2
 import * as migration_20260808_104813_d6_westdigital_provider_operations from './20260808_104813_d6_westdigital_provider_operations';
 import * as migration_20260808_124245_d6_commerce_fulfillment from './20260808_124245_d6_commerce_fulfillment';
 import * as migration_20260808_144932_d6_westdigital_balance_monitoring from './20260808_144932_d6_westdigital_balance_monitoring';
+import * as migration_20260809_024806_d6_active_renewals from './20260809_024806_d6_active_renewals';
 
 export const migrations = [
   {
@@ -166,6 +167,11 @@ export const migrations = [
   {
     up: migration_20260808_144932_d6_westdigital_balance_monitoring.up,
     down: migration_20260808_144932_d6_westdigital_balance_monitoring.down,
-    name: '20260808_144932_d6_westdigital_balance_monitoring'
+    name: '20260808_144932_d6_westdigital_balance_monitoring',
+  },
+  {
+    up: migration_20260809_024806_d6_active_renewals.up,
+    down: migration_20260809_024806_d6_active_renewals.down,
+    name: '20260809_024806_d6_active_renewals'
   },
 ];

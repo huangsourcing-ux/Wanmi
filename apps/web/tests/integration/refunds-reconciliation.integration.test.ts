@@ -136,7 +136,7 @@ async function createPaidOrder(
 
 beforeAll(async () => {
   payload = await getPayload({ config })
-})
+}, 60_000)
 
 afterAll(async () => {
   const refundJobs = await payload.find({
@@ -208,7 +208,7 @@ afterAll(async () => {
     })
   }
   await payload.db.destroy?.()
-})
+}, 60_000)
 
 describe('D5-04 Wechat refunds', () => {
   it('queues one full refund, follows refund_pending -> refunding -> refunded and only queries after submission', async () => {

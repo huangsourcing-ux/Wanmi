@@ -905,6 +905,9 @@ export interface Quote {
   calculationVersion: number;
   quoteRef: string;
   customer: number | Customer;
+  operation?: ('registration' | 'renewal') | null;
+  domainAsset?: (number | null) | DomainAsset;
+  assetExpiresAt?: string | null;
   domainAscii: string;
   tld: string;
   years: number;
@@ -943,12 +946,32 @@ export interface Quote {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "domainAssets".
+ */
+export interface DomainAsset {
+  id: number;
+  customer: number | Customer;
+  realnameTemplate: number | RealnameTemplate;
+  domainAscii: string;
+  registrar: string;
+  registeredAt: string;
+  expiresAt: string;
+  status: 'active' | 'expired' | 'pending' | 'unknown';
+  nameservers: string[];
+  lastSyncedAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "orders".
  */
 export interface Order {
   id: number;
   orderNumber: string;
   customer: number | Customer;
+  operation?: ('registration' | 'renewal') | null;
+  domainAsset?: (number | null) | DomainAsset;
   quote: number | Quote;
   realnameTemplate: number | RealnameTemplate;
   domainAscii: string;
@@ -1177,24 +1200,6 @@ export interface ProviderOperation {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "domainAssets".
- */
-export interface DomainAsset {
-  id: number;
-  customer: number | Customer;
-  realnameTemplate: number | RealnameTemplate;
-  domainAscii: string;
-  registrar: string;
-  registeredAt: string;
-  expiresAt: string;
-  status: 'active' | 'expired' | 'pending' | 'unknown';
-  nameservers: string[];
-  lastSyncedAt: string;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "renewals".
  */
 export interface Renewal {
@@ -1203,6 +1208,9 @@ export interface Renewal {
   asset: number | DomainAsset;
   order: number | Order;
   years: number;
+  previousExpiresAt: string;
+  confirmedExpiresAt?: string | null;
+  providerOperationKey?: string | null;
   status: 'pending' | 'succeeded' | 'failed' | 'manual_review';
   updatedAt: string;
   createdAt: string;
@@ -2564,6 +2572,9 @@ export interface QuotesSelect<T extends boolean = true> {
   calculationVersion?: T;
   quoteRef?: T;
   customer?: T;
+  operation?: T;
+  domainAsset?: T;
+  assetExpiresAt?: T;
   domainAscii?: T;
   tld?: T;
   years?: T;
@@ -2607,6 +2618,8 @@ export interface QuotesSelect<T extends boolean = true> {
 export interface OrdersSelect<T extends boolean = true> {
   orderNumber?: T;
   customer?: T;
+  operation?: T;
+  domainAsset?: T;
   quote?: T;
   realnameTemplate?: T;
   domainAscii?: T;
@@ -2790,6 +2803,9 @@ export interface RenewalsSelect<T extends boolean = true> {
   asset?: T;
   order?: T;
   years?: T;
+  previousExpiresAt?: T;
+  confirmedExpiresAt?: T;
+  providerOperationKey?: T;
   status?: T;
   updatedAt?: T;
   createdAt?: T;

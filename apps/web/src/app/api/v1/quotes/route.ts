@@ -8,7 +8,11 @@ import type { WestDigitalReadProvider } from '@/providers/types'
 import { quoteCreateRequestSchema, quoteCreationResultSchema } from '@/schemas/quotes'
 import { runtimeProviderObservability } from '@/services/observability/runtime'
 import { authenticatedCustomerRequest } from '@/services/auth/otp'
-import { createCustomerQuote, PayloadCustomerQuoteStore } from '@/services/pricing/customer-quotes'
+import {
+  createCustomerQuote,
+  PayloadCustomerDomainAssetStore,
+  PayloadCustomerQuoteStore,
+} from '@/services/pricing/customer-quotes'
 import {
   PayloadPriceSnapshotStore,
   type PriceSnapshotStore,
@@ -29,6 +33,7 @@ type QuotePostDependencies = {
   provider: WestDigitalReadProvider
   resolveContext: (request: Request) => Promise<{
     customer: { collection: 'customers'; id: number }
+    assetStore?: import('@/services/pricing/customer-quotes').CustomerDomainAssetStore
     quoteStore: import('@/services/pricing/customer-quotes').CustomerQuoteStore
     rules: Readonly<Record<string, PricingRule>>
     snapshots: PriceSnapshotStore
@@ -57,6 +62,7 @@ async function readJsonBody(request: Request): Promise<unknown> {
 
 async function defaultContext(request: Request): Promise<{
   customer: { collection: 'customers'; id: number }
+  assetStore: PayloadCustomerDomainAssetStore
   quoteStore: PayloadCustomerQuoteStore
   rules: Readonly<Record<string, PricingRule>>
   snapshots: PriceSnapshotStore
@@ -65,6 +71,7 @@ async function defaultContext(request: Request): Promise<{
   const { req, user } = await authenticatedCustomerRequest(payload, request)
   const customer = { collection: 'customers' as const, id: user.id }
   return {
+    assetStore: new PayloadCustomerDomainAssetStore(req, customer),
     customer,
     quoteStore: new PayloadCustomerQuoteStore(req, customer),
     rules: await loadEnabledPricingRules(payload, req),

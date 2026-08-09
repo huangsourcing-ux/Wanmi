@@ -61,7 +61,7 @@ describe('POST /api/v1/quotes', () => {
     expect(quoteCreationResultSchema.parse(await response.json())).toEqual(ready)
     expect(resolveContext).toHaveBeenCalledOnce()
     expect(createQuote).toHaveBeenCalledWith(
-      { domain: 'example.com', years: 1 },
+      { domain: 'example.com', operation: 'registration', years: 1 },
       expect.objectContaining({
         customer: context.customer,
         provider,
