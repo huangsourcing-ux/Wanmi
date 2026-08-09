@@ -63,6 +63,19 @@ export interface TlsHandshakeProvider extends HealthAwareProvider {
 }
 
 export interface SmsProvider extends HealthAwareProvider {
+  sendDomainExpiry(input: {
+    daysRemaining: number
+    domainAscii: string
+    expiresOn: string
+    phone: string
+    traceId: string
+  }): Promise<
+    ProviderResult<{
+      accepted: true
+      deliveryStatus: 'accepted' | 'delivered'
+      providerMessageId: string
+    }>
+  >
   sendOtp(input: { code: string; phone: string; traceId: string }): Promise<
     ProviderResult<{
       accepted: true
@@ -217,6 +230,7 @@ export type WestDigitalDomainAsset = {
   providerAssetId: string
   registeredAt: string
   registrarCode: string
+  status: 'active' | 'expired' | 'pending' | 'unknown'
 }
 
 export type WestDigitalWriteConfirmation = {
@@ -241,7 +255,9 @@ export interface WestDigitalWriteProvider extends HealthAwareProvider {
   queryRealname(input: {
     providerTemplateId: string
     traceId: string
-  }): Promise<ProviderResult<WestDigitalWriteConfirmation & { reviewState: WestDigitalRealnameReviewState }>>
+  }): Promise<
+    ProviderResult<WestDigitalWriteConfirmation & { reviewState: WestDigitalRealnameReviewState }>
+  >
   register(input: {
     clientPriceFen: number
     domainAscii: string

@@ -1492,6 +1492,47 @@ function verifyWechatRefundReconciliationSchema(stage) {
   }
 }
 
+function verifyDomainAssetOperationsSchema(stage) {
+  const schema = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (COUNT(*) FILTER (WHERE table_name = 'domain_expiry_reminders' AND column_name IN (
+           'reminder_key', 'customer_id', 'asset_id', 'channel', 'threshold_days',
+           'expires_at_snapshot', 'status', 'attempted_at', 'delivered_at',
+           'failure_category', 'provider_code', 'provider_message_id',
+           'provider_request_id', 'created_trace_id'
+         )))::text || ':' ||
+         (COUNT(*) FILTER (WHERE table_name = 'nameserver_changes' AND column_name IN (
+           'change_key', 'requested_by_type', 'requested_by_id', 'requested_at',
+           'job_queued_at', 'review_job_queued_at', 'last_checked_at', 'completed_at',
+           'provider_operation_id', 'failure_code', 'created_trace_id'
+         )))::text || ':' ||
+         (COUNT(*) FILTER (WHERE table_name = 'manual_reviews' AND column_name IN (
+           'domain_asset_id', 'nameserver_change_id'
+         )))::text || ':' ||
+         (to_regclass('public.domain_expiry_reminders_reminder_key_idx') IS NOT NULL)::text || ':' ||
+         (to_regclass('public.nameserver_changes_change_key_idx') IS NOT NULL)::text || ':' ||
+         ('domainExpiryReminders' = ANY(enum_range(NULL::enum_payload_jobs_workflow_slug)::text[]))::text || ':' ||
+         ('nameserverChange' = ANY(enum_range(NULL::enum_payload_jobs_workflow_slug)::text[]))::text
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name IN ('domain_expiry_reminders', 'nameserver_changes', 'manual_reviews')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (schema !== '14:11:2:true:true:true:true') {
+    throw new Error(`D6-04 domain asset operations schema invalid after ${stage}: ${schema}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -1517,6 +1558,21 @@ try {
   verifyCustomerQuoteSchema('empty-database migration')
   verifyWechatPaymentSchema('empty-database migration')
   verifyWechatRefundReconciliationSchema('empty-database migration')
+  verifyDomainAssetOperationsSchema('empty-database migration')
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 112
+     WHERE name = '20260809_013335_d6_domain_assets_nameservers_reminders'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+
   postgres([
     'psql',
     '--username',
@@ -3004,6 +3060,19 @@ try {
     '--set',
     'ON_ERROR_STOP=1',
     '--command',
+    `UPDATE payload_migrations SET batch = 112
+     WHERE name = '20260809_013335_d6_domain_assets_nameservers_reminders'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
     `INSERT INTO payload_jobs (input, workflow_slug, queue)
      VALUES ('{"verification":"d6-03-round-trip"}'::jsonb,
        'westdigitalBalanceMonitoring', 'background');
@@ -3036,9 +3105,7 @@ try {
     { capture: true },
   ).trim()
   if (balanceMonitoringAfterDown !== 'true:true') {
-    throw new Error(
-      `D6-03 migration down was incomplete: ${balanceMonitoringAfterDown}`,
-    )
+    throw new Error(`D6-03 migration down was incomplete: ${balanceMonitoringAfterDown}`)
   }
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
   const balanceMonitoringAfterUp = postgres(
@@ -3064,8 +3131,70 @@ try {
     throw new Error(`D6-03 migration up was incomplete: ${balanceMonitoringAfterUp}`)
   }
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `INSERT INTO payload_jobs (input, workflow_slug, queue)
+     VALUES
+       ('{"verification":"d6-04-reminder-round-trip"}'::jsonb,
+         'domainExpiryReminders', 'background'),
+       ('{"verification":"d6-04-nameserver-round-trip"}'::jsonb,
+         'nameserverChange', 'commerce');
+     UPDATE payload_migrations SET batch = 113
+     WHERE name = '20260809_013335_d6_domain_assets_nameservers_reminders'`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const domainAssetOperationsAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (to_regclass('public.domain_expiry_reminders') IS NULL)::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'nameserver_changes'
+             AND column_name = 'change_key'
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'manual_reviews'
+             AND column_name IN ('domain_asset_id', 'nameserver_change_id')
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM pg_enum
+           JOIN pg_type ON pg_type.oid = pg_enum.enumtypid
+           WHERE pg_type.typname = 'enum_payload_jobs_workflow_slug'
+             AND pg_enum.enumlabel IN ('domainExpiryReminders', 'nameserverChange')
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM payload_jobs
+           WHERE input->>'verification' IN (
+             'd6-04-reminder-round-trip', 'd6-04-nameserver-round-trip'
+           )
+         ))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (domainAssetOperationsAfterDown !== 'true:true:true:true:true') {
+    throw new Error(`D6-04 migration down was incomplete: ${domainAssetOperationsAfterDown}`)
+  }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyDomainAssetOperationsSchema('D6-04 migration round trip')
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, the D6-02 commerce-fulfillment migration, and the D6-03 West Digital balance-monitoring workflow migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, the D6-02 commerce-fulfillment migration, the D6-03 West Digital balance-monitoring workflow migration, and the D6-04 domain-asset operations migration round trips.\n',
   )
 } finally {
   if (created) {

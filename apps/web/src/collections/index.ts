@@ -25,7 +25,13 @@ import {
   ToolPages,
   Topics,
 } from './content'
-import { DomainAssets, NameserverChanges, ProviderOperations, Renewals } from './fulfillment'
+import {
+  DomainAssets,
+  DomainExpiryReminders,
+  NameserverChanges,
+  ProviderOperations,
+  Renewals,
+} from './fulfillment'
 import {
   AdminInvitations,
   AdminMfaCredentials,
@@ -82,6 +88,7 @@ export const collections: CollectionConfig[] = [
   Refunds,
   ProviderOperations,
   DomainAssets,
+  DomainExpiryReminders,
   Renewals,
   NameserverChanges,
   ManualReviews,
