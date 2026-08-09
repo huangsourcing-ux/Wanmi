@@ -645,6 +645,8 @@ D7-03 验证记录（2026-08-09）：开始前查阅仓库根目录只读《西�
 
 履约变异只击中真正承重的入口状态门：临时把 `pending_payment` 加入可履约集合后，主干 E2E 期望 `ORDER_NOT_FULFILLABLE`、实际收到 `ORDER_TRANSITION_INVALID`，恢复后同一用例通过；并发 CAS/幂等仍由 PostgreSQL `UPDATE ... WHERE ... RETURNING` 和 `Promise.all` 集成测试证明，不以顺序旅程冒充并发覆盖。新增 `make performance` 在随机 loopback 端口执行接口负载和 Lighthouse 13.4.1，浏览器预检阻断非本地 origin。本机三轮校准中初始 300 ms 公开页和 150 ms IDN 门槛分别实际失败于 357.7 ms、160.4 ms，第三轮 p95 为 264.9/3978.6/149.1 ms；三页 Performance 为 0.81/0.81/0.82，最差 LCP 3313.1 ms。PR #54 首轮 Linux CI 的既有 `make check` 与 Chromium 安装通过，但性能步骤如实失败于公开页 810.9 ms、IDN 274.9 ms 和 TBT 89.5～104 ms；域名接口、错误率、LCP 与四类分数通过，同时暴露 Chrome profile 在进程退出前删除导致 `ENOTEMPTY` 的清理竞态。跨环境门槛据最差实测只留约 8%～15% 余量，固定为公开页 900 ms、域名接口 4300 ms、IDN 310 ms、TBT 120 ms，其他分数/LCP/CLS 门槛不放宽；脚本现先等待 Chrome/Web 退出并对临时 profile 使用有限删除重试。修复后本机完整门禁以 p95 274.9/3966.5/172.9 ms、最差 LCP 3312.0 ms、TBT 14.5 ms 退出 0，临时 profile 正常清理。2.5 秒 LCP 优化目标未达到的事实继续保留。最终原样 `ALLOW_REAL_PROVIDER_WRITES=false make check` 及 PR #54 首轮 Linux `make check` 均通过生成物/schema 漂移、全部 migration 往返、Nginx/Runbook/发布契约、lint、TypeScript strict、594/594 单元测试、98/98 PostgreSQL/MinIO 集成测试、依赖/秘密安全门禁、完整历史 Gitleaks、Next.js 生产构建和 linux/amd64 镜像/Trivy。第 14 节只将本次完整回归有直接证据的项目从 9/30 更新为 23/30；三方真实对账和六项发布/恢复验证保持未勾选。D7 剩余五项均等待真实凭据或基础设施授权：staging contract、通知重放与 ECS/RDS/OSS/轮换恢复、2 vCPU/4 GiB、Web/Worker 与同 VPC Job 中断恢复、真实三方对账。
 
+PR #54 第二轮 Linux CI 的 `make check` 与 Chromium 安装再次通过，但性能采样超过 15 分钟仍未结束，人工取消且不作为通过证据；每次 Lighthouse 调用现有 60 秒硬超时、35 秒页面加载上限，CI 性能步骤有 15 分钟上限，超时均明确失败且不改变数值门槛。有界版本本机完整门禁以 p95 252.1/3969.8/164.5 ms、三页 Performance 0.81/0.81/0.82、最差 LCP 3312.1 ms、TBT 6.5 ms 退出 0。
+
 ### 11.2 D8 P1 开发验收
 
 开发完成必须满足：

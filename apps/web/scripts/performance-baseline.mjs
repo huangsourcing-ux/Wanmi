@@ -117,6 +117,20 @@ async function stopChild(child) {
   }
 }
 
+async function withTimeout(promise, timeoutMs, label) {
+  let timeout
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`${label} exceeded ${timeoutMs}ms`)), timeoutMs)
+      }),
+    ])
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 async function verifyLocalPageDependencies() {
   const browser = await chromium.launch({ headless: true })
   const blockedOrigins = new Set()
@@ -254,22 +268,27 @@ async function launchChrome() {
 async function lighthousePage(page, port) {
   const runs = []
   for (let run = 0; run < baseline.lighthouse.runs; run += 1) {
-    const result = await lighthouse(new URL(page.path, baseUrl).toString(), {
-      disableStorageReset: false,
-      formFactor: 'desktop',
-      logLevel: 'error',
-      onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
-      output: 'json',
-      port,
-      screenEmulation: {
-        deviceScaleFactor: 1,
-        disabled: false,
-        height: 900,
-        mobile: false,
-        width: 1440,
-      },
-      throttlingMethod: 'simulate',
-    })
+    const result = await withTimeout(
+      lighthouse(new URL(page.path, baseUrl).toString(), {
+        disableStorageReset: false,
+        formFactor: 'desktop',
+        logLevel: 'error',
+        maxWaitForLoad: 35_000,
+        onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
+        output: 'json',
+        port,
+        screenEmulation: {
+          deviceScaleFactor: 1,
+          disabled: false,
+          height: 900,
+          mobile: false,
+          width: 1440,
+        },
+        throttlingMethod: 'simulate',
+      }),
+      60_000,
+      `Lighthouse ${page.name} run ${run + 1}`,
+    )
     if (!result) throw new Error(`Lighthouse returned no result for ${page.name}`)
     runs.push({
       accessibilityScore: result.lhr.categories.accessibility.score,

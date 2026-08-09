@@ -69,3 +69,5 @@ ALLOW_REAL_PROVIDER_WRITES=false make performance
 首轮 Linux CI 还暴露 Chrome 收到 `SIGTERM` 后 profile 尚未关闭就被删除的清理竞态，实际失败为 `ENOTEMPTY: directory not empty, rmdir '/tmp/wanmi-lighthouse-*'`。脚本现等待 Chrome/Web 子进程退出，5 秒后才有限升级为 `SIGKILL`，并仅对临时 profile 删除使用 5 次、100 ms 的有限重试。
 
 修复后再次执行完整 `make performance`，本机接口 p95 为 274.9/3966.5/172.9 ms，三页 Performance 为 0.81/0.81/0.82，最差 LCP 3312.0 ms、TBT 14.5 ms，命令退出码 0，Chrome/Web 与临时 profile 均正常清理。
+
+PR #54 第二轮 Linux CI 的完整 `make check` 与 Chromium 安装再次通过，但性能采样超过 15 分钟仍未结束，人工取消后没有阈值判定结果；这不是性能通过证据，也不用于放宽数值门槛。为使本地和 CI 都能确定性结束，每次 Lighthouse 调用增加 60 秒硬超时，单页加载继续受 35 秒 `maxWaitForLoad` 约束，CI 的整个 `make performance` 步骤增加 15 分钟上限；任何一层超时均非零失败并报告具体页面/轮次。加入运行时上限后的本机完整门禁再次通过，接口 p95 为 252.1/3969.8/164.5 ms，三页 Performance 为 0.81/0.81/0.82，最差 LCP 3312.1 ms、TBT 6.5 ms，退出码 0。
