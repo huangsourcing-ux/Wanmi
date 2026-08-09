@@ -16,7 +16,11 @@ describe('managed redirects', () => {
     expect(isRedirectEligiblePath('/legacy/guide/')).toBe(true)
     for (const path of [
       'https://bad.test/path',
+      'https://wanmi.test@bad.test/path',
       '//bad.test/path',
+      '//wanmi.test@bad.test/path',
+      '/%252f%252fbad.test',
+      '/%2540bad.test',
       '/api/orders',
       '/admin',
       '/healthz',
@@ -30,6 +34,7 @@ describe('managed redirects', () => {
     ]) {
       expect(() => normalizeRedirectPath(path)).toThrow()
     }
+    expect(normalizeRedirectPath('/@bad.test')).toBe('/@bad.test')
   })
 
   it('accepts only published referenced content', () => {

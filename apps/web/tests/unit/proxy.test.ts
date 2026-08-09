@@ -9,6 +9,11 @@ vi.mock('@/services/content/publication-gate', () => ({ isPublishedPublicContent
 vi.mock('@/services/redirects/runtime', () => ({ resolvePublicRedirect }))
 
 import { proxy } from '@/proxy'
+import {
+  buildContentSecurityPolicy,
+  isBlockedAdminSurface,
+  normalizeSecurityPathname,
+} from '@/proxy'
 
 describe('public redirect proxy', () => {
   beforeEach(() => {
@@ -66,6 +71,7 @@ describe('public redirect proxy', () => {
     '/api/%61dmins/forgot-password',
     '/api/admins/forgot-passwor%64',
     '/api/admins/%256Cogin',
+    '/api/admins/%25256Cogin',
     '/api/admins%2Freset-password',
     '/api/admins\\refresh-token',
     '/api/%67raphql',
@@ -75,6 +81,71 @@ describe('public redirect proxy', () => {
     const response = await proxy(new NextRequest(`http://example.invalid${path}`))
     expect(response.status).toBe(404)
     expect(response.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('normalizes bounded encodings and separators while malformed input fails closed', () => {
+    expect(normalizeSecurityPathname('/api/admins/%25256Cogin')).toBe('/api/admins/login')
+    expect(normalizeSecurityPathname('/api//admins\\login/')).toBe('/api/admins/login')
+    expect(normalizeSecurityPathname('/api/admins/%')).toBeNull()
+    expect(isBlockedAdminSurface(null)).toBe(true)
+    expect(isBlockedAdminSurface('/api/admins/%')).toBe(true)
+  })
+
+  it.each([
+    '//evil.example/api/v1/events',
+    'https://wanmi.example@evil.example/api/v1/events',
+    'https://evil.example/@wanmi.example/api/v1/events',
+  ])('never turns URL confusion input into an external redirect: %s', async (target) => {
+    resolvePublicRedirect.mockResolvedValue(target)
+    const response = await proxy(new NextRequest('http://example.invalid/legacy'))
+    expect(response.status).not.toBe(301)
+    expect(response.headers.get('location')).toBeNull()
+  })
+
+  it('rejects cross-site first-party API requests and emits a strict nonce CSP', async () => {
+    const response = await proxy(
+      new NextRequest('http://example.invalid/api/v1/events', {
+        headers: {
+          origin: 'https://evil.example',
+          'sec-fetch-site': 'cross-site',
+          'x-request-id': 'cross-site-security-trace',
+        },
+        method: 'POST',
+      }),
+    )
+    expect(response.status).toBe(403)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(response.headers.get('access-control-allow-origin')).toBeNull()
+    expect(response.headers.get('vary')).toContain('origin')
+    const csp = response.headers.get('content-security-policy')
+    expect(csp).toMatch(/script-src 'self' 'nonce-[a-f0-9]{32}' 'strict-dynamic'/u)
+    expect(csp).not.toContain("'unsafe-inline'")
+    expect(csp).not.toContain("'unsafe-eval'")
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(response.headers.get('x-frame-options')).toBe('DENY')
+  })
+
+  it('keeps same-origin APIs no-store without enabling credentialed cross-origin reads', async () => {
+    const response = await proxy(
+      new NextRequest('http://example.invalid/api/v1/tools/dns', {
+        headers: {
+          origin: 'http://127.0.0.1:3000',
+          'sec-fetch-site': 'same-origin',
+        },
+        method: 'POST',
+      }),
+    )
+    expect(response.headers.get('x-middleware-next')).toBe('1')
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(response.headers.get('access-control-allow-origin')).toBeNull()
+    expect(response.headers.get('access-control-allow-credentials')).toBeNull()
+  })
+
+  it('builds a CSP without unsafe execution fallbacks', () => {
+    const csp = buildContentSecurityPolicy('0123456789abcdef')
+    expect(csp).toContain("script-src 'self' 'nonce-0123456789abcdef' 'strict-dynamic'")
+    expect(csp).toContain("object-src 'none'")
+    expect(csp).not.toMatch(/unsafe-(?:eval|inline)/u)
   })
 
   it('does not broaden the block to required Payload administrator REST endpoints', async () => {

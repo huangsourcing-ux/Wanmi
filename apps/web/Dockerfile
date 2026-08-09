@@ -1,4 +1,4 @@
-FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS base
+FROM node:24.19.0-alpine3.24@sha256:2a49bdf71e9fd965a58c1703fd9ddd205b34e5782b692a72dd1d248abb0beb43 AS base
 ENV COREPACK_HOME=/corepack
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
@@ -13,6 +13,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/package.json
 COPY patches patches
 RUN --mount=type=cache,id=wanmi-pnpm-store,target=/pnpm/store \
+    --mount=type=cache,id=wanmi-pnpm-metadata,target=/root/.cache/pnpm \
     pnpm config set store-dir /pnpm/store && \
     pnpm config set fetch-retries 5 && \
     pnpm config set fetch-timeout 120000 && \
@@ -28,20 +29,42 @@ ENV ALIYUN_OSS_REALNAME_MODE=mock
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY --from=dependencies /app/apps/web/node_modules ./apps/web/node_modules
 COPY . .
-RUN PAYLOAD_SECRET=build-only-payload-secret-32-bytes \
+RUN --mount=type=cache,id=wanmi-pnpm-store,target=/pnpm/store \
+    --mount=type=cache,id=wanmi-pnpm-metadata,target=/root/.cache/pnpm \
+    PAYLOAD_SECRET=build-only-payload-secret-32-bytes \
     SESSION_PEPPER=build-only-session-pepper-32-bytes \
     TOTP_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
     pnpm --filter @wanmi/web generate && \
     PAYLOAD_SECRET=build-only-payload-secret-32-bytes \
     SESSION_PEPPER=build-only-session-pepper-32-bytes \
     TOTP_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
-    pnpm --filter @wanmi/web build
+    pnpm --filter @wanmi/web build && \
+    pnpm --filter @wanmi/web deploy --prod --legacy --offline /runtime && \
+    rm -rf \
+      /runtime/.next/cache \
+      /runtime/.next/standalone \
+      /runtime/.next/types \
+      /runtime/node_modules/.pnpm/@esbuild+linux-x64@0.18.20 \
+      /runtime/node_modules/.pnpm/@esbuild+linux-x64@0.25.12 \
+      /runtime/node_modules/.pnpm/esbuild@0.18.20 \
+      /runtime/node_modules/.pnpm/esbuild@0.25.12
 
-FROM base AS runtime
+FROM node:24.19.0-alpine3.24@sha256:2a49bdf71e9fd965a58c1703fd9ddd205b34e5782b692a72dd1d248abb0beb43 AS runtime
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN groupadd --system --gid 1001 wanmi && useradd --system --uid 1001 --gid wanmi wanmi
-COPY --from=builder --chown=wanmi:wanmi /app /app
+WORKDIR /app
+RUN rm -rf \
+      /usr/local/bin/corepack \
+      /usr/local/bin/npm \
+      /usr/local/bin/npx \
+      /usr/local/bin/yarn \
+      /usr/local/bin/yarnpkg \
+      /usr/local/lib/node_modules/corepack \
+      /usr/local/lib/node_modules/npm \
+      /opt/yarn-v1.22.22 && \
+    addgroup --system --gid 1001 wanmi && \
+    adduser --system --disabled-password --no-create-home --uid 1001 --ingroup wanmi wanmi
+COPY --from=builder --chown=wanmi:wanmi /runtime /app
 USER wanmi
 EXPOSE 3000
-CMD ["pnpm", "--filter", "@wanmi/web", "start"]
+CMD ["node", "node_modules/next/dist/bin/next", "start"]

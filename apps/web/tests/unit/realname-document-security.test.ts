@@ -18,7 +18,7 @@ afterEach(() => {
 })
 
 describe('real-name document file safety', () => {
-  it('derives allowed image types from magic bytes and validates decoded structure', async () => {
+  it('derives allowed image types from magic bytes and ignores forged filename/content-type claims', async () => {
     const png = await sharp({
       create: { background: '#ffffff', channels: 3, height: 128, width: 128 },
     })
@@ -28,28 +28,73 @@ describe('real-name document file safety', () => {
     expect(validated).toMatchObject({ contentType: 'image/png', fileKind: 'png' })
     expect(validated.sha256).toMatch(/^[a-f0-9]{64}$/u)
 
+    const forged = new File([Buffer.concat([Buffer.from('MZ'), randomBytes(64)])], 'identity.png', {
+      type: 'image/png',
+    })
+    await expect(
+      validateRealnameFile(new Uint8Array(await forged.arrayBuffer()), 1024 * 1024),
+    ).rejects.toMatchObject({ code: 'REALNAME_DOCUMENT_MALICIOUS' })
+
+    const disguisedText = new File(
+      [Buffer.from('not an image despite forged metadata'.repeat(2))],
+      'identity.jpg',
+      { type: 'image/jpeg' },
+    )
+    await expect(
+      validateRealnameFile(new Uint8Array(await disguisedText.arrayBuffer()), 1024 * 1024),
+    ).rejects.toMatchObject({ code: 'REALNAME_DOCUMENT_TYPE_NOT_ALLOWED' })
+
     await expect(validateRealnameFile(Buffer.from('fake.png'), 1024 * 1024)).rejects.toMatchObject({
       code: 'REALNAME_DOCUMENT_INVALID',
     })
     await expect(
       validateRealnameFile(Buffer.concat([png, Buffer.from('trailing-polyglot')]), 1024 * 1024),
     ).rejects.toMatchObject({ code: 'REALNAME_DOCUMENT_INVALID' })
+
+    const invalidLength = Buffer.from(png)
+    invalidLength.writeUInt32BE(0xffff_ffff, 8)
+    await expect(validateRealnameFile(invalidLength, 1024 * 1024)).rejects.toMatchObject({
+      code: 'REALNAME_DOCUMENT_INVALID',
+    })
+    const invalidChunkType = Buffer.from(png)
+    invalidChunkType.write('IH1R', 12, 'ascii')
+    await expect(validateRealnameFile(invalidChunkType, 1024 * 1024)).rejects.toMatchObject({
+      code: 'REALNAME_DOCUMENT_INVALID',
+    })
+
+    const jpeg = await sharp({
+      create: { background: '#ffffff', channels: 3, height: 128, width: 128 },
+    })
+      .jpeg()
+      .toBuffer()
+    await expect(validateRealnameFile(jpeg.subarray(0, -2), 1024 * 1024)).rejects.toMatchObject({
+      code: 'REALNAME_DOCUMENT_INVALID',
+    })
   })
 
   it('rejects active PDF content, known malware signatures, executables and oversized input', async () => {
-    const activePdf = Buffer.from('%PDF-1.4\n1 0 obj << /OpenAction 2 0 R >> endobj\n%%EOF\n')
-    await expect(validateRealnameFile(activePdf, 1024 * 1024)).rejects.toMatchObject({
-      code: 'REALNAME_DOCUMENT_MALICIOUS',
-    })
+    for (const token of ['/OpenAction', '/JavaScript', '/JS', '/Launch', '/EmbeddedFile']) {
+      const activePdf = Buffer.from(`%PDF-1.4\n1 0 obj << ${token} 2 0 R >> endobj\n%%EOF\n`)
+      await expect(validateRealnameFile(activePdf, 1024 * 1024)).rejects.toMatchObject({
+        code: 'REALNAME_DOCUMENT_MALICIOUS',
+      })
+    }
     const eicarPdf = Buffer.from(
       '%PDF-1.4\nX5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*\n%%EOF\n',
     )
     await expect(validateRealnameFile(eicarPdf, 1024 * 1024)).rejects.toMatchObject({
       code: 'REALNAME_DOCUMENT_MALICIOUS',
     })
-    await expect(
-      validateRealnameFile(Buffer.concat([Buffer.from('MZ'), randomBytes(64)]), 1024 * 1024),
-    ).rejects.toMatchObject({ code: 'REALNAME_DOCUMENT_MALICIOUS' })
+    for (const magic of [
+      Buffer.from('MZ'),
+      Buffer.from([0x7f, 0x45, 0x4c, 0x46]),
+      Buffer.from([0xca, 0xfe, 0xba, 0xbe]),
+      Buffer.from([0xcf, 0xfa, 0xed, 0xfe]),
+    ]) {
+      await expect(
+        validateRealnameFile(Buffer.concat([magic, randomBytes(64)]), 1024 * 1024),
+      ).rejects.toMatchObject({ code: 'REALNAME_DOCUMENT_MALICIOUS' })
+    }
     await expect(validateRealnameFile(randomBytes(2048), 1024)).rejects.toMatchObject({
       code: 'REALNAME_DOCUMENT_TOO_LARGE',
     })

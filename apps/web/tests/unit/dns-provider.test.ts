@@ -204,6 +204,23 @@ describe('AliDNS controlled DoH provider', () => {
     ])
   })
 
+  it('refuses redirects instead of following a controlled resolver request into an internal host', async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      expect(init?.redirect).toBe('error')
+      return Response.redirect('http://127.0.0.1/internal-dns', 302)
+    }) as unknown as typeof fetch
+    const result = await provider(fetchImpl).queryRecordSet({
+      domainAscii: 'redirect.example.test',
+      recordType: 'A',
+      traceId: 'trace-dns-internal-redirect',
+    })
+    expect(result).toMatchObject({ error: { code: 'DNS_UNAVAILABLE' }, ok: false })
+    expect((fetchImpl as ReturnType<typeof vi.fn>).mock.calls.map(([url]) => String(url))).toEqual([
+      'https://223.5.5.5/dns-query',
+      'https://223.6.6.6/dns-query',
+    ])
+  })
+
   it('maps dual timeout, oversized and mismatched packets to safe failures', async () => {
     const timeoutFetch = vi.fn(async () => {
       throw new DOMException('timeout', 'TimeoutError')

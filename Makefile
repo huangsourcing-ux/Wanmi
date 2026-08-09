@@ -49,7 +49,7 @@ test-e2e:
 	pnpm --filter @wanmi/web migrate
 	pnpm test:e2e
 
-security:
+security: build
 	pnpm security
 
 build:
@@ -59,7 +59,7 @@ build:
 smoke:
 	node scripts/smoke.mjs
 
-check: verify-generated verify-migrations verify-nginx lint test test-integration security build
+check: verify-generated verify-migrations verify-nginx lint test test-integration security
 
 down:
 	docker compose down
