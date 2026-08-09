@@ -29,11 +29,20 @@ const BLOCKED_ADMIN_UI_PATHS = new Set([
 
 const SAFE_API_METHODS = new Set(['GET', 'HEAD'])
 
-export function buildContentSecurityPolicy(nonce: string): string {
+export function buildContentSecurityPolicy(
+  nonce: string,
+  options: { allowDevelopmentRuntime?: boolean } = {},
+): string {
+  const scriptPolicy = options.allowDevelopmentRuntime
+    ? `script-src 'self' 'nonce-${nonce}' 'unsafe-eval'`
+    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`
+  const stylePolicy = options.allowDevelopmentRuntime
+    ? `style-src 'self' 'unsafe-inline'`
+    : `style-src 'self' 'nonce-${nonce}'`
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
-    `style-src 'self' 'nonce-${nonce}'`,
+    scriptPolicy,
+    stylePolicy,
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
     "connect-src 'self'",
@@ -44,12 +53,29 @@ export function buildContentSecurityPolicy(nonce: string): string {
   ].join('; ')
 }
 
-function applySecurityHeaders(response: NextResponse, contentSecurityPolicy: string): NextResponse {
+function referrerPolicyForPath(
+  pathname: string,
+): 'no-referrer' | 'origin' | 'strict-origin-when-cross-origin' {
+  if (
+    pathname === '/api/v1/realname/documents/access' ||
+    pathname === '/api/v1/admin/realname/documents/access'
+  ) {
+    return 'no-referrer'
+  }
+  if (pathname.startsWith('/go/ad/')) return 'origin'
+  return 'strict-origin-when-cross-origin'
+}
+
+function applySecurityHeaders(
+  response: NextResponse,
+  contentSecurityPolicy: string,
+  pathname: string,
+): NextResponse {
   response.headers.set('content-security-policy', contentSecurityPolicy)
   response.headers.set('cross-origin-opener-policy', 'same-origin')
   response.headers.set('cross-origin-resource-policy', 'same-origin')
   response.headers.set('permissions-policy', 'camera=(), geolocation=(), microphone=(), payment=()')
-  response.headers.set('referrer-policy', 'strict-origin-when-cross-origin')
+  response.headers.set('referrer-policy', referrerPolicyForPath(pathname))
   response.headers.set('x-content-type-options', 'nosniff')
   response.headers.set('x-frame-options', 'DENY')
   return response
@@ -96,7 +122,9 @@ export async function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers)
   const traceId = getTraceId(request.headers)
   const nonce = randomUUID().replaceAll('-', '')
-  const contentSecurityPolicy = buildContentSecurityPolicy(nonce)
+  const contentSecurityPolicy = buildContentSecurityPolicy(nonce, {
+    allowDevelopmentRuntime: process.env.NODE_ENV === 'development',
+  })
   requestHeaders.set('x-request-id', traceId)
   requestHeaders.set('x-nonce', nonce)
   requestHeaders.set('content-security-policy', contentSecurityPolicy)
@@ -108,7 +136,7 @@ export async function proxy(request: NextRequest) {
     })
     response.headers.append('vary', 'origin')
     response.headers.append('vary', 'sec-fetch-site')
-    return applySecurityHeaders(response, contentSecurityPolicy)
+    return applySecurityHeaders(response, contentSecurityPolicy, request.nextUrl.pathname)
   }
 
   if (isBlockedAdminSurface(request.nextUrl.pathname)) {
@@ -118,6 +146,7 @@ export async function proxy(request: NextRequest) {
         status: 404,
       }),
       contentSecurityPolicy,
+      request.nextUrl.pathname,
     )
   }
 
@@ -135,7 +164,7 @@ export async function proxy(request: NextRequest) {
           status: 301,
         })
         response.headers.set('x-request-id', traceId)
-        return applySecurityHeaders(response, contentSecurityPolicy)
+        return applySecurityHeaders(response, contentSecurityPolicy, request.nextUrl.pathname)
       } catch {
         // A stale or corrupted redirect cache must fail closed before emitting Location.
       }
@@ -156,6 +185,7 @@ export async function proxy(request: NextRequest) {
           status: 404,
         }),
         contentSecurityPolicy,
+        request.nextUrl.pathname,
       )
     }
   }
@@ -171,7 +201,7 @@ export async function proxy(request: NextRequest) {
     response.headers.append('vary', 'origin')
     response.headers.append('vary', 'sec-fetch-site')
   }
-  return applySecurityHeaders(response, contentSecurityPolicy)
+  return applySecurityHeaders(response, contentSecurityPolicy, request.nextUrl.pathname)
 }
 
 export const config = {

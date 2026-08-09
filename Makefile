@@ -1,4 +1,4 @@
-.PHONY: bootstrap dev worker generate verify-generated verify-oss-real verify-migrations verify-nginx verify-operations verify-release fmt lint test test-integration test-e2e security build smoke check down
+.PHONY: bootstrap dev worker generate verify-generated verify-oss-real verify-migrations verify-nginx verify-operations verify-release fmt lint test test-integration test-e2e performance security build smoke check down
 
 bootstrap:
 	corepack enable
@@ -54,6 +54,12 @@ test-e2e:
 	docker compose up -d postgres whodat minio minio-init
 	pnpm --filter @wanmi/web migrate
 	pnpm test:e2e
+
+performance:
+	docker compose up -d postgres whodat minio minio-init
+	pnpm --filter @wanmi/web migrate
+	pnpm --filter @wanmi/web build
+	ALLOW_REAL_PROVIDER_WRITES=false pnpm --filter @wanmi/web performance
 
 security: build
 	pnpm security
