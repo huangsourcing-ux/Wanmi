@@ -89,6 +89,71 @@ export const DomainAssets: CollectionConfig = {
   ],
 }
 
+export const DomainExpiryReminders: CollectionConfig = {
+  slug: 'domainExpiryReminders',
+  access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
+  admin: { group: ADMIN_GROUPS.fulfillment, hidden: systemAdminHidden },
+  defaultSort: '-createdAt',
+  indexes: [{ fields: ['asset', 'expiresAtSnapshot'] }],
+  fields: [
+    {
+      name: 'reminderKey',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
+      required: true,
+      unique: true,
+    },
+    {
+      name: 'customer',
+      type: 'relationship',
+      relationTo: 'customers',
+      index: true,
+      required: true,
+    },
+    {
+      name: 'asset',
+      type: 'relationship',
+      relationTo: 'domainAssets',
+      index: true,
+      required: true,
+    },
+    { name: 'channel', type: 'select', options: ['in_app', 'sms'], required: true },
+    { name: 'thresholdDays', type: 'number', min: 0, max: 365, required: true },
+    { name: 'expiresAtSnapshot', type: 'date', index: true, required: true },
+    {
+      name: 'status',
+      type: 'select',
+      index: true,
+      options: ['pending', 'sending', 'delivered', 'failed', 'unknown'],
+      required: true,
+    },
+    { name: 'attemptedAt', type: 'date', index: true },
+    { name: 'deliveredAt', type: 'date', index: true },
+    {
+      name: 'failureCategory',
+      type: 'select',
+      options: [
+        'balance_insufficient',
+        'template_unapproved',
+        'invalid_number',
+        'rate_limited',
+        'unknown',
+      ],
+    },
+    { name: 'providerCode', type: 'text', access: { read: sensitiveFieldRead } },
+    { name: 'providerMessageId', type: 'text', access: { read: sensitiveFieldRead }, index: true },
+    { name: 'providerRequestId', type: 'text', access: { read: sensitiveFieldRead }, index: true },
+    {
+      name: 'createdTraceId',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
+      required: true,
+    },
+  ],
+}
+
 export const Renewals: CollectionConfig = {
   slug: 'renewals',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
@@ -135,6 +200,13 @@ export const NameserverChanges: CollectionConfig = {
   admin: { group: ADMIN_GROUPS.fulfillment, hidden: systemAdminHidden },
   fields: [
     {
+      name: 'changeKey',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
+      unique: true,
+    },
+    {
       name: 'customer',
       type: 'relationship',
       relationTo: 'customers',
@@ -148,7 +220,25 @@ export const NameserverChanges: CollectionConfig = {
       index: true,
       required: true,
     },
+    { name: 'previousNameservers', type: 'text', hasMany: true },
     { name: 'requestedNameservers', type: 'text', hasMany: true, required: true },
+    { name: 'confirmedNameservers', type: 'text', hasMany: true },
+    { name: 'requestedByType', type: 'select', options: ['customer'] },
+    { name: 'requestedById', type: 'text', access: { read: sensitiveFieldRead } },
+    { name: 'requestedAt', type: 'date', index: true },
+    { name: 'jobQueuedAt', type: 'date', access: { read: sensitiveFieldRead }, index: true },
+    { name: 'reviewJobQueuedAt', type: 'date', access: { read: sensitiveFieldRead }, index: true },
+    { name: 'lastCheckedAt', type: 'date', index: true },
+    { name: 'completedAt', type: 'date', index: true },
+    {
+      name: 'providerOperation',
+      type: 'relationship',
+      relationTo: 'providerOperations',
+      access: { read: sensitiveFieldRead },
+      index: true,
+    },
+    { name: 'failureCode', type: 'text', access: { read: sensitiveFieldRead }, index: true },
+    { name: 'createdTraceId', type: 'text', access: { read: sensitiveFieldRead }, index: true },
     {
       name: 'status',
       type: 'select',

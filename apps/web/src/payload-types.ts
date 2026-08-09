@@ -103,6 +103,7 @@ export interface Config {
     refunds: Refund;
     providerOperations: ProviderOperation;
     domainAssets: DomainAsset;
+    domainExpiryReminders: DomainExpiryReminder;
     renewals: Renewal;
     nameserverChanges: NameserverChange;
     manualReviews: ManualReview;
@@ -171,6 +172,7 @@ export interface Config {
     refunds: RefundsSelect<false> | RefundsSelect<true>;
     providerOperations: ProviderOperationsSelect<false> | ProviderOperationsSelect<true>;
     domainAssets: DomainAssetsSelect<false> | DomainAssetsSelect<true>;
+    domainExpiryReminders: DomainExpiryRemindersSelect<false> | DomainExpiryRemindersSelect<true>;
     renewals: RenewalsSelect<false> | RenewalsSelect<true>;
     nameserverChanges: NameserverChangesSelect<false> | NameserverChangesSelect<true>;
     manualReviews: ManualReviewsSelect<false> | ManualReviewsSelect<true>;
@@ -215,7 +217,9 @@ export interface Config {
       smsReceiptReconciliation: WorkflowSmsReceiptReconciliation;
       realnameCleanup: WorkflowRealnameCleanup;
       westdigitalBalanceMonitoring: WorkflowWestdigitalBalanceMonitoring;
+      domainExpiryReminders: WorkflowDomainExpiryReminders;
       commerceFulfillment: WorkflowCommerceFulfillment;
+      nameserverChange: WorkflowNameserverChange;
       wechatRefund: WorkflowWechatRefund;
       paymentTimeoutClose: WorkflowPaymentTimeoutClose;
     };
@@ -1200,6 +1204,31 @@ export interface ProviderOperation {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "domainExpiryReminders".
+ */
+export interface DomainExpiryReminder {
+  id: number;
+  reminderKey: string;
+  customer: number | Customer;
+  asset: number | DomainAsset;
+  channel: 'in_app' | 'sms';
+  thresholdDays: number;
+  expiresAtSnapshot: string;
+  status: 'pending' | 'sending' | 'delivered' | 'failed' | 'unknown';
+  attemptedAt?: string | null;
+  deliveredAt?: string | null;
+  failureCategory?:
+    | ('balance_insufficient' | 'template_unapproved' | 'invalid_number' | 'rate_limited' | 'unknown')
+    | null;
+  providerCode?: string | null;
+  providerMessageId?: string | null;
+  providerRequestId?: string | null;
+  createdTraceId: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "renewals".
  */
 export interface Renewal {
@@ -1221,9 +1250,22 @@ export interface Renewal {
  */
 export interface NameserverChange {
   id: number;
+  changeKey?: string | null;
   customer: number | Customer;
   asset: number | DomainAsset;
+  previousNameservers?: string[] | null;
   requestedNameservers: string[];
+  confirmedNameservers?: string[] | null;
+  requestedByType?: 'customer' | null;
+  requestedById?: string | null;
+  requestedAt?: string | null;
+  jobQueuedAt?: string | null;
+  reviewJobQueuedAt?: string | null;
+  lastCheckedAt?: string | null;
+  completedAt?: string | null;
+  providerOperation?: (number | null) | ProviderOperation;
+  failureCode?: string | null;
+  createdTraceId?: string | null;
   status: 'pending' | 'succeeded' | 'failed' | 'manual_review';
   updatedAt: string;
   createdAt: string;
@@ -1236,6 +1278,8 @@ export interface ManualReview {
   id: number;
   order?: (number | null) | Order;
   realnameTemplate?: (number | null) | RealnameTemplate;
+  domainAsset?: (number | null) | DomainAsset;
+  nameserverChange?: (number | null) | NameserverChange;
   reasonCode: string;
   status: 'open' | 'resolved';
   evidence?:
@@ -1801,7 +1845,9 @@ export interface PayloadJob {
         | 'smsReceiptReconciliation'
         | 'realnameCleanup'
         | 'westdigitalBalanceMonitoring'
+        | 'domainExpiryReminders'
         | 'commerceFulfillment'
+        | 'nameserverChange'
         | 'wechatRefund'
         | 'paymentTimeoutClose'
       )
@@ -1968,6 +2014,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'domainAssets';
         value: number | DomainAsset;
+      } | null)
+    | ({
+        relationTo: 'domainExpiryReminders';
+        value: number | DomainExpiryReminder;
       } | null)
     | ({
         relationTo: 'renewals';
@@ -2796,6 +2846,28 @@ export interface DomainAssetsSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "domainExpiryReminders_select".
+ */
+export interface DomainExpiryRemindersSelect<T extends boolean = true> {
+  reminderKey?: T;
+  customer?: T;
+  asset?: T;
+  channel?: T;
+  thresholdDays?: T;
+  expiresAtSnapshot?: T;
+  status?: T;
+  attemptedAt?: T;
+  deliveredAt?: T;
+  failureCategory?: T;
+  providerCode?: T;
+  providerMessageId?: T;
+  providerRequestId?: T;
+  createdTraceId?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "renewals_select".
  */
 export interface RenewalsSelect<T extends boolean = true> {
@@ -2815,9 +2887,22 @@ export interface RenewalsSelect<T extends boolean = true> {
  * via the `definition` "nameserverChanges_select".
  */
 export interface NameserverChangesSelect<T extends boolean = true> {
+  changeKey?: T;
   customer?: T;
   asset?: T;
+  previousNameservers?: T;
   requestedNameservers?: T;
+  confirmedNameservers?: T;
+  requestedByType?: T;
+  requestedById?: T;
+  requestedAt?: T;
+  jobQueuedAt?: T;
+  reviewJobQueuedAt?: T;
+  lastCheckedAt?: T;
+  completedAt?: T;
+  providerOperation?: T;
+  failureCode?: T;
+  createdTraceId?: T;
   status?: T;
   updatedAt?: T;
   createdAt?: T;
@@ -2829,6 +2914,8 @@ export interface NameserverChangesSelect<T extends boolean = true> {
 export interface ManualReviewsSelect<T extends boolean = true> {
   order?: T;
   realnameTemplate?: T;
+  domainAsset?: T;
+  nameserverChange?: T;
   reasonCode?: T;
   status?: T;
   evidence?: T;
@@ -3333,6 +3420,13 @@ export interface WorkflowWestdigitalBalanceMonitoring {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WorkflowDomainExpiryReminders".
+ */
+export interface WorkflowDomainExpiryReminders {
+  input?: unknown;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "WorkflowCommerceFulfillment".
  */
 export interface WorkflowCommerceFulfillment {
@@ -3340,6 +3434,18 @@ export interface WorkflowCommerceFulfillment {
     operationKey: string;
     orderId: number;
     salesStopReviewId?: number | null;
+    traceId: string;
+  };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WorkflowNameserverChange".
+ */
+export interface WorkflowNameserverChange {
+  input: {
+    assetId: number;
+    changeId: number;
+    operationKey: string;
     traceId: string;
   };
 }

@@ -105,10 +105,7 @@ afterAll(async () => {
     limit: 100,
     overrideAccess: true,
     where: {
-      and: [
-        { targetType: { equals: 'content' } },
-        { traceId: { equals: `${fixture}-trace` } },
-      ],
+      and: [{ targetType: { equals: 'content' } }, { traceId: { equals: `${fixture}-trace` } }],
     },
   })
   for (const audit of audits.docs) {

@@ -56,6 +56,18 @@ export const auditEventDefinitions = {
     actorTypes: ['provider', 'system'],
     targetType: 'renewal',
   },
+  'domain.asset.synced': {
+    actorTypes: ['customer', 'system'],
+    targetType: 'domain-asset',
+  },
+  'domain.expiry_reminder.recorded': {
+    actorTypes: ['system'],
+    targetType: 'domain-expiry-reminder',
+  },
+  'domain.nameserver.change_recorded': {
+    actorTypes: ['admin', 'customer', 'system'],
+    targetType: 'nameserver-change',
+  },
   'provider.operation.recorded': {
     actorTypes: ['admin', 'customer', 'provider', 'system'],
     targetType: 'provider-operation',
