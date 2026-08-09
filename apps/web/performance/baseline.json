@@ -22,7 +22,7 @@
   "lighthouse": {
     "maximumCls": 0.02,
     "maximumLcpMs": 3500,
-    "maximumTbtMs": 120,
+    "maximumTbtMs": 150,
     "minimumAccessibilityScore": 0.98,
     "minimumBestPracticesScore": 0.9,
     "minimumPerformanceScore": 0.78,

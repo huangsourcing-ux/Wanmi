@@ -84,6 +84,7 @@ async function ensureWebServer() {
 
   const child = spawn('pnpm', ['start'], {
     cwd: webDirectory,
+    detached: process.platform !== 'win32',
     env: {
       ...process.env,
       ALLOW_REAL_PROVIDER_WRITES: 'false',
@@ -98,7 +99,7 @@ async function ensureWebServer() {
   try {
     await waitFor(new URL('/healthz', baseUrl), 60_000, child)
   } catch (error) {
-    child.kill('SIGTERM')
+    await stopChild(child)
     throw new Error(
       `${error instanceof Error ? error.message : String(error)}\n${output.slice(-4_000)}`,
     )
@@ -106,14 +107,27 @@ async function ensureWebServer() {
   return child
 }
 
+function signalProcessTree(child, signal) {
+  if (process.platform !== 'win32' && child.pid) {
+    try {
+      process.kill(-child.pid, signal)
+      return true
+    } catch (error) {
+      if (!(error instanceof Error) || !('code' in error) || error.code !== 'ESRCH') throw error
+    }
+  }
+  return child.kill(signal)
+}
+
 async function stopChild(child) {
   if (child.exitCode !== null || child.signalCode !== null) return
   const exited = once(child, 'exit')
-  child.kill('SIGTERM')
+  signalProcessTree(child, 'SIGTERM')
   const stopped = await Promise.race([exited.then(() => true), delay(5_000, false)])
   if (!stopped && child.exitCode === null && child.signalCode === null) {
-    child.kill('SIGKILL')
-    await exited
+    signalProcessTree(child, 'SIGKILL')
+    const killed = await Promise.race([exited.then(() => true), delay(2_000, false)])
+    if (!killed) throw new Error(`Local process tree ${child.pid ?? 'unknown'} did not exit`)
   }
 }
 
@@ -259,7 +273,7 @@ async function launchChrome() {
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${profile}`,
     ],
-    { stdio: 'ignore' },
+    { detached: process.platform !== 'win32', stdio: 'ignore' },
   )
   await waitFor(`http://127.0.0.1:${port}/json/version`, 30_000, child)
   return { child, port, profile }
