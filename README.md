@@ -60,24 +60,25 @@ pnpm --filter @wanmi/web admin:bootstrap
 
 ## 稳定命令
 
-| 命令                     | 说明                                   |
-| ------------------------ | -------------------------------------- |
-| `make bootstrap`         | 安装锁定依赖并创建本地配置             |
-| `make dev`               | 启动 PostgreSQL、Who-Dat、MinIO 和 Web |
-| `make worker`            | 启动独立 Payload Jobs Worker           |
-| `make generate`          | 生成 Payload 类型和 Admin import map   |
-| `make verify-generated`  | 阻断类型、import map 与迁移漂移        |
-| `make verify-migrations` | 验证空库迁移和遗留 302 升级路径        |
-| `make verify-nginx`      | 验证固定镜像中的主机 301 配置          |
-| `make lint`              | ESLint 与 TypeScript strict 检查       |
-| `make test`              | Vitest 单元测试                        |
-| `make test-integration`  | PostgreSQL、Jobs、OTP 和存储集成测试   |
-| `make test-e2e`          | Playwright 核心冒烟                    |
-| `make security`          | 依赖和秘密扫描                         |
-| `make build`             | Next.js 生产构建及同镜像容器构建       |
-| `make smoke`             | 对已启动 Web 执行健康冒烟              |
-| `make verify-oss-real`   | 受控验证真实 OSS 的两条存储路径        |
-| `make check`             | 本地合并门槛                           |
+| 命令                     | 说明                                     |
+| ------------------------ | ---------------------------------------- |
+| `make bootstrap`         | 安装锁定依赖并创建本地配置               |
+| `make dev`               | 启动 PostgreSQL、Who-Dat、MinIO 和 Web   |
+| `make worker`            | 启动独立 Payload Jobs Worker             |
+| `make generate`          | 生成 Payload 类型和 Admin import map     |
+| `make verify-generated`  | 阻断类型、import map 与迁移漂移          |
+| `make verify-migrations` | 验证空库迁移和遗留 302 升级路径          |
+| `make verify-nginx`      | 验证固定镜像中的主机 301 配置            |
+| `make lint`              | ESLint 与 TypeScript strict 检查         |
+| `make test`              | Vitest 单元测试                          |
+| `make test-integration`  | PostgreSQL、Jobs、OTP 和存储集成测试     |
+| `make test-e2e`          | 生产构建上的 42 条 Playwright 全链路回归 |
+| `make performance`       | 本地接口负载与三页 Lighthouse 性能门槛   |
+| `make security`          | 依赖和秘密扫描                           |
+| `make build`             | Next.js 生产构建及同镜像容器构建         |
+| `make smoke`             | 对已启动 Web 执行健康冒烟                |
+| `make verify-oss-real`   | 受控验证真实 OSS 的两条存储路径          |
+| `make check`             | 本地合并门槛                             |
 
 ## 数据库变更
 

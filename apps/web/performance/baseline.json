@@ -1,0 +1,47 @@
+{
+  "api": {
+    "domain-search": {
+      "concurrency": 4,
+      "iterationsPerWorker": 3,
+      "maximumErrorRate": 0,
+      "maximumP95Ms": 4300
+    },
+    "idn": {
+      "concurrency": 8,
+      "iterationsPerWorker": 10,
+      "maximumErrorRate": 0,
+      "maximumP95Ms": 350
+    },
+    "public-tool-pages": {
+      "concurrency": 8,
+      "iterationsPerWorker": 5,
+      "maximumErrorRate": 0,
+      "maximumP95Ms": 990
+    }
+  },
+  "lighthouse": {
+    "maximumCls": 0.02,
+    "maximumLcpMs": 3500,
+    "maximumTbtMs": 150,
+    "minimumAccessibilityScore": 0.98,
+    "minimumBestPracticesScore": 0.9,
+    "minimumPerformanceScore": 0.78,
+    "minimumSeoScore": 0.98,
+    "pages": [
+      {
+        "name": "home",
+        "path": "/"
+      },
+      {
+        "name": "domain-search",
+        "path": "/tools/domain-search"
+      },
+      {
+        "name": "idn",
+        "path": "/tools/idn"
+      }
+    ],
+    "runs": 3
+  },
+  "schemaVersion": 1
+}

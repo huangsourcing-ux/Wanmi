@@ -148,6 +148,28 @@ describe('public redirect proxy', () => {
     expect(csp).not.toMatch(/unsafe-(?:eval|inline)/u)
   })
 
+  it('isolates the Next development runtime fallbacks from the production policy', () => {
+    const development = buildContentSecurityPolicy('0123456789abcdef', {
+      allowDevelopmentRuntime: true,
+    })
+    const production = buildContentSecurityPolicy('0123456789abcdef')
+    expect(development).toContain("'unsafe-eval'")
+    expect(development).toContain("style-src 'self' 'unsafe-inline'")
+    expect(development).not.toContain("'strict-dynamic'")
+    expect(production).not.toMatch(/unsafe-(?:eval|inline)/u)
+    expect(production).toContain("'strict-dynamic'")
+  })
+
+  it.each([
+    ['/go/ad/public-fixture', 'origin'],
+    ['/api/v1/realname/documents/access', 'no-referrer'],
+    ['/api/v1/admin/realname/documents/access', 'no-referrer'],
+    ['/tools/domain-search', 'strict-origin-when-cross-origin'],
+  ])('keeps the route-specific referrer policy for %s', async (path, expected) => {
+    const response = await proxy(new NextRequest(`http://example.invalid${path}`))
+    expect(response.headers.get('referrer-policy')).toBe(expected)
+  })
+
   it('does not broaden the block to required Payload administrator REST endpoints', async () => {
     for (const path of ['/api/admins/me', '/api/admins/logout', '/api/admins/123']) {
       const response = await proxy(new NextRequest(`http://example.invalid${path}`))

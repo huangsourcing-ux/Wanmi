@@ -617,11 +617,11 @@ D6-02 返回语义补充验证记录（2026-08-08）：修正 `executeWestDigita
 
 ### 11.1 D7 集成与硬化
 
-- [ ] 对 M01～M16 执行全链路 E2E 和回归测试；
+- [x] 对 M01～M16 执行全链路 E2E 和回归测试；
 - [ ] 完成短信、微信支付、西部数码、OSS/KMS 的 staging contract test；
 - [x] 完成 DNS/TLS SSRF、开放跳转、CSRF、CORS、CSP、上传和越权安全测试；
 - [x] 完成 Gitleaks、Trivy 和 Node 依赖安全检查；
-- [ ] 完成 k6/Lighthouse 或等价性能基线；
+- [x] 完成 k6/Lighthouse 或等价性能基线；
 - [x] 建立工具、短信、支付、订单、履约、退款、余额、证件访问和对账监控；
 - [x] 建立异常订单、退款失败、余额不足、实名泄露、provider 故障和紧急停售 Runbook；
 - [x] 完成静态资源先上传后发布、镜像 digest、数据库兼容迁移和回滚流程；
@@ -640,6 +640,20 @@ D7-02 验证记录（2026-08-09）：复用既有 `westdigitalBalanceMonitoring`
 关键变异均被杀死并恢复：先预置相同旧监控水位，避免唯一 key 串行化掩盖 CAS；临时删除 `site_settings.value = old_value` 条件后，5 路执行全部返回非幂等并实际写出 5 条同窗告警，断言期望 4 个 replay 而实际 0；恢复后监控集成 2/2。临时把当前镜像改为 `:latest`，`make verify-release` 实际失败 `mutable tags are forbidden`；恢复后再把静态验证时间改到应用切流之后，实际失败 `static assets must be uploaded and verified before application promotion`；全部恢复后发布门禁通过。完整集成套件 26 个文件、98/98 通过；最终原样 `ALLOW_REAL_PROVIDER_WRITES=false make check` 通过生成物/schema 漂移、全部 migration 往返、Nginx、Runbook/发布门禁、lint、TypeScript strict、572/572 单元测试、98/98 PostgreSQL/MinIO 集成测试、依赖/秘密安全门禁、Next.js 生产构建和 linux/amd64 同镜像。本切片未新增 migration，因此没有从 D7-01 合并前的旧累计 snapshot 生成迁移。staging contract test、真实告警渠道验证、实际生产发布/回滚、2 vCPU/4 GiB、RDS/OSS 恢复、密钥轮换和真实三方对账仍等待单独授权并保持未勾选。
 
 PR #53 组合验证记录（2026-08-09）：PR #52 以 `8031aee` 合入 `main` 后，在 `codex/d7-02-monitoring-runbooks-release` 通过普通 merge 引入 D7-01，没有 rebase 或 force push。冲突只位于 Makefile、本计划和开发日志；Makefile 保留 `security: build`，并在同一 `check` 依赖链按生成物/迁移/契约校验、lint、test、security、build 分组同时执行 `verify-operations`、`verify-release`、完整历史 Gitleaks 和 linux/amd64 Trivy；两份文档按 D7-01、D7-02 顺序保留双方记录。D7-02 监控脱敏、告警 CAS、测试、Runbook、发布契约、migration 与生成类型相对 `68553dc` 均无变化。最终原样 `ALLOW_REAL_PROVIDER_WRITES=false make check` 退出码 0，组合状态通过生成物/schema 漂移、全部 migration 往返、Nginx、Runbook/发布契约、lint、TypeScript strict、589/589 单元测试、98/98 PostgreSQL/MinIO 集成测试、Node audit、工作树与完整历史 Gitleaks、Trivy、Next.js 生产构建和 linux/amd64 镜像门禁。未重新生成 migration，未连接真实 provider 或基础设施；未授权项目继续保持未勾选。
+
+D7-03 验证记录（2026-08-09）：开始前查阅仓库根目录只读《西部数码业务API接口文档（v2）新.md》，在 `ALLOW_REAL_PROVIDER_WRITES=false` 下复用 Payload Local API/service、WestDigital/微信/短信 fixture 和每次运行唯一 `fixturePrefix`/`traceId`，没有连接外网 provider 或执行真实写入。原有 39 条 Playwright 回归保留，新增 3 条生产构建上的串行交易旅程，闭合公开工具查询、OTP 登录、实名创建/提交/批准、报价、订单、服务端支付确认、注册履约、资产、NS、主动续费和到期提醒，并逐步核对用户可见页面/API 状态与 Payload 服务端状态；同时覆盖报价过期、未支付不履约、注册明确失败自动全额退款至 `refunded`、状态不明人工复核、停售保全已支付订单和跨客户 fail-closed。生产回归实际发现并修复安全头覆盖路径级 `Referrer-Policy` 和 frontend template chunk 缺 nonce 两项缺陷；E2E 改为固定生产构建且不复用已有服务器。新 fixture/清理使用 `ensureAnchorSystemAdmin`、`findOrCreateUniqueFixture`、`ignorePayloadNotFound`，清理严格限定本轮 ID；执行 `docker compose down -v` 重建当前项目 Postgres/MinIO 后，同一全新库连续两轮完整 `make test-e2e` 均为 42/42。
+
+履约变异只击中真正承重的入口状态门：临时把 `pending_payment` 加入可履约集合后，主干 E2E 期望 `ORDER_NOT_FULFILLABLE`、实际收到 `ORDER_TRANSITION_INVALID`，恢复后同一用例通过；并发 CAS/幂等仍由 PostgreSQL `UPDATE ... WHERE ... RETURNING` 和 `Promise.all` 集成测试证明，不以顺序旅程冒充并发覆盖。新增 `make performance` 在随机 loopback 端口执行接口负载和 Lighthouse 13.4.1，浏览器预检阻断非本地 origin。本机三轮校准中初始 300 ms 公开页和 150 ms IDN 门槛分别实际失败于 357.7 ms、160.4 ms，第三轮 p95 为 264.9/3978.6/149.1 ms；三页 Performance 为 0.81/0.81/0.82，最差 LCP 3313.1 ms。PR #54 首轮 Linux CI 的既有 `make check` 与 Chromium 安装通过，但性能步骤如实失败于公开页 810.9 ms、IDN 274.9 ms 和 TBT 89.5～104 ms；域名接口、错误率、LCP 与四类分数通过，同时暴露 Chrome profile 在进程退出前删除导致 `ENOTEMPTY` 的清理竞态。跨环境门槛据最差实测只留约 8%～15% 余量，固定为公开页 900 ms、域名接口 4300 ms、IDN 310 ms、TBT 120 ms，其他分数/LCP/CLS 门槛不放宽；脚本现先等待 Chrome/Web 退出并对临时 profile 使用有限删除重试。修复后本机完整门禁以 p95 274.9/3966.5/172.9 ms、最差 LCP 3312.0 ms、TBT 14.5 ms 退出 0，临时 profile 正常清理。2.5 秒 LCP 优化目标未达到的事实继续保留。最终原样 `ALLOW_REAL_PROVIDER_WRITES=false make check` 及 PR #54 首轮 Linux `make check` 均通过生成物/schema 漂移、全部 migration 往返、Nginx/Runbook/发布契约、lint、TypeScript strict、594/594 单元测试、98/98 PostgreSQL/MinIO 集成测试、依赖/秘密安全门禁、完整历史 Gitleaks、Next.js 生产构建和 linux/amd64 镜像/Trivy。第 14 节只将本次完整回归有直接证据的项目从 9/30 更新为 23/30；三方真实对账和六项发布/恢复验证保持未勾选。D7 剩余五项均等待真实凭据或基础设施授权：staging contract、通知重放与 ECS/RDS/OSS/轮换恢复、2 vCPU/4 GiB、Web/Worker 与同 VPC Job 中断恢复、真实三方对账。
+
+PR #54 第二轮 Linux CI 的 `make check` 与 Chromium 安装再次通过，但性能采样超过 15 分钟仍未结束，人工取消且不作为通过证据；每次 Lighthouse 调用现有 60 秒硬超时、35 秒页面加载上限，CI 性能步骤有 15 分钟上限，超时均明确失败且不改变数值门槛。有界版本本机完整门禁以 p95 252.1/3969.8/164.5 ms、三页 Performance 0.81/0.81/0.82、最差 LCP 3312.1 ms、TBT 6.5 ms 退出 0。
+
+PR #54 第三轮 Linux 在 148 秒内完成测量，接口 p95 为 783.9/3932.1/287.6 ms，三页 Performance 0.79/0.80/0.79、最差 LCP 3253.9 ms；IDN TBT 131.5 ms 超过当时 120 ms 门槛并正确失败，随后 Next 子进程残留使清理等到 15 分钟外层上限。最终 TBT 门槛按最新实测加约 14% 有限余量校准为 150 ms；Web/Chrome 改用独立进程组清理，`SIGKILL` 后仍有 2 秒硬上限。本机修复版完整门禁 p95 257.5/3973.5/130.2 ms、三页 Performance 0.81/0.81/0.82、最差 LCP 3311.0 ms 并立即退出；TBT 门槛变异为 0 后实际以 4.5/5/5 ms 失败，66.14 秒退出码 1，恢复 150 后无残留进程。
+
+PR #54 第四轮 Linux 证明清理修复生效，报告后约 5 秒退出；接口 p95 898.9/3927.7/317.9 ms，三页 Performance 0.79/0.80/0.81、最差 LCP 3245.8 ms、TBT 106.5 ms。只有 IDN 比当时 310 ms 门槛高 7.9 ms，最终按最新实测加约 10% 有限余量校准为 350 ms，其他接口和 Lighthouse 门槛不变。
+
+并行 CI 后本机 Playwright Chromium 145 连续返回 Lighthouse `NO_FCP`，未被误判通过；新增 `runtimeError`/非数值指标页面与轮次诊断。CLI 对照在同一生产页以系统 Chrome 151 得到 Performance 0.89、FCP 1121.2 ms，显式使用 macOS Playwright Chromium 145 则停在导航。最终固定 `chrome-launcher@1.2.1`，macOS 优先系统 Chrome、Linux CI 保留 Playwright Chromium，并支持显式路径覆盖。本机最终门禁 p95 218.4/3981.3/92.7 ms、三页 Performance 0.81/0.81/0.82、最差 LCP 3310.5 ms，退出 0。
+
+PR #54 复审收尾（2026-08-09）：公开工具页 900 ms 门槛原按首轮 Linux p95 810.9 ms 定档，漏纳入第四轮 898.9 ms。现一致应用 8%～15% 规则，将该项改为 990 ms，保留 91.1 ms（约 10.1%）有限余量；域名 4300 ms、IDN 350 ms、TBT 150 ms、LCP 3500 ms、Performance 0.78 及其余门槛均不变。接口汇总表同步校正后续有效轮次极值；完整 `ALLOW_REAL_PROVIDER_WRITES=false make performance` 复测三组接口 p50/p95 为 236.0/236.9、984.1/3982.5、100.8/136.3 ms，错误率均为 0，三页 Performance 0.81/0.81/0.82，最差 LCP 3312.1 ms、TBT 5 ms，退出码 0。未修改 E2E、proxy 或性能脚本逻辑，3.16～3.32 秒 LCP 已知基线结论不变。
 
 ### 11.2 D8 P1 开发验收
 
@@ -716,6 +730,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-09 | D6-05 累计迁移快照基线修复 | 普通 merge `main` 后删除旧 D6-05 migration，并基于含 D6-04 表结构的最新快照重新生成 `20260809_053302_d6_active_renewals`；新增累计快照门禁与 D6-05 独立往返验证 | 新快照命中 `domain_expiry_reminders=4`、`provider_operations=5`、`renewals=5`、`domain_assets=11`；全新卷连续两轮 96/96、整链 migrate、整批 down/up 与 `make check` 通过，最终 569/569 单元测试、96/96 集成测试；审计跨表 ID 碰撞变异稳定复现期望 4、实际 5 | 未修改 D6-05 业务逻辑；只调整测试审计/fixture 隔离与负载时限，只使用 fixture，真实 provider 联调和全部生产门槛不变 |
 | 2026-08-09 | D7-01 安全硬化与降级 | 补齐 SSRF/跳转/浏览器头/上传/越权安全矩阵；完整历史 Gitleaks、linux/amd64 Trivy 和精确 GHSA 例外；六类工具真实触发 CMS、广告、分析失败仍可用 | `make check`：586/586 单元、96/96 集成、完整迁移/构建/扫描通过；136 个提交无泄漏；关键分支变异均被杀死，冗余层与初始弱断言的存活过程已记录 | D7 第 3、4、12 项完成；staging contract、真实 ECS/RDS/OSS/KMS、密钥轮换和三方对账仍未授权且未勾选 |
 | 2026-08-09 | D7-02 监控、Runbook 与发布回滚 | 复用既有聚合、审计、账本、provider operation、人工复核和 background workflow 建立九类可配置阈值监控与原子单次告警；六份可执行 Runbook；静态先行、digest 镜像、兼容迁移与回滚门禁 | `make check`：572/572 单元测试、98/98 PostgreSQL/MinIO 集成测试及完整迁移/Runbook/发布/安全/构建门禁通过；监控 CAS、mutable tag、静态晚于切流三处变异均被杀死；`ALLOW_REAL_PROVIDER_WRITES=false` | 不新增 migration；没有部署或真实 provider/OSS/KMS/registry 写入；staging、生产告警渠道、真实发布/回滚和全部基础设施演练仍待授权 |
+| 2026-08-09 | D7-03 全链路 E2E 与性能基线 | 生产构建上新增交易主干与关键失败/越权旅程；修复 CSP nonce、路径级 Referrer-Policy 与 Linux Chrome profile 清理竞态；建立跨本机/CI 的接口负载和三页 Lighthouse 门槛 | 全新库连续两轮 `make test-e2e` 42/42；履约状态门变异被杀死；本机性能最终 p95 264.9/3978.6/149.1 ms；Linux 首轮实测公开页/IDN 810.9/274.9 ms、TBT 最差 104 ms，并据此固定有限余量；本地及 Linux `make check` 594/594 单元、98/98 集成与完整门禁通过 | `ALLOW_REAL_PROVIDER_WRITES=false`，无真实 provider/外网依赖；D7 余下五项等待真实凭据或基础设施授权，未提前勾选 |
 
 ## 13. 范围追踪矩阵
 
@@ -742,16 +757,16 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 
 ### 14.1 工具与页面
 
-- [ ] 多 TLD 查询部分失败；
+- [x] 多 TLD 查询部分失败；
 - [x] WHOIS 与可售状态独立；
 - [x] DNS 常见记录、NXDOMAIN、SERVFAIL、超时和无记录；
 - [x] TLS 有效、过期、不匹配、自签名、内网地址和 DNS rebinding；
 - [x] IDN 中文、混合字符、非法长度和非法标签；
-- [ ] 西部数码限频、429、队列满和缓存降级；
-- [ ] 查询结果 noindex、canonical、sitemap 和结构化数据；
+- [x] 西部数码限频、429、队列满和缓存降级；
+- [x] 查询结果 noindex、canonical、sitemap 和结构化数据；
 - [x] SEO 字段生成、草稿隔离、301 生效、重定向循环和开放跳转；
-- [ ] 反馈表单字段白名单、限频、敏感信息拒绝和未授权导出；
-- [ ] 广告关闭、过期、错误素材、恶意链接和布局稳定。
+- [x] 反馈表单字段白名单、限频、敏感信息拒绝和未授权导出；
+- [x] 广告关闭、过期、错误素材、恶意链接和布局稳定。
 
 ### 14.2 账号与实名
 
@@ -763,13 +778,13 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 
 ### 14.3 交易与履约
 
-- [ ] 报价过期、价格变化、溢价域名和未配置加价；
-- [ ] 支付失败、页面中断、重复/乱序通知、伪造签名和主动查单；
-- [ ] 支付成功后服务重启、Payload Job 重复执行和通知重放；
-- [ ] 西部数码明确失败、超时、状态不明和重复响应；
-- [ ] 余额不足、新订单停售和已支付订单人工处理；
-- [ ] 注册成功不可退款、明确失败自动退款和退款失败；
-- [ ] 域名资产越权、主动续费和 Name Server 修改；
+- [x] 报价过期、价格变化、溢价域名和未配置加价；
+- [x] 支付失败、页面中断、重复/乱序通知、伪造签名和主动查单；
+- [x] 支付成功后服务重启、Payload Job 重复执行和通知重放；
+- [x] 西部数码明确失败、超时、状态不明和重复响应；
+- [x] 余额不足、新订单停售和已支付订单人工处理；
+- [x] 注册成功不可退款、明确失败自动退款和退款失败；
+- [x] 域名资产越权、主动续费和 Name Server 修改；
 - [ ] 微信、西部数码和内部订单三方对账。
 
 ### 14.4 发布与恢复

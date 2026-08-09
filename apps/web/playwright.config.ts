@@ -17,10 +17,22 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   webServer: {
-    command: 'pnpm dev',
-    reuseExistingServer: !process.env.CI,
+    command: 'pnpm build && pnpm start:e2e',
+    reuseExistingServer: false,
     url: 'http://127.0.0.1:3100/healthz',
     timeout: 120_000,
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: 'chromium',
+      testIgnore: 'commerce-journey.spec.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      dependencies: ['chromium'],
+      name: 'commerce-journey',
+      testMatch: 'commerce-journey.spec.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
 })

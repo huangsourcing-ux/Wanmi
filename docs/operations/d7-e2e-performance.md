@@ -1,0 +1,83 @@
+# D7-03 全链路 E2E 与性能基线
+
+## 1. 范围与安全边界
+
+本记录覆盖开发计划 11.1 第 1、5 项。全部验证使用本地 PostgreSQL、Who-Dat、MinIO 和 provider fixture，固定 `ALLOW_REAL_PROVIDER_WRITES=false`，没有真实短信、资金、域名、OSS/KMS 或外网 provider 写入。
+
+`make test-e2e` 先构建并启动生产版 Next.js：原有 39 条回归仍以 2 workers 执行；新增 3 条交易闭环在前一项目全部通过后串行执行，避免长事务 fixture 与其他文件同时操作开发服务器。并发 CAS、幂等与单执行者语义继续由使用 `Promise.all` 和 PostgreSQL 原子 `UPDATE ... WHERE ... RETURNING` 的集成测试承担，不以顺序 E2E 冒充并发证据。
+
+## 2. M01～M16 追踪
+
+| 模块     | 自动化证据                                                                                                        |
+| -------- | ----------------------------------------------------------------------------------------------------------------- |
+| M01～M02 | `public-site.spec.ts` 的首页、移动导航、10 TLD/部分成功；`commerce-journey.spec.ts` 同时核对公开 API 与可见结果卡 |
+| M03～M04 | WHOIS 与可售分离、Who-Dat 降级、DNS 八类记录及失败状态 E2E                                                        |
+| M05～M07 | 定价快照、报价；IDN 双向/风险；SSL/CAA 与失败降级 E2E/回归                                                        |
+| M08～M10 | 内容发布/预览、SEO/sitemap、浏览器本地历史、广告标识与受控跳转 E2E                                                |
+| M11～M12 | 管理员 TOTP、四角色 RBAC、第一方隐私事件、反馈状态及监控集成回归                                                  |
+| M13      | OTP 登录、opaque Session、实名模板创建/提交/批准、私有证件与跨客户隔离                                            |
+| M14      | 报价、订单、Native 支付页面、服务端确认、全额原路退款及用户可见状态                                               |
+| M15      | 注册与主动续费履约、明确失败、状态不明、停售保全及人工复核                                                        |
+| M16      | 域名资产出现、Name Server 变更、到期提醒及跨客户 fail-closed                                                      |
+
+主干路径逐步断言公开工具结果、客户登录、实名批准、报价/订单、支付前后页面、履约后订单、资产列表/详情、NS pending/succeeded、续费后到期时间以及短信/站内提醒的用户可见状态与 Payload 服务端状态一致。
+
+关键失败分支包括：过期报价返回 `QUOTE_EXPIRED` 且不泄漏域名；未确认支付在 provider 写前返回 `ORDER_NOT_FULFILLABLE`；注册明确失败建立全额退款并走完 `refund_pending → refunding → refunded`；提交后状态不明进入 `manual_review`；`.com` 停售时已支付订单保留 `paid` 并建立人工复核；他人报价、实名模板、支付、资产详情和 NS 修改全部 fail-closed。
+
+## 3. 性能方法与判定
+
+执行入口：
+
+```bash
+ALLOW_REAL_PROVIDER_WRITES=false make performance
+```
+
+该目标执行 migration、生产构建、随机分配 loopback 端口，并运行接口负载和 Lighthouse。脚本先用独立浏览器阻断所有非当前 loopback origin 的页面请求；发现任何外部依赖立即失败。接口只接受 HTTP 200 和预期 `ready` 状态，任何超时、非预期状态或错误都计入错误率。
+
+正式测量环境覆盖 macOS arm64 本机与 GitHub Actions Ubuntu runner，统一使用 Node.js 24.18.0、Lighthouse/chrome-launcher 13.4.1/1.2.1、Next.js 生产构建和本地 fixture；macOS 使用系统 Chrome 151.0.7922.76，Linux CI 使用 Playwright Chromium 145.0.7632.6。接口 p95 按全部请求计算；Lighthouse 使用 desktop simulated throttling，每页 3 次并取中值。本机连续执行三轮校准/门禁：第一轮公开工具页因 p95 357.7 ms 超过初始 300 ms 门槛失败，第二轮 IDN 因 p95 160.4 ms 超过初始 150 ms 门槛失败，第三轮通过。首轮 Linux CI 又如实失败于公开页 810.9 ms、IDN 274.9 ms 和三页 TBT 89.5～104 ms；第三轮 Linux 实测 IDN TBT 中位数进一步达到 131.5 ms，第四轮公开页与 IDN p95 分别达到 898.9 ms、317.9 ms。域名接口、错误率、LCP 与四类分数均通过。跨环境最终门槛按各项最差实测增加约 8%～15% 抖动空间，不按本机最快值冒充 CI 可重复基线。
+
+### 3.1 接口实测与门槛
+
+| 场景           | 负载           |  跨环境实测 p50 |    跨环境实测 p95 |                  硬门槛 |
+| -------------- | -------------- | --------------: | ----------------: | ----------------------: |
+| 公开工具结果页 | 8 workers × 5  | 217.6～891.4 ms |   218.4～898.9 ms |  p95 ≤ 990 ms，错误率 0 |
+| 域名可售接口   | 4 workers × 3  | 932.4～984.1 ms | 3927.7～3982.5 ms | p95 ≤ 4300 ms，错误率 0 |
+| IDN 接口       | 8 workers × 10 |  48.9～206.0 ms |    71.7～317.9 ms |  p95 ≤ 350 ms，错误率 0 |
+
+域名可售 fixture 保留固定上游限频/排队模型，因此并发 4 下约 4 秒 p95 是当前可解释基线，不应与纯本地 IDN 运算混为同一阈值。
+
+公开工具结果页最终门槛以第四轮 Linux CI 的最差 p95 `898.9 ms` 为依据，取 `990 ms`，保留 `91.1 ms`（约 `10.1%`）共享 runner 抖动空间，符合统一的 8%～15% 定档规则。域名接口、IDN、TBT 及 Lighthouse 其余门槛不变。
+
+### 3.2 Lighthouse 实测与门槛
+
+| 页面           | Performance | A11y | Best Practices |  SEO |             FCP |               LCP |           TBT | CLS |
+| -------------- | ----------: | ---: | -------------: | ---: | --------------: | ----------------: | ------------: | --: |
+| 首页           |  0.80～0.81 | 1.00 |           0.92 | 1.00 | 919.4～997.2 ms | 3164.2～3266.5 ms |   6.5～104 ms |   0 |
+| 域名查询工具页 |  0.80～0.81 | 1.00 |           0.92 | 1.00 | 814.0～916.7 ms | 3242.1～3315.4 ms |  5.5～89.5 ms |   0 |
+| IDN 工具页     |  0.79～0.82 | 1.00 |           0.92 | 1.00 | 763.8～831.0 ms | 3161.5～3233.4 ms | 4.5～131.5 ms |   0 |
+
+硬门槛为 Performance ≥ 0.78、Accessibility ≥ 0.98、Best Practices ≥ 0.90、SEO ≥ 0.98、LCP ≤ 3500 ms、TBT ≤ 150 ms、CLS ≤ 0.02；任一页任一项失败即命令非零退出。TBT 门槛按最新 Linux 131.5 ms 中位数保留约 14% 抖动空间，仍严于 200 ms 的良好表现边界；其他门槛比跨环境最差实测留约 8%～15%，不是永远通过的宽松值。
+
+当前 simulated LCP 3.16～3.32 秒尚未达到 2.5 秒的优化目标，作为已知基线保留，不能通过继续放宽回归门槛掩盖。诊断中 TTFB 9～20 ms、FCP 0.76～1.00 秒且 Lighthouse LCP breakdown 没有可节省项；后续应针对渲染模型和首屏元素继续优化，达到后再下调 3500 ms 门槛。
+
+## 4. 变异与回归缺陷证据
+
+履约前存在支付通知验签、订单状态机和履约入口状态门。变异只修改真正承重的入口状态门，临时把 `pending_payment` 加入可履约集合；主干 E2E 实际失败为期望 `ORDER_NOT_FULFILLABLE`、收到 `ORDER_TRANSITION_INVALID`。这证明测试会在 provider 写入口前识别未支付订单越过状态门；恢复后同一用例通过。
+
+完整回归还发现并修复两项真实缺陷：全局安全头覆盖广告 `Referrer-Policy: origin`（同时会覆盖证件访问 `no-referrer`）；生产构建中 frontend template 的单独客户端 chunk 没有 nonce，导致严格 CSP 下无法 hydration。现在按路径保留显式 referrer policy，并把请求 ID Provider 上移到动态 layout，生产 CSP 继续使用 nonce + `strict-dynamic`，没有加入 `unsafe-*`。
+
+涉及新 fixture 与清理范围后，明确执行 `docker compose down -v` 删除并重建当前项目的 Postgres/MinIO 本地卷；修复上述回归后，同一全新库连续两轮完整 `make test-e2e` 均为 42/42 通过。
+
+首轮 Linux CI 还暴露 Chrome 收到 `SIGTERM` 后 profile 尚未关闭就被删除的清理竞态，实际失败为 `ENOTEMPTY: directory not empty, rmdir '/tmp/wanmi-lighthouse-*'`。脚本现等待 Chrome/Web 子进程退出，5 秒后才有限升级为 `SIGKILL`，并仅对临时 profile 删除使用 5 次、100 ms 的有限重试。
+
+修复后再次执行完整 `make performance`，本机接口 p95 为 274.9/3966.5/172.9 ms，三页 Performance 为 0.81/0.81/0.82，最差 LCP 3312.0 ms、TBT 14.5 ms，命令退出码 0，Chrome/Web 与临时 profile 均正常清理。
+
+PR #54 第二轮 Linux CI 的完整 `make check` 与 Chromium 安装再次通过；性能步骤曾输出接口 p95 `664.0/3951.0/493.2 ms` 和 IDN 阈值失败，但随后进程未清理、运行超过 15 分钟并被人工取消，没有完整命令退出结果，因此不作为有效校准轮次或性能通过证据，也不用于调整数值门槛。为使本地和 CI 都能确定性结束，每次 Lighthouse 调用增加 60 秒硬超时，单页加载继续受 35 秒 `maxWaitForLoad` 约束，CI 的整个 `make performance` 步骤增加 15 分钟上限；任何一层超时均非零失败并报告具体页面/轮次。加入运行时上限后的本机完整门禁再次通过，接口 p95 为 252.1/3969.8/164.5 ms，三页 Performance 为 0.81/0.81/0.82，最差 LCP 3312.1 ms、TBT 6.5 ms，退出码 0。
+
+第三轮 Linux CI 在 148 秒内完成全部测量并正确报告 IDN TBT 131.5 ms 超过当时 120 ms 门槛，但随后只终止 `pnpm start` 父进程，Next 子进程继续持有管道，最终由 15 分钟外层上限判失败。Web 与 Chrome 现以独立进程组启动，清理向整组发送 `SIGTERM`，5 秒后有限升级 `SIGKILL`，再以 2 秒硬上限拒绝无界等待。修复后本机完整 `make performance` 以 p95 257.5/3973.5/130.2 ms、三页 Performance 0.81/0.81/0.82、最差 LCP 3311.0 ms 退出 0；把 TBT 门槛临时变异为 0 后，三页以 4.5/5/5 ms 明确失败，命令 66.14 秒退出码 1，证明数值失败路径同样能完成清理。门槛随后恢复为 150 ms。
+
+第四轮 Linux CI 证明进程组修复有效：性能报告后约 5 秒即清理退出。公开页、域名和 IDN 接口 p95 为 898.9/3927.7/317.9 ms，三页 Performance 为 0.79/0.80/0.81，最差 LCP 3245.8 ms、TBT 106.5 ms；只有 IDN 比当时 310 ms 门槛高 7.9 ms。IDN 最终门槛按最新实测增加约 10% 有限余量至 350 ms，其他接口和 Lighthouse 门槛不变。
+
+第四轮 CI 与本机同时采样后，本机 Playwright Chromium 145 连续返回 Lighthouse `NO_FCP`；旧脚本把空指标转换成 0 后统一失败，未误判通过，但诊断不够明确。脚本现对 `runtimeError` 和任何非数值指标立即报告页面/轮次；Lighthouse CLI 对照证明同一生产页在系统 Chrome 151 得到 Performance 0.89、FCP 1121.2 ms，而显式使用 macOS Playwright Chromium 145 停在导航。最终由固定 `chrome-launcher@1.2.1` 管理浏览器：macOS 优先系统 Chrome，Linux 继续使用已完成四轮测量的 Playwright Chromium，并允许用 `PERFORMANCE_CHROME_PATH` 显式覆盖。修复后本机最终 p95 为 218.4/3981.3/92.7 ms，三页 Performance 0.81/0.81/0.82，最差 LCP 3310.5 ms，退出码 0。
+
+PR #54 复审收尾发现公开页仍沿用首轮 Linux `810.9 ms` 定档，未纳入第四轮 `898.9 ms`。现按同一规则把公开页门槛改为 `990 ms`，保留约 `10.1%` 有限余量；未改动域名、IDN、TBT、LCP、评分、CLS 或错误率门槛，也未修改 E2E、proxy 或性能脚本逻辑。汇总表同步纳入全部有效校准轮次及本次复测的真实极值：公开页 p50/p95 为 `217.6～891.4/218.4～898.9 ms`，域名接口为 `932.4～984.1/3927.7～3982.5 ms`，IDN 为 `48.9～206.0/71.7～317.9 ms`；`NO_FCP` 浏览器诊断轮次和 TBT 门槛变异轮次不作为正式定档样本。最终完整 `ALLOW_REAL_PROVIDER_WRITES=false make performance` 实测三组接口 p50/p95 为 `236.0/236.9`、`984.1/3982.5`、`100.8/136.3 ms`，错误率均为 0；三页 Performance 为 `0.81/0.81/0.82`，最差 LCP `3312.1 ms`、TBT `5 ms`，退出码 0。LCP 3500 ms、Performance 0.78 及 simulated LCP 3.16～3.32 秒已知基线结论保持不变。
