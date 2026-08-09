@@ -19,6 +19,7 @@ import {
   type NameserverChangeJobInput,
 } from '@/services/domains/nameserver-changes'
 import { runConfiguredDomainExpiryReminders } from '@/services/domains/expiry-reminders'
+import { runOperationsMonitoring } from '@/services/operations/monitoring'
 
 const probeInput = [{ name: 'traceId', type: 'text', required: true }] as const
 
@@ -180,10 +181,23 @@ export const westdigitalBalanceMonitoring: WorkflowConfig = {
   retries: 0,
   schedule: [{ cron: '0 */5 * * * *', queue: 'background' }],
   handler: async ({ job, req }) => {
-    await monitorWestDigitalBalance(req, {
-      provider: createConfiguredWestDigitalBalanceProvider(),
-      traceId: `westdigital-balance-job-${job.id}`,
-    })
+    const failures: unknown[] = []
+    try {
+      await monitorWestDigitalBalance(req, {
+        provider: createConfiguredWestDigitalBalanceProvider(),
+        traceId: `westdigital-balance-job-${job.id}`,
+      })
+    } catch (error) {
+      failures.push(error)
+    }
+    try {
+      await runOperationsMonitoring(req)
+    } catch (error) {
+      failures.push(error)
+    }
+    if (failures.length) {
+      throw new AggregateError(failures, 'One or more operations monitoring checks failed')
+    }
   },
 }
 
