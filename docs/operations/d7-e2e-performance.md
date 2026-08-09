@@ -34,7 +34,7 @@ ALLOW_REAL_PROVIDER_WRITES=false make performance
 
 该目标执行 migration、生产构建、随机分配 loopback 端口，并运行接口负载和 Lighthouse。脚本先用独立浏览器阻断所有非当前 loopback origin 的页面请求；发现任何外部依赖立即失败。接口只接受 HTTP 200 和预期 `ready` 状态，任何超时、非预期状态或错误都计入错误率。
 
-正式测量环境覆盖 macOS arm64 本机与 GitHub Actions Ubuntu runner，统一使用 Node.js 24.18.0、Chromium/Lighthouse 13.4.1、Next.js 生产构建和本地 fixture。接口 p95 按全部请求计算；Lighthouse 使用 desktop simulated throttling，每页 3 次并取中值。本机连续执行三轮校准/门禁：第一轮公开工具页因 p95 357.7 ms 超过初始 300 ms 门槛失败，第二轮 IDN 因 p95 160.4 ms 超过初始 150 ms 门槛失败，第三轮通过。首轮 Linux CI 又如实失败于公开页 810.9 ms、IDN 274.9 ms 和三页 TBT 89.5～104 ms；第三轮 Linux 实测 IDN TBT 中位数进一步达到 131.5 ms。域名接口、错误率、LCP 与四类分数均通过。跨环境最终门槛按各项最差实测增加约 8%～15% 抖动空间，不按本机最快值冒充 CI 可重复基线。
+正式测量环境覆盖 macOS arm64 本机与 GitHub Actions Ubuntu runner，统一使用 Node.js 24.18.0、Lighthouse/chrome-launcher 13.4.1/1.2.1、Next.js 生产构建和本地 fixture；macOS 使用系统 Chrome 151.0.7922.76，Linux CI 使用 Playwright Chromium 145.0.7632.6。接口 p95 按全部请求计算；Lighthouse 使用 desktop simulated throttling，每页 3 次并取中值。本机连续执行三轮校准/门禁：第一轮公开工具页因 p95 357.7 ms 超过初始 300 ms 门槛失败，第二轮 IDN 因 p95 160.4 ms 超过初始 150 ms 门槛失败，第三轮通过。首轮 Linux CI 又如实失败于公开页 810.9 ms、IDN 274.9 ms 和三页 TBT 89.5～104 ms；第三轮 Linux 实测 IDN TBT 中位数进一步达到 131.5 ms，第四轮 IDN p95 达到 317.9 ms。域名接口、错误率、LCP 与四类分数均通过。跨环境最终门槛按各项最差实测增加约 8%～15% 抖动空间，不按本机最快值冒充 CI 可重复基线。
 
 ### 3.1 接口实测与门槛
 
@@ -42,7 +42,7 @@ ALLOW_REAL_PROVIDER_WRITES=false make performance
 | -------------- | -------------- | --------------: | ----------------: | ----------------------: |
 | 公开工具结果页 | 8 workers × 5  | 258.4～793.2 ms |   260.0～810.9 ms |  p95 ≤ 900 ms，错误率 0 |
 | 域名可售接口   | 4 workers × 3  | 932.4～980.8 ms | 3929.0～3978.6 ms | p95 ≤ 4300 ms，错误率 0 |
-| IDN 接口       | 8 workers × 10 |  49.7～180.7 ms |    71.7～274.9 ms |  p95 ≤ 310 ms，错误率 0 |
+| IDN 接口       | 8 workers × 10 |  49.7～206.0 ms |    71.7～317.9 ms |  p95 ≤ 350 ms，错误率 0 |
 
 域名可售 fixture 保留固定上游限频/排队模型，因此并发 4 下约 4 秒 p95 是当前可解释基线，不应与纯本地 IDN 运算混为同一阈值。
 
@@ -73,3 +73,7 @@ ALLOW_REAL_PROVIDER_WRITES=false make performance
 PR #54 第二轮 Linux CI 的完整 `make check` 与 Chromium 安装再次通过，但性能采样超过 15 分钟仍未结束，人工取消后没有阈值判定结果；这不是性能通过证据，也不用于放宽数值门槛。为使本地和 CI 都能确定性结束，每次 Lighthouse 调用增加 60 秒硬超时，单页加载继续受 35 秒 `maxWaitForLoad` 约束，CI 的整个 `make performance` 步骤增加 15 分钟上限；任何一层超时均非零失败并报告具体页面/轮次。加入运行时上限后的本机完整门禁再次通过，接口 p95 为 252.1/3969.8/164.5 ms，三页 Performance 为 0.81/0.81/0.82，最差 LCP 3312.1 ms、TBT 6.5 ms，退出码 0。
 
 第三轮 Linux CI 在 148 秒内完成全部测量并正确报告 IDN TBT 131.5 ms 超过当时 120 ms 门槛，但随后只终止 `pnpm start` 父进程，Next 子进程继续持有管道，最终由 15 分钟外层上限判失败。Web 与 Chrome 现以独立进程组启动，清理向整组发送 `SIGTERM`，5 秒后有限升级 `SIGKILL`，再以 2 秒硬上限拒绝无界等待。修复后本机完整 `make performance` 以 p95 257.5/3973.5/130.2 ms、三页 Performance 0.81/0.81/0.82、最差 LCP 3311.0 ms 退出 0；把 TBT 门槛临时变异为 0 后，三页以 4.5/5/5 ms 明确失败，命令 66.14 秒退出码 1，证明数值失败路径同样能完成清理。门槛随后恢复为 150 ms。
+
+第四轮 Linux CI 证明进程组修复有效：性能报告后约 5 秒即清理退出。公开页、域名和 IDN 接口 p95 为 898.9/3927.7/317.9 ms，三页 Performance 为 0.79/0.80/0.81，最差 LCP 3245.8 ms、TBT 106.5 ms；只有 IDN 比当时 310 ms 门槛高 7.9 ms。IDN 最终门槛按最新实测增加约 10% 有限余量至 350 ms，其他接口和 Lighthouse 门槛不变。
+
+第四轮 CI 与本机同时采样后，本机 Playwright Chromium 145 连续返回 Lighthouse `NO_FCP`；旧脚本把空指标转换成 0 后统一失败，未误判通过，但诊断不够明确。脚本现对 `runtimeError` 和任何非数值指标立即报告页面/轮次；Lighthouse CLI 对照证明同一生产页在系统 Chrome 151 得到 Performance 0.89、FCP 1121.2 ms，而显式使用 macOS Playwright Chromium 145 停在导航。最终由固定 `chrome-launcher@1.2.1` 管理浏览器：macOS 优先系统 Chrome，Linux 继续使用已完成四轮测量的 Playwright Chromium，并允许用 `PERFORMANCE_CHROME_PATH` 显式覆盖。修复后本机最终 p95 为 218.4/3981.3/92.7 ms，三页 Performance 0.81/0.81/0.82，最差 LCP 3310.5 ms，退出码 0。

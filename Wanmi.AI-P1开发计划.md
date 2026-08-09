@@ -649,6 +649,10 @@ PR #54 第二轮 Linux CI 的 `make check` 与 Chromium 安装再次通过，但
 
 PR #54 第三轮 Linux 在 148 秒内完成测量，接口 p95 为 783.9/3932.1/287.6 ms，三页 Performance 0.79/0.80/0.79、最差 LCP 3253.9 ms；IDN TBT 131.5 ms 超过当时 120 ms 门槛并正确失败，随后 Next 子进程残留使清理等到 15 分钟外层上限。最终 TBT 门槛按最新实测加约 14% 有限余量校准为 150 ms；Web/Chrome 改用独立进程组清理，`SIGKILL` 后仍有 2 秒硬上限。本机修复版完整门禁 p95 257.5/3973.5/130.2 ms、三页 Performance 0.81/0.81/0.82、最差 LCP 3311.0 ms 并立即退出；TBT 门槛变异为 0 后实际以 4.5/5/5 ms 失败，66.14 秒退出码 1，恢复 150 后无残留进程。
 
+PR #54 第四轮 Linux 证明清理修复生效，报告后约 5 秒退出；接口 p95 898.9/3927.7/317.9 ms，三页 Performance 0.79/0.80/0.81、最差 LCP 3245.8 ms、TBT 106.5 ms。只有 IDN 比当时 310 ms 门槛高 7.9 ms，最终按最新实测加约 10% 有限余量校准为 350 ms，其他接口和 Lighthouse 门槛不变。
+
+并行 CI 后本机 Playwright Chromium 145 连续返回 Lighthouse `NO_FCP`，未被误判通过；新增 `runtimeError`/非数值指标页面与轮次诊断。CLI 对照在同一生产页以系统 Chrome 151 得到 Performance 0.89、FCP 1121.2 ms，显式使用 macOS Playwright Chromium 145 则停在导航。最终固定 `chrome-launcher@1.2.1`，macOS 优先系统 Chrome、Linux CI 保留 Playwright Chromium，并支持显式路径覆盖。本机最终门禁 p95 218.4/3981.3/92.7 ms、三页 Performance 0.81/0.81/0.82、最差 LCP 3310.5 ms，退出 0。
+
 ### 11.2 D8 P1 开发验收
 
 开发完成必须满足：

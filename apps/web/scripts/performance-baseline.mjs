@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 
 import { chromium } from '@playwright/test'
+import { launch, Launcher } from 'chrome-launcher'
 import lighthouse from 'lighthouse'
 
 const webDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -264,19 +265,17 @@ async function measureApi() {
 async function launchChrome() {
   const port = await availablePort()
   const profile = await mkdtemp(path.join(tmpdir(), 'wanmi-lighthouse-'))
-  const child = spawn(
-    chromium.executablePath(),
-    [
-      '--headless=new',
-      '--no-first-run',
-      '--no-sandbox',
-      `--remote-debugging-port=${port}`,
-      `--user-data-dir=${profile}`,
-    ],
-    { detached: process.platform !== 'win32', stdio: 'ignore' },
-  )
-  await waitFor(`http://127.0.0.1:${port}/json/version`, 30_000, child)
-  return { child, port, profile }
+  const chromePath =
+    process.env.PERFORMANCE_CHROME_PATH ??
+    (process.platform === 'darwin' ? Launcher.getFirstInstallation() : undefined) ??
+    chromium.executablePath()
+  const instance = await launch({
+    chromeFlags: ['--headless', '--no-sandbox'],
+    chromePath,
+    port,
+    userDataDir: profile,
+  })
+  return { instance, port: instance.port, profile }
 }
 
 async function lighthousePage(page, port) {
@@ -304,7 +303,12 @@ async function lighthousePage(page, port) {
       `Lighthouse ${page.name} run ${run + 1}`,
     )
     if (!result) throw new Error(`Lighthouse returned no result for ${page.name}`)
-    runs.push({
+    if (result.lhr.runtimeError) {
+      throw new Error(
+        `Lighthouse ${page.name} run ${run + 1} failed: ${result.lhr.runtimeError.code}: ${result.lhr.runtimeError.message}`,
+      )
+    }
+    const measurements = {
       accessibilityScore: result.lhr.categories.accessibility.score,
       bestPracticesScore: result.lhr.categories['best-practices'].score,
       cls: result.lhr.audits['cumulative-layout-shift'].numericValue,
@@ -315,7 +319,16 @@ async function lighthousePage(page, port) {
       speedIndexMs: result.lhr.audits['speed-index'].numericValue,
       tbtMs: result.lhr.audits['total-blocking-time'].numericValue,
       ttfbMs: result.lhr.audits['server-response-time'].numericValue,
-    })
+    }
+    const invalidMeasurements = Object.entries(measurements)
+      .filter(([, value]) => typeof value !== 'number' || !Number.isFinite(value))
+      .map(([name]) => name)
+    if (invalidMeasurements.length > 0) {
+      throw new Error(
+        `Lighthouse ${page.name} run ${run + 1} returned non-numeric metrics: ${invalidMeasurements.join(', ')}`,
+      )
+    }
+    runs.push(measurements)
   }
   return {
     accessibilityScore: round(median(runs.map((run) => run.accessibilityScore)), 2),
@@ -390,7 +403,7 @@ try {
   }
 } finally {
   if (chrome) {
-    await stopChild(chrome.child)
+    await withTimeout(chrome.instance.kill(), 7_000, 'Chrome shutdown')
     await rm(chrome.profile, { force: true, maxRetries: 5, recursive: true, retryDelay: 100 })
   }
   if (web) await stopChild(web)

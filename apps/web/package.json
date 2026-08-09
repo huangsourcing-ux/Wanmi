@@ -86,6 +86,7 @@
     "@types/react-dom": "19.2.3",
     "@types/tr46": "5.0.1",
     "@vitejs/plugin-react": "4.5.2",
+    "chrome-launcher": "1.2.1",
     "eslint": "9.39.2",
     "eslint-config-next": "16.2.11",
     "image-size": "2.0.2",
