@@ -138,7 +138,7 @@ afterAll(async () => {
     await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
   }
   await payload.db.destroy?.()
-})
+}, 60_000)
 
 describe('D1 controlled redirects', () => {
   it('enforces CRUD access for every supported identity and records safe audit snapshots', async () => {

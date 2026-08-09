@@ -37,6 +37,7 @@ describe('shared audit event service', () => {
         'commerce.invoice_note.recorded',
         'commerce.payment_notification.replayed',
         'commerce.payment.reconciled',
+        'commerce.renewal.recorded',
         'commerce.sales_stop.changed',
         'commerce.sales_stop.paid_order_held',
         'commerce.sales_stop.refund_selected',

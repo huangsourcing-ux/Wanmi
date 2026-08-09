@@ -52,6 +52,10 @@ export const auditEventDefinitions = {
   'commerce.sales_stop.paid_order_held': { actorTypes: ['system'], targetType: 'order' },
   'commerce.sales_stop.refund_selected': { actorTypes: ['admin'], targetType: 'order' },
   'commerce.sales_stop.resume_selected': { actorTypes: ['admin'], targetType: 'order' },
+  'commerce.renewal.recorded': {
+    actorTypes: ['provider', 'system'],
+    targetType: 'renewal',
+  },
   'domain.asset.synced': {
     actorTypes: ['customer', 'system'],
     targetType: 'domain-asset',

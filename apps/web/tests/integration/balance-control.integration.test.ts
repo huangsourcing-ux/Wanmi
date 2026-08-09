@@ -38,7 +38,11 @@ import { submitRealnameTemplate, syncRealnameTemplateStatus } from '@/services/r
 import { fulfillmentQuoteSnapshotFixture } from '../fixtures/commerce'
 import { PRICING_RULE_FIXTURES } from '../fixtures/pricing'
 import { approvedRealnameProviderFixture, realnameTemplateFixture } from '../fixtures/realname'
-import { ensureAnchorSystemAdmin } from '../test-cleanup'
+import {
+  ensureAnchorSystemAdmin,
+  findOrCreateUniqueFixture,
+  ignorePayloadNotFound,
+} from '../test-cleanup'
 
 const prefix = `d6-balance-control-${randomUUID()}`
 let payload: Payload
@@ -216,7 +220,9 @@ afterAll(async () => {
   })
   for (const job of jobs.docs) {
     if (JSON.stringify(job.input).includes(prefix)) {
-      await payload.delete({ collection: 'payload-jobs', id: job.id, overrideAccess: true }).catch(() => undefined)
+      await ignorePayloadNotFound(() =>
+        payload.delete({ collection: 'payload-jobs', id: job.id, overrideAccess: true }),
+      )
     }
   }
   const orders = await payload.find({
@@ -225,9 +231,10 @@ afterAll(async () => {
     overrideAccess: true,
     where: { orderNumber: { contains: prefix } },
   })
-  for (const order of orders.docs) {
+  const orderIds = orders.docs.map((order) => order.id)
+  if (orderIds.length) {
     for (const collection of [
-      'domainAssets',
+      'renewals',
       'manualReviews',
       'orderEvents',
       'paymentNotifications',
@@ -236,18 +243,32 @@ afterAll(async () => {
     ] as const) {
       const rows = await payload.find({
         collection,
-        limit: 100,
+        limit: 500,
         overrideAccess: true,
-        where:
-          collection === 'domainAssets'
-            ? { domainAscii: { equals: order.domainAscii } }
-            : { order: { equals: order.id } },
+        where: { order: { in: orderIds } },
       })
       for (const row of rows.docs) {
-        await payload.delete({ collection, id: row.id, overrideAccess: true }).catch(() => undefined)
+        await ignorePayloadNotFound(() =>
+          payload.delete({ collection, id: row.id, overrideAccess: true }),
+        )
       }
     }
-    await payload.delete({ collection: 'orders', id: order.id, overrideAccess: true }).catch(() => undefined)
+    const assets = await payload.find({
+      collection: 'domainAssets',
+      limit: 500,
+      overrideAccess: true,
+      where: { domainAscii: { in: orders.docs.map((order) => order.domainAscii) } },
+    })
+    for (const asset of assets.docs) {
+      await ignorePayloadNotFound(() =>
+        payload.delete({ collection: 'domainAssets', id: asset.id, overrideAccess: true }),
+      )
+    }
+  }
+  for (const order of orders.docs) {
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: 'orders', id: order.id, overrideAccess: true }),
+    )
   }
   for (const collection of ['quotes', 'priceSnapshots', 'realnameTemplates', 'customers'] as const) {
     const rows = await payload.find({
@@ -261,10 +282,12 @@ afterAll(async () => {
             ? { createdTraceId: { contains: prefix } }
             : collection === 'priceSnapshots'
               ? { createdTraceId: { contains: prefix } }
-              : { displayName: { contains: prefix } },
+              : { displayName: { contains: prefix.slice(0, 36) } },
     })
     for (const row of rows.docs) {
-      await payload.delete({ collection, id: row.id, overrideAccess: true }).catch(() => undefined)
+      await ignorePayloadNotFound(() =>
+        payload.delete({ collection, id: row.id, overrideAccess: true }),
+      )
     }
   }
   for (const collection of ['reconciliations', 'auditLogs'] as const) {
@@ -275,7 +298,9 @@ afterAll(async () => {
       where: { traceId: { contains: prefix } },
     })
     for (const row of rows.docs) {
-      await payload.delete({ collection, id: row.id, overrideAccess: true }).catch(() => undefined)
+      await ignorePayloadNotFound(() =>
+        payload.delete({ collection, id: row.id, overrideAccess: true }),
+      )
     }
   }
   const setting = await payload.find({
@@ -293,7 +318,7 @@ afterAll(async () => {
     })
   }
   await payload.db.destroy?.()
-})
+}, 90_000)
 
 describe('D6-03 balance monitoring and emergency sales stop', () => {
   it('records concurrent low-balance observations and atomically emits one automatic stop alert', async () => {
@@ -541,6 +566,95 @@ describe('D6-03 balance monitoring and emergency sales stop', () => {
       },
     })
     expect(audits.docs).toHaveLength(1)
+  })
+
+  it('holds an already-paid renewal order with the same sales-stop semantics and no provider write', async () => {
+    const fixture = await createPaidOrder('renewal-hold')
+    const expiresAt = '2027-08-08T12:00:00.000Z'
+    const assetFixture = await findOrCreateUniqueFixture({
+      create: () =>
+        payload.create({
+          collection: 'domainAssets',
+          data: {
+            customer: fixture.customer.id,
+            domainAscii: fixture.domainAscii,
+            expiresAt,
+            lastSyncedAt: '2026-08-08T12:00:00.000Z',
+            nameservers: ['ns1.myhostadmin.net', 'ns2.myhostadmin.net'],
+            realnameTemplate: fixture.template.id,
+            registeredAt: '2026-08-08T12:00:00.000Z',
+            registrar: 'west',
+            status: 'active',
+          },
+          overrideAccess: true,
+        }),
+      find: async () =>
+        (
+          await payload.find({
+            collection: 'domainAssets',
+            limit: 1,
+            overrideAccess: true,
+            where: { domainAscii: { equals: fixture.domainAscii } },
+          })
+        ).docs[0],
+      path: 'domainAscii',
+      tableName: 'domain_assets',
+    })
+    const snapshot = {
+      ...fulfillmentQuoteSnapshotFixture({
+        amountMinor: 2_999,
+        customerId: fixture.customer.id,
+        domainAscii: fixture.domainAscii,
+        quoteId: fixture.quote.id,
+      }),
+      assetExpiresAt: expiresAt,
+      domainAssetId: assetFixture.value.id,
+      operation: 'renewal' as const,
+    }
+    await payload.update({
+      collection: 'quotes',
+      data: {
+        assetExpiresAt: expiresAt,
+        domainAsset: assetFixture.value.id,
+        operation: 'renewal',
+      },
+      id: fixture.quote.id,
+      overrideAccess: true,
+    })
+    await payload.update({
+      collection: 'orders',
+      data: {
+        domainAsset: assetFixture.value.id,
+        operation: 'renewal',
+        quoteSnapshot: snapshot,
+      },
+      id: fixture.order.id,
+      overrideAccess: true,
+    })
+    const transport = new FixtureWestDigitalWriteTransport()
+    const held = await runCommerceFulfillment(
+      await request('renewal-hold-run'),
+      {
+        operationKey: `${prefix}-renewal-hold`,
+        orderId: Number(fixture.order.id),
+        traceId: `${prefix}-renewal-hold`,
+      },
+      fulfillmentDependencies(new WestDigitalWriteAdapter({ transport })),
+    )
+    expect(held).toEqual({ idempotentReplay: true, status: 'paid' })
+    expect(transport.writeCount).toBe(0)
+    expect(
+      (await payload.findByID({ collection: 'orders', id: fixture.order.id, overrideAccess: true })).status,
+    ).toBe('paid')
+    expect(
+      (
+        await payload.find({
+          collection: 'renewals',
+          overrideAccess: true,
+          where: { order: { equals: fixture.order.id } },
+        })
+      ).docs,
+    ).toHaveLength(0)
   })
 
   it('allows one explicit refund choice without automatic cancellation or refund', async () => {

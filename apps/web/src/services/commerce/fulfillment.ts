@@ -20,6 +20,7 @@ import {
   queryWestDigitalAsset,
   type WestDigitalWriteOperationInput,
 } from '@/services/providers/westdigital-operations'
+import { recordAuditEvent } from '@/services/audit/record-audit-event'
 
 import { transitionOrder } from './order-state'
 import { requestAutomaticRegistrationFailureRefund } from './refunds'
@@ -58,12 +59,31 @@ type OrderRecord = {
   amountMinor: number
   currency: 'CNY'
   customer: number | string | { id: number | string }
+  domainAsset?: null | number | string | { id: number | string }
   domainAscii: string
   id: number | string
   quote: number | string | { id: number | string }
   quoteSnapshot: unknown
   realnameTemplate: number | string | { id: number | string }
+  operation?: 'registration' | 'renewal'
   status: string
+}
+
+type AssetRecord = {
+  customer: number | string | { id: number | string }
+  domainAscii: string
+  expiresAt: string
+  id: number | string
+  realnameTemplate: number | string | { id: number | string }
+  status: string
+}
+
+type RenewalRecord = {
+  confirmedExpiresAt?: null | string
+  id: number | string
+  previousExpiresAt: string
+  providerOperationKey?: null | string
+  status: 'failed' | 'manual_review' | 'pending' | 'succeeded'
 }
 
 type TemplateRecord = {
@@ -78,6 +98,7 @@ type TemplateRecord = {
 const dateString = z.string().refine((value) => Number.isFinite(Date.parse(value)))
 const money = z.number().int().nonnegative().refine(Number.isSafeInteger)
 const quoteSnapshotSchema = z.object({
+  assetExpiresAt: dateString.optional(),
   availabilityObservedAt: dateString,
   availabilityRequestId: z.string().min(1),
   calculation: z.object({
@@ -89,9 +110,11 @@ const quoteSnapshotSchema = z.object({
   createdTraceId: z.string().min(1),
   currency: z.literal('CNY'),
   customerId: z.string().min(1),
+  domainAssetId: z.union([z.number(), z.string()]).optional(),
   domainAscii: z.string().min(1),
   expiresAt: dateString,
   orderAvailability: z.object({ observedAt: dateString, requestId: z.string().min(1) }),
+  operation: z.enum(['registration', 'renewal']).default('registration'),
   providerCacheExpiresAt: dateString.optional(),
   providerCacheStatus: z.enum(['hit', 'miss', 'shared']),
   providerObservedAt: dateString,
@@ -218,15 +241,21 @@ async function preflight(
   const parsed = quoteSnapshotSchema.safeParse(order.quoteSnapshot)
   const customerId = relationId(order.customer)
   const expectedUpstreamCost = parsed.success
-    ? parsed.data.calculation.upstreamRegistrationPriceFen +
-      parsed.data.calculation.upstreamRenewalPriceFen * (parsed.data.years - 1)
+    ? parsed.data.operation === 'renewal'
+      ? parsed.data.calculation.upstreamRenewalPriceFen * parsed.data.years
+      : parsed.data.calculation.upstreamRegistrationPriceFen +
+        parsed.data.calculation.upstreamRenewalPriceFen * (parsed.data.years - 1)
     : undefined
   const expectedUserPrice = parsed.success
-    ? parsed.data.calculation.registrationPriceFen +
-      parsed.data.calculation.renewalPriceFen * (parsed.data.years - 1)
+    ? parsed.data.operation === 'renewal'
+      ? parsed.data.calculation.renewalPriceFen * parsed.data.years
+      : parsed.data.calculation.registrationPriceFen +
+        parsed.data.calculation.renewalPriceFen * (parsed.data.years - 1)
     : undefined
   if (
     !parsed.success ||
+    parsed.data.operation !== 'registration' ||
+    (order.operation ?? 'registration') !== 'registration' ||
     parsed.data.currency !== order.currency ||
     parsed.data.domainAscii !== order.domainAscii ||
     parsed.data.customerId !== String(customerId) ||
@@ -385,6 +414,324 @@ async function createConfirmedAsset(
   })
 }
 
+async function renewalPreflight(
+  req: PayloadRequest,
+  order: OrderRecord,
+  provider: FulfillmentPreflightProvider,
+  traceId: string,
+) {
+  const parsed = quoteSnapshotSchema.safeParse(order.quoteSnapshot)
+  const customerId = relationId(order.customer)
+  const assetId = order.domainAsset ? relationId(order.domainAsset) : undefined
+  const expectedUpstreamCost = parsed.success
+    ? parsed.data.calculation.upstreamRenewalPriceFen * parsed.data.years
+    : undefined
+  const expectedUserPrice = parsed.success
+    ? parsed.data.calculation.renewalPriceFen * parsed.data.years
+    : undefined
+  if (
+    !parsed.success ||
+    parsed.data.operation !== 'renewal' ||
+    order.operation !== 'renewal' ||
+    assetId === undefined ||
+    String(parsed.data.domainAssetId) !== String(assetId) ||
+    !parsed.data.assetExpiresAt ||
+    parsed.data.currency !== order.currency ||
+    parsed.data.domainAscii !== order.domainAscii ||
+    parsed.data.customerId !== String(customerId) ||
+    String(parsed.data.quoteId) !== String(relationId(order.quote)) ||
+    parsed.data.tld !== order.domainAscii.split('.').at(-1) ||
+    parsed.data.upstreamCostMinor !== expectedUpstreamCost ||
+    parsed.data.userPriceMinor !== expectedUserPrice ||
+    parsed.data.userPriceMinor !== order.amountMinor ||
+    !Number.isSafeInteger(expectedUpstreamCost) ||
+    !Number.isSafeInteger(expectedUserPrice)
+  ) {
+    await ensureManualReview(req, order, 'renewal.quote_snapshot_invalid', {
+      quoteSnapshotComplete: parsed.success,
+      traceId,
+    })
+    return { state: 'manual_review' as const }
+  }
+
+  const asset = (await req.payload.findByID({
+    collection: 'domainAssets',
+    depth: 0,
+    id: assetId,
+    overrideAccess: true,
+    req,
+  })) as unknown as AssetRecord
+  if (
+    String(relationId(asset.customer)) !== String(customerId) ||
+    String(relationId(asset.realnameTemplate)) !== String(relationId(order.realnameTemplate)) ||
+    asset.domainAscii !== order.domainAscii ||
+    asset.status !== 'active' ||
+    asset.expiresAt !== parsed.data.assetExpiresAt
+  ) {
+    await ensureManualReview(req, order, 'renewal.asset_changed_or_forbidden', {
+      assetId: String(assetId),
+      traceId,
+    })
+    return { state: 'manual_review' as const }
+  }
+
+  const balance = await provider.queryBalance({ traceId }).catch(() => undefined)
+  if (
+    !balance?.ok ||
+    !Number.isSafeInteger(balance.data.availableMinor) ||
+    balance.data.availableMinor < parsed.data.upstreamCostMinor
+  ) {
+    await ensureManualReview(req, order, 'renewal.balance_insufficient_or_unknown', {
+      providerRequestId: balance?.requestId,
+      requiredMinor: parsed.data.upstreamCostMinor,
+      traceId,
+    })
+    return { state: 'manual_review' as const }
+  }
+
+  return { asset, snapshot: parsed.data, state: 'ready' as const }
+}
+
+async function findRenewal(req: PayloadRequest, orderId: number | string) {
+  const found = await req.payload.find({
+    collection: 'renewals',
+    depth: 0,
+    limit: 1,
+    overrideAccess: true,
+    req,
+    where: { order: { equals: orderId } },
+  })
+  return found.docs[0] as unknown as RenewalRecord | undefined
+}
+
+async function ensureRenewal(
+  req: PayloadRequest,
+  order: OrderRecord,
+  asset: AssetRecord,
+  years: number,
+): Promise<RenewalRecord> {
+  const existing = await findRenewal(req, order.id)
+  if (existing) return existing
+  try {
+    return (await req.payload.create({
+      collection: 'renewals',
+      data: {
+        asset: asset.id as never,
+        customer: relationId(order.customer) as never,
+        order: order.id as never,
+        previousExpiresAt: asset.expiresAt,
+        status: 'pending',
+        years,
+      },
+      overrideAccess: true,
+      req,
+    })) as unknown as RenewalRecord
+  } catch (error) {
+    const raced = await findRenewal(req, order.id)
+    if (raced) return raced
+    throw error
+  }
+}
+
+async function markRenewalStatus(
+  req: PayloadRequest,
+  renewalId: number | string,
+  status: 'failed' | 'manual_review',
+  providerOperationKey: string,
+): Promise<void> {
+  await req.payload.update({
+    collection: 'renewals',
+    data: { providerOperationKey, status },
+    id: renewalId,
+    overrideAccess: true,
+    req,
+  })
+}
+
+async function commitConfirmedRenewal(
+  req: PayloadRequest,
+  input: {
+    asset: AssetRecord
+    confirmedExpiresAt: string
+    operationKey: string
+    order: OrderRecord
+    renewal: RenewalRecord
+  },
+): Promise<boolean> {
+  return transaction(req, async () => {
+    const db = await database(req)
+    const claimed = await db.execute(sql`
+      UPDATE renewals
+      SET
+        confirmed_expires_at = ${input.confirmedExpiresAt}::timestamptz,
+        provider_operation_key = ${input.operationKey},
+        status = 'succeeded',
+        updated_at = NOW()
+      WHERE id = ${input.renewal.id}
+        AND status IN ('pending', 'manual_review')
+        AND previous_expires_at = ${input.renewal.previousExpiresAt}::timestamptz
+      RETURNING id
+    `)
+    if (claimed.rows?.[0]?.id === undefined) {
+      const currentRenewal = await findRenewal(req, input.order.id)
+      const currentAsset = (await req.payload.findByID({
+        collection: 'domainAssets',
+        depth: 0,
+        id: input.asset.id,
+        overrideAccess: true,
+        req,
+      })) as unknown as AssetRecord
+      return (
+        currentRenewal?.status === 'succeeded' &&
+        currentRenewal.confirmedExpiresAt === input.confirmedExpiresAt &&
+        currentAsset.expiresAt === input.confirmedExpiresAt
+      )
+    }
+
+    const assetUpdated = await db.execute(sql`
+      UPDATE domain_assets
+      SET
+        expires_at = ${input.confirmedExpiresAt}::timestamptz,
+        last_synced_at = NOW(),
+        status = 'active',
+        updated_at = NOW()
+      WHERE id = ${input.asset.id}
+        AND customer_id = ${relationId(input.order.customer)}
+        AND expires_at = ${input.renewal.previousExpiresAt}::timestamptz
+      RETURNING id
+    `)
+    if (assetUpdated.rows?.[0]?.id === undefined) {
+      throw new AppError('RENEWAL_ASSET_CAS_CONFLICT', '域名到期时间已变化，需要人工核对', 409)
+    }
+    await recordAuditEvent(req, {
+      action: 'commerce.renewal.recorded',
+      actor: { type: 'system' },
+      metadata: {
+        confirmedExpiresAt: input.confirmedExpiresAt,
+        operationKey: input.operationKey,
+        previousExpiresAt: input.renewal.previousExpiresAt,
+        years: quoteSnapshotSchema.parse(input.order.quoteSnapshot).years,
+      },
+      targetId: input.renewal.id,
+    })
+    const currentOrder = (await req.payload.findByID({
+      collection: 'orders',
+      depth: 0,
+      id: input.order.id,
+      overrideAccess: true,
+      req,
+    })) as unknown as OrderRecord
+    if (currentOrder.status !== 'succeeded') {
+      await transitionOrder(req, input.order.id, 'succeeded', {
+        actorType: 'provider',
+        evidence: {
+          confirmedExpiresAt: input.confirmedExpiresAt,
+          operationKey: input.operationKey,
+        },
+        ...(currentOrder.status === 'manual_review'
+          ? { note: '只读查询确认续费成功并原子更新域名资产到期时间。' }
+          : {}),
+        reasonCode: 'renewal.provider_confirmed_success',
+      })
+    }
+    return true
+  })
+}
+
+async function runRenewalFulfillment(
+  req: PayloadRequest,
+  order: OrderRecord,
+  input: FulfillmentInput,
+  dependencies: FulfillmentDependencies,
+) {
+  const checked = await renewalPreflight(req, order, dependencies.preflight, input.traceId)
+  if (checked.state !== 'ready') return { idempotentReplay: false, status: checked.state }
+  if (order.status === 'paid') {
+    await transitionOrder(req, order.id, 'fulfilling', {
+      actorType: 'system',
+      evidence: {
+        assetOwnership: true,
+        balanceChecked: true,
+        frozenRenewalQuote: true,
+      },
+      reasonCode: 'renewal.preflight_passed',
+    })
+    order = { ...order, status: 'fulfilling' }
+  }
+  const renewal = await ensureRenewal(req, order, checked.asset, checked.snapshot.years)
+  const writeInput: WestDigitalWriteOperationInput = {
+    actor: { type: 'system' },
+    clientPriceFen: checked.snapshot.upstreamCostMinor,
+    currentExpiresOn: renewal.previousExpiresAt.slice(0, 10),
+    domainAscii: order.domainAscii,
+    operation: 'renew',
+    orderId: order.id,
+    premium: false,
+    targetId: order.id,
+    traceId: input.traceId,
+    years: checked.snapshot.years,
+  }
+  const operationKey = generateWestDigitalOperationKey(writeInput)
+  const operation = await executeWestDigitalWriteOperation(req, writeInput, dependencies.write)
+  const operationData = 'data' in operation ? operation.data : undefined
+  if (operation.state === 'error') {
+    await markRenewalStatus(req, renewal.id, 'failed', operationKey)
+    await requestAutomaticRegistrationFailureRefund(req, {
+      evidence: { operationKey, providerRequestId: operationData?.providerRequestId },
+      note: '西部数码明确确认续费失败且未提供续费服务，自动原路全额退款。',
+      orderId: order.id,
+      traceId: input.traceId,
+    })
+    return { idempotentReplay: operationData?.idempotentReplay ?? false, status: 'refund_pending' as const }
+  }
+  if (operation.state !== 'ready' || !operationData || operationData.status !== 'succeeded') {
+    await markRenewalStatus(req, renewal.id, 'manual_review', operationKey)
+    await ensureManualReview(req, order, 'renewal.provider_status_unknown', {
+      operationKey,
+      providerRequestId: operationData?.providerRequestId,
+      traceId: input.traceId,
+    })
+    return { idempotentReplay: operationData?.idempotentReplay ?? false, status: 'manual_review' as const }
+  }
+  const confirmed = await queryWestDigitalAsset(
+    req,
+    {
+      actor: { type: 'system' },
+      domainAscii: order.domainAscii,
+      targetId: checked.asset.id,
+      traceId: input.traceId,
+    },
+    dependencies.write,
+  )
+  if (
+    confirmed.state !== 'ready' ||
+    confirmed.data.domainAscii !== order.domainAscii ||
+    Date.parse(confirmed.data.expiresAt) <= Date.parse(renewal.previousExpiresAt)
+  ) {
+    await markRenewalStatus(req, renewal.id, 'manual_review', operationKey)
+    await ensureManualReview(req, order, 'renewal.asset_confirmation_unknown', {
+      operationKey,
+      traceId: input.traceId,
+    })
+    return { idempotentReplay: operationData.idempotentReplay, status: 'manual_review' as const }
+  }
+  const committed = await commitConfirmedRenewal(req, {
+    asset: checked.asset,
+    confirmedExpiresAt: confirmed.data.expiresAt,
+    operationKey,
+    order,
+    renewal,
+  })
+  if (!committed) {
+    await ensureManualReview(req, order, 'renewal.persistence_conflict', {
+      operationKey,
+      traceId: input.traceId,
+    })
+    return { idempotentReplay: true, status: 'manual_review' as const }
+  }
+  return { idempotentReplay: operationData.idempotentReplay, status: 'succeeded' as const }
+}
+
 export async function runCommerceFulfillment(
   req: PayloadRequest,
   input: FulfillmentInput,
@@ -413,6 +760,10 @@ export async function runCommerceFulfillment(
         return { idempotentReplay: true, status: 'paid' as const }
       }
     }
+  }
+
+  if (order.operation === 'renewal') {
+    return runRenewalFulfillment(req, order, input, dependencies)
   }
 
   let snapshot: z.infer<typeof quoteSnapshotSchema>

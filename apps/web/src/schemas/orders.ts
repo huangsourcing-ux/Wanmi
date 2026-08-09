@@ -6,13 +6,15 @@ const moneyMinorSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTE
 
 export const orderCreateRequestSchema = z.strictObject({
   quoteRef: z.string().uuid(),
-  realnameTemplateId: z.number().int().positive(),
+  realnameTemplateId: z.number().int().positive().optional(),
 })
 
 export const publicOrderSchema = z.strictObject({
   amountMinor: moneyMinorSchema,
   currency: z.literal('CNY'),
   domainAscii: z.string().min(1).max(253),
+  domainAssetId: z.number().int().positive().optional(),
+  operation: z.enum(['registration', 'renewal']).optional(),
   orderNumber: z.string().min(1).max(80),
   quoteExpiresAt: z.iso.datetime(),
   quoteRef: z.string().uuid(),

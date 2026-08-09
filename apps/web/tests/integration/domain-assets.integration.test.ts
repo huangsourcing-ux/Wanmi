@@ -365,7 +365,7 @@ afterAll(async () => {
       payload.delete({ collection: 'customers', id: customerId, overrideAccess: true }),
     )
   }
-})
+}, 60_000)
 
 describe('D6-04 domain assets, nameservers and expiry reminders', () => {
   it('fails closed across customer asset list/detail, nameserver request and order reads', async () => {

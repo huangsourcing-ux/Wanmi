@@ -39,10 +39,12 @@ export const QUOTE_VALIDITY_MS = 5 * 60 * 1_000
 type CustomerIdentity = { collection: 'customers'; id: number }
 
 export type QuoteSnapshotInput = {
+  assetExpiresAt?: string
   availabilityObservedAt: string
   availabilityRequestId: string
   calculation: StoredPriceSnapshot['calculation']
   customerId: number
+  domainAssetId?: number
   domainAscii: string
   expiresAt: string
   providerCacheExpiresAt?: string
@@ -51,6 +53,7 @@ export type QuoteSnapshotInput = {
   providerProductId: string
   providerRequestId: string
   quotedAt: string
+  operation?: 'registration' | 'renewal'
   sourceCalculationHash: string
   sourcePriceSnapshotRef: string
   tld: string
@@ -71,6 +74,23 @@ export interface CustomerQuoteStore {
   record(input: QuoteSnapshotInput): Promise<StoredCustomerQuote>
 }
 
+export type CustomerDomainAsset = {
+  customerId: number
+  domainAscii: string
+  expiresAt: string
+  id: number
+  realnameTemplateId: number
+  status: 'active' | 'expired' | 'pending' | 'unknown'
+}
+
+export interface CustomerDomainAssetStore {
+  findOwnedById(assetId: number): Promise<CustomerDomainAsset | undefined>
+}
+
+function relationId(value: number | { id: number }): number {
+  return typeof value === 'object' ? value.id : value
+}
+
 function customerId(user: CustomerIdentity): string {
   return String(user.id)
 }
@@ -78,6 +98,7 @@ function customerId(user: CustomerIdentity): string {
 function canonicalQuoteSnapshot(input: QuoteSnapshotInput) {
   const rule = input.calculation.rule
   return {
+    assetExpiresAt: input.assetExpiresAt,
     availabilityObservedAt: input.availabilityObservedAt,
     availabilityRequestId: input.availabilityRequestId,
     calculation: {
@@ -108,6 +129,7 @@ function canonicalQuoteSnapshot(input: QuoteSnapshotInput) {
       upstreamRenewalPriceFen: input.calculation.upstreamRenewalPriceFen,
     },
     customerId: String(input.customerId),
+    domainAssetId: input.domainAssetId,
     domainAscii: input.domainAscii,
     expiresAt: input.expiresAt,
     providerCacheExpiresAt: input.providerCacheExpiresAt,
@@ -116,6 +138,7 @@ function canonicalQuoteSnapshot(input: QuoteSnapshotInput) {
     providerProductId: input.providerProductId,
     providerRequestId: input.providerRequestId,
     quotedAt: input.quotedAt,
+    operation: input.operation ?? 'registration',
     schemaVersion: PRICE_SNAPSHOT_SCHEMA_VERSION,
     sourceCalculationHash: input.sourceCalculationHash,
     sourcePriceSnapshotRef: input.sourcePriceSnapshotRef,
@@ -171,6 +194,7 @@ function fromDocument(doc: Quote): StoredCustomerQuote {
   }
   const owner = typeof doc.customer === 'object' ? doc.customer.id : doc.customer
   return {
+    ...(doc.assetExpiresAt ? { assetExpiresAt: doc.assetExpiresAt } : {}),
     availabilityObservedAt: doc.availabilityObservedAt,
     availabilityRequestId: doc.availabilityRequestId,
     calculation: {
@@ -190,6 +214,11 @@ function fromDocument(doc: Quote): StoredCustomerQuote {
       upstreamRenewalPriceFen: doc.upstreamRenewalPriceMinor,
     },
     customerId: owner,
+    ...(typeof doc.domainAsset === 'number'
+      ? { domainAssetId: doc.domainAsset }
+      : doc.domainAsset && typeof doc.domainAsset === 'object'
+        ? { domainAssetId: doc.domainAsset.id }
+        : {}),
     domainAscii: doc.domainAscii,
     expiresAt: doc.expiresAt,
     ...(doc.providerCacheExpiresAt ? { providerCacheExpiresAt: doc.providerCacheExpiresAt } : {}),
@@ -201,6 +230,7 @@ function fromDocument(doc: Quote): StoredCustomerQuote {
     quoteIntegrityHash: doc.quoteIntegrityHash,
     quotedAt: doc.quotedAt,
     quoteRef: doc.quoteRef,
+    operation: doc.operation ?? 'registration',
     sourceCalculationHash: doc.sourceCalculationHash,
     sourcePriceSnapshotRef: doc.sourcePriceSnapshotRef,
     tld: doc.tld,
@@ -248,6 +278,7 @@ export class PayloadCustomerQuoteStore implements CustomerQuoteStore {
     const created = await this.req.payload.create({
       collection: 'quotes',
       data: {
+        assetExpiresAt: input.assetExpiresAt,
         availabilityObservedAt: input.availabilityObservedAt,
         availabilityRequestId: input.availabilityRequestId,
         calculationFormula: input.calculation.calculationFormula,
@@ -255,6 +286,7 @@ export class PayloadCustomerQuoteStore implements CustomerQuoteStore {
         createdTraceId: input.traceId,
         currency: 'CNY',
         customer: input.customerId,
+        domainAsset: input.domainAssetId,
         domainAscii: input.domainAscii,
         expiresAt: input.expiresAt,
         priceClass: 'standard',
@@ -269,6 +301,7 @@ export class PayloadCustomerQuoteStore implements CustomerQuoteStore {
         quotedAt: input.quotedAt,
         quoteIntegrityHash,
         quoteRef: randomUUID(),
+        operation: input.operation ?? 'registration',
         registrationPriceMinor: input.calculation.registrationPriceFen,
         renewalPriceMinor: input.calculation.renewalPriceFen,
         ...(rule.mode === 'fixed'
@@ -296,11 +329,42 @@ export class PayloadCustomerQuoteStore implements CustomerQuoteStore {
   }
 }
 
+export class PayloadCustomerDomainAssetStore implements CustomerDomainAssetStore {
+  constructor(
+    private readonly req: PayloadRequest,
+    private readonly user: CustomerIdentity,
+  ) {}
+
+  async findOwnedById(assetId: number): Promise<CustomerDomainAsset | undefined> {
+    const result = await this.req.payload.find({
+      collection: 'domainAssets',
+      depth: 0,
+      limit: 1,
+      overrideAccess: false,
+      req: this.req,
+      user: this.user,
+      where: { id: { equals: assetId } },
+    })
+    const asset = result.docs[0]
+    if (!asset) return undefined
+    return {
+      customerId: relationId(asset.customer),
+      domainAscii: asset.domainAscii,
+      expiresAt: asset.expiresAt,
+      id: asset.id,
+      realnameTemplateId: relationId(asset.realnameTemplate),
+      status: asset.status,
+    }
+  }
+}
+
 function publicQuote(quote: StoredCustomerQuote): PublicQuote {
   return {
     currency: 'CNY',
     domainAscii: quote.domainAscii,
+    ...(quote.domainAssetId ? { domainAssetId: quote.domainAssetId } : {}),
     expiresAt: quote.expiresAt,
+    operation: quote.operation ?? 'registration',
     priceClass: 'standard',
     providerObservedAt: quote.providerObservedAt,
     quotedAt: quote.quotedAt,
@@ -374,6 +438,7 @@ export async function createCustomerQuote(
   candidate: QuoteCreateRequest,
   options: {
     customer: CustomerIdentity
+    assetStore?: CustomerDomainAssetStore
     now?: () => number
     provider: WestDigitalReadProvider
     quoteStore: CustomerQuoteStore
@@ -384,35 +449,50 @@ export async function createCustomerQuote(
   },
 ): Promise<QuoteCreationResult> {
   const input = quoteCreateRequestSchema.parse(candidate)
-  const normalized = normalizeDomain(input.domain)
-  if (!normalized.ok) {
-    throw new AppError(normalized.error.code, normalized.error.message, 400)
+  const asset =
+    input.operation === 'renewal'
+      ? await options.assetStore?.findOwnedById(input.assetId)
+      : undefined
+  if (input.operation === 'renewal' && !asset) {
+    throw new AppError('DOMAIN_ASSET_NOT_FOUND', '未找到可续费的域名资产', 404)
   }
+  if (asset && asset.status !== 'active') {
+    throw new AppError('DOMAIN_ASSET_NOT_RENEWABLE', '域名资产当前状态不允许续费', 409)
+  }
+  const candidateDomain = asset?.domainAscii ?? (input.operation === 'registration' ? input.domain : '')
+  const normalized = normalizeDomain(candidateDomain)
+  if (!normalized.ok) throw new AppError(normalized.error.code, normalized.error.message, 400)
   const supportedTlds = options.supportedTlds ?? new Set(DEFAULT_DOMAIN_SEARCH_TLDS)
   const tld = resolveTld(normalized.value.ascii, supportedTlds)
   if (!tld) return blocked('TLD_UNSUPPORTED', options.traceId)
   const rule = options.rules[tld]
   if (!rule) return blocked('PRICE_RULE_UNCONFIGURED', options.traceId)
 
-  let availability: ProviderResult<WestDigitalAvailability>
-  try {
-    availability = await options.provider.queryAvailability({
-      domain: normalized.value.ascii,
-      traceId: options.traceId,
-    })
-  } catch {
-    return resultProblem({
-      code: 'QUOTE_PROVIDER_UNAVAILABLE',
-      message: '暂时无法确认域名状态',
-      traceId: options.traceId,
-    })
-  }
-  if (!availability.ok) return providerFailure(availability, options.traceId)
-  if (!availability.data.available) {
-    return blocked('DOMAIN_UNAVAILABLE', options.traceId, availability.observedAt)
-  }
-  if (availability.data.premium) {
-    return blocked('PREMIUM_UNSUPPORTED', options.traceId, availability.observedAt)
+  let availabilityObservedAt = new Date((options.now ?? Date.now)()).toISOString()
+  let availabilityRequestId = `${options.traceId}-owned-asset`
+  if (input.operation === 'registration') {
+    let availability: ProviderResult<WestDigitalAvailability>
+    try {
+      availability = await options.provider.queryAvailability({
+        domain: normalized.value.ascii,
+        traceId: options.traceId,
+      })
+    } catch {
+      return resultProblem({
+        code: 'QUOTE_PROVIDER_UNAVAILABLE',
+        message: '暂时无法确认域名状态',
+        traceId: options.traceId,
+      })
+    }
+    if (!availability.ok) return providerFailure(availability, options.traceId)
+    if (!availability.data.available) {
+      return blocked('DOMAIN_UNAVAILABLE', options.traceId, availability.observedAt)
+    }
+    if (availability.data.premium) {
+      return blocked('PREMIUM_UNSUPPORTED', options.traceId, availability.observedAt)
+    }
+    availabilityObservedAt = availability.observedAt
+    availabilityRequestId = availability.requestId
   }
 
   let price: ProviderResult<WestDigitalPrice>
@@ -461,20 +541,30 @@ export async function createCustomerQuote(
       traceId: options.traceId,
     })
     replayPriceSnapshot(sourceSnapshot)
-    const upstreamCostMinor = calculateRegistrationTotalFen({
-      registrationPriceFen: calculation.upstreamRegistrationPriceFen,
-      renewalPriceFen: calculation.upstreamRenewalPriceFen,
-      years: input.years,
-    })
-    const userPriceMinor = calculateRegistrationTotalFen({
-      registrationPriceFen: calculation.registrationPriceFen,
-      renewalPriceFen: calculation.renewalPriceFen,
-      years: input.years,
-    })
+    const upstreamCostMinor =
+      input.operation === 'renewal'
+        ? calculation.upstreamRenewalPriceFen * input.years
+        : calculateRegistrationTotalFen({
+            registrationPriceFen: calculation.upstreamRegistrationPriceFen,
+            renewalPriceFen: calculation.upstreamRenewalPriceFen,
+            years: input.years,
+          })
+    const userPriceMinor =
+      input.operation === 'renewal'
+        ? calculation.renewalPriceFen * input.years
+        : calculateRegistrationTotalFen({
+            registrationPriceFen: calculation.registrationPriceFen,
+            renewalPriceFen: calculation.renewalPriceFen,
+            years: input.years,
+          })
+    if (!Number.isSafeInteger(upstreamCostMinor) || !Number.isSafeInteger(userPriceMinor)) {
+      throw new AppError('QUOTE_AMOUNT_OVERFLOW', '报价金额超出安全范围', 500)
+    }
     const quotedAt = new Date((options.now ?? Date.now)()).toISOString()
     const quote = await options.quoteStore.record({
-      availabilityObservedAt: availability.observedAt,
-      availabilityRequestId: availability.requestId,
+      availabilityRequestId,
+      availabilityObservedAt,
+      ...(asset ? { assetExpiresAt: asset.expiresAt, domainAssetId: asset.id } : {}),
       calculation,
       customerId: options.customer.id,
       domainAscii: normalized.value.ascii,
@@ -485,6 +575,7 @@ export async function createCustomerQuote(
       providerProductId: price.data.productId,
       providerRequestId: price.requestId,
       quotedAt,
+      operation: input.operation,
       sourceCalculationHash: sourceSnapshot.calculationHash,
       sourcePriceSnapshotRef: sourceSnapshot.snapshotRef,
       tld,

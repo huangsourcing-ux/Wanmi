@@ -4,15 +4,30 @@ import { createResultSchema } from '@/schemas/api'
 
 const moneyMinorSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 
-export const quoteCreateRequestSchema = z.strictObject({
-  domain: z.string().trim().min(1).max(253),
-  years: z.number().int().min(1).max(10),
-})
+export const quoteCreateRequestSchema = z.discriminatedUnion('operation', [
+  z.strictObject({
+    domain: z.string().trim().min(1).max(253),
+    operation: z.literal('registration'),
+    years: z.number().int().min(1).max(10),
+  }),
+  z.strictObject({
+    assetId: z.number().int().positive(),
+    operation: z.literal('renewal'),
+    years: z.number().int().min(1).max(10),
+  }),
+]).or(
+  z.strictObject({
+    domain: z.string().trim().min(1).max(253),
+    years: z.number().int().min(1).max(10),
+  }).transform((value) => ({ ...value, operation: 'registration' as const })),
+)
 
 export const publicQuoteSchema = z.strictObject({
   currency: z.literal('CNY'),
   domainAscii: z.string().min(1).max(253),
+  domainAssetId: z.number().int().positive().optional(),
   expiresAt: z.iso.datetime(),
+  operation: z.enum(['registration', 'renewal']).optional(),
   priceClass: z.literal('standard'),
   providerObservedAt: z.iso.datetime(),
   quoteRef: z.string().uuid(),
@@ -46,5 +61,5 @@ export const quoteCreationDataSchema = z
 export const quoteCreationResultSchema = createResultSchema(quoteCreationDataSchema)
 
 export type PublicQuote = z.infer<typeof publicQuoteSchema>
-export type QuoteCreateRequest = z.infer<typeof quoteCreateRequestSchema>
+export type QuoteCreateRequest = z.input<typeof quoteCreateRequestSchema>
 export type QuoteCreationResult = z.infer<typeof quoteCreationResultSchema>

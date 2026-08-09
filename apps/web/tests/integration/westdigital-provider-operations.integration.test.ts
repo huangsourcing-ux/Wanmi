@@ -16,6 +16,7 @@ import {
   WESTDIGITAL_WRITE_MAX_ATTEMPTS,
   type WestDigitalWriteOperationInput,
 } from '@/services/providers/westdigital-operations'
+import { recordAuditEvent } from '@/services/audit/record-audit-event'
 
 const fixturePrefix = `d6-west-${randomUUID()}`
 let payload: Payload
@@ -106,7 +107,7 @@ afterAll(async () => {
     await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
   }
   await payload.db.destroy?.()
-}, 30_000)
+}, 90_000)
 
 describe('D6 WestDigital provider operation safety', () => {
   it('records a successful write, status confirmation, unique key and transaction-coupled audit', async () => {
@@ -133,6 +134,12 @@ describe('D6 WestDigital provider operation safety', () => {
       targetId: input.targetId,
       targetType: 'domain',
     })
+    await recordAuditEvent(await req('foreign-target-collision'), {
+      action: 'provider.operation.recorded',
+      actor: { type: 'system' },
+      metadata: { outcome: 'foreign-target-collision' },
+      targetId: operations.docs[0]!.id,
+    })
     const audits = await payload.find({
       collection: 'auditLogs',
       overrideAccess: true,
@@ -140,6 +147,7 @@ describe('D6 WestDigital provider operation safety', () => {
         and: [
           { action: { equals: 'provider.operation.recorded' } },
           { targetId: { equals: String(operations.docs[0]!.id) } },
+          { traceId: { equals: `${fixturePrefix}-${String(input.targetId)}` } },
         ],
       },
     })

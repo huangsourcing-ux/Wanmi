@@ -208,6 +208,19 @@ export const Quotes: CollectionConfig = {
       index: true,
       required: true,
     },
+    {
+      name: 'operation',
+      type: 'select',
+      defaultValue: 'registration',
+      options: ['registration', 'renewal'],
+    },
+    {
+      name: 'domainAsset',
+      type: 'relationship',
+      relationTo: 'domainAssets',
+      index: true,
+    },
+    { name: 'assetExpiresAt', type: 'date' },
     { name: 'domainAscii', type: 'text', index: true, required: true },
     { name: 'tld', type: 'text', index: true, required: true },
     { name: 'years', type: 'number', min: 1, max: 10, required: true },
@@ -333,6 +346,18 @@ export const Orders: CollectionConfig = {
       relationTo: 'customers',
       index: true,
       required: true,
+    },
+    {
+      name: 'operation',
+      type: 'select',
+      defaultValue: 'registration',
+      options: ['registration', 'renewal'],
+    },
+    {
+      name: 'domainAsset',
+      type: 'relationship',
+      relationTo: 'domainAssets',
+      index: true,
     },
     { name: 'quote', type: 'relationship', relationTo: 'quotes', required: true },
     {

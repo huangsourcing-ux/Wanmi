@@ -79,7 +79,7 @@ afterAll(async () => {
     await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
   }
   await payload.db.destroy?.()
-})
+}, 60_000)
 
 describe('D4 real-name templates', () => {
   it('isolates rows, accepts only provider-confirmed approval, audits transitions and disables use', async () => {

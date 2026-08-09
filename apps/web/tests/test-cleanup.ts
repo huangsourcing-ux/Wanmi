@@ -21,7 +21,10 @@ export async function findOrCreateUniqueFixture<T>(options: {
       error instanceof ValidationError &&
       error.data.errors.some(
         (fieldError) =>
-          fieldError.path === options.path && fieldError.tableName === options.tableName,
+          fieldError.path === options.path &&
+          (fieldError.tableName === options.tableName ||
+            (fieldError.tableName === undefined &&
+              error.data.collection === options.tableName)),
       )
     if (!isExpectedUniqueConflict) throw error
 

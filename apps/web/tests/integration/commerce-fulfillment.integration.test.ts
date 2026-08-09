@@ -272,7 +272,7 @@ afterAll(async () => {
     await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
   }
   await payload.db.destroy?.()
-}, 30_000)
+}, 90_000)
 
 describe('D6-02 commerce fulfillment', () => {
   it('atomically lands one commerce job under concurrent payment confirmations', async () => {

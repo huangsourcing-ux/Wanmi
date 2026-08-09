@@ -25,6 +25,13 @@ function uniqueError(path: string, tableName: string) {
   })
 }
 
+function localAuthConflict(path: string, collection: string) {
+  return new ValidationError({
+    collection,
+    errors: [{ message: 'Email is already registered', path }],
+  })
+}
+
 describe('shared test fixture helpers', () => {
   it('returns the raced anchor only after the expected admin email unique conflict', async () => {
     const find = vi
@@ -51,8 +58,38 @@ describe('shared test fixture helpers', () => {
     expect(find).toHaveBeenCalledTimes(1)
   })
 
+  it('recognizes the Payload local-auth conflict by field and collection', async () => {
+    const find = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(anchor)
+    const create = vi.fn().mockRejectedValue(localAuthConflict('email', 'admins'))
+
+    await expect(
+      findOrCreateUniqueFixture({
+        create,
+        find,
+        path: 'email',
+        tableName: 'admins',
+      }),
+    ).resolves.toEqual({ created: false, value: anchor })
+    expect(find).toHaveBeenCalledTimes(2)
+  })
+
   it('rethrows unique conflicts for any field other than the declared fixture key', async () => {
     const failure = uniqueError('username', 'admins')
+    const find = vi.fn().mockResolvedValue(undefined)
+
+    await expect(
+      findOrCreateUniqueFixture({
+        create: vi.fn().mockRejectedValue(failure),
+        find,
+        path: 'email',
+        tableName: 'admins',
+      }),
+    ).rejects.toBe(failure)
+    expect(find).toHaveBeenCalledTimes(1)
+  })
+
+  it('rethrows local-auth conflicts from a different collection', async () => {
+    const failure = localAuthConflict('email', 'customers')
     const find = vi.fn().mockResolvedValue(undefined)
 
     await expect(
