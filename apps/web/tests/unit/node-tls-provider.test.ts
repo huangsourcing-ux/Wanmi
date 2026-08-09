@@ -347,11 +347,15 @@ describe('Node TLS provider fixed-target transport', () => {
     const server = createTlsServer({ cert: certificate, key: privateKey })
     const port = await listen(server)
     const calls: CapturedConnectOptions[] = []
+    let mismatchedSocket: Socket | undefined
+    let destroy: ReturnType<typeof vi.spyOn> | undefined
     try {
       const result = await provider({
         connectTcp: (options) => {
           calls.push(options as CapturedConnectOptions)
-          return connect({ host: '127.0.0.1', port })
+          mismatchedSocket = connect({ host: '127.0.0.1', port })
+          destroy = vi.spyOn(mismatchedSocket, 'destroy')
+          return mismatchedSocket
         },
       }).inspectCertificate({
         addresses: [publicIpv4, '93.184.216.35'],
@@ -360,6 +364,8 @@ describe('Node TLS provider fixed-target transport', () => {
       })
       expect(result).toMatchObject({ error: { code: 'TLS_TARGET_CHANGED' }, ok: false })
       expect(calls).toHaveLength(1)
+      expect(destroy).toHaveBeenCalled()
+      expect(mismatchedSocket?.destroyed).toBe(true)
     } finally {
       await close(server)
     }

@@ -55,7 +55,7 @@ test-e2e:
 	pnpm --filter @wanmi/web migrate
 	pnpm test:e2e
 
-security:
+security: build
 	pnpm security
 
 build:

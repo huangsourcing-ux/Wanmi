@@ -109,27 +109,33 @@ export async function readPublicToolRelations(
   return (await readPublicToolRelationDirectory(payload))[slug] ?? EMPTY_TOOL_RELATIONS
 }
 
-let cachedDirectory:
-  | { expiresAt: number; value: ToolRelationDirectory }
-  | undefined
-let refreshingDirectory: Promise<ToolRelationDirectory> | undefined
+export function createCachedPublicToolRelationsReader(
+  loadPayload: () => Promise<Payload>,
+  now: () => number = Date.now,
+): (slug: PublicToolSlug) => Promise<PublicToolRelations> {
+  let cachedDirectory: { expiresAt: number; value: ToolRelationDirectory } | undefined
+  let refreshingDirectory: Promise<ToolRelationDirectory> | undefined
 
-export async function readCachedPublicToolRelations(
-  slug: PublicToolSlug,
-): Promise<PublicToolRelations> {
-  if (cachedDirectory && cachedDirectory.expiresAt > Date.now()) {
-    return cachedDirectory.value[slug] ?? EMPTY_TOOL_RELATIONS
+  return async (slug) => {
+    if (cachedDirectory && cachedDirectory.expiresAt > now()) {
+      return cachedDirectory.value[slug] ?? EMPTY_TOOL_RELATIONS
+    }
+    if (!refreshingDirectory) {
+      refreshingDirectory = loadPayload()
+        .then(readPublicToolRelationDirectory)
+        .catch(() => emptyDirectory())
+        .then((value) => {
+          cachedDirectory = { expiresAt: now() + TOOL_RELATIONS_CACHE_TTL_MS, value }
+          return value
+        })
+        .finally(() => {
+          refreshingDirectory = undefined
+        })
+    }
+    return (await refreshingDirectory)[slug] ?? EMPTY_TOOL_RELATIONS
   }
-  if (!refreshingDirectory) {
-    refreshingDirectory = getPayload({ config })
-      .then(readPublicToolRelationDirectory)
-      .then((value) => {
-        cachedDirectory = { expiresAt: Date.now() + TOOL_RELATIONS_CACHE_TTL_MS, value }
-        return value
-      })
-      .finally(() => {
-        refreshingDirectory = undefined
-      })
-  }
-  return (await refreshingDirectory)[slug] ?? EMPTY_TOOL_RELATIONS
 }
+
+export const readCachedPublicToolRelations = createCachedPublicToolRelationsReader(() =>
+  getPayload({ config }),
+)

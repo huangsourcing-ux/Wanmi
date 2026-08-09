@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 
@@ -25,6 +27,48 @@ const BLOCKED_ADMIN_UI_PATHS = new Set([
   '/admin/unlock',
 ])
 
+const SAFE_API_METHODS = new Set(['GET', 'HEAD'])
+
+export function buildContentSecurityPolicy(nonce: string): string {
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+    `style-src 'self' 'nonce-${nonce}'`,
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ')
+}
+
+function applySecurityHeaders(response: NextResponse, contentSecurityPolicy: string): NextResponse {
+  response.headers.set('content-security-policy', contentSecurityPolicy)
+  response.headers.set('cross-origin-opener-policy', 'same-origin')
+  response.headers.set('cross-origin-resource-policy', 'same-origin')
+  response.headers.set('permissions-policy', 'camera=(), geolocation=(), microphone=(), payment=()')
+  response.headers.set('referrer-policy', 'strict-origin-when-cross-origin')
+  response.headers.set('x-content-type-options', 'nosniff')
+  response.headers.set('x-frame-options', 'DENY')
+  return response
+}
+
+export function isCrossSiteFirstPartyApiRequest(request: NextRequest): boolean {
+  if (!request.nextUrl.pathname.startsWith('/api/v1/')) return false
+  const origin = request.headers.get('origin')
+  const expectedOrigin = new URL(getEnv().NEXT_PUBLIC_SERVER_URL).origin
+  if (origin && origin !== expectedOrigin) return true
+
+  const fetchSite = request.headers.get('sec-fetch-site')?.toLowerCase()
+  if (fetchSite === 'cross-site') return true
+
+  return (
+    !SAFE_API_METHODS.has(request.method) && fetchSite === 'same-site' && origin !== expectedOrigin
+  )
+}
+
 export function normalizeSecurityPathname(pathname: string): string | null {
   let decoded = pathname
   try {
@@ -41,7 +85,8 @@ export function normalizeSecurityPathname(pathname: string): string | null {
   return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized
 }
 
-function isBlockedAdminSurface(pathname: string): boolean {
+export function isBlockedAdminSurface(pathname: string | null): boolean {
+  if (pathname === null) return true
   const normalized = normalizeSecurityPathname(pathname)
   if (normalized === null) return true
   return BLOCKED_ADMIN_AUTH_PATHS.has(normalized) || BLOCKED_ADMIN_UI_PATHS.has(normalized)
@@ -50,13 +95,30 @@ function isBlockedAdminSurface(pathname: string): boolean {
 export async function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers)
   const traceId = getTraceId(request.headers)
+  const nonce = randomUUID().replaceAll('-', '')
+  const contentSecurityPolicy = buildContentSecurityPolicy(nonce)
   requestHeaders.set('x-request-id', traceId)
+  requestHeaders.set('x-nonce', nonce)
+  requestHeaders.set('content-security-policy', contentSecurityPolicy)
+
+  if (isCrossSiteFirstPartyApiRequest(request)) {
+    const response = new NextResponse(null, {
+      headers: { 'cache-control': 'no-store', 'x-request-id': traceId },
+      status: 403,
+    })
+    response.headers.append('vary', 'origin')
+    response.headers.append('vary', 'sec-fetch-site')
+    return applySecurityHeaders(response, contentSecurityPolicy)
+  }
 
   if (isBlockedAdminSurface(request.nextUrl.pathname)) {
-    return new NextResponse(null, {
-      headers: { 'cache-control': 'no-store', 'x-request-id': traceId },
-      status: 404,
-    })
+    return applySecurityHeaders(
+      new NextResponse(null, {
+        headers: { 'cache-control': 'no-store', 'x-request-id': traceId },
+        status: 404,
+      }),
+      contentSecurityPolicy,
+    )
   }
 
   if (
@@ -65,14 +127,18 @@ export async function proxy(request: NextRequest) {
   ) {
     const target = await resolvePublicRedirect(normalizeRedirectPath(request.nextUrl.pathname))
     if (target) {
-      const destination = new URL(target, getEnv().NEXT_PUBLIC_SERVER_URL)
-      destination.search = request.nextUrl.search
-      const response = new NextResponse(null, {
-        headers: { location: destination.toString() },
-        status: 301,
-      })
-      response.headers.set('x-request-id', traceId)
-      return response
+      try {
+        const destination = new URL(normalizeRedirectPath(target), getEnv().NEXT_PUBLIC_SERVER_URL)
+        destination.search = request.nextUrl.search
+        const response = new NextResponse(null, {
+          headers: { location: destination.toString() },
+          status: 301,
+        })
+        response.headers.set('x-request-id', traceId)
+        return applySecurityHeaders(response, contentSecurityPolicy)
+      } catch {
+        // A stale or corrupted redirect cache must fail closed before emitting Location.
+      }
     }
   }
 
@@ -84,10 +150,13 @@ export async function proxy(request: NextRequest) {
       published = false
     }
     if (published === false) {
-      return new NextResponse(null, {
-        headers: { 'cache-control': 'no-store', 'x-request-id': traceId },
-        status: 404,
-      })
+      return applySecurityHeaders(
+        new NextResponse(null, {
+          headers: { 'cache-control': 'no-store', 'x-request-id': traceId },
+          status: 404,
+        }),
+        contentSecurityPolicy,
+      )
     }
   }
 
@@ -97,7 +166,12 @@ export async function proxy(request: NextRequest) {
     response.headers.set('cache-control', 'private, no-store, max-age=0')
     response.headers.set('x-robots-tag', 'noindex, nofollow')
   }
-  return response
+  if (request.nextUrl.pathname.startsWith('/api/v1/')) {
+    response.headers.set('cache-control', 'no-store')
+    response.headers.append('vary', 'origin')
+    response.headers.append('vary', 'sec-fetch-site')
+  }
+  return applySecurityHeaders(response, contentSecurityPolicy)
 }
 
 export const config = {

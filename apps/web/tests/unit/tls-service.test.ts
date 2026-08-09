@@ -206,6 +206,30 @@ describe('TLS / CAA orchestration and SSRF controls', () => {
     },
   )
 
+  it('blocks DNS rebinding when a later resolution changes from public to private', async () => {
+    let addressLookup = 0
+    const dns = dnsProvider(({ domainAscii, recordType }) => {
+      if (recordType === 'A') {
+        addressLookup += 1
+        const address = addressLookup === 1 ? '93.184.216.34' : '127.0.0.1'
+        return dnsSuccess('A', [{ address, ownerName: domainAscii, ttl: 0, type: 'A' }])
+      }
+      return dnsSuccess(recordType)
+    })
+    const tls = tlsProvider()
+
+    await expect(
+      queryTlsCertificate({ query: 'rebind.example.test' }, options(dns, tls, 'rebind-first')),
+    ).resolves.toMatchObject({ state: 'ready' })
+    await expect(
+      queryTlsCertificate({ query: 'rebind.example.test' }, options(dns, tls, 'rebind-second')),
+    ).resolves.toMatchObject({ problem: { code: 'TLS_TARGET_BLOCKED' }, state: 'error' })
+    expect(tls.inspectCertificate).toHaveBeenCalledTimes(1)
+    expect(tls.inspectCertificate).toHaveBeenCalledWith(
+      expect.objectContaining({ addresses: ['93.184.216.34'] }),
+    )
+  })
+
   it('uses current or inherited RFC 8659 CAA RRsets and reuses the bounded DNS/result caches', async () => {
     const dns = dnsProvider(({ domainAscii, recordType }) => {
       if (recordType === 'A') {

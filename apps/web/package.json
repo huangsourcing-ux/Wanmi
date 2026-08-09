@@ -3,6 +3,13 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "files": [
+    ".next",
+    "migrations",
+    "next.config.ts",
+    "src",
+    "tsconfig.json"
+  ],
   "scripts": {
     "admin:bootstrap": "tsx scripts/bootstrap-admin.ts",
     "build": "cross-env NODE_OPTIONS='--no-deprecation --max-old-space-size=1536' next build",
@@ -89,7 +96,7 @@
     "vitest": "4.0.18"
   },
   "engines": {
-    "node": "24.18.0",
+    "node": ">=24.18.0 <25",
     "pnpm": "11.7.0"
   }
 }
