@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Generated artifacts excluded from committed-history secret evidence"
+paths = [
+  '''^apps/web/coverage/''',
+  '''^apps/web/playwright-report/''',
+  '''^apps/web/test-results/''',
+]

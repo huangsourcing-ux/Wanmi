@@ -45,15 +45,18 @@ export async function AdvertisingSlot({
   )
 }
 
-async function loadAdvertisement({
-  pageType,
-  placementCode,
-}: {
-  pageType: 'content' | 'home' | 'tld' | 'tool'
-  placementCode: string
-}): Promise<PublicAdvertisement | null> {
+export async function loadAdvertisement(
+  {
+    pageType,
+    placementCode,
+  }: {
+    pageType: 'content' | 'home' | 'tld' | 'tool'
+    placementCode: string
+  },
+  loadPayload: typeof getPayload = getPayload,
+): Promise<PublicAdvertisement | null> {
   try {
-    const payload = await getPayload({ config })
+    const payload = await loadPayload({ config })
     return await readPublicAdvertisement(payload, { pageType, placementCode })
   } catch {
     return null

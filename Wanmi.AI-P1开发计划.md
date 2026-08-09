@@ -619,8 +619,8 @@ D6-02 返回语义补充验证记录（2026-08-08）：修正 `executeWestDigita
 
 - [ ] 对 M01～M16 执行全链路 E2E 和回归测试；
 - [ ] 完成短信、微信支付、西部数码、OSS/KMS 的 staging contract test；
-- [ ] 完成 DNS/TLS SSRF、开放跳转、CSRF、CORS、CSP、上传和越权安全测试；
-- [ ] 完成 Gitleaks、Trivy 和 Node 依赖安全检查；
+- [x] 完成 DNS/TLS SSRF、开放跳转、CSRF、CORS、CSP、上传和越权安全测试；
+- [x] 完成 Gitleaks、Trivy 和 Node 依赖安全检查；
 - [ ] 完成 k6/Lighthouse 或等价性能基线；
 - [ ] 建立工具、短信、支付、订单、履约、退款、余额、证件访问和对账监控；
 - [ ] 建立异常订单、退款失败、余额不足、实名泄露、provider 故障和紧急停售 Runbook；
@@ -628,8 +628,10 @@ D6-02 返回语义补充验证记录（2026-08-08）：修正 `executeWestDigita
 - [ ] 验证支付通知重放、ECS 重建、RDS 恢复、OSS 误删恢复和密钥轮换；
 - [ ] 在 2 vCPU/4 GiB 生产 Linux 环境验证 Web、Worker、Who-Dat 内存、日志轮转和 2 小时重建目标；
 - [ ] 验证 Web/Worker 独立重启，以及 ECS 与 RDS 同 VPC 的 `commerce` Job 强制中断恢复；
-- [ ] 验证广告关闭、分析失败或 CMS 故障时工具仍完整可用；
+- [x] 验证广告关闭、分析失败或 CMS 故障时工具仍完整可用；
 - [ ] 完成微信、西部数码和内部订单三方对账演练。
+
+D7-01 验证记录（2026-08-09）：在不重写既有地址分类、固定 IP 连接、上传魔数/结构校验和 RBAC 的前提下，补齐 DNS/TLS SSRF、DNS rebinding、内网重定向、连接后目标复核、IPv4-mapped IPv6、开放跳转混淆、CSRF/CORS/CSP、恶意上传、跨客户七类业务数据和全部特权后台路由的系统化安全契约；发现并修复缓存重定向最终目标未复核、CMS 初始化失败会拖垮工具两处真实缺陷。六类工具在 CMS provider 抛错、广告 provider 抛错/广告位为空和分析请求拒绝时仍保留完整入口及核心能力，明确闭合此前未单独验证的 D1 第 5.3 节最后一条退出条件。`make security` 现在分别扫描工作树和带 `.git` 的完整历史，历史配置不继承 `.env.local` allowlist；linux/amd64 生产镜像改为固定 digest 的最小 Alpine 运行层，并由固定 digest Trivy 对 HIGH/CRITICAL 扫描。`image-size` 上游最新版仍为 2.0.2、尚无修复版本，因此保留现有本地补丁；Node audit 和 Trivy 仅通过包名、版本及 Trivy `VendorIDs` 中的两条精确 GHSA 放行并输出理由。变异验证覆盖 IPv4-mapped 防护、连接后地址/端口双层复核、最终重定向复核、CMS/广告/分析失败处理、历史扫描参数和 Trivy 例外匹配；其中只移除 remoteAddress 复核时端口冗余层使变异存活，同时移除两层后目标变更用例按预期失败；分析 catch 的初始弱断言同样先存活，强化为观察实际 rejected Promise 的 catch 后按预期失败。最终原样 `ALLOW_REAL_PROVIDER_WRITES=false make check` 退出码 0，通过生成物/schema 漂移、全部 migration 往返、Nginx、lint、TypeScript strict、586/586 单元测试、96/96 PostgreSQL/MinIO 集成测试、Next.js 生产构建、linux/amd64 镜像、136 个提交的完整历史 Gitleaks 及 Trivy 门禁。未修改测试 fixture 身份或清理范围，未新增 migration；全部 provider 均为本地 fixture/mock，未连接真实微信、西部数码、短信、OSS/KMS 或生产基础设施。
 
 ### 11.2 D8 P1 开发验收
 
@@ -704,6 +706,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-08 | D6-05 主动续费闭环 | 复用报价、订单、支付、commerce 履约、自动退款和人工复核；续费写复用 D6-01，既有 renewals 与 domainAssets 以 PostgreSQL CAS 幂等落库 | `make check`：564/564 单元测试、91/91 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；全新卷连续三轮 91/91；续费落库 CAS 与支付后过期报价两处变异均被杀死；`ALLOW_REAL_PROVIDER_WRITES=false` | D6 进行中；D6-04 资产读侧、NS、提醒和越权门禁位于独立 PR；真实续费 contract test、资金/域名写联调和 D7 强制中断恢复仍未授权，生产门槛不变 |
 | 2026-08-08 | D6-04 域名资产、NS 与提醒 | 本人资产列表/详情/同步；NS commerce 写入、人工只查复核与事务审计；站内/短信到期提醒及原子去重；用户/订单/资产越权门禁 | `make check`：567/567 单元测试、90/90 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；全新卷后三轮完整集成均 90/90；归属门禁与提醒 CAS 两处变异均被杀死；`ALLOW_REAL_PROVIDER_WRITES=false` | D6 进行中；主动续费及第 10.2 第 2 项仍待 D6-05；真实短信模板、provider contract test 与生产门槛不变 |
 | 2026-08-09 | D6-05 累计迁移快照基线修复 | 普通 merge `main` 后删除旧 D6-05 migration，并基于含 D6-04 表结构的最新快照重新生成 `20260809_053302_d6_active_renewals`；新增累计快照门禁与 D6-05 独立往返验证 | 新快照命中 `domain_expiry_reminders=4`、`provider_operations=5`、`renewals=5`、`domain_assets=11`；全新卷连续两轮 96/96、整链 migrate、整批 down/up 与 `make check` 通过，最终 569/569 单元测试、96/96 集成测试；审计跨表 ID 碰撞变异稳定复现期望 4、实际 5 | 未修改 D6-05 业务逻辑；只调整测试审计/fixture 隔离与负载时限，只使用 fixture，真实 provider 联调和全部生产门槛不变 |
+| 2026-08-09 | D7-01 安全硬化与降级 | 补齐 SSRF/跳转/浏览器头/上传/越权安全矩阵；完整历史 Gitleaks、linux/amd64 Trivy 和精确 GHSA 例外；六类工具真实触发 CMS、广告、分析失败仍可用 | `make check`：586/586 单元、96/96 集成、完整迁移/构建/扫描通过；136 个提交无泄漏；关键分支变异均被杀死，冗余层与初始弱断言的存活过程已记录 | D7 第 3、4、12 项完成；staging contract、真实 ECS/RDS/OSS/KMS、密钥轮换和三方对账仍未授权且未勾选 |
 
 ## 13. 范围追踪矩阵
 
@@ -737,7 +740,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 - [x] IDN 中文、混合字符、非法长度和非法标签；
 - [ ] 西部数码限频、429、队列满和缓存降级；
 - [ ] 查询结果 noindex、canonical、sitemap 和结构化数据；
-- [ ] SEO 字段生成、草稿隔离、301 生效、重定向循环和开放跳转；
+- [x] SEO 字段生成、草稿隔离、301 生效、重定向循环和开放跳转；
 - [ ] 反馈表单字段白名单、限频、敏感信息拒绝和未授权导出；
 - [ ] 广告关闭、过期、错误素材、恶意链接和布局稳定。
 
@@ -768,7 +771,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 - [ ] 支付通知重放与订单恢复；
 - [ ] 静态资源回滚和镜像回滚；
 - [ ] 密钥轮换与失效；
-- [ ] provider、广告、分析、CMS 故障不拖垮公开工具。
+- [x] provider、广告、分析、CMS 故障不拖垮公开工具。
 
 ## 15. 建议给 Codex 的启动指令
 
