@@ -17,4 +17,6 @@
 
 2026-08-10 的 D7-08 首次开工前预检已取得真实云侧结论，但未进入节点实测：阿里云 API 确认目标实例规格为 2 vCPU/4 GiB，但当前 SSH 目标与该实例不匹配，因此不能证明空载、架构、磁盘或完整重置起点。同次预检还实测 RDS `SSLEnabled=off`、上海私有 Bucket 未启用版本控制/删除保护，且无法复核生产主密钥注入、离线备份与凭据轮换。因此按 fail-closed 门禁未执行部署、强杀、重建、PITR、OSS 删除或密钥轮换，真实 ECS 内存/轮转/恢复/RTO 状态仍为“未验证”。完整脱敏证据见 `docs/operations/d7-08-ecs-recovery-validation.md`。
 
+同日后续只读复核确认项目负责人更正后的 ECS 地址与上述 2 vCPU/4 GiB 云实例匹配，SSH 22 可达，但未尝试认证或进入机内。因同一对话披露了明文云 AccessKey、ECS 密码和 RDS 密码，原“凭据已轮换”前置已失效；这些值未被命令、配置或仓库使用，后续必须先撤销并重新轮换，再以受控密钥式入口完成机内预检。RDS 仍为 `VPC/Basic`、`SSLEnabled=off`，OSS 仍为 `unversioned`，因此设计验证状态不变：真实 ECS 仍未验证。
+
 本地容器验证产物固定为 `linux/amd64`。取得 ECS 授权后必须先核对实例 CPU 架构；若为 ARM64，使用同一 Dockerfile 生成并验证对应平台或多架构 manifest，不得在未运行验证的架构上直接上线。
