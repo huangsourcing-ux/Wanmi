@@ -10,7 +10,7 @@
 4. 完整应用主密钥 key ring 在受控环境生成，已注入 Web/Worker 的受控 secret，且离线备份与保管记录可复核；只记录版本名和校验结论，不记录 key 值；
 5. 应用/RDS/OSS 凭据轮换已留下可复核记录，演练资源边界精确，`ALLOW_REAL_PROVIDER_WRITES` 与全部 provider 写能力闸均为 `false`。
 
-任一项失败或无法确认时，立即停止变更性演练，将实测字段、错误码、时间戳和结论写入当次验证记录，对应计划项保持未勾选。不得用手工导出代替 PITR，不得用无版本 Bucket 或 fixture 代替 OSS 误删恢复，不得从开发机复制主密钥。2026-08-10 首次 D7-08 预检的阻塞证据见 `docs/operations/d7-08-ecs-recovery-validation.md`。
+任一项失败或无法确认时，立即停止变更性演练，将实测字段、错误码、时间戳和结论写入当次验证记录，对应计划项保持未勾选。不得用手工导出代替 PITR，不得用无版本 Bucket 或 fixture 代替 OSS 误删恢复，不得从开发机复制主密钥。凭据一旦出现在聊天、文档、命令行或日志中，必须视为已暴露，撤销旧值并完成新一轮受控注入后才能重开。2026-08-10 首次 D7-08 预检的阻塞证据见 `docs/operations/d7-08-ecs-recovery-validation.md`。
 
 ## Web/Worker 独立重启
 
