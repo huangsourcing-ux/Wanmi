@@ -19,18 +19,17 @@ export class ProviderWriteGuardError extends Error {
   }
 }
 
-type WestDigitalRuntimeBudget = {
+export type ProviderWriteBudgetAuthorization = {
   amountFen: number
-  operationKeys: Set<string>
-  registerRenewOperations: number
+  amountLimitFen: number
+  amountLimitExceededCode: string
+  capability: 'payment' | 'refund' | 'register_renew'
+  operationDelta: number
+  operationKey: string
+  operationLimit: number
+  operationLimitExceededCode: string
+  provider: 'wechatpay' | 'westdigital'
 }
-
-let westDigitalBudget: WestDigitalRuntimeBudget = {
-  amountFen: 0,
-  operationKeys: new Set(),
-  registerRenewOperations: 0,
-}
-let wechatPayAmountFen = 0
 
 function requireGate(enabled: boolean, code: string): void {
   if (!enabled) throw new ProviderWriteGuardError(code)
@@ -63,9 +62,9 @@ function westDigitalCapabilityEnabled(operation: WestDigitalGuardedWrite['operat
 export function authorizeWestDigitalWrite(
   input: WestDigitalGuardedWrite,
   operationKey: string,
-): void {
+): ProviderWriteBudgetAuthorization | undefined {
   const env = getEnv()
-  if (!env.ALLOW_REAL_PROVIDER_WRITES) return
+  if (!env.ALLOW_REAL_PROVIDER_WRITES) return undefined
 
   requireGate(env.ALLOW_REAL_WESTDIGITAL, 'WESTDIGITAL_PROVIDER_WRITE_DISABLED')
   requireGate(
@@ -82,8 +81,7 @@ export function authorizeWestDigitalWrite(
     throw new ProviderWriteGuardError('WESTDIGITAL_WRITE_DOMAIN_NOT_ALLOWLISTED')
   }
 
-  if (input.operation !== 'register' && input.operation !== 'renew') return
-  if (westDigitalBudget.operationKeys.has(operationKey)) return
+  if (input.operation !== 'register' && input.operation !== 'renew') return undefined
   if (!Number.isSafeInteger(input.clientPriceFen) || input.clientPriceFen <= 0) {
     throw new ProviderWriteGuardError('WESTDIGITAL_WRITE_AMOUNT_INVALID')
   }
@@ -97,28 +95,24 @@ export function authorizeWestDigitalWrite(
   if (input.clientPriceFen > env.WESTDIGITAL_WRITE_SINGLE_AMOUNT_LIMIT_FEN) {
     throw new ProviderWriteGuardError('WESTDIGITAL_WRITE_SINGLE_AMOUNT_LIMIT_EXCEEDED')
   }
-  if (
-    westDigitalBudget.registerRenewOperations + 1 >
-    env.WESTDIGITAL_WRITE_MAX_REGISTER_RENEW_OPERATIONS
-  ) {
-    throw new ProviderWriteGuardError('WESTDIGITAL_WRITE_OPERATION_LIMIT_EXCEEDED')
+  return {
+    amountFen: input.clientPriceFen,
+    amountLimitFen: env.WESTDIGITAL_WRITE_CUMULATIVE_AMOUNT_LIMIT_FEN,
+    amountLimitExceededCode: 'WESTDIGITAL_WRITE_CUMULATIVE_AMOUNT_LIMIT_EXCEEDED',
+    capability: 'register_renew',
+    operationDelta: 1,
+    operationKey,
+    operationLimit: env.WESTDIGITAL_WRITE_MAX_REGISTER_RENEW_OPERATIONS,
+    operationLimitExceededCode: 'WESTDIGITAL_WRITE_OPERATION_LIMIT_EXCEEDED',
+    provider: 'westdigital',
   }
-  if (
-    westDigitalBudget.amountFen + input.clientPriceFen >
-    env.WESTDIGITAL_WRITE_CUMULATIVE_AMOUNT_LIMIT_FEN
-  ) {
-    throw new ProviderWriteGuardError('WESTDIGITAL_WRITE_CUMULATIVE_AMOUNT_LIMIT_EXCEEDED')
-  }
-
-  westDigitalBudget.operationKeys.add(operationKey)
-  westDigitalBudget.registerRenewOperations += 1
-  westDigitalBudget.amountFen += input.clientPriceFen
 }
 
 export function authorizeWechatPayWrite(
   operation: 'payment' | 'payment_close' | 'refund',
   amountFen: number,
-): void {
+  operationKey: string,
+): ProviderWriteBudgetAuthorization | undefined {
   const env = getEnv()
   requireGate(env.ALLOW_REAL_PROVIDER_WRITES, 'PROVIDER_WRITE_DISABLED')
   requireGate(env.ALLOW_REAL_WECHATPAY, 'WECHATPAY_PROVIDER_WRITE_DISABLED')
@@ -126,7 +120,7 @@ export function authorizeWechatPayWrite(
     operation === 'refund' ? env.ALLOW_REAL_WECHATPAY_REFUNDS : env.ALLOW_REAL_WECHATPAY_PAYMENTS,
     operation === 'refund' ? 'WECHATPAY_REFUND_WRITE_DISABLED' : 'WECHATPAY_PAYMENT_WRITE_DISABLED',
   )
-  if (operation === 'payment_close') return
+  if (operation === 'payment_close') return undefined
   if (
     env.WECHATPAY_WRITE_SINGLE_AMOUNT_LIMIT_FEN < 1 ||
     env.WECHATPAY_WRITE_CUMULATIVE_AMOUNT_LIMIT_FEN < 1
@@ -139,23 +133,24 @@ export function authorizeWechatPayWrite(
   if (amountFen > env.WECHATPAY_WRITE_SINGLE_AMOUNT_LIMIT_FEN) {
     throw new ProviderWriteGuardError('WECHATPAY_WRITE_SINGLE_AMOUNT_LIMIT_EXCEEDED')
   }
-  if (wechatPayAmountFen + amountFen > env.WECHATPAY_WRITE_CUMULATIVE_AMOUNT_LIMIT_FEN) {
-    throw new ProviderWriteGuardError('WECHATPAY_WRITE_CUMULATIVE_AMOUNT_LIMIT_EXCEEDED')
+  if (!operationKey.trim()) {
+    throw new ProviderWriteGuardError('WECHATPAY_WRITE_OPERATION_KEY_INVALID')
   }
-  wechatPayAmountFen += amountFen
+  return {
+    amountFen,
+    amountLimitFen: env.WECHATPAY_WRITE_CUMULATIVE_AMOUNT_LIMIT_FEN,
+    amountLimitExceededCode: 'WECHATPAY_WRITE_CUMULATIVE_AMOUNT_LIMIT_EXCEEDED',
+    capability: operation,
+    operationDelta: 0,
+    operationKey,
+    operationLimit: 0,
+    operationLimitExceededCode: 'WECHATPAY_WRITE_OPERATION_LIMIT_EXCEEDED',
+    provider: 'wechatpay',
+  }
 }
 
 export function assertLiveRuntimeTransportAllowed(provider: 'wechatpay' | 'westdigital'): void {
   if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
     throw new Error(`Automated tests must never construct a live ${provider} runtime transport`)
   }
-}
-
-export function resetProviderWriteGuardrailsForTests(): void {
-  westDigitalBudget = {
-    amountFen: 0,
-    operationKeys: new Set(),
-    registerRenewOperations: 0,
-  }
-  wechatPayAmountFen = 0
 }

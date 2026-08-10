@@ -3,8 +3,7 @@ import { getPayload, type PayloadRequest } from 'payload'
 
 import { AppError, getTraceId, problemResponse, successResponse } from '@/lib/errors'
 import type { WestDigitalReadProvider } from '@/providers/types'
-import { WestDigitalReadAdapter } from '@/providers/westdigital'
-import { FixtureWestDigitalTransport } from '@/providers/westdigital-fixtures'
+import { createConfiguredWestDigitalReadProvider } from '@/providers/westdigital'
 import { orderCreateRequestSchema, orderCreationResultSchema } from '@/schemas/orders'
 import { authenticatedCustomerRequest } from '@/services/auth/otp'
 import { createCustomerOrder } from '@/services/commerce/order-creation'
@@ -13,9 +12,8 @@ import { runtimeProviderObservability } from '@/services/observability/runtime'
 export const runtime = 'nodejs'
 
 const MAX_REQUEST_BODY_BYTES = 4_096
-const provider = new WestDigitalReadAdapter({
+const provider = createConfiguredWestDigitalReadProvider({
   logger: runtimeProviderObservability.logger,
-  transport: new FixtureWestDigitalTransport(),
 })
 
 type OrderPostDependencies = {

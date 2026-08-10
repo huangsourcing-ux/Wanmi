@@ -43,6 +43,18 @@ jobs:
       ALIYUN_KMS_MODE: mock
       ALIYUN_OSS_REALNAME_MODE: mock
       ALLOW_REAL_PROVIDER_WRITES: 'false'
+      ALLOW_REAL_ALIYUN_KMS: 'false'
+      ALLOW_REAL_ALIYUN_OSS_REALNAME: 'false'
+      ALLOW_REAL_ALIYUN_SMS_SENDS: 'false'
+      ALLOW_REAL_WECHATPAY: 'false'
+      ALLOW_REAL_WECHATPAY_PAYMENTS: 'false'
+      ALLOW_REAL_WECHATPAY_REFUNDS: 'false'
+      ALLOW_REAL_WESTDIGITAL: 'false'
+      ALLOW_REAL_WESTDIGITAL_READS: 'false'
+      ALLOW_REAL_WESTDIGITAL_REALNAME_WRITES: 'false'
+      ALLOW_REAL_WESTDIGITAL_REGISTRATION_WRITES: 'false'
+      ALLOW_REAL_WESTDIGITAL_RENEWAL_WRITES: 'false'
+      ALLOW_REAL_WESTDIGITAL_NAMESERVER_WRITES: 'false'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

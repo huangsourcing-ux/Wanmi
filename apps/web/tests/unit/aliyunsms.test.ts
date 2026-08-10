@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { getEnv, resetEnvForTests } from '@/lib/env'
-import { classifySmsFailure, classifySmsReceipt, createSmsProvider } from '@/providers/aliyunsms'
+import {
+  classifySmsFailure,
+  classifySmsReceipt,
+  createSmsProvider,
+  validateAliyunSmsLiveConfiguration,
+} from '@/providers/aliyunsms'
 
 describe('Alibaba Cloud SMS adapter', () => {
   afterEach(() => {
@@ -47,6 +52,35 @@ describe('Alibaba Cloud SMS adapter', () => {
     process.env.CUSTOMER_SESSION_COOKIE = 'wanmi_admin-token'
     resetEnvForTests()
     expect(() => getEnv()).toThrow(/customer\/admin cookies must be distinct/u)
+  })
+
+  it('loads credential, sign, and both template references without sending SMS', () => {
+    vi.stubEnv('ALIBABA_CLOUD_ACCESS_KEY_ID', 'fixture-access-key')
+    vi.stubEnv('ALIBABA_CLOUD_ACCESS_KEY_SECRET', 'fixture-access-secret')
+    vi.stubEnv('ALIBABA_CLOUD_REGION_ID', 'cn-shanghai')
+    vi.stubEnv('ALIBABA_CLOUD_SMS_SIGN_NAME', 'fixture-sign')
+    vi.stubEnv('ALIBABA_CLOUD_SMS_OTP_TEMPLATE_CODE', 'SMS_OTP_FIXTURE')
+    vi.stubEnv('ALIBABA_CLOUD_SMS_DOMAIN_EXPIRY_TEMPLATE_CODE', 'SMS_EXPIRY_FIXTURE')
+
+    expect(validateAliyunSmsLiveConfiguration()).toEqual({
+      credentialsConfigured: true,
+      domainExpiryTemplateConfigured: true,
+      otpTemplateConfigured: true,
+      signConfigured: true,
+    })
+  })
+
+  it('fails closed when any live SMS template reference is absent', () => {
+    vi.stubEnv('ALIBABA_CLOUD_ACCESS_KEY_ID', 'fixture-access-key')
+    vi.stubEnv('ALIBABA_CLOUD_ACCESS_KEY_SECRET', 'fixture-access-secret')
+    vi.stubEnv('ALIBABA_CLOUD_REGION_ID', 'cn-shanghai')
+    vi.stubEnv('ALIBABA_CLOUD_SMS_SIGN_NAME', 'fixture-sign')
+    vi.stubEnv('ALIBABA_CLOUD_SMS_OTP_TEMPLATE_CODE', 'SMS_OTP_FIXTURE')
+    vi.stubEnv('ALIBABA_CLOUD_SMS_DOMAIN_EXPIRY_TEMPLATE_CODE', '')
+
+    expect(() => validateAliyunSmsLiveConfiguration()).toThrow(
+      /ALIBABA_CLOUD_SMS_DOMAIN_EXPIRY_TEMPLATE_CODE/u,
+    )
   })
 
   it('maps Alibaba Cloud receipt statuses without retaining provider messages', () => {

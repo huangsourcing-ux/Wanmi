@@ -11,13 +11,18 @@ import { isPublicDnsAddress } from '@/services/dns/query-dns-records'
 const WESTDIGITAL_HOSTNAME = 'api.west.cn'
 const WESTDIGITAL_ORIGIN = `https://${WESTDIGITAL_HOSTNAME}`
 const MAX_RESOLVED_ADDRESSES = 16
-const ALLOWED_PATHS = new Set(['/api/v2/audit/', '/api/v2/domain/', '/api/v2/info/'])
+const ALLOWED_PATHS = new Set([
+  '/api/v2/audit/',
+  '/api/v2/domain/',
+  '/api/v2/domain/query/',
+  '/api/v2/info/',
+])
 
 type ResolvedAddress = { address: string; family: 4 | 6 }
 
 export type WestDigitalHttpRequest = {
   body: Readonly<Record<string, string>>
-  path: '/v2/audit/' | '/v2/domain/' | '/v2/info/'
+  path: '/v2/audit/' | '/v2/domain/' | '/v2/domain/query/' | '/v2/info/'
   requestId: string
   signal: AbortSignal
 }

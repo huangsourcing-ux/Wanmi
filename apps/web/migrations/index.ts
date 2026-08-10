@@ -28,6 +28,7 @@ import * as migration_20260808_124245_d6_commerce_fulfillment from './20260808_1
 import * as migration_20260808_144932_d6_westdigital_balance_monitoring from './20260808_144932_d6_westdigital_balance_monitoring'
 import * as migration_20260809_013335_d6_domain_assets_nameservers_reminders from './20260809_013335_d6_domain_assets_nameservers_reminders'
 import * as migration_20260809_053302_d6_active_renewals from './20260809_053302_d6_active_renewals'
+import * as migration_20260810_021337_d7_provider_write_budgets from './20260810_021337_d7_provider_write_budgets'
 
 export const migrations = [
   {
@@ -179,5 +180,10 @@ export const migrations = [
     up: migration_20260809_053302_d6_active_renewals.up,
     down: migration_20260809_053302_d6_active_renewals.down,
     name: '20260809_053302_d6_active_renewals',
+  },
+  {
+    up: migration_20260810_021337_d7_provider_write_budgets.up,
+    down: migration_20260810_021337_d7_provider_write_budgets.down,
+    name: '20260810_021337_d7_provider_write_budgets',
   },
 ]

@@ -9,6 +9,11 @@ import type {
   WestDigitalBalanceTransportRequest,
   WestDigitalBalanceTransportResponse,
 } from '@/providers/westdigital-balance'
+import type {
+  WestDigitalReadTransport,
+  WestDigitalTransportRequest,
+  WestDigitalTransportResponse,
+} from '@/providers/westdigital'
 import {
   WestDigitalWriteTransportError,
   type WestDigitalWriteTransport,
@@ -16,11 +21,25 @@ import {
   type WestDigitalWriteTransportResponse,
 } from '@/providers/westdigital-write'
 
-type LiveRequest = WestDigitalBalanceTransportRequest | WestDigitalWriteTransportRequest
-type LiveResponse = WestDigitalBalanceTransportResponse | WestDigitalWriteTransportResponse
+type LiveRequest =
+  | WestDigitalBalanceTransportRequest
+  | WestDigitalTransportRequest
+  | WestDigitalWriteTransportRequest
+type LiveResponse =
+  | WestDigitalBalanceTransportResponse
+  | WestDigitalTransportResponse
+  | WestDigitalWriteTransportResponse
+
+function livePath(
+  path: LiveRequest['path'],
+): '/v2/audit/' | '/v2/domain/' | '/v2/domain/query/' | '/v2/info/' {
+  if (path === 'v2/domain/query/') return '/v2/domain/query/'
+  if (path === 'v2/info/') return '/v2/info/'
+  return path
+}
 
 export class LiveWestDigitalTransport
-  implements WestDigitalBalanceTransport, WestDigitalWriteTransport
+  implements WestDigitalBalanceTransport, WestDigitalReadTransport, WestDigitalWriteTransport
 {
   constructor() {
     assertLiveRuntimeTransportAllowed('westdigital')
@@ -35,7 +54,7 @@ export class LiveWestDigitalTransport
       return await executeWestDigitalHttpRequest(
         {
           body: request.body,
-          path: request.path,
+          path: livePath(request.path),
           requestId: request.requestId,
           signal: request.signal,
         },
@@ -46,7 +65,13 @@ export class LiveWestDigitalTransport
         },
       )
     } catch (error) {
-      if (!('operation' in request)) throw error
+      if (
+        !('operation' in request) ||
+        request.operation === 'availability' ||
+        request.operation === 'price'
+      ) {
+        throw error
+      }
       const transportError =
         error instanceof WestDigitalHttpRequestError
           ? error

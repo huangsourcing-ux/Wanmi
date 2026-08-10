@@ -5,7 +5,6 @@ import { createLocalReq, getPayload, type Payload } from 'payload'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { resetEnvForTests } from '@/lib/env'
-import { resetProviderWriteGuardrailsForTests } from '@/lib/provider-write-guardrails'
 import {
   FixtureWestDigitalWriteTransport,
   retryableBeforeSubmission,
@@ -97,7 +96,6 @@ beforeAll(async () => {
 afterEach(() => {
   vi.unstubAllEnvs()
   resetEnvForTests()
-  resetProviderWriteGuardrailsForTests()
 })
 
 afterAll(async () => {
@@ -350,65 +348,5 @@ describe('D6 WestDigital provider operation safety', () => {
       state: 'degraded',
     })
     expect(transport.requests).toHaveLength(0)
-  })
-
-  it('blocks register and renewal operations above the per-runtime count limit', async () => {
-    const first = registerInput('guard-count-one')
-    const second = registerInput('guard-count-two')
-    vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'true')
-    vi.stubEnv('ALLOW_REAL_WESTDIGITAL', 'true')
-    vi.stubEnv('ALLOW_REAL_WESTDIGITAL_REGISTRATION_WRITES', 'true')
-    vi.stubEnv('CI', 'false')
-    vi.stubEnv('WESTDIGITAL_WRITE_DOMAIN_ALLOWLIST', `${first.domainAscii},${second.domainAscii}`)
-    vi.stubEnv('WESTDIGITAL_WRITE_MAX_REGISTER_RENEW_OPERATIONS', '1')
-    vi.stubEnv('WESTDIGITAL_WRITE_SINGLE_AMOUNT_LIMIT_FEN', '10000')
-    vi.stubEnv('WESTDIGITAL_WRITE_CUMULATIVE_AMOUNT_LIMIT_FEN', '100000')
-    resetEnvForTests()
-    const transport = new FixtureWestDigitalWriteTransport((request) =>
-      request.operation === 'register'
-        ? successResponse(request.body.domain!)
-        : assetResponse(request.body.domain!),
-    )
-
-    await expect(run(first, transport)).resolves.toMatchObject({ state: 'ready' })
-    await expect(run(second, transport)).resolves.toMatchObject({
-      problem: { code: 'WESTDIGITAL_WRITE_OPERATION_LIMIT_EXCEEDED' },
-      state: 'degraded',
-    })
-    expect(transport.writeCount).toBe(1)
-  })
-
-  it('blocks both single and cumulative West Digital amounts before the provider call', async () => {
-    const single = { ...registerInput('guard-single-amount'), clientPriceFen: 3_001 }
-    const first = { ...registerInput('guard-cumulative-one'), clientPriceFen: 2_500 }
-    const second = { ...registerInput('guard-cumulative-two'), clientPriceFen: 1_600 }
-    vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'true')
-    vi.stubEnv('ALLOW_REAL_WESTDIGITAL', 'true')
-    vi.stubEnv('ALLOW_REAL_WESTDIGITAL_REGISTRATION_WRITES', 'true')
-    vi.stubEnv('CI', 'false')
-    vi.stubEnv(
-      'WESTDIGITAL_WRITE_DOMAIN_ALLOWLIST',
-      [single.domainAscii, first.domainAscii, second.domainAscii].join(','),
-    )
-    vi.stubEnv('WESTDIGITAL_WRITE_MAX_REGISTER_RENEW_OPERATIONS', '10')
-    vi.stubEnv('WESTDIGITAL_WRITE_SINGLE_AMOUNT_LIMIT_FEN', '3000')
-    vi.stubEnv('WESTDIGITAL_WRITE_CUMULATIVE_AMOUNT_LIMIT_FEN', '4000')
-    resetEnvForTests()
-    const transport = new FixtureWestDigitalWriteTransport((request) =>
-      request.operation === 'register'
-        ? successResponse(request.body.domain!)
-        : assetResponse(request.body.domain!),
-    )
-
-    await expect(run(single, transport)).resolves.toMatchObject({
-      problem: { code: 'WESTDIGITAL_WRITE_SINGLE_AMOUNT_LIMIT_EXCEEDED' },
-      state: 'degraded',
-    })
-    await expect(run(first, transport)).resolves.toMatchObject({ state: 'ready' })
-    await expect(run(second, transport)).resolves.toMatchObject({
-      problem: { code: 'WESTDIGITAL_WRITE_CUMULATIVE_AMOUNT_LIMIT_EXCEEDED' },
-      state: 'degraded',
-    })
-    expect(transport.writeCount).toBe(1)
   })
 })

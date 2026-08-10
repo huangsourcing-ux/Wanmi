@@ -30,6 +30,8 @@ import {
   DomainExpiryReminders,
   NameserverChanges,
   ProviderOperations,
+  ProviderWriteBudgetDebits,
+  ProviderWriteBudgets,
   Renewals,
 } from './fulfillment'
 import {
@@ -87,6 +89,8 @@ export const collections: CollectionConfig[] = [
   RefundNotifications,
   Refunds,
   ProviderOperations,
+  ProviderWriteBudgets,
+  ProviderWriteBudgetDebits,
   DomainAssets,
   DomainExpiryReminders,
   Renewals,

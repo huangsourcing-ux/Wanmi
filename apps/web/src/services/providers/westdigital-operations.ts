@@ -15,6 +15,7 @@ import type {
   WestDigitalWriteProvider,
 } from '@/providers/types'
 import { isExplicitlyRetryableWestDigitalWriteError } from '@/providers/westdigital-write'
+import { consumeProviderWriteBudget } from '@/services/providers/provider-write-budget'
 
 export const WESTDIGITAL_WRITE_MAX_ATTEMPTS = 3
 
@@ -478,7 +479,8 @@ export async function executeWestDigitalWriteOperation(
   }
 
   try {
-    authorizeWestDigitalWrite(input, operationKey)
+    const authorization = authorizeWestDigitalWrite(input, operationKey)
+    if (authorization) await consumeProviderWriteBudget(req, authorization)
   } catch (error) {
     if (error instanceof ProviderWriteGuardError) {
       return safetyRejectedResult(req, input, operation, error)

@@ -9,7 +9,7 @@
     "verifiedAt": "2026-08-09T10:01:00.000Z"
   },
   "applicationPromotionNotBefore": "2026-08-09T10:02:00.000Z",
-  "migrations": [],
+  "migrations": ["20260810_021337_d7_provider_write_budgets"],
   "rollback": {
     "database": "retain",
     "image": "registry.example.invalid/wanmi-web@sha256:3333333333333333333333333333333333333333333333333333333333333333",

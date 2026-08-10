@@ -135,7 +135,9 @@ export class FixtureWestDigitalBalanceTransport implements WestDigitalBalanceTra
   }
 }
 
-export function createConfiguredWestDigitalBalanceProvider(): WestDigitalBalanceAdapter {
+export function createConfiguredWestDigitalBalanceProvider(
+  options: { liveTransportFactory?: () => WestDigitalBalanceTransport } = {},
+): WestDigitalBalanceAdapter {
   const env = getEnv()
   if (env.WESTDIGITAL_MODE === 'fixture') {
     return new WestDigitalBalanceAdapter({ transport: new FixtureWestDigitalBalanceTransport() })
@@ -152,6 +154,8 @@ export function createConfiguredWestDigitalBalanceProvider(): WestDigitalBalance
   assertLiveRuntimeTransportAllowed('westdigital')
   return new WestDigitalBalanceAdapter({
     timeoutMs: env.WESTDIGITAL_READ_TIMEOUT_MS,
-    transport: new LiveWestDigitalTransport(),
+    transport: options.liveTransportFactory
+      ? options.liveTransportFactory()
+      : new LiveWestDigitalTransport(),
   })
 }

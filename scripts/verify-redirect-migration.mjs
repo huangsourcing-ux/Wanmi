@@ -1533,6 +1533,50 @@ function verifyDomainAssetOperationsSchema(stage) {
   }
 }
 
+function verifyProviderWriteBudgetSchema(stage) {
+  const schema = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (to_regclass('public.provider_write_budgets') IS NOT NULL)::text || ':' ||
+         (to_regclass('public.provider_write_budget_debits') IS NOT NULL)::text || ':' ||
+         (SELECT count(*)::text FROM provider_write_budgets) || ':' ||
+         (SELECT count(*)::text FROM provider_write_budgets
+          WHERE (scope_key, provider::text, capability::text) IN (
+            ('westdigital:register_renew', 'westdigital', 'register_renew'),
+            ('wechatpay:payment', 'wechatpay', 'payment'),
+            ('wechatpay:refund', 'wechatpay', 'refund')
+          ) AND used_operations = 0 AND used_amount_fen = 0) || ':' ||
+         (to_regclass('public.provider_write_budgets_provider_capability_idx') IS NOT NULL)::text || ':' ||
+         (SELECT count(*)::text FROM pg_constraint
+          WHERE conname IN (
+            'provider_write_budgets_scope_match',
+            'provider_write_budgets_safe_integers',
+            'provider_write_budget_debits_safe_integers'
+          )) || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public'
+             AND table_name = 'payload_locked_documents_rels'
+             AND column_name IN (
+               'provider_write_budgets_id', 'provider_write_budget_debits_id'
+             )
+         ))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (schema !== 'true:true:3:3:true:3:true') {
+    throw new Error(`D7-05 provider write budget schema invalid after ${stage}: ${schema}`)
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -1559,6 +1603,7 @@ try {
   verifyWechatPaymentSchema('empty-database migration')
   verifyWechatRefundReconciliationSchema('empty-database migration')
   verifyDomainAssetOperationsSchema('empty-database migration')
+  verifyProviderWriteBudgetSchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -3281,8 +3326,61 @@ try {
   }
   verifyDomainAssetOperationsSchema('D6-05 migration round trip dependency')
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `WITH budget AS (
+       UPDATE provider_write_budgets
+       SET used_operations = 1, used_amount_fen = 100,
+           configured_operation_limit = 2, configured_amount_limit_fen = 200
+       WHERE scope_key = 'westdigital:register_renew'
+       RETURNING id
+     )
+     INSERT INTO provider_write_budget_debits (
+       debit_key, budget_id, operation_delta, amount_fen, updated_at, created_at
+     )
+     SELECT 'd7-05-migration-round-trip', id, 1, 100, NOW(), NOW() FROM budget;
+     UPDATE payload_migrations SET batch = 115
+     WHERE name = '20260810_021337_d7_provider_write_budgets';`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const providerBudgetsAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (to_regclass('public.provider_write_budgets') IS NULL)::text || ':' ||
+         (to_regclass('public.provider_write_budget_debits') IS NULL)::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM pg_type
+           WHERE typname IN (
+             'enum_provider_write_budgets_provider',
+             'enum_provider_write_budgets_capability'
+           )
+         ))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (providerBudgetsAfterDown !== 'true:true:true') {
+    throw new Error(`D7-05 migration down was incomplete: ${providerBudgetsAfterDown}`)
+  }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyProviderWriteBudgetSchema('D7-05 historical zero backfill and down/up round trip')
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, the D6-02 commerce-fulfillment migration, the D6-03 West Digital balance-monitoring workflow migration, the D6-04 domain-asset operations migration, and the D6-05 active-renewal migration round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, the D6-02 commerce-fulfillment migration, the D6-03 West Digital balance-monitoring workflow migration, the D6-04 domain-asset operations migration, the D6-05 active-renewal migration, and the D7-05 provider write budget historical backfill/down-up round trips.\n',
   )
 } finally {
   if (created) {

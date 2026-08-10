@@ -2,8 +2,7 @@ import config from '@payload-config'
 import { getPayload } from 'payload'
 
 import { AppError, getTraceId, problemResponse, successResponse } from '@/lib/errors'
-import { FixtureWestDigitalTransport } from '@/providers/westdigital-fixtures'
-import { WestDigitalReadAdapter } from '@/providers/westdigital'
+import { createConfiguredWestDigitalReadProvider } from '@/providers/westdigital'
 import type { WestDigitalReadProvider } from '@/providers/types'
 import { PRICING_MAX_TLDS, pricingRequestSchema, pricingResultSchema } from '@/schemas/pricing'
 import { queryTldPricing } from '@/services/pricing/query-tld-pricing'
@@ -18,9 +17,8 @@ import {
 export const runtime = 'nodejs'
 
 const MAX_REQUEST_BODY_BYTES = 4_096
-const provider = new WestDigitalReadAdapter({
+const provider = createConfiguredWestDigitalReadProvider({
   logger: runtimeProviderObservability.logger,
-  transport: new FixtureWestDigitalTransport(),
 })
 
 type PricingPostDependencies = {

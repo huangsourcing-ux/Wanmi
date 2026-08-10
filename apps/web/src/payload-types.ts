@@ -102,6 +102,8 @@ export interface Config {
     refundNotifications: RefundNotification;
     refunds: Refund;
     providerOperations: ProviderOperation;
+    providerWriteBudgets: ProviderWriteBudget;
+    providerWriteBudgetDebits: ProviderWriteBudgetDebit;
     domainAssets: DomainAsset;
     domainExpiryReminders: DomainExpiryReminder;
     renewals: Renewal;
@@ -171,6 +173,8 @@ export interface Config {
     refundNotifications: RefundNotificationsSelect<false> | RefundNotificationsSelect<true>;
     refunds: RefundsSelect<false> | RefundsSelect<true>;
     providerOperations: ProviderOperationsSelect<false> | ProviderOperationsSelect<true>;
+    providerWriteBudgets: ProviderWriteBudgetsSelect<false> | ProviderWriteBudgetsSelect<true>;
+    providerWriteBudgetDebits: ProviderWriteBudgetDebitsSelect<false> | ProviderWriteBudgetDebitsSelect<true>;
     domainAssets: DomainAssetsSelect<false> | DomainAssetsSelect<true>;
     domainExpiryReminders: DomainExpiryRemindersSelect<false> | DomainExpiryRemindersSelect<true>;
     renewals: RenewalsSelect<false> | RenewalsSelect<true>;
@@ -1199,6 +1203,35 @@ export interface ProviderOperation {
     | number
     | boolean
     | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "providerWriteBudgets".
+ */
+export interface ProviderWriteBudget {
+  id: number;
+  scopeKey: string;
+  provider: 'westdigital' | 'wechatpay';
+  capability: 'register_renew' | 'payment' | 'refund';
+  usedOperations: number;
+  usedAmountFen: number;
+  configuredOperationLimit: number;
+  configuredAmountLimitFen: number;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "providerWriteBudgetDebits".
+ */
+export interface ProviderWriteBudgetDebit {
+  id: number;
+  debitKey: string;
+  budget: number | ProviderWriteBudget;
+  operationDelta: number;
+  amountFen: number;
   updatedAt: string;
   createdAt: string;
 }
@@ -2824,6 +2857,33 @@ export interface ProviderOperationsSelect<T extends boolean = true> {
   submittedAt?: T;
   lastCheckedAt?: T;
   safeResult?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "providerWriteBudgets_select".
+ */
+export interface ProviderWriteBudgetsSelect<T extends boolean = true> {
+  scopeKey?: T;
+  provider?: T;
+  capability?: T;
+  usedOperations?: T;
+  usedAmountFen?: T;
+  configuredOperationLimit?: T;
+  configuredAmountLimitFen?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "providerWriteBudgetDebits_select".
+ */
+export interface ProviderWriteBudgetDebitsSelect<T extends boolean = true> {
+  debitKey?: T;
+  budget?: T;
+  operationDelta?: T;
+  amountFen?: T;
   updatedAt?: T;
   createdAt?: T;
 }
