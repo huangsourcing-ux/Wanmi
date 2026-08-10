@@ -141,7 +141,10 @@ describe('real-name document envelope encryption', () => {
   it('does not construct live OSS or KMS clients while real provider access is disabled', async () => {
     vi.stubEnv('ALIYUN_KMS_MODE', 'live')
     vi.stubEnv('ALIYUN_OSS_REALNAME_MODE', 'live')
-    vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'false')
+    vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'true')
+    vi.stubEnv('ALLOW_REAL_ALIYUN_KMS', 'false')
+    vi.stubEnv('ALLOW_REAL_ALIYUN_OSS_REALNAME', 'false')
+    vi.stubEnv('CI', 'false')
     vi.stubEnv('ALIBABA_CLOUD_ACCESS_KEY_ID', '')
     vi.stubEnv('ALIBABA_CLOUD_ACCESS_KEY_SECRET', '')
     resetEnvForTests()

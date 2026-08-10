@@ -1,16 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
 
 import { sql } from '@payloadcms/db-postgres'
-import {
-  commitTransaction,
-  initTransaction,
-  killTransaction,
-  type PayloadRequest,
-} from 'payload'
+import { commitTransaction, initTransaction, killTransaction, type PayloadRequest } from 'payload'
 
 import type { AuditActor } from '@/services/audit/record-audit-event'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
+import { getEnv } from '@/lib/env'
 import { AppError, toProblemDetails } from '@/lib/errors'
+import { authorizeWestDigitalWrite, ProviderWriteGuardError } from '@/lib/provider-write-guardrails'
 import type { Result } from '@/schemas/api'
 import type {
   WestDigitalDomainAsset,
@@ -20,6 +17,10 @@ import type {
 import { isExplicitlyRetryableWestDigitalWriteError } from '@/providers/westdigital-write'
 
 export const WESTDIGITAL_WRITE_MAX_ATTEMPTS = 3
+
+function westDigitalDataSource(): 'westdigital' | 'westdigital-fixture' {
+  return getEnv().WESTDIGITAL_MODE === 'live' ? 'westdigital' : 'westdigital-fixture'
+}
 
 type ProviderOperationStatus = 'failed' | 'prepared' | 'submitted' | 'succeeded' | 'unknown'
 type OperationRecord = {
@@ -41,6 +42,7 @@ type SharedInput = {
 
 export type WestDigitalWriteOperationInput =
   | (SharedInput & {
+      domainAscii: string
       operation: 'realname'
       profile: WestDigitalRealnameProfile
     })
@@ -95,7 +97,9 @@ export function generateWestDigitalOperationKey(input: WestDigitalWriteOperation
   return `westdigital:${input.operation}:${String(input.targetId)}:${digest}`
 }
 
-function targetType(input: WestDigitalWriteOperationInput): 'domain' | 'order' | 'realname_template' {
+function targetType(
+  input: WestDigitalWriteOperationInput,
+): 'domain' | 'order' | 'realname_template' {
   if (input.operation === 'realname') return 'realname_template'
   return input.orderId === undefined ? 'domain' : 'order'
 }
@@ -112,7 +116,10 @@ async function transaction<T>(req: PayloadRequest, work: () => Promise<T>): Prom
   }
 }
 
-async function findOperation(req: PayloadRequest, operationKey: string): Promise<OperationRecord | undefined> {
+async function findOperation(
+  req: PayloadRequest,
+  operationKey: string,
+): Promise<OperationRecord | undefined> {
   const found = await req.payload.find({
     collection: 'providerOperations',
     depth: 0,
@@ -225,7 +232,11 @@ async function claimAttempt(
         }
       | undefined
     if (!database) {
-      throw new AppError('WESTDIGITAL_OPERATION_CLAIM_UNAVAILABLE', '无法原子认领 Provider 操作', 503)
+      throw new AppError(
+        'WESTDIGITAL_OPERATION_CLAIM_UNAVAILABLE',
+        '无法原子认领 Provider 操作',
+        503,
+      )
     }
     const updated = await database.execute(sql`
       UPDATE provider_operations
@@ -308,13 +319,15 @@ function confirmed(
   result: Awaited<ReturnType<typeof queryStatus>>,
 ): boolean {
   if (!result?.ok) return false
-  if (input.operation === 'realname') return 'state' in result.data && result.data.state !== 'unknown'
+  if (input.operation === 'realname')
+    return 'state' in result.data && result.data.state !== 'unknown'
   if (!('domainAscii' in result.data) || result.data.domainAscii !== input.domainAscii) return false
   if (input.operation === 'nameserver') {
     const actual = new Set(result.data.nameservers.map((value) => value.toLowerCase()))
     return input.nameservers.every((value) => actual.has(value.toLowerCase()))
   }
-  if (input.operation === 'renew') return result.data.expiresAt.slice(0, 10) > input.currentExpiresOn
+  if (input.operation === 'renew')
+    return result.data.expiresAt.slice(0, 10) > input.currentExpiresOn
   return true
 }
 
@@ -325,7 +338,12 @@ function view(operation: OperationRecord, idempotentReplay: boolean): WestDigita
     operationId: String(operation.id),
     operationKey: operation.operationKey,
     providerRequestId: operation.providerRequestId ?? undefined,
-    status: operation.status === 'succeeded' ? 'succeeded' : operation.status === 'failed' ? 'failed' : 'unknown',
+    status:
+      operation.status === 'succeeded'
+        ? 'succeeded'
+        : operation.status === 'failed'
+          ? 'failed'
+          : 'unknown',
   }
 }
 
@@ -335,22 +353,67 @@ function result(
   traceId: string,
 ): Result<WestDigitalOperationView> {
   const data = view(operation, idempotentReplay)
-  const meta = { dataSource: 'westdigital-fixture', observedAt: new Date().toISOString(), traceId }
+  const dataSource = westDigitalDataSource()
+  const meta = { dataSource, observedAt: new Date().toISOString(), traceId }
   if (operation.status === 'succeeded') return { data, meta, state: 'ready' }
-  const code = operation.status === 'failed' ? 'WESTDIGITAL_OPERATION_FAILED' : 'WESTDIGITAL_STATUS_UNKNOWN'
+  const code =
+    operation.status === 'failed' ? 'WESTDIGITAL_OPERATION_FAILED' : 'WESTDIGITAL_STATUS_UNKNOWN'
   const problem = toProblemDetails(
-    new AppError(code, operation.status === 'failed' ? '西部数码明确拒绝该操作' : '西部数码操作状态暂时无法确认', 503, {
-      action: operation.status === 'failed' ? '请检查安全失败原因' : '只能查询状态，禁止重复提交写操作',
-      dataSource: 'westdigital-fixture',
-      observedAt: meta.observedAt,
-      retryable: operation.status !== 'failed',
-      title: operation.status === 'failed' ? 'Provider 操作失败' : 'Provider 状态不明',
-    }),
+    new AppError(
+      code,
+      operation.status === 'failed' ? '西部数码明确拒绝该操作' : '西部数码操作状态暂时无法确认',
+      503,
+      {
+        action:
+          operation.status === 'failed' ? '请检查安全失败原因' : '只能查询状态，禁止重复提交写操作',
+        dataSource,
+        observedAt: meta.observedAt,
+        retryable: operation.status !== 'failed',
+        title: operation.status === 'failed' ? 'Provider 操作失败' : 'Provider 状态不明',
+      },
+    ),
     traceId,
   )
   return operation.status === 'failed'
     ? { meta, problem, state: 'error' }
     : { data, meta, problem, state: 'degraded' }
+}
+
+async function safetyRejectedResult(
+  req: PayloadRequest,
+  input: WestDigitalWriteOperationInput,
+  operation: OperationRecord,
+  error: ProviderWriteGuardError,
+): Promise<Result<WestDigitalOperationView>> {
+  await recordAuditEvent(req, {
+    action: 'provider.operation.recorded',
+    actor: input.actor,
+    metadata: {
+      errorCode: error.code,
+      operation: input.operation,
+      operationKey: operation.operationKey,
+      outcome: 'write_blocked',
+      requestIdentifier: input.traceId,
+      target: { id: String(input.targetId), type: targetType(input) },
+    },
+    targetId: operation.id,
+  })
+  const observedAt = new Date().toISOString()
+  return {
+    data: view(operation, true),
+    meta: { dataSource: 'westdigital-safety-fence', observedAt, traceId: input.traceId },
+    problem: toProblemDetails(
+      new AppError(error.code, '真实西部数码写操作已被安全围栏拒绝', 503, {
+        action: '保持操作未提交，检查分级开关、域名白名单和本次运行额度',
+        dataSource: 'westdigital-safety-fence',
+        observedAt,
+        retryable: false,
+        title: 'Provider 写安全围栏拒绝',
+      }),
+      input.traceId,
+    ),
+    state: 'degraded',
+  }
 }
 
 export async function executeWestDigitalWriteOperation(
@@ -376,7 +439,11 @@ export async function executeWestDigitalWriteOperation(
         {
           lastCheckedAt: new Date().toISOString(),
           safeResult: queried?.ok
-            ? { ...(operation.safeResult as Record<string, unknown>), confirmed: true, requestId: queried.requestId }
+            ? {
+                ...(operation.safeResult as Record<string, unknown>),
+                confirmed: true,
+                requestId: queried.requestId,
+              }
             : { ...(operation.safeResult as Record<string, unknown>), confirmed: false },
           status: 'succeeded',
         },
@@ -410,11 +477,21 @@ export async function executeWestDigitalWriteOperation(
     return result(operation, true, input.traceId)
   }
 
+  try {
+    authorizeWestDigitalWrite(input, operationKey)
+  } catch (error) {
+    if (error instanceof ProviderWriteGuardError) {
+      return safetyRejectedResult(req, input, operation, error)
+    }
+    throw error
+  }
+
   while (operation.status === 'prepared') {
     const claimed = await claimAttempt(req, input, operation)
     if (!claimed) {
       operation = (await findOperation(req, operationKey)) ?? operation
-      if (operation.status !== 'prepared') return executeWestDigitalWriteOperation(req, input, provider)
+      if (operation.status !== 'prepared')
+        return executeWestDigitalWriteOperation(req, input, provider)
       operation = await recordOutcome(
         req,
         input,
@@ -511,19 +588,25 @@ export async function queryWestDigitalAsset(
       operation: 'query',
       outcome: queried.ok ? 'succeeded' : queried.error.statusKnown ? 'failed' : 'status_unknown',
       requestIdentifier,
-      result: queried.ok ? { providerRequestId: queried.requestId } : { errorCode: queried.error.code },
+      result: queried.ok
+        ? { providerRequestId: queried.requestId }
+        : { errorCode: queried.error.code },
       target: { id: String(input.targetId), type: 'domain' },
     },
     targetId: input.targetId,
   })
-  const meta = { dataSource: 'westdigital-fixture', observedAt: queried.observedAt, traceId: input.traceId }
+  const meta = {
+    dataSource: westDigitalDataSource(),
+    observedAt: queried.observedAt,
+    traceId: input.traceId,
+  }
   if (queried.ok) return { data: queried.data, meta, state: 'ready' }
   return {
     meta,
     problem: toProblemDetails(
       new AppError(queried.error.code, '域名资产状态暂时无法同步', 503, {
         action: queried.error.retryable ? '请稍后重试查询' : '请转人工核对',
-        dataSource: 'westdigital-fixture',
+        dataSource: westDigitalDataSource(),
         observedAt: queried.observedAt,
         retryable: queried.error.retryable,
         title: queried.error.statusKnown ? '资产查询失败' : '资产状态不明',

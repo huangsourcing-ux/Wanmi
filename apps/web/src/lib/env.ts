@@ -7,6 +7,18 @@ const booleanFromString = z
 
 const schema = z.object({
   ALLOW_REAL_PROVIDER_WRITES: booleanFromString,
+  ALLOW_REAL_ALIYUN_KMS: booleanFromString,
+  ALLOW_REAL_ALIYUN_OSS_REALNAME: booleanFromString,
+  ALLOW_REAL_ALIYUN_SMS_SENDS: booleanFromString,
+  ALLOW_REAL_WECHATPAY: booleanFromString,
+  ALLOW_REAL_WECHATPAY_PAYMENTS: booleanFromString,
+  ALLOW_REAL_WECHATPAY_REFUNDS: booleanFromString,
+  ALLOW_REAL_WESTDIGITAL: booleanFromString,
+  ALLOW_REAL_WESTDIGITAL_NAMESERVER_WRITES: booleanFromString,
+  ALLOW_REAL_WESTDIGITAL_READS: booleanFromString,
+  ALLOW_REAL_WESTDIGITAL_REALNAME_WRITES: booleanFromString,
+  ALLOW_REAL_WESTDIGITAL_REGISTRATION_WRITES: booleanFromString,
+  ALLOW_REAL_WESTDIGITAL_RENEWAL_WRITES: booleanFromString,
   ALIYUN_KMS_MODE: z.enum(['mock', 'live']).default('mock'),
   ALIYUN_OSS_REALNAME_MODE: z.enum(['mock', 'live']).default('mock'),
   ALIYUN_SMS_MODE: z.enum(['mock', 'live']).default('mock'),
@@ -90,8 +102,46 @@ const schema = z.object({
   WESTDIGITAL_READ_RESPONSE_MAX_BYTES: z.coerce.number().int().positive().default(65_536),
   WESTDIGITAL_READ_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
   WESTDIGITAL_API_PASSWORD: z.string().min(1).optional(),
+  WESTDIGITAL_MODE: z.enum(['fixture', 'live']).default('fixture'),
   WESTDIGITAL_USERNAME: z.string().min(1).optional(),
+  WESTDIGITAL_WRITE_CUMULATIVE_AMOUNT_LIMIT_FEN: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .safe()
+    .default(0),
+  WESTDIGITAL_WRITE_DOMAIN_ALLOWLIST: z.string().default(''),
+  WESTDIGITAL_WRITE_MAX_REGISTER_RENEW_OPERATIONS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .safe()
+    .default(0),
+  WESTDIGITAL_WRITE_SINGLE_AMOUNT_LIMIT_FEN: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .safe()
+    .default(0),
   WESTDIGITAL_WHOIS_FALLBACK_ENABLED: booleanFromString,
+  WECHATPAY_API_V3_KEY: z.string().length(32).optional(),
+  WECHATPAY_APP_ID: z.string().min(1).max(32).optional(),
+  WECHATPAY_MERCHANT_CERTIFICATE_SERIAL: z.string().min(1).max(128).optional(),
+  WECHATPAY_MERCHANT_ID: z.string().min(1).max(32).optional(),
+  WECHATPAY_MERCHANT_PRIVATE_KEY_PATH: z.string().min(1).optional(),
+  WECHATPAY_MODE: z.enum(['fixture', 'live']).default('fixture'),
+  WECHATPAY_NOTIFY_URL: z.url().optional(),
+  WECHATPAY_PLATFORM_CERTIFICATE_SERIAL: z.string().min(1).max(128).optional(),
+  WECHATPAY_PLATFORM_PUBLIC_KEY_PATH: z.string().min(1).optional(),
+  WECHATPAY_RESPONSE_MAX_BYTES: z.coerce.number().int().positive().default(1_048_576),
+  WECHATPAY_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+  WECHATPAY_WRITE_CUMULATIVE_AMOUNT_LIMIT_FEN: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .safe()
+    .default(0),
+  WECHATPAY_WRITE_SINGLE_AMOUNT_LIMIT_FEN: z.coerce.number().int().nonnegative().safe().default(0),
   WHO_DAT_AUTH_KEY: z.string().optional(),
   WHO_DAT_READ_BURST: z.coerce.number().int().positive().default(10),
   WHO_DAT_READ_QUEUE_CAPACITY: z.coerce.number().int().positive().default(32),
@@ -107,6 +157,14 @@ export type WanmiEnv = z.infer<typeof schema>
 let cached: WanmiEnv | undefined
 
 export function getEnv(): WanmiEnv {
+  if (
+    /^(?:1|true)$/iu.test(process.env.CI ?? '') &&
+    /^(?:1|true)$/iu.test(process.env.ALLOW_REAL_PROVIDER_WRITES ?? '')
+  ) {
+    throw new Error(
+      'CI safety gate: ALLOW_REAL_PROVIDER_WRITES must remain false; real provider writes are forbidden in CI',
+    )
+  }
   cached ??= schema.parse(process.env)
   return cached
 }

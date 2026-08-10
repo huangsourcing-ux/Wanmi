@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createWechatPayFixture } from '@/providers/wechatpay'
+import { resetEnvForTests } from '@/lib/env'
+import { resetProviderWriteGuardrailsForTests } from '@/lib/provider-write-guardrails'
+import {
+  createConfiguredWechatPayProvider,
+  createWechatPayFixture,
+  SafetyFencedWechatPayProvider,
+  resetWechatPayRuntimeForTests,
+} from '@/providers/wechatpay'
 
 import {
   officialWechatPaymentExample,
@@ -8,6 +15,13 @@ import {
 } from '../fixtures/wechatpay-official'
 
 const now = new Date('2026-08-08T01:00:00.000Z')
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+  resetEnvForTests()
+  resetProviderWriteGuardrailsForTests()
+  resetWechatPayRuntimeForTests()
+})
 
 describe('Wechat Pay API v3 fixture adapter', () => {
   it('verifies and decrypts the official API v3 payment-notification example shape', async () => {
@@ -271,5 +285,82 @@ describe('Wechat Pay API v3 fixture adapter', () => {
         traceId: 'trace-refund-forged',
       }),
     ).resolves.toMatchObject({ signatureVerified: false, verified: false })
+  })
+
+  it('rejects single and cumulative live payment amounts before the adapter transport', async () => {
+    vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'true')
+    vi.stubEnv('ALLOW_REAL_WECHATPAY', 'true')
+    vi.stubEnv('ALLOW_REAL_WECHATPAY_PAYMENTS', 'true')
+    vi.stubEnv('CI', 'false')
+    vi.stubEnv('WECHATPAY_WRITE_SINGLE_AMOUNT_LIMIT_FEN', '500')
+    vi.stubEnv('WECHATPAY_WRITE_CUMULATIVE_AMOUNT_LIMIT_FEN', '500')
+    resetEnvForTests()
+    const fixture = createWechatPayFixture({ now: () => now })
+    const createPayment = vi.spyOn(fixture.provider, 'createPayment')
+    const provider = new SafetyFencedWechatPayProvider(fixture.provider)
+    const payment = (amountMinor: number, merchantOrderNumber: string) =>
+      provider.createPayment({
+        amountMinor,
+        channel: 'native',
+        description: 'guardrail fixture',
+        expiresAt: '2026-08-08T01:04:00.000Z',
+        merchantOrderNumber,
+        traceId: `trace-${merchantOrderNumber}`,
+      })
+
+    await expect(payment(501, 'WMGUARDSINGLE')).resolves.toMatchObject({
+      error: { code: 'WECHATPAY_WRITE_SINGLE_AMOUNT_LIMIT_EXCEEDED' },
+      ok: false,
+    })
+    expect(createPayment).not.toHaveBeenCalled()
+
+    await expect(payment(300, 'WMGUARDCUM001')).resolves.toMatchObject({ ok: true })
+    await expect(payment(300, 'WMGUARDCUM002')).resolves.toMatchObject({
+      error: { code: 'WECHATPAY_WRITE_CUMULATIVE_AMOUNT_LIMIT_EXCEEDED' },
+      ok: false,
+    })
+    expect(createPayment).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps payment and refund write capabilities independently gated', async () => {
+    vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'true')
+    vi.stubEnv('ALLOW_REAL_WECHATPAY', 'true')
+    vi.stubEnv('ALLOW_REAL_WECHATPAY_PAYMENTS', 'true')
+    vi.stubEnv('ALLOW_REAL_WECHATPAY_REFUNDS', 'false')
+    vi.stubEnv('CI', 'false')
+    vi.stubEnv('WECHATPAY_WRITE_SINGLE_AMOUNT_LIMIT_FEN', '500')
+    vi.stubEnv('WECHATPAY_WRITE_CUMULATIVE_AMOUNT_LIMIT_FEN', '1000')
+    resetEnvForTests()
+    const fixture = createWechatPayFixture({ now: () => now })
+    const createRefund = vi.spyOn(fixture.provider, 'createRefund')
+    const provider = new SafetyFencedWechatPayProvider(fixture.provider)
+
+    await expect(
+      provider.createRefund({
+        amountMinor: 300,
+        merchantOrderNumber: 'WMGUARDREFUND',
+        reason: 'fixture guardrail',
+        refundNumber: 'WRGUARDREFUND',
+        traceId: 'trace-guard-refund',
+      }),
+    ).resolves.toMatchObject({
+      error: { code: 'WECHATPAY_REFUND_WRITE_DISABLED' },
+      ok: false,
+    })
+    expect(createRefund).not.toHaveBeenCalled()
+  })
+
+  it('never constructs a live Wechat Pay runtime transport in tests', () => {
+    const liveTransportFactory = vi.fn()
+    vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'true')
+    vi.stubEnv('ALLOW_REAL_WECHATPAY', 'true')
+    vi.stubEnv('CI', 'false')
+    vi.stubEnv('WECHATPAY_MODE', 'live')
+    resetEnvForTests()
+
+    expect(() => createConfiguredWechatPayProvider({ liveTransportFactory })).toThrow(
+      /tests must never construct a live wechatpay runtime transport/iu,
+    )
+    expect(liveTransportFactory).not.toHaveBeenCalled()
   })
 })

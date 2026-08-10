@@ -2,14 +2,19 @@ import { randomUUID } from 'node:crypto'
 
 import config from '@payload-config'
 import { createLocalReq, getPayload, type Payload } from 'payload'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
+import { resetEnvForTests } from '@/lib/env'
+import { resetProviderWriteGuardrailsForTests } from '@/lib/provider-write-guardrails'
 import {
   FixtureWestDigitalWriteTransport,
   retryableBeforeSubmission,
   timeoutAfterSubmission,
 } from '@/providers/westdigital-write-fixtures'
-import { WestDigitalWriteAdapter, WestDigitalWriteTransportError } from '@/providers/westdigital-write'
+import {
+  WestDigitalWriteAdapter,
+  WestDigitalWriteTransportError,
+} from '@/providers/westdigital-write'
 import {
   executeWestDigitalWriteOperation,
   generateWestDigitalOperationKey,
@@ -17,6 +22,8 @@ import {
   type WestDigitalWriteOperationInput,
 } from '@/services/providers/westdigital-operations'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
+
+import { ignorePayloadNotFound } from '../test-cleanup'
 
 const fixturePrefix = `d6-west-${randomUUID()}`
 let payload: Payload
@@ -87,6 +94,12 @@ beforeAll(async () => {
   payload = await getPayload({ config })
 })
 
+afterEach(() => {
+  vi.unstubAllEnvs()
+  resetEnvForTests()
+  resetProviderWriteGuardrailsForTests()
+})
+
 afterAll(async () => {
   const operations = await payload.find({
     collection: 'providerOperations',
@@ -95,7 +108,9 @@ afterAll(async () => {
     where: { targetId: { contains: fixturePrefix } },
   })
   for (const operation of operations.docs) {
-    await payload.delete({ collection: 'providerOperations', id: operation.id, overrideAccess: true })
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: 'providerOperations', id: operation.id, overrideAccess: true }),
+    )
   }
   const audits = await payload.find({
     collection: 'auditLogs',
@@ -104,7 +119,9 @@ afterAll(async () => {
     where: { traceId: { contains: fixturePrefix } },
   })
   for (const audit of audits.docs) {
-    await payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true })
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: 'auditLogs', id: audit.id, overrideAccess: true }),
+    )
   }
   await payload.db.destroy?.()
 }, 90_000)
@@ -186,9 +203,14 @@ describe('D6 WestDigital provider operation safety', () => {
     const first = await run(input, transport)
     const replay = await run(input, transport)
     expect(first).toMatchObject({ data: { status: 'unknown' }, state: 'degraded' })
-    expect(replay).toMatchObject({ data: { idempotentReplay: true, status: 'unknown' }, state: 'degraded' })
+    expect(replay).toMatchObject({
+      data: { idempotentReplay: true, status: 'unknown' },
+      state: 'degraded',
+    })
     expect(transport.writeCount).toBe(1)
-    expect(transport.requests.filter((request) => request.operation === 'asset_query')).toHaveLength(1)
+    expect(
+      transport.requests.filter((request) => request.operation === 'asset_query'),
+    ).toHaveLength(1)
   })
 
   it('converges duplicate submissions and duplicate successful responses to one provider write', async () => {
@@ -221,9 +243,7 @@ describe('D6 WestDigital provider operation safety', () => {
       return assetResponse(input.domainAscii, 'concurrent-provider-client-id')
     })
 
-    const results = await Promise.all(
-      Array.from({ length: 5 }, () => run(input, transport)),
-    )
+    const results = await Promise.all(Array.from({ length: 5 }, () => run(input, transport)))
 
     expect(transport.writeCount).toBe(1)
     expect(results.every((result) => result.state !== 'error')).toBe(true)
@@ -249,9 +269,14 @@ describe('D6 WestDigital provider operation safety', () => {
     const first = await run(input, transport)
     const replay = await run(input, transport)
     expect(first).toMatchObject({ data: { status: 'unknown' }, state: 'degraded' })
-    expect(replay).toMatchObject({ data: { idempotentReplay: true, status: 'unknown' }, state: 'degraded' })
+    expect(replay).toMatchObject({
+      data: { idempotentReplay: true, status: 'unknown' },
+      state: 'degraded',
+    })
     expect(transport.writeCount).toBe(1)
-    expect(transport.requests.filter((request) => request.operation === 'asset_query')).toHaveLength(2)
+    expect(
+      transport.requests.filter((request) => request.operation === 'asset_query'),
+    ).toHaveLength(2)
   })
 
   it('only queries when concurrent calls observe an unknown operation', async () => {
@@ -264,12 +289,12 @@ describe('D6 WestDigital provider operation safety', () => {
     expect(initial).toMatchObject({ data: { status: 'unknown' }, state: 'degraded' })
     expect(transport.writeCount).toBe(1)
 
-    const results = await Promise.all(
-      Array.from({ length: 5 }, () => run(input, transport)),
-    )
+    const results = await Promise.all(Array.from({ length: 5 }, () => run(input, transport)))
 
     expect(transport.writeCount).toBe(1)
-    expect(transport.requests.filter((request) => request.operation === 'asset_query')).toHaveLength(5)
+    expect(
+      transport.requests.filter((request) => request.operation === 'asset_query'),
+    ).toHaveLength(5)
     expect(
       results.every(
         (result) =>
@@ -303,5 +328,87 @@ describe('D6 WestDigital provider operation safety', () => {
       attemptCount: WESTDIGITAL_WRITE_MAX_ATTEMPTS,
       status: 'failed',
     })
+  })
+
+  it('blocks a domain outside the explicit live-write allowlist before the provider call', async () => {
+    const input = registerInput('guard-domain')
+    vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'true')
+    vi.stubEnv('ALLOW_REAL_WESTDIGITAL', 'true')
+    vi.stubEnv('ALLOW_REAL_WESTDIGITAL_REGISTRATION_WRITES', 'true')
+    vi.stubEnv('CI', 'false')
+    vi.stubEnv('WESTDIGITAL_WRITE_DOMAIN_ALLOWLIST', 'another-guard-domain.com')
+    vi.stubEnv('WESTDIGITAL_WRITE_MAX_REGISTER_RENEW_OPERATIONS', '10')
+    vi.stubEnv('WESTDIGITAL_WRITE_SINGLE_AMOUNT_LIMIT_FEN', '10000')
+    vi.stubEnv('WESTDIGITAL_WRITE_CUMULATIVE_AMOUNT_LIMIT_FEN', '100000')
+    resetEnvForTests()
+    const transport = new FixtureWestDigitalWriteTransport(() => {
+      throw new Error('provider transport must not be reached')
+    })
+
+    await expect(run(input, transport)).resolves.toMatchObject({
+      problem: { code: 'WESTDIGITAL_WRITE_DOMAIN_NOT_ALLOWLISTED' },
+      state: 'degraded',
+    })
+    expect(transport.requests).toHaveLength(0)
+  })
+
+  it('blocks register and renewal operations above the per-runtime count limit', async () => {
+    const first = registerInput('guard-count-one')
+    const second = registerInput('guard-count-two')
+    vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'true')
+    vi.stubEnv('ALLOW_REAL_WESTDIGITAL', 'true')
+    vi.stubEnv('ALLOW_REAL_WESTDIGITAL_REGISTRATION_WRITES', 'true')
+    vi.stubEnv('CI', 'false')
+    vi.stubEnv('WESTDIGITAL_WRITE_DOMAIN_ALLOWLIST', `${first.domainAscii},${second.domainAscii}`)
+    vi.stubEnv('WESTDIGITAL_WRITE_MAX_REGISTER_RENEW_OPERATIONS', '1')
+    vi.stubEnv('WESTDIGITAL_WRITE_SINGLE_AMOUNT_LIMIT_FEN', '10000')
+    vi.stubEnv('WESTDIGITAL_WRITE_CUMULATIVE_AMOUNT_LIMIT_FEN', '100000')
+    resetEnvForTests()
+    const transport = new FixtureWestDigitalWriteTransport((request) =>
+      request.operation === 'register'
+        ? successResponse(request.body.domain!)
+        : assetResponse(request.body.domain!),
+    )
+
+    await expect(run(first, transport)).resolves.toMatchObject({ state: 'ready' })
+    await expect(run(second, transport)).resolves.toMatchObject({
+      problem: { code: 'WESTDIGITAL_WRITE_OPERATION_LIMIT_EXCEEDED' },
+      state: 'degraded',
+    })
+    expect(transport.writeCount).toBe(1)
+  })
+
+  it('blocks both single and cumulative West Digital amounts before the provider call', async () => {
+    const single = { ...registerInput('guard-single-amount'), clientPriceFen: 3_001 }
+    const first = { ...registerInput('guard-cumulative-one'), clientPriceFen: 2_500 }
+    const second = { ...registerInput('guard-cumulative-two'), clientPriceFen: 1_600 }
+    vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'true')
+    vi.stubEnv('ALLOW_REAL_WESTDIGITAL', 'true')
+    vi.stubEnv('ALLOW_REAL_WESTDIGITAL_REGISTRATION_WRITES', 'true')
+    vi.stubEnv('CI', 'false')
+    vi.stubEnv(
+      'WESTDIGITAL_WRITE_DOMAIN_ALLOWLIST',
+      [single.domainAscii, first.domainAscii, second.domainAscii].join(','),
+    )
+    vi.stubEnv('WESTDIGITAL_WRITE_MAX_REGISTER_RENEW_OPERATIONS', '10')
+    vi.stubEnv('WESTDIGITAL_WRITE_SINGLE_AMOUNT_LIMIT_FEN', '3000')
+    vi.stubEnv('WESTDIGITAL_WRITE_CUMULATIVE_AMOUNT_LIMIT_FEN', '4000')
+    resetEnvForTests()
+    const transport = new FixtureWestDigitalWriteTransport((request) =>
+      request.operation === 'register'
+        ? successResponse(request.body.domain!)
+        : assetResponse(request.body.domain!),
+    )
+
+    await expect(run(single, transport)).resolves.toMatchObject({
+      problem: { code: 'WESTDIGITAL_WRITE_SINGLE_AMOUNT_LIMIT_EXCEEDED' },
+      state: 'degraded',
+    })
+    await expect(run(first, transport)).resolves.toMatchObject({ state: 'ready' })
+    await expect(run(second, transport)).resolves.toMatchObject({
+      problem: { code: 'WESTDIGITAL_WRITE_CUMULATIVE_AMOUNT_LIMIT_EXCEEDED' },
+      state: 'degraded',
+    })
+    expect(transport.writeCount).toBe(1)
   })
 })

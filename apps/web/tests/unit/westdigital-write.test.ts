@@ -5,6 +5,7 @@ import {
   createConfiguredWestDigitalWriteAdapter,
   FixtureWestDigitalWriteTransport,
 } from '@/providers/westdigital-write-fixtures'
+import { encodeWestDigitalForm } from '@/providers/westdigital-http'
 import { WestDigitalWriteAdapter } from '@/providers/westdigital-write'
 
 import { realnameTemplateFixture } from '../fixtures/realname'
@@ -15,6 +16,12 @@ afterEach(() => {
 })
 
 describe('WestDigital write adapter fixtures', () => {
+  it('encodes documented real-name form fields as GB2312-compatible bytes', () => {
+    expect(encodeWestDigitalForm({ act: 'auditsub', fullname: '李小明' }).toString('ascii')).toBe(
+      'act=auditsub&fullname=%C0%EE%D0%A1%C3%F7',
+    )
+  })
+
   it('maps documented real-name, registration, renewal, asset and name-server contracts', async () => {
     const transport = new FixtureWestDigitalWriteTransport()
     const provider = new WestDigitalWriteAdapter({
@@ -78,7 +85,9 @@ describe('WestDigital write adapter fixtures', () => {
       ok: true,
     })
 
-    expect(transport.requests.map(({ body, operation, path }) => ({ act: body.act, operation, path }))).toEqual([
+    expect(
+      transport.requests.map(({ body, operation, path }) => ({ act: body.act, operation, path })),
+    ).toEqual([
       { act: 'auditsub', operation: 'realname_create', path: '/v2/audit/' },
       { act: 'auditinfo', operation: 'realname_query', path: '/v2/audit/' },
       { act: 'regdomain', operation: 'register', path: '/v2/audit/' },
@@ -100,11 +109,20 @@ describe('WestDigital write adapter fixtures', () => {
 
   it('never constructs a live runtime transport', () => {
     vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'false')
+    vi.stubEnv('WESTDIGITAL_MODE', 'fixture')
     resetEnvForTests()
     expect(createConfiguredWestDigitalWriteAdapter()).toBeInstanceOf(WestDigitalWriteAdapter)
 
+    const liveTransportFactory = vi.fn()
+    vi.stubEnv('CI', 'false')
     vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'true')
+    vi.stubEnv('ALLOW_REAL_WESTDIGITAL', 'true')
+    vi.stubEnv('ALLOW_REAL_WESTDIGITAL_READS', 'true')
+    vi.stubEnv('WESTDIGITAL_MODE', 'live')
     resetEnvForTests()
-    expect(() => createConfiguredWestDigitalWriteAdapter()).toThrow(/真实西部数码写 transport 未提供/u)
+    expect(() => createConfiguredWestDigitalWriteAdapter({ liveTransportFactory })).toThrow(
+      /tests must never construct a live westdigital runtime transport/iu,
+    )
+    expect(liveTransportFactory).not.toHaveBeenCalled()
   })
 })
