@@ -679,6 +679,10 @@ D7-07 验证记录（2026-08-10）：把 ADR-0006 的顺序实现为 `make rebui
 
 两处承重变异均被杀死：吞掉 readyz rejection 后 `verify:rebuild` 失败 `Missing expected rejection (Error)`；同时删除恢复 SQL 的 processing 与 cutoff 条件后 5 路结果从期望 `[3]` 变为 `[3,3,3,3,3]`。镜像 metadata、OCI 每层 sentinel、最终 rootfs、应用层 Gitleaks 形态和运行日志扫描均通过；secret 只从环境注入。最新 Trivy 数据库最初拒绝 drizzle-kit 带入的旧 esbuild Go 二进制；未加豁免，而是将依赖树统一锁定到 esbuild 0.28.1，最终 `make check` 通过 609/609 单元、105/105 集成、完整迁移/构建、工作树与 139 提交历史 Gitleaks 及 Trivy。真实 provider 前置自检仍缺 WestDigital、Wechat Pay、私有 OSS 和应用主密钥生产配置，四类字段/错误码/时延均 N/A，没有执行一次性真实契约脚本，11.1 第 2 项保持未勾选。**容器受限等价验证已完成，真实 ECS 验证待授权**；本切片未访问真实 ECS/RDS/OSS，11.1 第 10、11 项与 D0 单 ECS 项均不勾选，真实环境须重跑内存/节点余量、日志轮转、独立重启、同 VPC 强杀恢复和完整 RTO。完整证据见 `docs/operations/d7-07-local-rebuild-validation.md`。
 
+D7-06 bootstrap 回归修复记录（2026-08-10）：干净环境中 `scripts/bootstrap.mjs` 此前只替换 Payload、Session 与 TOTP 三个占位符，漏掉新必填的 `REALNAME_DOCUMENT_MASTER_KEYS` 和 `REALNAME_DOCUMENT_MASTER_KEY_VERSION`。现按 `local-v1:标准 Base64 32 字节随机密钥` 生成本地专用 key ring，active version 与之一致，命令不输出密钥，`.env.example` 仍只保留注释空键。新 `make verify-bootstrap` 在系统临时目录生成 `.env.local`，隔离 CI/当前业务环境变量后执行完整 `getEnv()`，可使今后任一新必填变量遗漏立即使 `make check` 失败。schema 审计确认其余无默认必填项已由 `.env.example` 提供可用本地值或由 bootstrap 生成，无其他遗漏。
+
+验证使用不带 `.git`、`node_modules`、现有 `apps/web/.env.local` 或未跟踪 `docs/planning/` 的系统临时副本模拟干净仓库；首次手工校验因从仓库根目录启动 `tsx` 而未加载 Web tsconfig 别名，调整到 `apps/web` 后从头重跑。最终 `make bootstrap`、生成文件的完整 `getEnv()` 与 `make verify-bootstrap` 均通过，并将本次迁移进程的 `DATABASE_URL` 指向随机命名的隔离空库，从首个 migration 到 `20260810_040217_d7_app_master_key` 全部成功。临时库/目录精确清理后，完整 `ALLOW_REAL_PROVIDER_WRITES=false make check` 退出码 0，通过 609/609 单元、104/104 集成、全部迁移、构建、发布和安全门禁。既有 `.env.local` 与 `wanmi` 数据库未修改；D7-07 重建工具链、恢复实现和受限验证结论未改动。
+
 ### 11.2 D8 P1 开发验收
 
 开发完成必须满足：
@@ -759,6 +763,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-09 | D7-05 持久化预算与只读联调入口 | provider/能力 scope 的 PostgreSQL 原子条件扣减与 operation key 幂等 debit；空库/历史/down-up migration；一次性脱敏只读契约脚本与默认/测试/CI 闸门固定 | 次数条件变异被杀死；全新卷连续两轮 102/102；`make check` 605/605 单元、104/104 集成及完整迁移/构建/工作树与 149 提交历史 Gitleaks/Trivy 门禁通过 | 真实联调受缺失生产配置及 KMS `NotEnabled` 阻塞；未调用目标接口或云对象写，11.1 第 2 项保持未勾选，证据见 `docs/operations/d7-05-provider-read-contracts.md` |
 | 2026-08-10 | D7-06 应用自管主密钥冻结项变更 | 版本化应用主密钥 key ring 包裹逐对象随机数据密钥；保留 AES-256-GCM/fill(0)；移除 KMS 代码、探针、配置、闸门与 SDK；更新 ADR、Runbook、发布迁移策略及全套批准文档 | 三处承重变异均被杀死；全新卷连续两轮 104/104；`make check` 609/609 单元、104/104 集成及完整迁移/构建/151 提交历史 Gitleaks/Trivy 通过；E2E 42/42 | 旧 mock KMS 对象明确废弃，生产无真实数据；主密钥进入应用配置后服务器完整攻破可取得 key ring，生产注入、离线备份、轮换与紧急恢复演练仍是硬门槛 |
 | 2026-08-10 | D7-07 重建工具链与本地受限验证 | 固定 ADR-0006 八步工具链、同 digest Web/Worker、readyz fail-closed、Payload Job 原子恢复；空目标节点 2 vCPU/4 GiB 下测量内存/轮转/独立重启/强杀恢复/RTO | 峰值/稳态 639.6/561.3 MiB；日志至少 9.5 MB 后留存 1,093,349 bytes；RTO 93.4 秒；两个恢复者 `[1,0]` 且 provider claim/attempt 均 1；两处变异被杀死；镜像层/日志 secret 检查通过 | 容器受限等价验证已完成，真实 ECS 验证待授权；未接触 ECS/RDS/OSS；11.1 第 2、10、11 项及 D0 单 ECS 项保持未勾选，真实环境须完整重跑 |
+| 2026-08-10 | D7-06 bootstrap 阻塞修复 | 为干净环境生成 `local-v1` 主密钥 key ring 与 active version；显式 0600；新增隔离环境的完整 `getEnv()` 回归并纳入 `make check` | 无现有 `.env.local` 的临时干净副本通过 bootstrap/getEnv；随机隔离空库完成全部 migration；`make check` 通过 609/609 单元、104/104 集成及完整构建/安全门禁 | `.env.example` 仍无主密钥值；生产注入/轮换/恢复门槛不变；D7-07 工具链与结论未改 |
 
 ## 13. 范围追踪矩阵
 
