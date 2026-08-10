@@ -1,5 +1,17 @@
 # 恢复 Runbook
 
+## 真实环境开工门禁
+
+在任何 ECS 重启/重置、commerce Job 强制中断、RDS PITR、OSS 误删或主密钥轮换前，必须先用只读证据同时确认：
+
+1. 工具链 PR 已审核合并，受控入口精确指向获授权的 2 vCPU/4 GiB 专用 ECS，机内没有其他业务负载；
+2. RDS 启用 SSL、只经 VPC 内网连接，自动数据/日志备份存在，且只读 API 返回包含目标时间点的 PITR 可恢复窗口；
+3. 专用私有 OSS Bucket 的版本控制为 `Enabled`，删除后非当前版本至少保留 30 天；
+4. 完整应用主密钥 key ring 在受控环境生成，已注入 Web/Worker 的受控 secret，且离线备份与保管记录可复核；只记录版本名和校验结论，不记录 key 值；
+5. 应用/RDS/OSS 凭据轮换已留下可复核记录，演练资源边界精确，`ALLOW_REAL_PROVIDER_WRITES` 与全部 provider 写能力闸均为 `false`。
+
+任一项失败或无法确认时，立即停止变更性演练，将实测字段、错误码、时间戳和结论写入当次验证记录，对应计划项保持未勾选。不得用手工导出代替 PITR，不得用无版本 Bucket 或 fixture 代替 OSS 误删恢复，不得从开发机复制主密钥。2026-08-10 首次 D7-08 预检的阻塞证据见 `docs/operations/d7-08-ecs-recovery-validation.md`。
+
 ## Web/Worker 独立重启
 
 1. 记录镜像版本、迁移状态、失败 Job ID 和 trace ID。
