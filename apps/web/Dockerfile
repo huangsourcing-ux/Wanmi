@@ -30,24 +30,37 @@ COPY --from=dependencies /app/apps/web/node_modules ./apps/web/node_modules
 COPY . .
 RUN --mount=type=cache,id=wanmi-pnpm-store,target=/pnpm/store \
     --mount=type=cache,id=wanmi-pnpm-metadata,target=/root/.cache/pnpm \
+    WANMI_BUILD_PAYLOAD_SECRET="$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))")" && \
+    WANMI_BUILD_SESSION_PEPPER="$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))")" && \
+    WANMI_BUILD_TOTP_KEY="$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))")" && \
     WANMI_BUILD_REALNAME_KEY="$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))")" && \
-    PAYLOAD_SECRET=build-only-payload-secret-32-bytes \
-    SESSION_PEPPER=build-only-session-pepper-32-bytes \
-    TOTP_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+    PAYLOAD_SECRET="$WANMI_BUILD_PAYLOAD_SECRET" \
+    SESSION_PEPPER="$WANMI_BUILD_SESSION_PEPPER" \
+    TOTP_ENCRYPTION_KEY="$WANMI_BUILD_TOTP_KEY" \
     REALNAME_DOCUMENT_MASTER_KEY_VERSION=build-v1 \
     REALNAME_DOCUMENT_MASTER_KEYS="build-v1:${WANMI_BUILD_REALNAME_KEY}" \
     pnpm --filter @wanmi/web generate && \
-    PAYLOAD_SECRET=build-only-payload-secret-32-bytes \
-    SESSION_PEPPER=build-only-session-pepper-32-bytes \
-    TOTP_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+    PAYLOAD_SECRET="$WANMI_BUILD_PAYLOAD_SECRET" \
+    SESSION_PEPPER="$WANMI_BUILD_SESSION_PEPPER" \
+    TOTP_ENCRYPTION_KEY="$WANMI_BUILD_TOTP_KEY" \
     REALNAME_DOCUMENT_MASTER_KEY_VERSION=build-v1 \
     REALNAME_DOCUMENT_MASTER_KEYS="build-v1:${WANMI_BUILD_REALNAME_KEY}" \
     pnpm --filter @wanmi/web build && \
-    pnpm --filter @wanmi/web deploy --prod --legacy --offline /runtime && \
+    pnpm --filter @wanmi/web deploy --prod --legacy /runtime/apps/web && \
+    rm -rf /runtime/apps/web/.next && \
+    cp -a /app/apps/web/.next/standalone/. /runtime/ && \
+    cp -a /app/apps/web/.next/static /runtime/apps/web/.next/static && \
     rm -rf \
-      /runtime/.next/cache \
-      /runtime/.next/standalone \
-      /runtime/.next/types \
+      /runtime/node_modules/.pnpm/@img+sharp-libvips-linuxmusl-x64@* \
+      /runtime/node_modules/.pnpm/@img+sharp-linuxmusl-x64@* && \
+    cp -a \
+      /runtime/apps/web/node_modules/.pnpm/@img+sharp-libvips-linuxmusl-x64@* \
+      /runtime/apps/web/node_modules/.pnpm/@img+sharp-linuxmusl-x64@* \
+      /runtime/node_modules/.pnpm/ && \
+    rm -rf \
+      /runtime/apps/web/.next/cache \
+      /runtime/apps/web/.next/standalone \
+      /runtime/apps/web/.next/types \
       /runtime/node_modules/.pnpm/@esbuild+linux-x64@0.18.20 \
       /runtime/node_modules/.pnpm/@esbuild+linux-x64@0.25.12 \
       /runtime/node_modules/.pnpm/esbuild@0.18.20 \
@@ -69,6 +82,7 @@ RUN rm -rf \
     addgroup --system --gid 1001 wanmi && \
     adduser --system --disabled-password --no-create-home --uid 1001 --ingroup wanmi wanmi
 COPY --from=builder --chown=wanmi:wanmi /runtime /app
+WORKDIR /app/apps/web
 USER wanmi
 EXPOSE 3000
-CMD ["node", "node_modules/next/dist/bin/next", "start"]
+CMD ["node", "server.js"]

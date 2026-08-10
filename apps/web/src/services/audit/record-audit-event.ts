@@ -37,6 +37,7 @@ export const auditEventDefinitions = {
   'pricing.rule.enabled': { actorTypes: ['admin'], targetType: 'price-rule' },
   'pricing.rule.updated': { actorTypes: ['admin'], targetType: 'price-rule' },
   'commerce.invoice_note.recorded': { actorTypes: ['admin'], targetType: 'order' },
+  'commerce.job.interrupted_released': { actorTypes: ['system'], targetType: 'payload-job' },
   'commerce.balance_control.updated': { actorTypes: ['admin'], targetType: 'site-setting' },
   'commerce.balance_low.alerted': { actorTypes: ['system'], targetType: 'site-setting' },
   'commerce.payment_notification.replayed': {

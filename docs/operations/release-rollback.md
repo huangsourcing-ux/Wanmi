@@ -27,7 +27,37 @@ make verify-release
 3. 将 linux/amd64 镜像推送到批准 registry，解析 registry 返回的 digest；release manifest 只写 digest 引用，不写 `latest` 或环境 tag 作为部署目标。
 4. 若有 migration，先运行既有 Payload migration 流程并核对 status；每项必须已进入 compatibility policy。expand migration 可安全保留，contract migration 必须具备已验证 down。
 5. 在 manifest 填入当前/上一镜像 digest、当前/上一静态 manifest、迁移列表和 rollback.database；运行 `make verify-release`。
-6. 只有门禁通过且已取得生产部署授权，外部部署控制面才可在 `applicationPromotionNotBefore` 之后切换 Web/Worker 到同一 digest。检查 `/healthz`、`/readyz` 和 Worker 队列后再恢复流量。
+6. 只有门禁通过且已取得生产部署授权，才可在 `applicationPromotionNotBefore` 之后执行下述可重建流程。检查 `/healthz`、`/readyz`、Worker 队列和 Nginx 后再恢复流量。
+
+## 可执行节点重建
+
+准备 release manifest 以及只存在于受控运行环境的配置，然后执行：
+
+```bash
+RELEASE_MANIFEST=/run/wanmi/release-manifest.json \
+WANMI_DEPLOYMENT_ID=wanmi-20260810 \
+WANMI_NGINX_CONFIG_PATH=/run/wanmi/nginx.conf \
+make rebuild
+```
+
+`scripts/rebuild-plan.mjs` 将以下顺序固定为唯一执行路径，不得跳步或手工换序：
+
+| 序号 | 步骤                        | 成功判定                                                                | 失败退出码 |
+| ---: | --------------------------- | ----------------------------------------------------------------------- | ---------: |
+|    1 | 准备环境变量与网络          | 必填变量非空、部署 ID/端口/资源限制合法，容器名可用，隔离网络存在       |      11/13 |
+|    2 | 按 digest 拉取同一镜像      | 既有 release-policy 门禁通过，切流时间已到，应用为 `linux/amd64` digest |      12/14 |
+|    3 | 运行 Payload migrations     | 同一镜像内 `payload migrate` 与 `payload migrate:status` 均退出 0       |         16 |
+|    4 | 启动 Web                    | digest 容器处于 `running` 且进程退出码为 0                              |         17 |
+|    5 | 验证 readyz                 | 有界时间内 HTTP 成功且 JSON 顶层 `status=ready`                         |         18 |
+|    6 | 启动 commerce 单并发 Worker | `jobs:run --queue commerce --limit 1` 运行，且 Web/Worker 镜像引用相同  |         19 |
+|    7 | 查询并恢复未完成 Job        | Payload runner 退出 0，原子恢复完成后 Worker 仍运行                     |         20 |
+|    8 | 启动 Nginx                  | `nginx -t`、容器运行和 `/nginx-healthz=ready` 全部通过                  |         21 |
+
+readyz 不通过时第 5 步以 18 退出，执行器不会调用第 6～8 步。Web 与 Worker 的容器配置都直接使用 manifest 的同一个 digest，工具同时检查两者 `.Config.Image`，只允许启动命令不同。Who-Dat 与 Nginx 也使用仓库固定的 digest 引用。
+
+必填 secret 为 `PAYLOAD_SECRET`、`SESSION_PEPPER`、`TOTP_ENCRYPTION_KEY`、完整的 `REALNAME_DOCUMENT_MASTER_KEYS` 和 `WHO_DAT_AUTH_KEY`；数据库、provider、对象存储配置及其他凭据同样只能通过当前进程环境传给容器。工具不读取 `.env`、不生成凭据文件、不把值放入镜像参数，并按敏感键名在 stdout/stderr 中替换为 `[REDACTED]`。不要使用 `set -x`，不要把环境转存到故障工单；镜像构建与日志泄漏的机械检查见 `make validate-rebuild-local` 的镜像元数据、每层应用路径、最终 rootfs 与运行日志扫描。
+
+`make validate-rebuild-local` 是一次性人工演练，创建隔离的本地 Docker daemon、registry 和 PostgreSQL，并构造临时随机 sentinel；它不得加入 CI，也不得指向真实 ECS、RDS 或 OSS。生产执行不得复用演练生成的本地 manifest、密钥、端口或 registry。
 
 ## 回滚步骤
 
@@ -43,4 +73,6 @@ make verify-release
 - 不覆盖旧静态前缀，不在回滚窗口内清理上一版本资源；
 - 不使用 `push`、`migrate:fresh` 或运行时 schema 同步；
 - 不把 contract migration 留在数据库后直接启动依赖已删除列的旧代码；
+- 不在 readyz 失败时单独手工启动 Worker，不让恢复脚本绕过 Payload runner；
+- 不把 secret 写入 manifest、Dockerfile、镜像构建参数、日志或临时配置文件；
 - 不把本 Runbook 视为生产部署、OSS、registry 或数据库变更授权。

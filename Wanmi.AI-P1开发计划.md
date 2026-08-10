@@ -319,7 +319,7 @@ D0 的架构、权限、认证、迁移、Jobs 幂等、真实 OSS、隔离 RDS�
 - Web/Worker 独立重启及 ECS 与 RDS 同 VPC 的 `commerce` Job 中断恢复；
 - 空节点重建与两小时 RTO。
 
-这些任务仍是开发整体验收和生产上线硬门槛。现有项目迁出前不得在共享 ECS 部署 Wanmi、压测、重启现有服务或执行节点重建；D1 若暴露主架构、权限、迁移或 Jobs 假设失败，立即返回 D0 修正。
+这些任务仍是开发整体验收和生产上线硬门槛。2026-08-10 项目负责人确认现有项目已经迁出、目标 ECS 已成为可重置/重装的专用机器，原共享 ECS 外部阻塞解除；但 D7-07 仍只做本地容器受限等价验证，真实 ECS 执行留到下一授权切片。在真实环境证据完成前，本节单 ECS 项及 11.1 第 10、11 项都保持未勾选。D1 若暴露主架构、权限、迁移或 Jobs 假设失败，立即返回 D0 修正。
 
 ## 5. D1：公共站与管理基础（第 2～3 周）
 
@@ -673,6 +673,12 @@ D7-06 冻结项变更验证记录（2026-08-10）：项目负责人依据 D7-05 
 
 三处承重变异均被对应测试杀死：把逐对象随机数据密钥替换为固定 32 字节后，独立 key 断言失败；删除正文解密的 `decipher.final()` 后，篡改 GCM tag 的对象被错误读取且认证断言失败；缺失记录版本时回退 active version 后，严格单次版本查询断言失败。恢复后聚焦 9/9。对本项目执行 `docker compose down -v` 删除并重建 PostgreSQL/MinIO 卷后，完整集成连续两轮均为 104/104。最终 `ALLOW_REAL_PROVIDER_WRITES=false make check` 退出码 0，通过生成物/schema 漂移、空库/升级与全部 migration 往返、7 份 Runbook/14 个 endpoint 引用、2 项 release migration policy、lint、TypeScript strict、609/609 单元、104/104 集成、Next.js 与 linux/amd64 镜像构建、Node audit、Trivy、工作树及 151 个提交完整历史 Gitleaks；`make test-e2e` 42/42。全仓 `pnpm format:check` 仍报告 44 个既有生成/历史文件格式债，本切片全部非生成文件的定向 Prettier 检查通过，未改这些无关文件。
 
+D7-07 验证记录（2026-08-10）：把 ADR-0006 的顺序实现为 `make rebuild`：环境/网络 → 复用 `verify-release` 与 `release-policy.json` 按 digest 拉取 → 同镜像 Payload migrations → Web → database-backed readyz → 同 digest 的 `commerce --limit 1` Worker → Payload runner 查询并原子释放过期未完成 Job → Nginx。每步有独立成功判定和 11～21 范围失败码；固定计划会传播 readyz rejection，因此失败时 Worker/Nginx 不会启动。恢复 service 不使用 `payload.update({ where })`，而是在同一 PostgreSQL 事务内用带 queue、processing、completed、error、cutoff 条件的 `UPDATE ... RETURNING` 竞争行，并继续由既有 Payload handler/provider operation 唯一键承担只查或安全执行语义。发布、回滚与恢复 Runbook 已同步，`verify-operations` 增加这些文档到实现 symbol 的引用门禁。
+
+最终一次本地空目标节点的整个 Docker daemon 由宿主硬限制为 2 vCPU/4 GiB，应用与常驻容器为 `linux/amd64`；Web/Worker 使用同一 digest。8 次内存采样实测 Web/Worker/Who-Dat 峰值分别 304.3/298.2/37.1 MiB、稳态 226.3/298.0/37.0 MiB，合计峰值/稳态 639.6/561.3 MiB，相对 4 GiB 余量 3456.4/3534.7 MiB。日志写入至少 9.5 MB 后旧段删除且只保留 1,093,349 bytes。完整 8 步从空节点到 Nginx ready 为 93.4 秒，对比 7200 秒 RTO 通过。60 秒 Promise 在 provider write claim 后制造处理中断：Web 重启时 Worker Job 保持 processing，Worker `SIGKILL` 时 Web 保持 ready；两个 Promise 并发恢复者实际 `[1,0]`，最终 provider operation/attempt/status=`1|1|1|succeeded`、write claim 审计 1，未产生 renewal/refund，证明恢复恰好一次。
+
+两处承重变异均被杀死：吞掉 readyz rejection 后 `verify:rebuild` 失败 `Missing expected rejection (Error)`；同时删除恢复 SQL 的 processing 与 cutoff 条件后 5 路结果从期望 `[3]` 变为 `[3,3,3,3,3]`。镜像 metadata、OCI 每层 sentinel、最终 rootfs、应用层 Gitleaks 形态和运行日志扫描均通过；secret 只从环境注入。最新 Trivy 数据库最初拒绝 drizzle-kit 带入的旧 esbuild Go 二进制；未加豁免，而是将依赖树统一锁定到 esbuild 0.28.1，最终 `make check` 通过 609/609 单元、105/105 集成、完整迁移/构建、工作树与 139 提交历史 Gitleaks 及 Trivy。真实 provider 前置自检仍缺 WestDigital、Wechat Pay、私有 OSS 和应用主密钥生产配置，四类字段/错误码/时延均 N/A，没有执行一次性真实契约脚本，11.1 第 2 项保持未勾选。**容器受限等价验证已完成，真实 ECS 验证待授权**；本切片未访问真实 ECS/RDS/OSS，11.1 第 10、11 项与 D0 单 ECS 项均不勾选，真实环境须重跑内存/节点余量、日志轮转、独立重启、同 VPC 强杀恢复和完整 RTO。完整证据见 `docs/operations/d7-07-local-rebuild-validation.md`。
+
 ### 11.2 D8 P1 开发验收
 
 开发完成必须满足：
@@ -752,6 +758,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-09 | D7-04 provider 写通道与分级安全围栏 | 建立 WestDigital 与微信真实 transport；总闸下细分 provider/能力开关；在既有写入口内加入域名白名单、次数与金额围栏；CI 和测试永久禁止 live transport | 西部三类围栏变异分别被杀死；全新卷连续两轮集成 101/101；`make check` 602/602 单元、101/101 集成及完整迁移/构建/工作树与 147 提交历史 Gitleaks/Trivy 门禁通过 | 全程 `ALLOW_REAL_PROVIDER_WRITES=false`，未发起真实调用；通道建成不等于 staging 联调完成，11.1 第 2 项保持未勾选 |
 | 2026-08-09 | D7-05 持久化预算与只读联调入口 | provider/能力 scope 的 PostgreSQL 原子条件扣减与 operation key 幂等 debit；空库/历史/down-up migration；一次性脱敏只读契约脚本与默认/测试/CI 闸门固定 | 次数条件变异被杀死；全新卷连续两轮 102/102；`make check` 605/605 单元、104/104 集成及完整迁移/构建/工作树与 149 提交历史 Gitleaks/Trivy 门禁通过 | 真实联调受缺失生产配置及 KMS `NotEnabled` 阻塞；未调用目标接口或云对象写，11.1 第 2 项保持未勾选，证据见 `docs/operations/d7-05-provider-read-contracts.md` |
 | 2026-08-10 | D7-06 应用自管主密钥冻结项变更 | 版本化应用主密钥 key ring 包裹逐对象随机数据密钥；保留 AES-256-GCM/fill(0)；移除 KMS 代码、探针、配置、闸门与 SDK；更新 ADR、Runbook、发布迁移策略及全套批准文档 | 三处承重变异均被杀死；全新卷连续两轮 104/104；`make check` 609/609 单元、104/104 集成及完整迁移/构建/151 提交历史 Gitleaks/Trivy 通过；E2E 42/42 | 旧 mock KMS 对象明确废弃，生产无真实数据；主密钥进入应用配置后服务器完整攻破可取得 key ring，生产注入、离线备份、轮换与紧急恢复演练仍是硬门槛 |
+| 2026-08-10 | D7-07 重建工具链与本地受限验证 | 固定 ADR-0006 八步工具链、同 digest Web/Worker、readyz fail-closed、Payload Job 原子恢复；空目标节点 2 vCPU/4 GiB 下测量内存/轮转/独立重启/强杀恢复/RTO | 峰值/稳态 639.6/561.3 MiB；日志至少 9.5 MB 后留存 1,093,349 bytes；RTO 93.4 秒；两个恢复者 `[1,0]` 且 provider claim/attempt 均 1；两处变异被杀死；镜像层/日志 secret 检查通过 | 容器受限等价验证已完成，真实 ECS 验证待授权；未接触 ECS/RDS/OSS；11.1 第 2、10、11 项及 D0 单 ECS 项保持未勾选，真实环境须完整重跑 |
 
 ## 13. 范围追踪矩阵
 

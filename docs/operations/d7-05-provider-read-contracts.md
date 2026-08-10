@@ -83,3 +83,16 @@ pnpm --filter @wanmi/web verify:providers:read-contracts
 凭据必须由本地环境变量或部署密钥注入。除各 provider 既有配置外，还需显式提供 `WESTDIGITAL_READ_CONTRACT_LOOKUP_DOMAIN` 与属于该 WestDigital 账号的 `WESTDIGITAL_READ_CONTRACT_ASSET_DOMAIN`。运行时只临时开启总闸、西部 provider/只读、微信 provider 和 OSS 闸；所有资金/域名写能力闸及短信发送闸必须保持 `false`。命令会输出脱敏 JSON 契约证据，任何一类失败均返回非零。
 
 补证后必须把本文件第 3、4 节替换为真实四类结果，逐接口记录字段路径、provider code、映射差异和响应时间；确认 OSS 测试对象已删除、短信发送数为 0、西部数码写数为 0、微信写数为 0。四类全部完成前，开发计划 11.1 第 2 项不得勾选。
+
+## 6. D7-07 前置自检追加记录（2026-08-10）
+
+D7-07 开始前再次检查当前运行环境，只判断键是否存在，不输出、复制或持久化任何值。KMS 已由批准的 D7-06 冻结项变更移除，本次第四类前提改为版本化应用主密钥注入。
+
+| 契约类别            | 缺失前提                                                                  | 实际字段/错误码/响应时间 | 结论                                            |
+| ------------------- | ------------------------------------------------------------------------- | ------------------------ | ----------------------------------------------- |
+| WestDigital 只读    | username、API password、lookup domain、账号内 asset domain                | N/A                      | 未调用 `query`/`getprice`/`view`/`checkbalance` |
+| Wechat Pay 只读查单 | app/merchant ID、证书序列、API v3 key、商户私钥、平台验签材料、notify URL | N/A                      | 未调用查单                                      |
+| 私有 OSS 契约对象   | bucket、endpoint、access key/secret                                       | N/A                      | 未上传、读取、签名或删除对象                    |
+| 应用主密钥注入      | `REALNAME_DOCUMENT_MASTER_KEYS` 与 active version                         | N/A                      | 未以临时或推测密钥冒充生产注入验证              |
+
+仓库默认、测试、CI 和本次进程中的 `ALLOW_REAL_PROVIDER_WRITES` 及 WestDigital 注册/续费/实名/NS、Wechat Pay 支付/退款、短信发送、私有 OSS 写入能力闸均保持 `false`。因为四类前提仍不完整，没有执行一次性 `verify:providers:read-contracts`，没有取得可填入第 4 节的真实字段、错误码或响应时间，也没有修改 Zod schema/断言迁就 fixture。开发计划 11.1 第 2 项继续保持未勾选。
