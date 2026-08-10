@@ -3,7 +3,19 @@ packages:
 
 autoInstallPeers: false
 
+supportedArchitectures:
+  os:
+    - current
+    - linux
+  cpu:
+    - current
+    - x64
+  libc:
+    - current
+    - musl
+
 overrides:
+  esbuild: 0.28.1
   nanoid: 3.3.17
   postcss: 8.5.25
   sharp: 0.35.0

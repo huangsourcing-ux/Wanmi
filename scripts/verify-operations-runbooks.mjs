@@ -75,6 +75,23 @@ const requiredCodeReferences = [
     'apps/web/src/services/realname/master-key.ts',
     'createRealnameDocumentMasterKeyring',
   ],
+  ['docs/operations/startup.md', 'deploy/nginx/wanmi-host-redirects.conf', 'server_name'],
+  ['docs/operations/release-rollback.md', 'scripts/rebuild.mjs', 'exitCodes'],
+  [
+    'docs/operations/recovery.md',
+    'apps/web/src/services/operations/commerce-job-recovery.ts',
+    'recoverInterruptedCommerceJobs',
+  ],
+  [
+    'docs/operations/d7-05-provider-read-contracts.md',
+    'apps/web/scripts/verify-provider-read-contracts.ts',
+    'RUN_REAL_PROVIDER_READ_CONTRACTS',
+  ],
+  [
+    'docs/operations/d7-07-local-rebuild-validation.md',
+    'scripts/validate-rebuild-local.mjs',
+    'D7_LOCAL_VALIDATION_RESULT',
+  ],
 ]
 
 for (const [documentation, sourceFile, symbol] of requiredCodeReferences) {
@@ -86,5 +103,5 @@ for (const [documentation, sourceFile, symbol] of requiredCodeReferences) {
 }
 
 process.stdout.write(
-  `Verified ${runbooks.length} operations Runbooks, ${endpointCount} endpoint references, and implementation links.\n`,
+  `Verified ${runbooks.length} operations Runbooks, ${endpointCount} endpoint references, and ${requiredCodeReferences.length} implementation links.\n`,
 )

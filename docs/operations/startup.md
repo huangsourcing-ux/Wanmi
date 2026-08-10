@@ -26,7 +26,7 @@
 make verify-nginx
 ```
 
-该命令使用固定的 `nginx:1.30.4-alpine-slim@sha256:ddde39c6e51f02fde7410c2e9c234cf2d0a4c7bdbbe176aeb37d8ad7ab4eb58c`、一次性测试证书和随机本地端口运行 `nginx -t`，再验证 4 个 HTTP 与 3 个 HTTPS 别名请求的 301、路径和查询参数。生产部署仍需项目负责人明确授权；共享 ECS 承载其他项目期间禁止复制配置、申请证书、reload Nginx 或切换流量。
+该命令使用固定的 `nginx:1.30.4-alpine-slim@sha256:ddde39c6e51f02fde7410c2e9c234cf2d0a4c7bdbbe176aeb37d8ad7ab4eb58c`、一次性测试证书和随机本地端口运行 `nginx -t`，再验证 4 个 HTTP 与 3 个 HTTPS 别名请求的 301、路径和查询参数。项目负责人已于 2026-08-10 确认目标 ECS 上的原有项目迁出，但生产部署仍需单独明确授权；D7-07 只在本地隔离容器执行，不复制配置到 ECS、不申请证书、不 reload Nginx、不切换流量。
 
 ## 故障判断
 

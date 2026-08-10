@@ -29,6 +29,9 @@ export class FixtureWestDigitalWriteTransport implements WestDigitalWriteTranspo
       requestId: input.requestId,
       traceId: input.traceId,
     })
+    if (['nameserver', 'realname_create', 'register', 'renew'].includes(input.operation)) {
+      await interruptValidationDelay(input.signal)
+    }
     return this.handler(input)
   }
 
@@ -37,6 +40,32 @@ export class FixtureWestDigitalWriteTransport implements WestDigitalWriteTranspo
       ['nameserver', 'realname_create', 'register', 'renew'].includes(request.operation),
     ).length
   }
+}
+
+async function interruptValidationDelay(signal: AbortSignal): Promise<void> {
+  const raw = process.env.WANMI_D7_FIXTURE_DELAY_MS
+  if (raw === undefined || raw === '' || raw === '0') return
+  if (
+    process.env.WANMI_D7_REBUILD_VALIDATION !== 'D7-07-LOCAL-ONLY' ||
+    /^(?:1|true)$/iu.test(process.env.ALLOW_REAL_PROVIDER_WRITES ?? '')
+  ) {
+    throw new Error('D7-07 fixture delay is restricted to local write-disabled validation')
+  }
+  const milliseconds = Number(raw)
+  if (!Number.isInteger(milliseconds) || milliseconds < 1 || milliseconds > 60_000) {
+    throw new Error('WANMI_D7_FIXTURE_DELAY_MS must be 1..60000')
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(resolve, milliseconds)
+    signal.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timeout)
+        reject(new Error('D7-07 fixture delay aborted'))
+      },
+      { once: true },
+    )
+  })
 }
 
 function defaultFixture(
@@ -94,7 +123,10 @@ export function createConfiguredWestDigitalWriteAdapter(
 ): WestDigitalWriteAdapter {
   const env = getEnv()
   if (env.WESTDIGITAL_MODE === 'fixture') {
-    return new WestDigitalWriteAdapter({ transport: new FixtureWestDigitalWriteTransport() })
+    return new WestDigitalWriteAdapter({
+      timeoutMs: env.WESTDIGITAL_READ_TIMEOUT_MS,
+      transport: new FixtureWestDigitalWriteTransport(),
+    })
   }
   if (
     !env.ALLOW_REAL_PROVIDER_WRITES ||

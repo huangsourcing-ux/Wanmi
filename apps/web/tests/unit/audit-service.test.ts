@@ -35,6 +35,7 @@ describe('shared audit event service', () => {
         'commerce.balance_control.updated',
         'commerce.balance_low.alerted',
         'commerce.invoice_note.recorded',
+        'commerce.job.interrupted_released',
         'commerce.payment_notification.replayed',
         'commerce.payment.reconciled',
         'commerce.renewal.recorded',

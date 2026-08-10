@@ -25,6 +25,7 @@
     "verify:migrations": "node scripts/verify-redirect-migration.mjs",
     "verify:nginx": "node scripts/verify-nginx-redirects.mjs",
     "verify:operations": "node scripts/verify-operations-runbooks.mjs",
+    "verify:rebuild": "node scripts/verify-rebuild-toolchain.mjs",
     "verify:release": "node scripts/verify-release-contract.mjs",
     "worker": "pnpm --filter @wanmi/web worker"
   },

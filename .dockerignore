@@ -12,3 +12,6 @@ apps/web/coverage
 apps/web/playwright-report
 apps/web/test-results
 node_modules
+/scripts
+/docs
+/*.md

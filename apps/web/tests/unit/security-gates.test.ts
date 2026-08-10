@@ -56,6 +56,7 @@ describe('D7 repository security gates', () => {
   it('fails the linux/amd64 image scan on HIGH or CRITICAL findings', () => {
     const dockerfile = source('apps/web/Dockerfile')
     const makefile = source('Makefile')
+    const workspace = source('pnpm-workspace.yaml')
     const security = source('scripts/security.mjs')
     expect(makefile).toContain('docker build --platform linux/amd64')
     expect(makefile).toMatch(/^security: build$/mu)
@@ -68,11 +69,16 @@ describe('D7 repository security gates', () => {
       'node:24.19.0-alpine3.24@sha256:2a49bdf71e9fd965a58c1703fd9ddd205b34e5782b692a72dd1d248abb0beb43',
     )
     expect(dockerfile).toContain(
-      'pnpm --filter @wanmi/web deploy --prod --legacy --offline /runtime',
+      'pnpm --filter @wanmi/web deploy --prod --legacy /runtime/apps/web',
     )
+    expect(dockerfile).toContain('cp -a /app/apps/web/.next/standalone/. /runtime/')
+    expect(dockerfile).toContain('WORKDIR /app/apps/web')
+    expect(dockerfile).toContain('CMD ["node", "server.js"]')
+    expect(dockerfile).toContain('USER wanmi')
     expect(dockerfile).toContain('COPY --from=builder --chown=wanmi:wanmi /runtime /app')
     expect(dockerfile).toContain('/usr/local/lib/node_modules/npm')
     expect(dockerfile).not.toContain('COPY --from=builder --chown=wanmi:wanmi /app /app')
+    expect(workspace).toContain('esbuild: 0.28.1')
   })
 
   it('keeps image-size exceptions exact, package-scoped, and justified', () => {

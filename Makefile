@@ -1,4 +1,4 @@
-.PHONY: bootstrap dev worker generate verify-bootstrap verify-generated verify-oss-real verify-migrations verify-nginx verify-operations verify-provider-write-policy verify-release fmt lint test test-integration test-e2e performance security build smoke check down
+.PHONY: bootstrap dev worker rebuild validate-rebuild-local generate verify-bootstrap verify-generated verify-oss-real verify-migrations verify-nginx verify-operations verify-provider-write-policy verify-rebuild verify-release fmt lint test test-integration test-e2e performance security build smoke check down
 
 bootstrap:
 	corepack enable
@@ -12,6 +12,12 @@ dev:
 
 worker:
 	pnpm worker
+
+rebuild:
+	node scripts/rebuild.mjs --manifest "$${RELEASE_MANIFEST:-deploy/release-manifest.json}"
+
+validate-rebuild-local:
+	node scripts/validate-rebuild-local.mjs
 
 generate:
 	pnpm generate
@@ -37,6 +43,9 @@ verify-operations:
 
 verify-provider-write-policy:
 	node scripts/verify-provider-write-policy.mjs
+
+verify-rebuild:
+	pnpm verify:rebuild
 
 verify-release:
 	pnpm verify:release
@@ -77,7 +86,7 @@ build:
 smoke:
 	node scripts/smoke.mjs
 
-check: verify-bootstrap verify-provider-write-policy verify-generated verify-migrations verify-nginx verify-operations verify-release lint test test-integration security build
+check: verify-bootstrap verify-provider-write-policy verify-generated verify-migrations verify-nginx verify-operations verify-rebuild verify-release lint test test-integration security build
 
 down:
 	docker compose down
