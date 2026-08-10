@@ -1,6 +1,13 @@
 [extend]
 useDefault = true
 
+[[rules]]
+id = "wanmi-provider-secret-assignment"
+description = "Wanmi provider secrets must never be assigned in committed history"
+regex = '''(?i)(WESTDIGITAL_API_PASSWORD|WECHATPAY_API_V3_KEY|WECHATPAY_MERCHANT_PRIVATE_KEY)[ \t]*=[ \t]*["']?([^\s"'#]{8,})'''
+secretGroup = 2
+keywords = ["WESTDIGITAL_API_PASSWORD", "WECHATPAY_API_V3_KEY", "WECHATPAY_MERCHANT_PRIVATE_KEY"]
+
 [allowlist]
 description = "Generated artifacts excluded from committed-history secret evidence"
 paths = [

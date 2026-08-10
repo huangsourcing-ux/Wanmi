@@ -8,6 +8,11 @@ import { mockFailure, mockSuccess } from './mock'
 
 const mockKeyEncryptionKey = randomBytes(32)
 
+function liveKmsAllowed(): boolean {
+  const env = getEnv()
+  return env.ALLOW_REAL_PROVIDER_WRITES && env.ALLOW_REAL_ALIYUN_KMS
+}
+
 export class MockKmsProvider implements KmsProvider {
   async health() {
     return mockSuccess({ healthy: true })
@@ -101,7 +106,7 @@ export class AlibabaKmsProvider implements KmsProvider {
 
   async generateDataKey(_input: { traceId: string }) {
     void _input.traceId
-    if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
+    if (!liveKmsAllowed()) {
       return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
     }
     try {
@@ -121,7 +126,7 @@ export class AlibabaKmsProvider implements KmsProvider {
   }
 
   async decryptDataKey(input: { ciphertext: string; traceId: string }) {
-    if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
+    if (!liveKmsAllowed()) {
       return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
     }
     try {
@@ -139,7 +144,7 @@ export class AlibabaKmsProvider implements KmsProvider {
 export function createKmsProvider(): KmsProvider {
   const env = getEnv()
   if (env.ALIYUN_KMS_MODE !== 'live') return new MockKmsProvider()
-  if (!env.ALLOW_REAL_PROVIDER_WRITES) return new DisabledKmsProvider()
+  if (!liveKmsAllowed()) return new DisabledKmsProvider()
   if (
     !process.env.ALIBABA_CLOUD_ACCESS_KEY_ID ||
     !process.env.ALIBABA_CLOUD_ACCESS_KEY_SECRET ||

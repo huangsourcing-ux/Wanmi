@@ -2,6 +2,8 @@ import {
   createCipheriv,
   createDecipheriv,
   createHash,
+  createPrivateKey,
+  createPublicKey,
   generateKeyPairSync,
   randomBytes,
   randomUUID,
@@ -9,11 +11,18 @@ import {
   verify,
   type KeyObject,
 } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 
 import { z } from 'zod'
 
 import { getEnv } from '@/lib/env'
 import type { ProviderResult } from '@/lib/domain'
+import {
+  assertLiveRuntimeTransportAllowed,
+  authorizeWechatPayWrite,
+  ProviderWriteGuardError,
+} from '@/lib/provider-write-guardrails'
+import { LiveWechatPayTransport } from '@/providers/wechatpay-live'
 
 import { mockFailure, mockSuccess } from './mock'
 import type {
@@ -921,20 +930,138 @@ export class MockWechatPayProvider implements PaymentProvider, RefundProvider {
   }
 }
 
+export class SafetyFencedWechatPayProvider implements PaymentProvider, RefundProvider {
+  constructor(private readonly delegate: PaymentProvider & RefundProvider) {}
+
+  async health() {
+    return this.delegate.health()
+  }
+
+  async createPayment(input: Parameters<PaymentProvider['createPayment']>[0]) {
+    try {
+      authorizeWechatPayWrite('payment', input.amountMinor)
+    } catch (error) {
+      if (error instanceof ProviderWriteGuardError) {
+        return mockFailure(error.code, { statusKnown: true })
+      }
+      throw error
+    }
+    return this.delegate.createPayment(input)
+  }
+
+  async closeOrder(input: Parameters<PaymentProvider['closeOrder']>[0]) {
+    try {
+      authorizeWechatPayWrite('payment_close', 0)
+    } catch (error) {
+      if (error instanceof ProviderWriteGuardError) {
+        return mockFailure(error.code, { statusKnown: true })
+      }
+      throw error
+    }
+    return this.delegate.closeOrder(input)
+  }
+
+  async queryOrder(input: Parameters<PaymentProvider['queryOrder']>[0]) {
+    return this.delegate.queryOrder(input)
+  }
+
+  async createRefund(input: Parameters<RefundProvider['createRefund']>[0]) {
+    try {
+      authorizeWechatPayWrite('refund', input.amountMinor)
+    } catch (error) {
+      if (error instanceof ProviderWriteGuardError) {
+        return mockFailure(error.code, { statusKnown: true })
+      }
+      throw error
+    }
+    return this.delegate.createRefund(input)
+  }
+
+  async queryRefund(input: Parameters<RefundProvider['queryRefund']>[0]) {
+    return this.delegate.queryRefund(input)
+  }
+
+  async verifyNotification(input: Parameters<PaymentProvider['verifyNotification']>[0]) {
+    return this.delegate.verifyNotification(input)
+  }
+
+  async verifyRefundNotification(input: Parameters<RefundProvider['verifyRefundNotification']>[0]) {
+    return this.delegate.verifyRefundNotification(input)
+  }
+}
+
 export function paymentPayloadDigest(body: string): string {
   return createHash('sha256').update(body).digest('hex')
 }
 
-export function assertRealWechatPayWritesDisabled(): void {
-  if (getEnv().ALLOW_REAL_PROVIDER_WRITES) {
-    throw new Error('D5 fixture provider cannot run with real provider writes enabled')
+function readKeyFile(path: string, label: string): Buffer {
+  const value = readFileSync(path)
+  if (value.byteLength === 0 || value.byteLength > 64 * 1024) {
+    throw new Error(`${label} file is empty or exceeds the safety limit`)
   }
+  return value
 }
 
-let runtimeFixture: WechatPayFixture | undefined
+export function createConfiguredWechatPayProvider(
+  options: {
+    liveTransportFactory?: () => WechatPayTransport
+  } = {},
+): PaymentProvider & RefundProvider {
+  const env = getEnv()
+  if (env.WECHATPAY_MODE === 'fixture') return createWechatPayFixture().provider
+  if (!env.ALLOW_REAL_PROVIDER_WRITES || !env.ALLOW_REAL_WECHATPAY) {
+    throw new Error('Wechat Pay live mode requires the total and provider safety gates')
+  }
+  assertLiveRuntimeTransportAllowed('wechatpay')
+  if (
+    !env.WECHATPAY_API_V3_KEY ||
+    !env.WECHATPAY_APP_ID ||
+    !env.WECHATPAY_MERCHANT_CERTIFICATE_SERIAL ||
+    !env.WECHATPAY_MERCHANT_ID ||
+    !env.WECHATPAY_MERCHANT_PRIVATE_KEY_PATH ||
+    !env.WECHATPAY_NOTIFY_URL ||
+    !env.WECHATPAY_PLATFORM_CERTIFICATE_SERIAL ||
+    !env.WECHATPAY_PLATFORM_PUBLIC_KEY_PATH
+  ) {
+    throw new Error(
+      'Wechat Pay live mode is missing an explicit credential or certificate reference',
+    )
+  }
+  if (new URL(env.WECHATPAY_NOTIFY_URL).protocol !== 'https:') {
+    throw new Error('Wechat Pay live notify URL must use HTTPS')
+  }
+  const transport = options.liveTransportFactory
+    ? options.liveTransportFactory()
+    : new LiveWechatPayTransport()
+  const provider = new WechatPayApiV3Adapter({
+    apiV3Key: Buffer.from(env.WECHATPAY_API_V3_KEY, 'utf8'),
+    appId: env.WECHATPAY_APP_ID,
+    merchantCertificateSerial: env.WECHATPAY_MERCHANT_CERTIFICATE_SERIAL,
+    merchantId: env.WECHATPAY_MERCHANT_ID,
+    merchantPrivateKey: createPrivateKey(
+      readKeyFile(env.WECHATPAY_MERCHANT_PRIVATE_KEY_PATH, 'Wechat Pay merchant private key'),
+    ),
+    notifyUrl: env.WECHATPAY_NOTIFY_URL,
+    transport,
+    wechatPayPublicKeys: new Map([
+      [
+        env.WECHATPAY_PLATFORM_CERTIFICATE_SERIAL,
+        createPublicKey(
+          readKeyFile(env.WECHATPAY_PLATFORM_PUBLIC_KEY_PATH, 'Wechat Pay platform public key'),
+        ),
+      ],
+    ]),
+  })
+  return new SafetyFencedWechatPayProvider(provider)
+}
+
+let runtimeProvider: (PaymentProvider & RefundProvider) | undefined
 
 export function getRuntimeWechatPayProvider(): PaymentProvider & RefundProvider {
-  assertRealWechatPayWritesDisabled()
-  runtimeFixture ??= createWechatPayFixture()
-  return runtimeFixture.provider
+  runtimeProvider ??= createConfiguredWechatPayProvider()
+  return runtimeProvider
+}
+
+export function resetWechatPayRuntimeForTests(): void {
+  runtimeProvider = undefined
 }

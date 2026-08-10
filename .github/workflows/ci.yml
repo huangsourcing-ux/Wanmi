@@ -42,6 +42,7 @@ jobs:
       ALIYUN_SMS_MODE: mock
       ALIYUN_KMS_MODE: mock
       ALIYUN_OSS_REALNAME_MODE: mock
+      ALLOW_REAL_PROVIDER_WRITES: 'false'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

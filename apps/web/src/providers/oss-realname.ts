@@ -7,6 +7,11 @@ import { mockFailure, mockSuccess } from './mock'
 
 const objects = new Map<string, Uint8Array>()
 
+function liveRealnameOssAllowed(): boolean {
+  const env = getEnv()
+  return env.ALLOW_REAL_PROVIDER_WRITES && env.ALLOW_REAL_ALIYUN_OSS_REALNAME
+}
+
 export class MockRealnameObjectProvider implements RealnameObjectProvider {
   async health() {
     return mockSuccess({ healthy: true })
@@ -90,7 +95,7 @@ export class AliOssRealnameProvider implements RealnameObjectProvider {
     if (!this.keyAllowed(input.key)) {
       return mockFailure('OSS_KEY_OUT_OF_SCOPE', { statusKnown: true })
     }
-    if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
+    if (!liveRealnameOssAllowed()) {
       return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
     }
     try {
@@ -106,7 +111,7 @@ export class AliOssRealnameProvider implements RealnameObjectProvider {
     if (!this.keyAllowed(input.key)) {
       return mockFailure('OSS_KEY_OUT_OF_SCOPE', { statusKnown: true })
     }
-    if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
+    if (!liveRealnameOssAllowed()) {
       return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
     }
     try {
@@ -129,7 +134,7 @@ export class AliOssRealnameProvider implements RealnameObjectProvider {
     if (!this.keyAllowed(input.key) || input.expiresSeconds < 1 || input.expiresSeconds > 120) {
       return mockFailure('OSS_SIGN_SCOPE_INVALID', { statusKnown: true })
     }
-    if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
+    if (!liveRealnameOssAllowed()) {
       return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
     }
     try {
@@ -145,7 +150,7 @@ export class AliOssRealnameProvider implements RealnameObjectProvider {
     if (!this.keyAllowed(input.key)) {
       return mockFailure('OSS_KEY_OUT_OF_SCOPE', { statusKnown: true })
     }
-    if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
+    if (!liveRealnameOssAllowed()) {
       return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
     }
     try {
@@ -160,7 +165,7 @@ export class AliOssRealnameProvider implements RealnameObjectProvider {
 export function createRealnameObjectProvider(): RealnameObjectProvider {
   const env = getEnv()
   if (env.ALIYUN_OSS_REALNAME_MODE === 'mock') return new MockRealnameObjectProvider()
-  if (!env.ALLOW_REAL_PROVIDER_WRITES) return new DisabledRealnameObjectProvider()
+  if (!liveRealnameOssAllowed()) return new DisabledRealnameObjectProvider()
   const accessKeyId = process.env.ALIBABA_CLOUD_ACCESS_KEY_ID
   const accessKeySecret = process.env.ALIBABA_CLOUD_ACCESS_KEY_SECRET
   const bucket = env.OSS_REALNAME_BUCKET

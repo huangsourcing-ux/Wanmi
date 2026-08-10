@@ -115,6 +115,29 @@ class MockSmsProvider implements SmsProvider {
   }
 }
 
+class DisabledSmsProvider implements SmsProvider {
+  async health() {
+    return mockSuccess({ healthy: false })
+  }
+
+  async sendOtp() {
+    return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
+  }
+
+  async sendDomainExpiry() {
+    return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
+  }
+
+  async queryReceipt() {
+    return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
+  }
+}
+
+function liveSmsAllowed(): boolean {
+  const env = getEnv()
+  return env.ALLOW_REAL_PROVIDER_WRITES && env.ALLOW_REAL_ALIYUN_SMS_SENDS
+}
+
 class LiveSmsProvider implements SmsProvider {
   private readonly client: SmsClient
 
@@ -143,7 +166,7 @@ class LiveSmsProvider implements SmsProvider {
   }
 
   async sendOtp(input: { code: string; phone: string; traceId: string }) {
-    if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
+    if (!liveSmsAllowed()) {
       return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
     }
     try {
@@ -192,7 +215,7 @@ class LiveSmsProvider implements SmsProvider {
     phone: string
     traceId: string
   }) {
-    if (!getEnv().ALLOW_REAL_PROVIDER_WRITES) {
+    if (!liveSmsAllowed()) {
       return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
     }
     try {
@@ -239,6 +262,9 @@ class LiveSmsProvider implements SmsProvider {
   }
 
   async queryReceipt(input: { phone: string; providerMessageId: string; sentAt: string }) {
+    if (!liveSmsAllowed()) {
+      return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
+    }
     try {
       const response = await this.client.querySendDetails(
         new QuerySendDetailsRequest({
@@ -265,5 +291,7 @@ class LiveSmsProvider implements SmsProvider {
 }
 
 export function createSmsProvider(): SmsProvider {
-  return getEnv().ALIYUN_SMS_MODE === 'live' ? new LiveSmsProvider() : new MockSmsProvider()
+  const env = getEnv()
+  if (env.ALIYUN_SMS_MODE !== 'live') return new MockSmsProvider()
+  return liveSmsAllowed() ? new LiveSmsProvider() : new DisabledSmsProvider()
 }

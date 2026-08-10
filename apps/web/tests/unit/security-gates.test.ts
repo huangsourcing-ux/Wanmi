@@ -29,6 +29,23 @@ describe('D7 repository security gates', () => {
     expect(historyConfig).not.toContain('.env.local')
   })
 
+  it('keeps provider-secret assignments on one line so empty placeholders stay valid', () => {
+    const expectedAssignmentWhitespace = String.raw`[ \t]*=[ \t]*`
+    const crossLineAssignmentWhitespace = String.raw`\s*=\s*`
+    const example = source('.env.example')
+
+    for (const configPath of ['.gitleaks.toml', '.gitleaks-history.toml']) {
+      const config = source(configPath)
+      expect(config).toContain(expectedAssignmentWhitespace)
+      expect(config).not.toContain(crossLineAssignmentWhitespace)
+    }
+
+    for (const key of ['WESTDIGITAL_API_PASSWORD', 'WECHATPAY_API_V3_KEY']) {
+      expect(example).toContain(`# ${key}=`)
+    }
+    expect(example).toContain('# WECHATPAY_MERCHANT_PRIVATE_KEY_PATH=')
+  })
+
   it('fails the linux/amd64 image scan on HIGH or CRITICAL findings', () => {
     const dockerfile = source('apps/web/Dockerfile')
     const makefile = source('Makefile')

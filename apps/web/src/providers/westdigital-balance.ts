@@ -4,6 +4,8 @@ import { z } from 'zod'
 
 import type { ProviderResult } from '@/lib/domain'
 import { getEnv } from '@/lib/env'
+import { assertLiveRuntimeTransportAllowed } from '@/lib/provider-write-guardrails'
+import { LiveWestDigitalTransport } from '@/providers/westdigital-live'
 
 import type { WestDigitalBalanceProvider } from './types'
 
@@ -34,7 +36,8 @@ function minor(value: number | string): number {
   if (!/^\d+(?:\.\d{1,2})?$/u.test(text)) throw new Error('Invalid WestDigital balance amount')
   const [yuan, fraction = ''] = text.split('.')
   const result = Number(yuan) * 100 + Number(fraction.padEnd(2, '0'))
-  if (!Number.isSafeInteger(result) || result < 0) throw new Error('Invalid WestDigital balance amount')
+  if (!Number.isSafeInteger(result) || result < 0)
+    throw new Error('Invalid WestDigital balance amount')
   return result
 }
 
@@ -66,9 +69,9 @@ export class WestDigitalBalanceAdapter implements WestDigitalBalanceProvider {
     return success({ healthy: true }, observedAt, this.requestId())
   }
 
-  async queryBalance(input: { traceId: string }): Promise<
-    ProviderResult<{ availableMinor: number; frozenMinor: number }>
-  > {
+  async queryBalance(input: {
+    traceId: string
+  }): Promise<ProviderResult<{ availableMinor: number; frozenMinor: number }>> {
     const observedAt = (this.options.now ?? (() => new Date()))().toISOString()
     const requestId = this.requestId()
     const controller = new AbortController()
@@ -115,7 +118,9 @@ export class FixtureWestDigitalBalanceTransport implements WestDigitalBalanceTra
     },
   ) {}
 
-  async execute(input: WestDigitalBalanceTransportRequest): Promise<WestDigitalBalanceTransportResponse> {
+  async execute(
+    input: WestDigitalBalanceTransportRequest,
+  ): Promise<WestDigitalBalanceTransportResponse> {
     this.requests.push(input)
     return {
       body: {
@@ -131,8 +136,22 @@ export class FixtureWestDigitalBalanceTransport implements WestDigitalBalanceTra
 }
 
 export function createConfiguredWestDigitalBalanceProvider(): WestDigitalBalanceAdapter {
-  if (getEnv().ALLOW_REAL_PROVIDER_WRITES) {
-    throw new Error('D6-03 只允许西部数码余额 fixture；必须保持 ALLOW_REAL_PROVIDER_WRITES=false')
+  const env = getEnv()
+  if (env.WESTDIGITAL_MODE === 'fixture') {
+    return new WestDigitalBalanceAdapter({ transport: new FixtureWestDigitalBalanceTransport() })
   }
-  return new WestDigitalBalanceAdapter({ transport: new FixtureWestDigitalBalanceTransport() })
+  if (
+    !env.ALLOW_REAL_PROVIDER_WRITES ||
+    !env.ALLOW_REAL_WESTDIGITAL ||
+    !env.ALLOW_REAL_WESTDIGITAL_READS
+  ) {
+    throw new Error(
+      'West Digital live balance mode requires the total, provider, and read-query safety gates',
+    )
+  }
+  assertLiveRuntimeTransportAllowed('westdigital')
+  return new WestDigitalBalanceAdapter({
+    timeoutMs: env.WESTDIGITAL_READ_TIMEOUT_MS,
+    transport: new LiveWestDigitalTransport(),
+  })
 }

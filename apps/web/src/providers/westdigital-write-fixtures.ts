@@ -1,4 +1,6 @@
 import { getEnv } from '@/lib/env'
+import { assertLiveRuntimeTransportAllowed } from '@/lib/provider-write-guardrails'
+import { LiveWestDigitalTransport } from '@/providers/westdigital-live'
 
 import {
   WestDigitalWriteAdapter,
@@ -17,7 +19,9 @@ export class FixtureWestDigitalWriteTransport implements WestDigitalWriteTranspo
 
   constructor(private readonly handler: WestDigitalWriteFixtureHandler = defaultFixture) {}
 
-  async execute(input: WestDigitalWriteTransportRequest): Promise<WestDigitalWriteTransportResponse> {
+  async execute(
+    input: WestDigitalWriteTransportRequest,
+  ): Promise<WestDigitalWriteTransportResponse> {
     this.requests.push({
       body: { ...input.body },
       operation: input.operation,
@@ -35,7 +39,9 @@ export class FixtureWestDigitalWriteTransport implements WestDigitalWriteTranspo
   }
 }
 
-function defaultFixture(input: WestDigitalWriteTransportRequest): WestDigitalWriteTransportResponse {
+function defaultFixture(
+  input: WestDigitalWriteTransportRequest,
+): WestDigitalWriteTransportResponse {
   const clientid = `fixture-${input.requestId}`
   if (input.operation === 'realname_create') {
     return { body: { clientid, data: { c_sysid: 1664777 }, result: 200 }, status: 200 }
@@ -81,11 +87,32 @@ function defaultFixture(input: WestDigitalWriteTransportRequest): WestDigitalWri
   }
 }
 
-export function createConfiguredWestDigitalWriteAdapter(): WestDigitalWriteAdapter {
-  if (getEnv().ALLOW_REAL_PROVIDER_WRITES) {
-    throw new Error('真实西部数码写 transport 未提供；必须保持 ALLOW_REAL_PROVIDER_WRITES=false')
+export function createConfiguredWestDigitalWriteAdapter(
+  options: {
+    liveTransportFactory?: () => WestDigitalWriteTransport
+  } = {},
+): WestDigitalWriteAdapter {
+  const env = getEnv()
+  if (env.WESTDIGITAL_MODE === 'fixture') {
+    return new WestDigitalWriteAdapter({ transport: new FixtureWestDigitalWriteTransport() })
   }
-  return new WestDigitalWriteAdapter({ transport: new FixtureWestDigitalWriteTransport() })
+  if (
+    !env.ALLOW_REAL_PROVIDER_WRITES ||
+    !env.ALLOW_REAL_WESTDIGITAL ||
+    !env.ALLOW_REAL_WESTDIGITAL_READS
+  ) {
+    throw new Error(
+      'West Digital live mode requires the total, provider, and read-query safety gates',
+    )
+  }
+  assertLiveRuntimeTransportAllowed('westdigital')
+  const transport = options.liveTransportFactory
+    ? options.liveTransportFactory()
+    : new LiveWestDigitalTransport()
+  return new WestDigitalWriteAdapter({
+    timeoutMs: env.WESTDIGITAL_READ_TIMEOUT_MS,
+    transport,
+  })
 }
 
 export function retryableBeforeSubmission(): never {

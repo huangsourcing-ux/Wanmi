@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { getEnv, resetEnvForTests } from '@/lib/env'
 import { classifySmsFailure, classifySmsReceipt, createSmsProvider } from '@/providers/aliyunsms'
 
 describe('Alibaba Cloud SMS adapter', () => {
   afterEach(() => {
+    vi.unstubAllEnvs()
     process.env.ALIYUN_SMS_MODE = 'mock'
     process.env.ALLOW_REAL_PROVIDER_WRITES = 'false'
     process.env.CUSTOMER_SESSION_COOKIE = 'wanmi_customer_session'
@@ -24,8 +25,10 @@ describe('Alibaba Cloud SMS adapter', () => {
   })
 
   it('keeps live SMS writes disabled without calling the provider', async () => {
-    process.env.ALIYUN_SMS_MODE = 'live'
-    process.env.ALLOW_REAL_PROVIDER_WRITES = 'false'
+    vi.stubEnv('ALIYUN_SMS_MODE', 'live')
+    vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'true')
+    vi.stubEnv('ALLOW_REAL_ALIYUN_SMS_SENDS', 'false')
+    vi.stubEnv('CI', 'false')
     resetEnvForTests()
 
     const result = await createSmsProvider().sendOtp({

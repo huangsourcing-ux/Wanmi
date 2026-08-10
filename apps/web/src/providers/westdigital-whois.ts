@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 
 import { z } from 'zod'
 
@@ -6,14 +6,9 @@ import type { ProviderResult } from '@/lib/domain'
 import { normalizeDomain } from '@/lib/domain-name'
 import { getEnv } from '@/lib/env'
 import { logger as defaultLogger } from '@/lib/logging'
-import {
-  ReadQueueFullError,
-  TokenBucketReadLimiter,
-  readBoundedBody,
-} from '@/providers/read-control'
+import { ReadQueueFullError, TokenBucketReadLimiter } from '@/providers/read-control'
+import { executeWestDigitalHttpRequest } from '@/providers/westdigital-http'
 import type { PublicRegistrationProvider, PublicRegistrationRecord } from '@/providers/types'
-
-const WESTDIGITAL_WHOIS_URL = 'https://api.west.cn/api/v2/domain/'
 
 const responseSchema = z.strictObject({
   clientid: z.string().min(1).max(128),
@@ -124,12 +119,7 @@ function retryAfter(response: WestDigitalWhoisTransportResponse): number | undef
 }
 
 export class LiveWestDigitalWhoisTransport implements WestDigitalWhoisTransport {
-  private readonly fetchImpl: typeof fetch
-  private readonly now: () => number
-
   constructor(private readonly options: LiveTransportOptions) {
-    this.fetchImpl = options.fetchImpl ?? fetch
-    this.now = options.now ?? Date.now
     if (!options.username || !options.apiPassword)
       throw new Error('West Digital credentials required')
   }
@@ -137,39 +127,15 @@ export class LiveWestDigitalWhoisTransport implements WestDigitalWhoisTransport 
   async execute(
     request: WestDigitalWhoisTransportRequest,
   ): Promise<WestDigitalWhoisTransportResponse> {
-    const time = String(this.now())
-    const token = createHash('md5')
-      .update(`${this.options.username}${this.options.apiPassword}${time}`)
-      .digest('hex')
-    const response = await this.fetchImpl(WESTDIGITAL_WHOIS_URL, {
-      body: new URLSearchParams({
-        act: 'whois',
-        domain: request.domainAscii,
-        time,
-        token,
-        username: this.options.username,
-      }),
-      headers: {
-        accept: 'application/json',
-        'content-type': 'application/x-www-form-urlencoded;charset=GB2312',
-        'x-request-id': request.requestId,
+    return executeWestDigitalHttpRequest(
+      {
+        body: { act: 'whois', domain: request.domainAscii },
+        path: '/v2/domain/',
+        requestId: request.requestId,
+        signal: request.signal,
       },
-      method: 'POST',
-      redirect: 'error',
-      signal: request.signal,
-    })
-    const bytes = await readBoundedBody(response, this.options.maxResponseBytes)
-    let candidate: unknown
-    try {
-      candidate = JSON.parse(new TextDecoder('gb18030', { fatal: true }).decode(bytes)) as unknown
-    } catch {
-      candidate = undefined
-    }
-    return {
-      body: candidate,
-      headers: { 'retry-after': response.headers.get('retry-after') ?? undefined },
-      status: response.status,
-    }
+      this.options,
+    )
   }
 }
 

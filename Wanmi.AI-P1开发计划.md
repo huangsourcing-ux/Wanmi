@@ -655,6 +655,12 @@ PR #54 第四轮 Linux 证明清理修复生效，报告后约 5 秒退出；接
 
 PR #54 复审收尾（2026-08-09）：公开工具页 900 ms 门槛原按首轮 Linux p95 810.9 ms 定档，漏纳入第四轮 898.9 ms。现一致应用 8%～15% 规则，将该项改为 990 ms，保留 91.1 ms（约 10.1%）有限余量；域名 4300 ms、IDN 350 ms、TBT 150 ms、LCP 3500 ms、Performance 0.78 及其余门槛均不变。接口汇总表同步校正后续有效轮次极值；完整 `ALLOW_REAL_PROVIDER_WRITES=false make performance` 复测三组接口 p50/p95 为 236.0/236.9、984.1/3982.5、100.8/136.3 ms，错误率均为 0，三页 Performance 0.81/0.81/0.82，最差 LCP 3312.1 ms、TBT 5 ms，退出码 0。未修改 E2E、proxy 或性能脚本逻辑，3.16～3.32 秒 LCP 已知基线结论不变。
 
+D7-04 验证记录（2026-08-09）：开始前查阅仓库根目录只读《西部数码业务API接口文档（v2）新.md》，按其 `/api/v2/audit/`、`/api/v2/domain/`、`/api/v2/info/`、GB2312 表单、鉴权 token 和返回语义实现实名、注册、续费、Name Server、域名详情与余额真实 transport。HTTP 层由既有 WestDigital 读侧共同复用：固定 host/path、DNS 全地址公网分类、固定已验证 IP、TLS SNI、连接后 remote address/port 复核、无重定向、超时和响应上限均保留；写侧仍只从 `executeWestDigitalWriteOperation` 进入，继续使用唯一业务键、同事务 PostgreSQL `UPDATE ... WHERE ... RETURNING` 原子认领、有限的未提交重试、提交后状态不明只查询和事务审计。微信 Native/H5 下单、查单、关单、退款、退款查询只新增固定 API v3 路径 transport，运行时仍由 `WechatPayApiV3Adapter` 统一签名、验签和 AES-GCM 解密，通知保持先验签后解密，没有新增平行调用路径。
+
+总闸 `ALLOW_REAL_PROVIDER_WRITES` 保留并默认/CI 固定为 `false`，其下分别增加短信、KMS、私有 OSS、微信 provider 与下单/退款、西部 provider 与只读、实名/注册/续费/NS 写能力门禁；任一层关闭都返回禁用 provider、fixture 或明确拒绝，不构造 live transport，也不伪装成功。CI 在启动检查和 env 解析两层拒绝总闸为 `true`。西部写安全围栏位于 `executeWestDigitalWriteOperation` 内且早于原子认领/provider 调用：显式 ASCII 域名白名单覆盖实名/注册/续费/NS，注册+续费使用进程内唯一 operation key 计数，金额使用整数分的单笔与累计上限；微信下单/退款同样在 adapter delegate 前执行单笔与进程累计金额上限。所有上限默认 0，live 模式、provider 总闸、能力闸、白名单或上限缺失均 fail-closed。测试环境在 live factory 和 live transport 构造器两层硬拒绝，微信和西部各有“never constructs a live runtime transport”断言。
+
+变异验证分别命中三道真正承重的西部围栏并全部恢复：仅移除白名单 membership 检查后，域名用例期望 `WESTDIGITAL_WRITE_DOMAIN_NOT_ALLOWLISTED`、实际进入 transport 并返回 `WESTDIGITAL_STATUS_UNKNOWN`；仅移除注册/续费次数比较后，第二笔从期望降级变为 `ready`；同时移除单笔与累计金额比较后，超额写从期望拒绝变为 `ready`。涉及新增 fixture 清理的 PostgreSQL 集成在 `docker compose down -v` 重建后连续两轮均为 26 文件、101/101。Gitleaks 自定义规则覆盖 WestDigital API password、微信 API v3 key 和商户私钥形态；规则最初因 `\s*` 跨行把注释空占位与下一行拼接而正确使工作树扫描失败，现限制为同一行水平空白并加入回归测试，工作树与 147 个提交/约 32.70 MB 完整历史均无泄漏。最终 `ALLOW_REAL_PROVIDER_WRITES=false make check` 通过生成物/schema 漂移、全部 migration 往返、Nginx/Runbook/发布契约、lint、TypeScript strict、602/602 单元测试、101/101 PostgreSQL/MinIO 集成测试、Node audit、两类 Gitleaks、linux/amd64 镜像/Trivy 和 Next.js 生产构建。本切片没有 migration、真实 provider 请求、资金/域名/短信/云写、部署或生产数据变更；11.1 第 2 项 staging contract test 明确保留未勾选。
+
 ### 11.2 D8 P1 开发验收
 
 开发完成必须满足：
@@ -731,6 +737,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-09 | D7-01 安全硬化与降级 | 补齐 SSRF/跳转/浏览器头/上传/越权安全矩阵；完整历史 Gitleaks、linux/amd64 Trivy 和精确 GHSA 例外；六类工具真实触发 CMS、广告、分析失败仍可用 | `make check`：586/586 单元、96/96 集成、完整迁移/构建/扫描通过；136 个提交无泄漏；关键分支变异均被杀死，冗余层与初始弱断言的存活过程已记录 | D7 第 3、4、12 项完成；staging contract、真实 ECS/RDS/OSS/KMS、密钥轮换和三方对账仍未授权且未勾选 |
 | 2026-08-09 | D7-02 监控、Runbook 与发布回滚 | 复用既有聚合、审计、账本、provider operation、人工复核和 background workflow 建立九类可配置阈值监控与原子单次告警；六份可执行 Runbook；静态先行、digest 镜像、兼容迁移与回滚门禁 | `make check`：572/572 单元测试、98/98 PostgreSQL/MinIO 集成测试及完整迁移/Runbook/发布/安全/构建门禁通过；监控 CAS、mutable tag、静态晚于切流三处变异均被杀死；`ALLOW_REAL_PROVIDER_WRITES=false` | 不新增 migration；没有部署或真实 provider/OSS/KMS/registry 写入；staging、生产告警渠道、真实发布/回滚和全部基础设施演练仍待授权 |
 | 2026-08-09 | D7-03 全链路 E2E 与性能基线 | 生产构建上新增交易主干与关键失败/越权旅程；修复 CSP nonce、路径级 Referrer-Policy 与 Linux Chrome profile 清理竞态；建立跨本机/CI 的接口负载和三页 Lighthouse 门槛 | 全新库连续两轮 `make test-e2e` 42/42；履约状态门变异被杀死；本机性能最终 p95 264.9/3978.6/149.1 ms；Linux 首轮实测公开页/IDN 810.9/274.9 ms、TBT 最差 104 ms，并据此固定有限余量；本地及 Linux `make check` 594/594 单元、98/98 集成与完整门禁通过 | `ALLOW_REAL_PROVIDER_WRITES=false`，无真实 provider/外网依赖；D7 余下五项等待真实凭据或基础设施授权，未提前勾选 |
+| 2026-08-09 | D7-04 provider 写通道与分级安全围栏 | 建立 WestDigital 与微信真实 transport；总闸下细分 provider/能力开关；在既有写入口内加入域名白名单、次数与金额围栏；CI 和测试永久禁止 live transport | 西部三类围栏变异分别被杀死；全新卷连续两轮集成 101/101；`make check` 602/602 单元、101/101 集成及完整迁移/构建/工作树与 147 提交历史 Gitleaks/Trivy 门禁通过 | 全程 `ALLOW_REAL_PROVIDER_WRITES=false`，未发起真实调用；通道建成不等于 staging 联调完成，11.1 第 2 项保持未勾选 |
 
 ## 13. 范围追踪矩阵
 
