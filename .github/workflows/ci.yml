@@ -40,10 +40,8 @@ jobs:
       TOTP_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       PUBLIC_STORAGE_MODE: local
       ALIYUN_SMS_MODE: mock
-      ALIYUN_KMS_MODE: mock
       ALIYUN_OSS_REALNAME_MODE: mock
       ALLOW_REAL_PROVIDER_WRITES: 'false'
-      ALLOW_REAL_ALIYUN_KMS: 'false'
       ALLOW_REAL_ALIYUN_OSS_REALNAME: 'false'
       ALLOW_REAL_ALIYUN_SMS_SENDS: 'false'
       ALLOW_REAL_WECHATPAY: 'false'
@@ -60,6 +58,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
+      - name: Generate ephemeral real-name document master key
+        shell: bash
+        run: |
+          printf 'REALNAME_DOCUMENT_MASTER_KEY_VERSION=ci-v1\n' >> "$GITHUB_ENV"
+          printf 'REALNAME_DOCUMENT_MASTER_KEYS=ci-v1:%s\n' "$(openssl rand -base64 32 | tr -d '\n')" >> "$GITHUB_ENV"
       - run: corepack enable && corepack prepare pnpm@11.7.0 --activate
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @wanmi/web payload migrate

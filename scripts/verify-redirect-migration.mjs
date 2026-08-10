@@ -1198,6 +1198,32 @@ function verifyRealnameDocumentSchema(stage) {
   }
 }
 
+function verifyAppMasterKeySchema(stage) {
+  const schema = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'realname_documents'
+           AND column_name = 'master_key_version'
+           AND is_nullable = 'YES'
+       )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (schema !== 't') {
+    throw new Error(`D7-06 application master-key schema invalid after ${stage}: ${schema}`)
+  }
+}
+
 function verifyRealnameLifecycleSchema(stage) {
   const schema = postgres(
     [
@@ -1598,6 +1624,7 @@ try {
   verifyCustomerAuthSmsSchema('empty-database migration')
   verifyRealnameTemplateSchema('empty-database migration')
   verifyRealnameDocumentSchema('empty-database migration')
+  verifyAppMasterKeySchema('empty-database migration')
   verifyRealnameLifecycleSchema('empty-database migration')
   verifyCustomerQuoteSchema('empty-database migration')
   verifyWechatPaymentSchema('empty-database migration')
@@ -2414,10 +2441,10 @@ try {
     '--command',
     `INSERT INTO realname_documents (
        customer_id, template_id, object_key, encrypted_data_key, content_type,
-       size_bytes, sha256, updated_at, created_at
+       size_bytes, sha256, master_key_version, updated_at, created_at
      )
      SELECT customer_id, id, 'legacy/private/document', 'legacy-key', 'image/jpeg',
-            128, repeat('0', 64), NOW(), NOW()
+            128, repeat('0', 64), 'legacy-kms-unavailable', NOW(), NOW()
      FROM realname_templates
      WHERE display_name = 'legacy realname template'`,
   ])
@@ -3379,8 +3406,77 @@ try {
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
   verifyProviderWriteBudgetSchema('D7-05 historical zero backfill and down/up round trip')
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 116
+     WHERE name = '20260810_040217_d7_app_master_key';`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const appMasterKeyAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT NOT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'realname_documents'
+           AND column_name = 'master_key_version'
+       )`,
+    ],
+    { capture: true },
+  ).trim()
+  if (appMasterKeyAfterDown !== 't') {
+    throw new Error(`D7-06 migration down was incomplete: ${appMasterKeyAfterDown}`)
+  }
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE realname_documents SET storage_state = 'active'
+     WHERE object_key = 'legacy/private/document';`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyAppMasterKeySchema('D7-06 historical mock-KMS invalidation and down/up round trip')
+  const appMasterKeyBackfill = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT master_key_version || ':' || storage_state::text
+       FROM realname_documents
+       WHERE object_key = 'legacy/private/document'`,
+    ],
+    { capture: true },
+  ).trim()
+  if (appMasterKeyBackfill !== 'legacy-kms-unavailable:upload_failed') {
+    throw new Error(`D7-06 legacy mock-KMS backfill was unsafe: ${appMasterKeyBackfill}`)
+  }
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, the D6-02 commerce-fulfillment migration, the D6-03 West Digital balance-monitoring workflow migration, the D6-04 domain-asset operations migration, the D6-05 active-renewal migration, and the D7-05 provider write budget historical backfill/down-up round trips.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, the D6-02 commerce-fulfillment migration, the D6-03 West Digital balance-monitoring workflow migration, the D6-04 domain-asset operations migration, the D6-05 active-renewal migration, the D7-05 provider write budget historical backfill/down-up round trips, and the D7-06 application master-key historical invalidation/down-up round trip.\n',
   )
 } finally {
   if (created) {

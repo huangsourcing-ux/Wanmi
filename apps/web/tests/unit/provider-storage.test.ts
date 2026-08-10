@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { MockKmsProvider } from '@/providers/kms'
 import { MockRealnameObjectProvider } from '@/providers/oss-realname'
+import { unwrapDocumentDataKey, wrapDocumentDataKey } from '@/services/realname/master-key'
+
+import { createTestRealnameDocumentMasterKeyring } from '../fixtures/realname-master-key'
 
 describe('private realname storage prototype', () => {
   it('uploads, reads, signs and deletes without touching public Media storage', async () => {
@@ -19,14 +21,17 @@ describe('private realname storage prototype', () => {
   })
 
   it('keeps plaintext data keys out of the persisted ciphertext representation', async () => {
-    const kms = new MockKmsProvider()
-    const generated = await kms.generateDataKey({ traceId: 'trace-kms-1' })
-    expect(generated.ok).toBe(true)
-    if (!generated.ok) return
-    const decrypted = await kms.decryptDataKey({
-      ciphertext: generated.data.ciphertext,
-      traceId: 'trace-kms-2',
+    const keyring = createTestRealnameDocumentMasterKeyring()
+    const plaintext = new Uint8Array(32).fill(7)
+    const wrapped = wrapDocumentDataKey(plaintext, keyring)
+    expect(wrapped.encryptedDataKey).not.toContain(Buffer.from(plaintext).toString('base64url'))
+    const decrypted = unwrapDocumentDataKey({
+      encryptedDataKey: wrapped.encryptedDataKey,
+      keyring,
+      masterKeyVersion: wrapped.masterKeyVersion,
     })
-    expect(decrypted.ok && decrypted.data.plaintext).toEqual(generated.data.plaintext)
+    expect(decrypted).toEqual(Buffer.from(plaintext))
+    decrypted.fill(0)
+    plaintext.fill(0)
   })
 })

@@ -2,7 +2,7 @@
 
 ## 1. 范围与安全边界
 
-本记录覆盖开发计划 11.1 第 1、5 项。全部验证使用本地 PostgreSQL、Who-Dat、MinIO 和 provider fixture，固定 `ALLOW_REAL_PROVIDER_WRITES=false`，没有真实短信、资金、域名、OSS/KMS 或外网 provider 写入。
+本记录覆盖开发计划 11.1 第 1、5 项。全部验证使用本地 PostgreSQL、Who-Dat、MinIO 和 provider fixture，固定 `ALLOW_REAL_PROVIDER_WRITES=false`，没有真实短信、资金、域名、OSS 或外网 provider 写入；当时的证件信封仅使用本地 mock 密钥。
 
 `make test-e2e` 先构建并启动生产版 Next.js：原有 39 条回归仍以 2 workers 执行；新增 3 条交易闭环在前一项目全部通过后串行执行，避免长事务 fixture 与其他文件同时操作开发服务器。并发 CAS、幂等与单执行者语义继续由使用 `Promise.all` 和 PostgreSQL 原子 `UPDATE ... WHERE ... RETURNING` 的集成测试承担，不以顺序 E2E 冒充并发证据。
 

@@ -1,14 +1,14 @@
 # Wanmi.AI 技术栈与工程规范
 
-> 文档版本：v5.5（D5-03 支付安全澄清）
+> 文档版本：v5.6（D7-06 应用自管主密钥）
 >
-> 更新日期：2026-08-07
+> 更新日期：2026-08-10
 >
 > 状态：P1 开发已批准；生产上线附条件批准
 >
 > 适用范围：Wanmi.AI P1 Web 域名工具与代理注册平台
 >
-> 冻结基线：`P1-BASELINE-2026-08-04.1`；批准标签 `p1-docs-approved-2026-08-04-1` 待本次批准变更提交后建立
+> 冻结基线：`P1-BASELINE-2026-08-10.1`；批准标签 `p1-docs-approved-2026-08-10-1`
 
 ## 1. 技术结论
 
@@ -25,7 +25,7 @@ P1 使用单一 TypeScript 代码库：
 | 后台任务 | Payload Jobs，独立 Worker 进程 |
 | 对象存储 | 公共媒体使用 `@payloadcms/storage-s3`；实名私有文件使用 `ali-oss`；两者使用独立前缀与权限 |
 | 注册信息 | Who-Dat 独立进程负责 RDAP/WHOIS |
-| 阿里云接口 | Alibaba Cloud TypeScript SDK 调用短信与 KMS；`ali-oss` 操作实名私有对象 |
+| 阿里云接口 | Alibaba Cloud TypeScript SDK 调用短信；`ali-oss` 操作实名私有对象；不依赖阿里云 KMS |
 | 支付 | 微信支付 API v3，桌面 Native 二维码与移动 H5 |
 | 域名上游 | 西部数码 provider adapter，只允许服务端调用 |
 | 部署 | Nginx + Next.js/Payload Web + Payload Jobs Worker + Who-Dat |
@@ -78,7 +78,7 @@ Payload 不替代：
 - 手机 OTP、管理员 TOTP；
 - 微信支付验签、查单、退款和三方对账；
 - 西部数码注册、续费、实名和 NS 适配；
-- 实名文件的 OSS/KMS 安全流程；
+- 实名文件的 OSS 与版本化应用主密钥信封加密流程；
 - Wanmi 订单状态机和业务幂等。
 
 不使用 Payload Ecommerce/Stripe 插件，不以通用商品、购物车或库存模型替代域名交易模型。
@@ -95,7 +95,7 @@ apps/web/
   src/access/              # 可复用权限函数
   src/services/            # 认证、交易、provider、域名工具等业务逻辑
   src/jobs/                # Payload Jobs 任务与 workflows
-  src/providers/           # 微信、西部数码、短信、Who-Dat、OSS/KMS adapters
+  src/providers/           # 微信、西部数码、短信、Who-Dat、OSS adapters
   src/schemas/             # Zod 请求/响应 schema
   src/lib/                 # 纯函数与基础设施封装
   src/payload.config.ts
@@ -299,7 +299,8 @@ OTP 必须具备手机号、IP、设备和全局限频，防枚举响应，短�
 
 - 使用 `realnameDocuments` 私有集合和 OSS 私有前缀；
 - 使用 `ali-oss` 完成上传、读取、短时签名和删除，不自行实现 OSS 请求签名；
-- 使用 Alibaba Cloud TypeScript SDK 调用 KMS 完成信封加密，密钥与数据分离，不自行实现阿里云 API 签名；
+- 每个对象在应用内生成独立 32 字节数据密钥，以 AES-256-GCM 加密正文并在使用后清零；
+- 使用环境注入的版本化 32 字节应用主密钥包裹数据密钥，旧版本有对象引用时必须保留；主密钥版本缺失时拒绝解密，不回退 active key；
 - 只提供短时签名访问；
 - 上传、读取、下载、替换和删除全部审计；
 - 文件类型、大小、内容嗅探和恶意文件校验；
@@ -329,7 +330,7 @@ OTP 必须具备手机号、IP、设备和全局限频，防枚举响应，短�
 - 支付通知验签、重复、乱序、伪造和重放；
 - Jobs 重复执行、Worker 重启、provider 明确失败、超时、状态不明和余额不足；
 - 明确失败退款、退款失败、人工处理和三方对账；
-- DNS/TLS SSRF、上传文件、公共 `storage-s3`、私有 `ali-oss`、KMS 和证件删除；
+- DNS/TLS SSRF、上传文件、公共 `storage-s3`、私有 `ali-oss`、应用主密钥和证件删除；
 - Payload migrations、ECS 重建、Jobs 恢复和支付通知重放。
 
 ### 10.2 验证命令
@@ -373,9 +374,9 @@ OTP 必须具备手机号、IP、设备和全局限频，防枚举响应，短�
 ### 11.2 配置与密钥
 
 - 配置使用环境变量并提供无秘密的 `.env.example`；
-- Payload secret、Session pepper、TOTP 加密密钥、微信 API v3 key、商户私钥、西部数码凭据、短信凭据和 OSS/KMS 凭据不得进入 Git；
-- 支付与 provider 密钥通过 KMS/Secrets Manager 或等效受控方式保存；
-- 启动时验证关键配置，缺失则拒绝启动相关写能力；
+- Payload secret、Session pepper、TOTP 加密密钥、实名应用主密钥、微信 API v3 key、商户私钥、西部数码凭据、短信凭据和 OSS 凭据不得进入 Git；
+- 支付、provider 凭据和实名应用主密钥通过部署 secret 或等效受控方式保存；应用主密钥另有双人受控离线备份；
+- 启动时验证关键配置；实名主密钥版本、标准 Base64、精确 32 字节和 active version 任一不合法即拒绝启动；
 - 日志对手机号、身份证、证件、Cookie、验证码、支付报文和密钥脱敏。
 
 ## 12. D0 架构验证（建议 3～5 天）
@@ -389,7 +390,7 @@ D0 的 3～5 天是架构决策时间盒，不是强制截止日期。通常 D0 
 - [ ] 普通用户短信 OTP mock、opaque Session 和全部会话撤销；
 - [ ] `commerce` Job、concurrency key、事务和订单事件；
 - [ ] 公共媒体通过 `@payloadcms/storage-s3` 完成 OSS S3 兼容上传、读取、删除、签名地址和 ETag 验证；
-- [ ] 私有实名文件通过 `ali-oss` 完成上传、读取、短时签名和删除原型，并通过 Alibaba Cloud TypeScript SDK 完成 KMS mock/联调边界验证；
+- [ ] 私有实名文件通过 `ali-oss` 完成上传、读取、短时签名和删除原型，并以版本化应用主密钥完成每对象数据密钥信封加密和旧版本轮换读取验证；
 - [ ] 阿里云短信 adapter 使用 Alibaba Cloud TypeScript SDK 完成 mock、错误映射和签名边界验证；
 - [ ] 单 ECS 内存与 Web/Worker 重启恢复测试；
 - [ ] Payload Local API `overrideAccess: false` 回归测试。
@@ -404,8 +405,8 @@ D0 失败时先修正架构假设，不在业务模块中引入第二套后端�
 - 域名代理资质、Wanmi 与西部数码责任边界和页面披露方式经外部专业人员复核，页面显著标明所代理的域名注册服务机构；
 - Wanmi.net ICP 与公安联网备案完成或核验；
 - RDS 高可用、PITR 和恢复验证通过；
-- OSS 私有访问、KMS 加密、版本控制、删除和误删恢复通过；
-- 密钥轮换、最小权限和审计通过；
+- OSS 私有访问、应用主密钥信封加密、版本控制、30 天删除和误删恢复通过；
+- 应用主密钥最小读取权限、轮换、离线备份、紧急恢复和审计通过；
 - 支付告警、通知重放、退款和三方对账演练通过；
 - ECS 重建、Payload migrations、Jobs 恢复和灾难恢复演练通过；
 - 项目负责人完成最终上线批准。
@@ -442,6 +443,7 @@ D0 失败时先修正架构假设，不在业务模块中引入第二套后端�
 
 | 版本 | 日期 | 结论 |
 |---|---|---|
+| v5.6 | 2026-08-10 | D7-05 实测 KMS `AccountStatus=NotEnabled` 后，项目负责人批准移除 KMS；保留 AES-256-GCM、每对象 32 字节数据密钥和明文密钥清零，改为版本化应用主密钥包裹；如实接受服务器完整攻破可取得主密钥的防御纵深下降，并把注入、轮换、离线备份和紧急恢复保留为生产硬门槛 |
 | v5.5 | 2026-08-07 | 按项目负责人 D5-03 资金安全指令，明确经验签通知触发的主动查单状态不明，或查单确认到账但金额/标识不一致时，允许 `pending_payment → manual_review`；其他交易状态、退款和上线门槛不变 |
 | v5.4 | 2026-08-04 | 项目负责人批准 D0 条件通过并进入 D1；仅将共享 ECS 的资源、重启、同 VPC Jobs 恢复、重建和 RTO 验证转入 D7，其他架构和生产门槛不变 |
 | v5.3 | 2026-08-03 | 项目负责人批准将 Next.js 从 16.2.6 更新至修复 4 个 high 安全公告的 16.2.11；Payload 与全部官方插件继续精确锁定 3.86.0，产品范围、交易规则、工期与上线门槛不变 |

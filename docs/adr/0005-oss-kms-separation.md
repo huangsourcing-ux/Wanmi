@@ -1,14 +1,28 @@
-# ADR-0005：公共 OSS 与私有实名存储分离
+# ADR-0005：公共 OSS、私有实名存储与应用主密钥分离
 
-- 状态：D0 公共与私有存储路径通过
-- 日期：2026-08-03；真实 OSS 验证更新：2026-08-04
+- 状态：已批准；D7-06 冻结项变更已落实
+- 日期：2026-08-03；真实 OSS 验证更新：2026-08-04；主密钥决策更新：2026-08-10
+
+## 背景
+
+D4-03 原决策由阿里云 KMS `GenerateDataKey`/`Decrypt` 提供每对象数据密钥。D7-05 在目标账号实测 `DescribeAccountKmsStatus` 返回 `AccountStatus=NotEnabled`，项目负责人于 2026-08-10 明确指示不再提供 KMS，并批准按冻结项变更流程改为应用自管主密钥。生产尚无真实实名证件数据。
 
 ## 决策
 
-公共内容只进入 Payload `media` Collection，由 `@payloadcms/storage-s3` 写入 `public/media` 前缀。实名证件不进入 Media，使用 `ali-oss` adapter 写独立 Bucket/私有前缀；每个对象保存 KMS 加密的数据密钥、摘要和元数据。
+公共内容只进入 Payload `media` Collection，由 `@payloadcms/storage-s3` 写入 `public/media` 前缀。实名证件不进入 Media，使用 `ali-oss` adapter 写独立 Bucket/私有前缀。
 
-私有访问只返回短时签名地址，上传、访问、替换和删除写审计。公共与私有 provider 接口不可互换。SDK live mode 缺配置时安全失败，且 `ALLOW_REAL_PROVIDER_WRITES=false` 时禁止真实调用。
+实名证件继续使用信封加密：应用为每个对象调用 `randomBytes(32)` 生成独立数据密钥，以 AES-256-GCM 加密正文并在使用后清零明文数据密钥；环境注入的版本化 32 字节应用主密钥再以 AES-256-GCM 包裹数据密钥。对象和受限数据库记录同时保存加密数据密钥、主密钥版本、IV、认证标签、摘要和元数据。轮换时新增主密钥版本并切换 active version，旧版本在仍有对象引用时必须保留，禁止缺失版本时回退到当前主密钥。
+
+主密钥只通过 Web/Worker 运行环境的受控 secret 注入，启动时校验版本、标准 Base64 编码和解码后精确 32 字节；`.env.example` 只保留注释占位键名。私有访问只返回短时签名地址，上传、访问、替换和删除写审计。公共与私有 OSS provider 接口不可互换；`ALLOW_REAL_PROVIDER_WRITES=false` 时继续禁止真实 OSS 调用，但应用内加解密不依赖该 provider 写闸。
+
+## 后果与威胁模型
+
+保留的安全属性是：OSS 或数据库单独泄露时，攻击者只能获得证件密文和被包裹的数据密钥；每对象数据密钥、AES-256-GCM 完整性校验和明文密钥清零不变。
+
+失去的防御纵深必须如实接受：主密钥现在进入应用运行配置，服务器或部署 secret 完整攻破后，攻击者可以取得主密钥并解密仍由该版本保护的对象；不再具有 KMS 不导出主密钥、独立 KMS 权限边界、服务端审计和禁用密钥的隔离能力。因此生产上线前必须完成应用 secret 最小权限、双人受控备份、轮换、紧急恢复、日志防泄漏和节点重建演练。主密钥一旦永久丢失，对应版本对象不可恢复。
+
+历史本地/测试对象由进程内随机 mock KMS key 包裹，该 key 未持久化，不能安全转换为新格式。migration `20260810_040217_d7_app_master_key` 将此类已有记录标为 `masterKeyVersion=legacy-kms-unavailable` 且 `storageState=upload_failed`，明确废弃并等待既有清理流程删除；不尝试伪造可读或静默回退。生产尚无真实数据，因此没有生产对象迁移。
 
 ## 验证状态
 
-MinIO 已覆盖公共上传、读取、删除、签名地址和 ETag；注入式 `ali-oss` client 与 KMS mock 覆盖私有上传、读取、签名和删除。2026-08-04 在专用私有 D0 Bucket 完成真实 `storage-s3` 与 `ali-oss` 上传、读取、ETag、60 秒签名、删除及清理验证。真实 KMS 密钥验证仍属于后续实名功能和生产上线门槛，不影响本次仅延期 ECS 运行环境验证的 D0 条件通过决定。
+MinIO 已覆盖公共上传、读取、删除、签名地址和 ETag；注入式 `ali-oss` client 覆盖私有上传、读取、签名和删除。2026-08-04 在专用私有 D0 Bucket 完成真实 `storage-s3` 与 `ali-oss` 上传、读取、ETag、60 秒签名、删除及清理验证。D7-06 自动化覆盖每对象数据密钥、GCM tag、主密钥版本拒绝、旧版本轮换后可读、配置启动校验和历史 mock 对象安全失效；真实 OSS、生产 secret 注入、轮换和紧急恢复演练仍属于生产上线门槛。

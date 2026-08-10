@@ -29,7 +29,7 @@ describe('D7 repository security gates', () => {
     expect(historyConfig).not.toContain('.env.local')
   })
 
-  it('keeps provider-secret assignments on one line so empty placeholders stay valid', () => {
+  it('keeps secret assignments on one line and covers the document master-key shape', () => {
     const expectedAssignmentWhitespace = String.raw`[ \t]*=[ \t]*`
     const crossLineAssignmentWhitespace = String.raw`\s*=\s*`
     const example = source('.env.example')
@@ -44,6 +44,13 @@ describe('D7 repository security gates', () => {
       expect(example).toContain(`# ${key}=`)
     }
     expect(example).toContain('# WECHATPAY_MERCHANT_PRIVATE_KEY_PATH=')
+    expect(example).toContain('# REALNAME_DOCUMENT_MASTER_KEYS=')
+    expect(example).toContain('# REALNAME_DOCUMENT_MASTER_KEY_VERSION=')
+    expect(example).not.toMatch(/^REALNAME_DOCUMENT_MASTER_KEYS=/mu)
+    for (const configPath of ['.gitleaks.toml', '.gitleaks-history.toml']) {
+      expect(source(configPath)).toContain('wanmi-realname-master-key-assignment')
+      expect(source(configPath)).toContain('REALNAME_DOCUMENT_MASTER_KEYS')
+    }
   })
 
   it('fails the linux/amd64 image scan on HIGH or CRITICAL findings', () => {

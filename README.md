@@ -114,7 +114,7 @@ make verify-oss-real
 - 浏览器业务写入仅通过 `/api/v1`；Payload Admin 和官方表单插件按其明确边界运行。
 - 代表用户调用 Local API 必须使用 `findAsUser`，它固定 `overrideAccess: false`。
 - commerce Job 的唯一键是 provider operation key；已提交或未知状态不会自动重提。
-- 公共 Media 使用 Storage S3；实名文件使用独立 `ali-oss` adapter 和 KMS 数据密钥。
+- 公共 Media 使用 Storage S3；实名文件使用独立 `ali-oss` adapter、每对象数据密钥和版本化应用主密钥信封加密。
 - 当前云授权只覆盖专用 D0 OSS/RDS 隔离验证与 ECS 只读盘点；不允许在承载现有项目的 ECS 上部署、压测、重启或重建，也不允许发送真实短信、执行资金或域名写操作。
 
 更多说明见 [ADR 目录](docs/adr) 和 [运维目录](docs/operations)。

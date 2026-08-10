@@ -10,6 +10,7 @@ const runbooks = [
   'realname-leak.md',
   'provider-outage.md',
   'emergency-sales-stop.md',
+  'realname-master-key.md',
 ]
 const requiredHeadings = ['触发信号', '影响判定', '处置步骤', '不可做', '事后审计']
 
@@ -68,6 +69,11 @@ const requiredCodeReferences = [
     'docs/operations/emergency-sales-stop.md',
     'apps/web/src/services/commerce/balance-control.ts',
     'updateBalanceControl',
+  ],
+  [
+    'docs/operations/realname-master-key.md',
+    'apps/web/src/services/realname/master-key.ts',
+    'createRealnameDocumentMasterKeyring',
   ],
 ]
 

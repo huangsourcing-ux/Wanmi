@@ -24,20 +24,24 @@ ENV DATABASE_URL=postgresql://build:build@127.0.0.1:5432/build
 ENV NEXT_PUBLIC_SERVER_URL=http://127.0.0.1:3000
 ENV PUBLIC_STORAGE_MODE=local
 ENV ALIYUN_SMS_MODE=mock
-ENV ALIYUN_KMS_MODE=mock
 ENV ALIYUN_OSS_REALNAME_MODE=mock
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY --from=dependencies /app/apps/web/node_modules ./apps/web/node_modules
 COPY . .
 RUN --mount=type=cache,id=wanmi-pnpm-store,target=/pnpm/store \
     --mount=type=cache,id=wanmi-pnpm-metadata,target=/root/.cache/pnpm \
+    WANMI_BUILD_REALNAME_KEY="$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))")" && \
     PAYLOAD_SECRET=build-only-payload-secret-32-bytes \
     SESSION_PEPPER=build-only-session-pepper-32-bytes \
     TOTP_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+    REALNAME_DOCUMENT_MASTER_KEY_VERSION=build-v1 \
+    REALNAME_DOCUMENT_MASTER_KEYS="build-v1:${WANMI_BUILD_REALNAME_KEY}" \
     pnpm --filter @wanmi/web generate && \
     PAYLOAD_SECRET=build-only-payload-secret-32-bytes \
     SESSION_PEPPER=build-only-session-pepper-32-bytes \
     TOTP_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+    REALNAME_DOCUMENT_MASTER_KEY_VERSION=build-v1 \
+    REALNAME_DOCUMENT_MASTER_KEYS="build-v1:${WANMI_BUILD_REALNAME_KEY}" \
     pnpm --filter @wanmi/web build && \
     pnpm --filter @wanmi/web deploy --prod --legacy --offline /runtime && \
     rm -rf \

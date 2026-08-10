@@ -8,6 +8,13 @@ regex = '''(?i)(WESTDIGITAL_API_PASSWORD|WECHATPAY_API_V3_KEY|WECHATPAY_MERCHANT
 secretGroup = 2
 keywords = ["WESTDIGITAL_API_PASSWORD", "WECHATPAY_API_V3_KEY", "WECHATPAY_MERCHANT_PRIVATE_KEY"]
 
+[[rules]]
+id = "wanmi-realname-master-key-assignment"
+description = "Wanmi real-name document master keys must never be assigned in committed history"
+regex = '''(?i)(REALNAME_DOCUMENT_MASTER_KEYS)[ \t]*=[ \t]*["']?([A-Za-z0-9][A-Za-z0-9._-]{0,63}:[A-Za-z0-9+/]{43}=)'''
+secretGroup = 2
+keywords = ["REALNAME_DOCUMENT_MASTER_KEYS"]
+
 [allowlist]
 description = "Generated artifacts excluded from committed-history secret evidence"
 paths = [

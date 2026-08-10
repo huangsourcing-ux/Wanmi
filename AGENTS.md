@@ -2,7 +2,7 @@
 
 本文件是 Wanmi.AI 仓库内 Codex/AI 开发代理的执行规范。适用于仓库根目录及全部子目录；更深目录如有 `AGENTS.md`，只可补充局部约束，不得放宽本文件的产品、安全和上线门槛。
 
-当前项目负责人批准并冻结的 P1 文档基线为 `P1-BASELINE-2026-08-08.1`，对应已落库批准标签 `p1-docs-approved-2026-08-08-1`。本基线在上一基线 `P1-BASELINE-2026-08-04.1`（标签 `p1-docs-approved-2026-08-04-1`）之上，仅包含一项冻结项变更：经项目负责人于 2026-08-08 明确追认，订单合法迁移矩阵新增 `pending_payment → manual_review`，适用于经验签通知触发的主动查单状态不明，或查单确认到账但金额/商户订单号/交易号不一致的情形；对应文档为 `Wanmi.AI-技术栈.md` v5.5 第 6.1 节与 ADR-0004。其他冻结项（P1 范围、固定架构、其余订单状态与迁移、退款规则、实名归属、12～16 周工期口径、生产上线门槛）一律不变。
+当前项目负责人批准并冻结的 P1 文档基线为 `P1-BASELINE-2026-08-10.1`，对应批准标签 `p1-docs-approved-2026-08-10-1`。本基线在上一基线 `P1-BASELINE-2026-08-08.1`（标签 `p1-docs-approved-2026-08-08-1`）之上包含一项冻结项变更：D7-05 实测阿里云 KMS `AccountStatus=NotEnabled` 后，项目负责人于 2026-08-10 明确指示移除 KMS，实名证件保留每对象 32 字节数据密钥与 AES-256-GCM 信封加密，改由环境注入的版本化应用主密钥包裹数据密钥；对应文档为 `Wanmi.AI-技术栈.md` v5.6 与 ADR-0005。上一基线已批准的 `pending_payment → manual_review` 及其他冻结项（P1 范围、其余固定架构、其余订单状态与迁移、退款规则、实名归属、12～16 周工期口径和生产上线门槛）不变；上线门槛中的加密要求仅将 KMS 实现替换为应用主密钥注入、轮换和紧急恢复。
 
 ## 1. 项目目标
 
@@ -94,7 +94,7 @@ P1 以产品完成度、工具使用量、注册成功率、状态明确率和�
 - Payload Jobs；Web 与独立 Worker 使用同一镜像；
 - Tailwind CSS + shadcn/ui；共享 Zod request/response schemas；
 - 阿里云 OSS；公共媒体使用 `@payloadcms/storage-s3`，私有实名文件使用 `ali-oss`，两者分离；
-- 阿里云短信和 KMS 使用 Alibaba Cloud TypeScript SDK，不自行实现阿里云 API 签名；
+- 阿里云短信使用 Alibaba Cloud TypeScript SDK；实名证件使用环境注入的版本化应用主密钥完成信封加密；
 - Who-Dat 负责 RDAP/WHOIS；
 - Nginx + Next.js/Payload + Payload Jobs Worker + Who-Dat。
 
@@ -253,7 +253,7 @@ cancelled
 - `whodat`：RDAP/WHOIS；
 - `oss-public`：通过 `@payloadcms/storage-s3` 管理公共媒体；
 - `oss-realname`：通过 `ali-oss` 管理私有证件对象；
-- `kms`：通过 Alibaba Cloud TypeScript SDK 完成信封加密和密钥轮换。
+- `realname/master-key`：使用版本化应用主密钥包裹每对象随机数据密钥；旧版本有对象引用时必须保留。
 
 凡涉及西部数码 API 的调研、字段映射、fixture/mock、transport、错误映射、联调或代码审核，开始前必须先查阅仓库根目录的本地文档 `西部数码业务API接口文档（v2）新.md`，并以该文档作为当前项目的西部数码接口依据。不得凭记忆、网络搜索结果或其他项目实现猜测 URL、请求字段、响应字段、价格单位、鉴权或错误语义；文档缺失、描述不明确或与现有实现冲突时，停止相关实现并向项目负责人确认。该本地文档仅供只读参考，不因本规则自动纳入版本控制，也不构成真实接口、真实凭据或写操作授权。
 
@@ -265,7 +265,7 @@ cancelled
 - DNS/TLS/URL 查询防 SSRF：阻止 loopback、私网、link-local、元数据地址和重绑定；
 - 限制超时、响应大小、记录数、并发和允许端口；
 - Unicode 域名规范化并显示 Punycode；
-- 实名文件使用独立私有 Collection、OSS 私有前缀和 KMS 信封加密；
+- 实名文件使用独立私有 Collection、OSS 私有前缀和版本化应用主密钥信封加密；
 - 证件只允许短时访问，访问、替换和删除全审计；
 - 删除模板或注销后 30 天内清理主存储和备份；
 - 日志不得包含完整手机号、身份证号、Cookie、OTP、证件、私钥、支付密钥或 provider secret；
@@ -292,7 +292,7 @@ cancelled
 - 支付重复/乱序/伪造通知；
 - Job 重复、Worker 重启和 provider 超时；
 - 自动退款、退款失败、人工复核和三方对账；
-- DNS/TLS SSRF、上传、OSS/KMS、证件删除；
+- DNS/TLS SSRF、上传、OSS/应用主密钥、证件删除；
 - Payload migrations、节点重建和通知重放。
 
 “完成”必须同时满足：功能符合 PRD、权限和错误路径完整、测试通过、迁移/类型已同步、日志可审计、相关开发计划已更新。只实现 happy path 不算完成。
@@ -308,7 +308,7 @@ cancelled
 - customer SMS OTP mock、opaque Session 和全部撤销；
 - `commerce` Job、concurrency key、事务和状态事件；
 - 公共媒体 `storage-s3` 的 OSS S3 兼容上传、读取、删除、签名地址和 ETag；
-- 私有实名文件 `ali-oss` 与 KMS SDK 的上传、加密、短时访问和删除原型；
+- 私有实名文件 `ali-oss` 与版本化应用主密钥的上传、信封加密、短时访问和删除原型；
 - 单 ECS 内存、重启和 Jobs 恢复；
 - `overrideAccess: false` 权限测试。
 
@@ -330,7 +330,7 @@ D0 未通过时修正假设，不引入第二套后端作为绕过。
 - 域名代理资质、Wanmi 与西部数码责任边界和页面披露方式经外部专业人员复核，页面显著标明所代理的域名注册服务机构；
 - ICP 与公安联网备案；
 - RDS HA、PITR 和恢复验证；
-- OSS/KMS、版本控制、删除和误删恢复；
+- OSS 私有访问、应用主密钥信封加密、版本控制、删除和误删恢复；
 - 密钥轮换、支付告警和三方对账；
 - ECS 重建、Payload migrations、Jobs 恢复和支付通知重放演练；
 - 项目负责人最终批准。

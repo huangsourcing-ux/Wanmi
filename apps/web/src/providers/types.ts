@@ -104,16 +104,6 @@ export type SmsFailureCategory =
   | 'template_unapproved'
   | 'unknown'
 
-export interface KmsProvider extends HealthAwareProvider {
-  decryptDataKey(input: {
-    ciphertext: string
-    traceId: string
-  }): Promise<ProviderResult<{ plaintext: Uint8Array }>>
-  generateDataKey(input: {
-    traceId: string
-  }): Promise<ProviderResult<{ ciphertext: string; plaintext: Uint8Array }>>
-}
-
 export interface RealnameObjectProvider extends HealthAwareProvider {
   deleteObject(input: { key: string; traceId: string }): Promise<ProviderResult<{ deleted: true }>>
   read(input: {

@@ -14,6 +14,13 @@
       "phase": "expand",
       "reason": "新增独立预算与幂等扣减表；旧代码忽略新表，新代码在迁移完成后才启用数据库预算围栏。",
       "rollback": "retain"
+    },
+    "20260810_040217_d7_app_master_key": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增可空主密钥版本列并失效历史 mock KMS 对象；旧代码可忽略该列，新代码仅写入带版本的新对象。",
+      "rollback": "retain"
     }
   }
 }
