@@ -6,6 +6,9 @@ import type { ProviderError, ProviderResult } from '@/lib/domain'
 import { normalizeDomain, type NormalizedDomain } from '@/lib/domain-name'
 import { getEnv } from '@/lib/env'
 import { logger as defaultLogger } from '@/lib/logging'
+import { assertLiveRuntimeTransportAllowed } from '@/lib/provider-write-guardrails'
+import { FixtureWestDigitalTransport } from '@/providers/westdigital-fixtures'
+import { LiveWestDigitalTransport } from '@/providers/westdigital-live'
 
 import { mockSuccess } from './mock'
 import type {
@@ -794,4 +797,38 @@ export class MockWestDigitalProvider implements DomainOperationProvider {
   async submitOperation(input: { operationKey: string; traceId: string }) {
     return mockSuccess({ providerRequestId: `mock-${input.operationKey}` })
   }
+}
+
+export function createConfiguredWestDigitalReadProvider(
+  options: {
+    liveTransportFactory?: () => WestDigitalReadTransport
+    logger?: WestDigitalLogger
+  } = {},
+): WestDigitalReadAdapter {
+  const env = getEnv()
+  if (env.WESTDIGITAL_MODE === 'fixture') {
+    return new WestDigitalReadAdapter({
+      ...(options.logger ? { logger: options.logger } : {}),
+      transport: new FixtureWestDigitalTransport(),
+    })
+  }
+  if (
+    !env.ALLOW_REAL_PROVIDER_WRITES ||
+    !env.ALLOW_REAL_WESTDIGITAL ||
+    !env.ALLOW_REAL_WESTDIGITAL_READS
+  ) {
+    throw new Error(
+      'West Digital live reads require the total, provider, and read-query safety gates',
+    )
+  }
+  if (!env.WESTDIGITAL_USERNAME || !env.WESTDIGITAL_API_PASSWORD) {
+    throw new Error('West Digital live read credentials are missing')
+  }
+  assertLiveRuntimeTransportAllowed('westdigital')
+  return new WestDigitalReadAdapter({
+    ...(options.logger ? { logger: options.logger } : {}),
+    transport: options.liveTransportFactory
+      ? options.liveTransportFactory()
+      : new LiveWestDigitalTransport(),
+  })
 }

@@ -31,6 +31,7 @@
     "typecheck": "tsc --noEmit",
     "verify-generated": "node scripts/verify-generated.mjs",
     "verify:cloud:oss": "tsx scripts/verify-real-oss.ts",
+    "verify:providers:read-contracts": "tsx --env-file=.env.local scripts/verify-provider-read-contracts.ts",
     "worker": "cross-env NODE_OPTIONS=--no-deprecation payload jobs:run --cron '* * * * *' --all-queues --limit 1 --handle-schedules"
   },
   "dependencies": {

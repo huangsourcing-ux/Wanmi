@@ -310,6 +310,8 @@ describe('D1 administrator navigation groups', () => {
     priceRules: ADMIN_GROUPS.commerce,
     priceSnapshots: ADMIN_GROUPS.commerce,
     providerOperations: ADMIN_GROUPS.fulfillment,
+    providerWriteBudgetDebits: ADMIN_GROUPS.fulfillment,
+    providerWriteBudgets: ADMIN_GROUPS.fulfillment,
     quotes: ADMIN_GROUPS.commerce,
     realnameDocuments: ADMIN_GROUPS.realname,
     realnameTemplates: ADMIN_GROUPS.realname,

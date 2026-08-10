@@ -2,8 +2,7 @@ import config from '@payload-config'
 import { getPayload } from 'payload'
 
 import { AppError, getTraceId, problemResponse, successResponse } from '@/lib/errors'
-import { FixtureWestDigitalTransport } from '@/providers/westdigital-fixtures'
-import { WestDigitalReadAdapter } from '@/providers/westdigital'
+import { createConfiguredWestDigitalReadProvider } from '@/providers/westdigital'
 import type { WestDigitalReadProvider } from '@/providers/types'
 import { quoteCreateRequestSchema, quoteCreationResultSchema } from '@/schemas/quotes'
 import { runtimeProviderObservability } from '@/services/observability/runtime'
@@ -23,9 +22,8 @@ import type { PricingRule } from '@/services/pricing/price-calculation'
 export const runtime = 'nodejs'
 
 const MAX_REQUEST_BODY_BYTES = 4_096
-const provider = new WestDigitalReadAdapter({
+const provider = createConfiguredWestDigitalReadProvider({
   logger: runtimeProviderObservability.logger,
-  transport: new FixtureWestDigitalTransport(),
 })
 
 type QuotePostDependencies = {

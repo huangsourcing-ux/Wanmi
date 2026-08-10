@@ -1,0 +1,484 @@
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
+
+import { getEnv } from '../src/lib/env'
+import type { ProviderResult } from '../src/lib/domain'
+import { validateAliyunSmsLiveConfiguration } from '../src/providers/aliyunsms'
+import { createKmsProvider } from '../src/providers/kms'
+import { createRealnameObjectProvider } from '../src/providers/oss-realname'
+import {
+  createConfiguredWestDigitalBalanceProvider,
+  type WestDigitalBalanceTransport,
+  type WestDigitalBalanceTransportRequest,
+  type WestDigitalBalanceTransportResponse,
+} from '../src/providers/westdigital-balance'
+import { LiveWestDigitalTransport } from '../src/providers/westdigital-live'
+import {
+  createConfiguredWestDigitalReadProvider,
+  type WestDigitalReadTransport,
+  type WestDigitalTransportRequest,
+  type WestDigitalTransportResponse,
+} from '../src/providers/westdigital'
+import { createConfiguredWestDigitalWriteAdapter } from '../src/providers/westdigital-write-fixtures'
+import type {
+  WestDigitalWriteTransport,
+  WestDigitalWriteTransportRequest,
+  WestDigitalWriteTransportResponse,
+} from '../src/providers/westdigital-write'
+import { createConfiguredWechatPayProvider } from '../src/providers/wechatpay'
+import { LiveWechatPayTransport } from '../src/providers/wechatpay-live'
+import type {
+  WechatPayTransport,
+  WechatPayTransportRequest,
+  WechatPayTransportResponse,
+} from '../src/providers/wechatpay'
+
+type ContractObservation = {
+  actualFieldPaths: string[]
+  adapterErrorCode?: string
+  adapterOk?: boolean
+  durationMs: number
+  interface: string
+  mappedFieldPaths?: string[]
+  providerCode?: string
+  requestIdHash?: string
+  status?: number
+  transportErrorCode?: string
+}
+
+type WestDigitalRequest =
+  | WestDigitalBalanceTransportRequest
+  | WestDigitalTransportRequest
+  | WestDigitalWriteTransportRequest
+type WestDigitalResponse =
+  | WestDigitalBalanceTransportResponse
+  | WestDigitalTransportResponse
+  | WestDigitalWriteTransportResponse
+
+const acknowledgement = 'D7-05-READ-ONLY'
+const observations: ContractObservation[] = []
+const failures: Array<{ code: string; interface: string }> = []
+
+function required(name: string): string {
+  const value = process.env[name]?.trim()
+  if (!value) throw new Error(`Missing required read-contract setting: ${name}`)
+  return value
+}
+
+function assert(condition: unknown, message: string): asserts condition {
+  if (!condition) throw new Error(message)
+}
+
+function assertProviderOk<T>(
+  result: ProviderResult<T>,
+  interfaceName: string,
+): asserts result is Extract<ProviderResult<T>, { ok: true }> {
+  if (!result.ok) throw new Error(`${interfaceName} failed: ${result.error.code}`)
+}
+
+function roundedDuration(startedAt: number): number {
+  return Math.round((performance.now() - startedAt) * 10) / 10
+}
+
+function requestIdHash(value: string | undefined): string | undefined {
+  return value ? createHash('sha256').update(value).digest('hex').slice(0, 16) : undefined
+}
+
+function fieldPaths(value: unknown, prefix = ''): string[] {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return prefix ? [`${prefix}[]`] : ['[]']
+    return [...new Set(value.flatMap((item) => fieldPaths(item, `${prefix}[]`)))].sort()
+  }
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>)
+      .flatMap(([key, child]) => fieldPaths(child, prefix ? `${prefix}.${key}` : key))
+      .sort()
+  }
+  return prefix ? [prefix] : []
+}
+
+function providerCode(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object') return undefined
+  const candidate = body as { code?: unknown; result?: unknown }
+  const value = candidate.code ?? candidate.result
+  return typeof value === 'string' || typeof value === 'number' ? String(value) : undefined
+}
+
+function mappedResult<T>(result: ProviderResult<T>): {
+  adapterErrorCode?: string
+  adapterOk: boolean
+  mappedFieldPaths?: string[]
+  requestIdHash?: string
+} {
+  return result.ok
+    ? {
+        adapterOk: true,
+        mappedFieldPaths: fieldPaths(result.data),
+        ...(requestIdHash(result.requestId)
+          ? { requestIdHash: requestIdHash(result.requestId) }
+          : {}),
+      }
+    : {
+        adapterErrorCode: result.error.code,
+        adapterOk: false,
+        ...(requestIdHash(result.requestId)
+          ? { requestIdHash: requestIdHash(result.requestId) }
+          : {}),
+      }
+}
+
+function westDigitalInterface(request: WestDigitalRequest): string {
+  if ('operation' in request) {
+    if (request.operation === 'asset_query') return 'westdigital.domain_detail'
+    return `westdigital.${request.operation}`
+  }
+  return 'westdigital.balance'
+}
+
+class RecordingWestDigitalTransport
+  implements WestDigitalBalanceTransport, WestDigitalReadTransport, WestDigitalWriteTransport
+{
+  constructor(private readonly delegate: LiveWestDigitalTransport) {}
+
+  async execute(
+    request: WestDigitalBalanceTransportRequest,
+  ): Promise<WestDigitalBalanceTransportResponse>
+  async execute(request: WestDigitalTransportRequest): Promise<WestDigitalTransportResponse>
+  async execute(
+    request: WestDigitalWriteTransportRequest,
+  ): Promise<WestDigitalWriteTransportResponse>
+  async execute(request: WestDigitalRequest): Promise<WestDigitalResponse> {
+    const startedAt = performance.now()
+    const name = westDigitalInterface(request)
+    try {
+      const response = await this.delegate.execute(request)
+      observations.push({
+        actualFieldPaths: fieldPaths(response.body),
+        durationMs: roundedDuration(startedAt),
+        interface: name,
+        ...(providerCode(response.body) ? { providerCode: providerCode(response.body) } : {}),
+        status: response.status,
+      })
+      return response
+    } catch (error) {
+      observations.push({
+        actualFieldPaths: [],
+        durationMs: roundedDuration(startedAt),
+        interface: name,
+        transportErrorCode:
+          error && typeof error === 'object' && 'code' in error
+            ? String((error as { code: unknown }).code)
+            : 'UNAVAILABLE',
+      })
+      throw error
+    }
+  }
+
+  attachMapped<T>(name: string, result: ProviderResult<T>): void {
+    const observation = [...observations]
+      .reverse()
+      .find((candidate) => candidate.interface === name)
+    if (!observation) throw new Error(`Missing transport observation for ${name}`)
+    Object.assign(observation, mappedResult(result))
+  }
+}
+
+class RecordingWechatPayTransport implements WechatPayTransport {
+  constructor(private readonly delegate: LiveWechatPayTransport) {}
+
+  async request(input: WechatPayTransportRequest): Promise<WechatPayTransportResponse> {
+    const startedAt = performance.now()
+    try {
+      const response = await this.delegate.request(input)
+      let body: unknown
+      try {
+        body = response.body ? (JSON.parse(response.body) as unknown) : {}
+      } catch {
+        body = undefined
+      }
+      observations.push({
+        actualFieldPaths: fieldPaths(body),
+        durationMs: roundedDuration(startedAt),
+        interface: 'wechatpay.order_query',
+        ...(providerCode(body) ? { providerCode: providerCode(body) } : {}),
+        status: response.status,
+      })
+      return response
+    } catch (error) {
+      observations.push({
+        actualFieldPaths: [],
+        durationMs: roundedDuration(startedAt),
+        interface: 'wechatpay.order_query',
+        transportErrorCode:
+          error && typeof error === 'object' && 'code' in error
+            ? String((error as { code: unknown }).code)
+            : 'UNAVAILABLE',
+      })
+      throw error
+    }
+  }
+
+  attachMapped<T>(result: ProviderResult<T>): void {
+    const observation = [...observations]
+      .reverse()
+      .find((candidate) => candidate.interface === 'wechatpay.order_query')
+    if (!observation) throw new Error('Missing Wechat Pay transport observation')
+    Object.assign(observation, mappedResult(result))
+  }
+}
+
+function assertReadOnlyPreflight(): void {
+  assert(
+    process.env.RUN_REAL_PROVIDER_READ_CONTRACTS === acknowledgement,
+    `RUN_REAL_PROVIDER_READ_CONTRACTS must equal ${acknowledgement}`,
+  )
+  assert(!/^(?:1|true)$/iu.test(process.env.CI ?? ''), 'Real contracts are forbidden in CI')
+
+  const env = getEnv()
+  assert(env.ALLOW_REAL_PROVIDER_WRITES, 'The temporary total provider gate must be enabled')
+  assert(env.ALLOW_REAL_WESTDIGITAL, 'West Digital provider gate must be enabled')
+  assert(env.ALLOW_REAL_WESTDIGITAL_READS, 'West Digital read gate must be enabled')
+  assert(env.ALLOW_REAL_WECHATPAY, 'Wechat Pay provider gate must be enabled')
+  assert(env.ALLOW_REAL_ALIYUN_KMS, 'KMS contract gate must be enabled')
+  assert(env.ALLOW_REAL_ALIYUN_OSS_REALNAME, 'Private OSS contract gate must be enabled')
+
+  const forbiddenWriteGates: Array<[boolean, string]> = [
+    [env.ALLOW_REAL_ALIYUN_SMS_SENDS, 'ALLOW_REAL_ALIYUN_SMS_SENDS'],
+    [env.ALLOW_REAL_WECHATPAY_PAYMENTS, 'ALLOW_REAL_WECHATPAY_PAYMENTS'],
+    [env.ALLOW_REAL_WECHATPAY_REFUNDS, 'ALLOW_REAL_WECHATPAY_REFUNDS'],
+    [env.ALLOW_REAL_WESTDIGITAL_REALNAME_WRITES, 'ALLOW_REAL_WESTDIGITAL_REALNAME_WRITES'],
+    [env.ALLOW_REAL_WESTDIGITAL_REGISTRATION_WRITES, 'ALLOW_REAL_WESTDIGITAL_REGISTRATION_WRITES'],
+    [env.ALLOW_REAL_WESTDIGITAL_RENEWAL_WRITES, 'ALLOW_REAL_WESTDIGITAL_RENEWAL_WRITES'],
+    [env.ALLOW_REAL_WESTDIGITAL_NAMESERVER_WRITES, 'ALLOW_REAL_WESTDIGITAL_NAMESERVER_WRITES'],
+  ]
+  const enabledWriteGates = forbiddenWriteGates.filter(([enabled]) => enabled).map(([, key]) => key)
+  assert(
+    enabledWriteGates.length === 0,
+    `Read-only preflight rejected enabled write gates: ${enabledWriteGates.join(', ')}`,
+  )
+  assert(env.WESTDIGITAL_MODE === 'live', 'WESTDIGITAL_MODE must be live')
+  assert(env.WECHATPAY_MODE === 'live', 'WECHATPAY_MODE must be live')
+  assert(env.ALIYUN_KMS_MODE === 'live', 'ALIYUN_KMS_MODE must be live')
+  assert(env.ALIYUN_OSS_REALNAME_MODE === 'live', 'ALIYUN_OSS_REALNAME_MODE must be live')
+  assert(env.ALIYUN_SMS_MODE === 'live', 'ALIYUN_SMS_MODE must be live')
+}
+
+async function runCheck(name: string, execute: () => Promise<void>): Promise<void> {
+  try {
+    await execute()
+  } catch (error) {
+    failures.push({
+      code: error instanceof Error ? error.name : 'UNKNOWN',
+      interface: name,
+    })
+  }
+}
+
+async function verifyWestDigital(): Promise<void> {
+  const lookupDomain = required('WESTDIGITAL_READ_CONTRACT_LOOKUP_DOMAIN')
+  const assetDomain = required('WESTDIGITAL_READ_CONTRACT_ASSET_DOMAIN')
+  const transport = new RecordingWestDigitalTransport(new LiveWestDigitalTransport())
+  const reads = createConfiguredWestDigitalReadProvider({ liveTransportFactory: () => transport })
+  const assets = createConfiguredWestDigitalWriteAdapter({ liveTransportFactory: () => transport })
+  const balance = createConfiguredWestDigitalBalanceProvider({
+    liveTransportFactory: () => transport,
+  })
+  const traceId = `d7-05-westdigital-${randomUUID()}`
+
+  const availability = await reads.queryAvailability({ domain: lookupDomain, traceId })
+  transport.attachMapped('westdigital.availability', availability)
+  assertProviderOk(availability, 'West Digital availability mapping')
+
+  const price = await reads.queryPrice({ domain: lookupDomain, traceId, years: 1 })
+  transport.attachMapped('westdigital.price', price)
+  assertProviderOk(price, 'West Digital price mapping')
+
+  const asset = await assets.queryAsset({ domainAscii: assetDomain, traceId })
+  transport.attachMapped('westdigital.domain_detail', asset)
+  assertProviderOk(asset, 'West Digital domain detail mapping')
+
+  const accountBalance = await balance.queryBalance({ traceId })
+  transport.attachMapped('westdigital.balance', accountBalance)
+  assertProviderOk(accountBalance, 'West Digital balance mapping')
+}
+
+async function verifyWechatPay(): Promise<void> {
+  const transport = new RecordingWechatPayTransport(new LiveWechatPayTransport())
+  const provider = createConfiguredWechatPayProvider({ liveTransportFactory: () => transport })
+  const merchantOrderNumber =
+    process.env.WECHATPAY_READ_CONTRACT_ORDER?.trim() ??
+    `D705${Date.now().toString(36)}${randomBytes(4).toString('hex')}`
+  const result = await provider.queryOrder({
+    merchantOrderNumber,
+    traceId: `d7-05-wechatpay-${randomUUID()}`,
+  })
+  transport.attachMapped(result)
+  assert(!result.ok, 'Wechat Pay read contract order unexpectedly exists')
+  assert(
+    result.error.code === 'WECHATPAY_REQUEST_REJECTED',
+    `Wechat Pay signed error mapping differed: ${result.error.code}`,
+  )
+}
+
+async function verifyPrivateOss(): Promise<void> {
+  const provider = createRealnameObjectProvider()
+  const prefix = getEnv().OSS_REALNAME_PREFIX
+  const traceId = `d7-05-oss-${randomUUID()}`
+  const key = `${prefix}/contract-tests/d7-05/${randomUUID()}.bin`
+  const body = randomBytes(48)
+  let created = false
+  try {
+    let startedAt = performance.now()
+    const upload = await provider.upload({ body, key, traceId })
+    observations.push({
+      actualFieldPaths: upload.ok ? fieldPaths(upload.data) : [],
+      ...mappedResult(upload),
+      durationMs: roundedDuration(startedAt),
+      interface: 'aliyun.oss_private_upload_test_object',
+    })
+    assertProviderOk(upload, 'Private OSS test-object upload')
+    created = true
+
+    startedAt = performance.now()
+    const read = await provider.read({ key, traceId })
+    observations.push({
+      actualFieldPaths: read.ok ? fieldPaths(read.data) : [],
+      ...mappedResult(read),
+      durationMs: roundedDuration(startedAt),
+      interface: 'aliyun.oss_private_read_test_object',
+    })
+    assertProviderOk(read, 'Private OSS test-object read')
+    assert(Buffer.from(read.data.body).equals(body), 'Private OSS returned different test bytes')
+
+    startedAt = performance.now()
+    const signed = await provider.signRead({ expiresSeconds: 60, key, traceId })
+    assertProviderOk(signed, 'Private OSS signed read')
+    const response = await fetch(signed.data.url, { signal: AbortSignal.timeout(15_000) })
+    const signedBody = Buffer.from(await response.arrayBuffer())
+    observations.push({
+      actualFieldPaths: ['url'],
+      adapterOk: response.ok && signedBody.equals(body),
+      durationMs: roundedDuration(startedAt),
+      interface: 'aliyun.oss_private_signed_read_test_object',
+      mappedFieldPaths: ['url'],
+      status: response.status,
+    })
+    assert(
+      response.ok && signedBody.equals(body),
+      'Private OSS signed read returned different bytes',
+    )
+  } finally {
+    if (created) {
+      const startedAt = performance.now()
+      const deleted = await provider.deleteObject({ key, traceId })
+      observations.push({
+        actualFieldPaths: deleted.ok ? fieldPaths(deleted.data) : [],
+        ...mappedResult(deleted),
+        durationMs: roundedDuration(startedAt),
+        interface: 'aliyun.oss_private_delete_test_object',
+      })
+      assert(deleted.ok, 'Private OSS test-object cleanup failed')
+    }
+    body.fill(0)
+  }
+}
+
+async function verifyKms(): Promise<void> {
+  const provider = createKmsProvider()
+  const traceId = `d7-05-kms-${randomUUID()}`
+  const startedAt = performance.now()
+  const generated = await provider.generateDataKey({ traceId })
+  if (!generated.ok) {
+    observations.push({
+      actualFieldPaths: [],
+      ...mappedResult(generated),
+      durationMs: roundedDuration(startedAt),
+      interface: 'aliyun.kms_generate_decrypt_roundtrip',
+      mappedFieldPaths: ['ciphertext', 'plaintext'],
+    })
+  }
+  assertProviderOk(generated, 'KMS GenerateDataKey')
+  let decrypted: Awaited<ReturnType<typeof provider.decryptDataKey>> | undefined
+  try {
+    decrypted = await provider.decryptDataKey({ ciphertext: generated.data.ciphertext, traceId })
+    observations.push({
+      actualFieldPaths: [
+        ...fieldPaths(generated.data).map((field) => `generate.${field}`),
+        ...(decrypted.ok ? fieldPaths(decrypted.data).map((field) => `decrypt.${field}`) : []),
+      ],
+      adapterErrorCode: decrypted.ok ? undefined : decrypted.error.code,
+      adapterOk: decrypted.ok,
+      durationMs: roundedDuration(startedAt),
+      interface: 'aliyun.kms_generate_decrypt_roundtrip',
+      mappedFieldPaths: ['ciphertext', 'plaintext'],
+    })
+    assertProviderOk(decrypted, 'KMS Decrypt')
+    assert(
+      Buffer.from(decrypted.data.plaintext).equals(Buffer.from(generated.data.plaintext)),
+      'KMS decrypted data key did not match generated plaintext',
+    )
+  } finally {
+    Buffer.from(generated.data.plaintext).fill(0)
+    if (decrypted?.ok) Buffer.from(decrypted.data.plaintext).fill(0)
+  }
+}
+
+async function verifySmsConfiguration(): Promise<void> {
+  const startedAt = performance.now()
+  try {
+    const configuration = validateAliyunSmsLiveConfiguration()
+    observations.push({
+      actualFieldPaths: fieldPaths(configuration),
+      adapterOk: true,
+      durationMs: roundedDuration(startedAt),
+      interface: 'aliyun.sms_configuration_load_only',
+      mappedFieldPaths: fieldPaths(configuration),
+    })
+  } catch (error) {
+    observations.push({
+      actualFieldPaths: [],
+      adapterErrorCode: error instanceof Error ? error.name : 'UNKNOWN',
+      adapterOk: false,
+      durationMs: roundedDuration(startedAt),
+      interface: 'aliyun.sms_configuration_load_only',
+    })
+    throw error
+  }
+}
+
+async function main(): Promise<void> {
+  assertReadOnlyPreflight()
+  await runCheck('westdigital', verifyWestDigital)
+  await runCheck('wechatpay', verifyWechatPay)
+  await runCheck('aliyun.oss_private', verifyPrivateOss)
+  await runCheck('aliyun.kms', verifyKms)
+  await runCheck('aliyun.sms_configuration', verifySmsConfiguration)
+
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        acknowledgement,
+        failures,
+        observations,
+        observedAt: new Date().toISOString(),
+        smsSent: false,
+        status: failures.length === 0 ? 'passed' : 'failed',
+        westDigitalWrites: 0,
+        wechatPayWrites: 0,
+      },
+      null,
+      2,
+    )}\n`,
+  )
+  if (failures.length > 0) process.exitCode = 1
+}
+
+main().catch((error) => {
+  process.stderr.write(
+    `${JSON.stringify({
+      code: error instanceof Error ? error.name : 'UNKNOWN',
+      message: error instanceof Error ? error.message : 'Read-contract preflight failed',
+      status: 'blocked',
+    })}\n`,
+  )
+  process.exitCode = 1
+})

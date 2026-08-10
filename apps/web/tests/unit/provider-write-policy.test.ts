@@ -45,4 +45,14 @@ describe('real provider write CI policy', () => {
     resetEnvForTests()
     expect(() => getEnv()).toThrow(/real provider writes are forbidden in CI/u)
   })
+
+  it('permanently verifies every total, provider, read, and write gate in defaults, tests, and CI', () => {
+    const result = spawnSync(process.execPath, [verifier], {
+      cwd: fileURLToPath(new URL('../../../../', import.meta.url)),
+      encoding: 'utf8',
+      env: { ...process.env, ALLOW_REAL_PROVIDER_WRITES: 'false', CI: 'false' },
+    })
+    expect(result.status).toBe(0)
+    expect(result.stdout).toMatch(/pin every real-provider gate to false/u)
+  })
 })

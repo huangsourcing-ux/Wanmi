@@ -138,6 +138,33 @@ function liveSmsAllowed(): boolean {
   return env.ALLOW_REAL_PROVIDER_WRITES && env.ALLOW_REAL_ALIYUN_SMS_SENDS
 }
 
+const liveSmsConfigurationKeys = [
+  'ALIBABA_CLOUD_ACCESS_KEY_ID',
+  'ALIBABA_CLOUD_ACCESS_KEY_SECRET',
+  'ALIBABA_CLOUD_REGION_ID',
+  'ALIBABA_CLOUD_SMS_SIGN_NAME',
+  'ALIBABA_CLOUD_SMS_OTP_TEMPLATE_CODE',
+  'ALIBABA_CLOUD_SMS_DOMAIN_EXPIRY_TEMPLATE_CODE',
+] as const
+
+export function validateAliyunSmsLiveConfiguration(): {
+  credentialsConfigured: true
+  domainExpiryTemplateConfigured: true
+  otpTemplateConfigured: true
+  signConfigured: true
+} {
+  const missing = liveSmsConfigurationKeys.filter((key) => !process.env[key]?.trim())
+  if (missing.length > 0) {
+    throw new Error(`Aliyun SMS live configuration is missing: ${missing.join(', ')}`)
+  }
+  return {
+    credentialsConfigured: true,
+    domainExpiryTemplateConfigured: true,
+    otpTemplateConfigured: true,
+    signConfigured: true,
+  }
+}
+
 class LiveSmsProvider implements SmsProvider {
   private readonly client: SmsClient
 
@@ -154,15 +181,12 @@ class LiveSmsProvider implements SmsProvider {
   }
 
   async health() {
-    return mockSuccess({
-      healthy: Boolean(
-        process.env.ALIBABA_CLOUD_ACCESS_KEY_ID &&
-          process.env.ALIBABA_CLOUD_ACCESS_KEY_SECRET &&
-          process.env.ALIBABA_CLOUD_REGION_ID &&
-          process.env.ALIBABA_CLOUD_SMS_SIGN_NAME &&
-          process.env.ALIBABA_CLOUD_SMS_OTP_TEMPLATE_CODE,
-      ),
-    })
+    try {
+      validateAliyunSmsLiveConfiguration()
+      return mockSuccess({ healthy: true })
+    } catch {
+      return mockSuccess({ healthy: false })
+    }
   }
 
   async sendOtp(input: { code: string; phone: string; traceId: string }) {

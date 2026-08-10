@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { resetEnvForTests } from '@/lib/env'
-import { resetProviderWriteGuardrailsForTests } from '@/lib/provider-write-guardrails'
+import { ProviderWriteGuardError } from '@/lib/provider-write-guardrails'
 import {
   createConfiguredWechatPayProvider,
   createWechatPayFixture,
@@ -19,7 +19,6 @@ const now = new Date('2026-08-08T01:00:00.000Z')
 afterEach(() => {
   vi.unstubAllEnvs()
   resetEnvForTests()
-  resetProviderWriteGuardrailsForTests()
   resetWechatPayRuntimeForTests()
 })
 
@@ -287,7 +286,7 @@ describe('Wechat Pay API v3 fixture adapter', () => {
     ).resolves.toMatchObject({ signatureVerified: false, verified: false })
   })
 
-  it('rejects single and cumulative live payment amounts before the adapter transport', async () => {
+  it('rejects single and persistent cumulative live payment amounts before the adapter transport', async () => {
     vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'true')
     vi.stubEnv('ALLOW_REAL_WECHATPAY', 'true')
     vi.stubEnv('ALLOW_REAL_WECHATPAY_PAYMENTS', 'true')
@@ -297,7 +296,13 @@ describe('Wechat Pay API v3 fixture adapter', () => {
     resetEnvForTests()
     const fixture = createWechatPayFixture({ now: () => now })
     const createPayment = vi.spyOn(fixture.provider, 'createPayment')
-    const provider = new SafetyFencedWechatPayProvider(fixture.provider)
+    const consumeBudget = vi
+      .fn()
+      .mockResolvedValueOnce({ debited: true })
+      .mockRejectedValueOnce(
+        new ProviderWriteGuardError('WECHATPAY_WRITE_CUMULATIVE_AMOUNT_LIMIT_EXCEEDED'),
+      )
+    const provider = new SafetyFencedWechatPayProvider(fixture.provider, consumeBudget)
     const payment = (amountMinor: number, merchantOrderNumber: string) =>
       provider.createPayment({
         amountMinor,
@@ -313,6 +318,7 @@ describe('Wechat Pay API v3 fixture adapter', () => {
       ok: false,
     })
     expect(createPayment).not.toHaveBeenCalled()
+    expect(consumeBudget).not.toHaveBeenCalled()
 
     await expect(payment(300, 'WMGUARDCUM001')).resolves.toMatchObject({ ok: true })
     await expect(payment(300, 'WMGUARDCUM002')).resolves.toMatchObject({
@@ -320,6 +326,7 @@ describe('Wechat Pay API v3 fixture adapter', () => {
       ok: false,
     })
     expect(createPayment).toHaveBeenCalledTimes(1)
+    expect(consumeBudget).toHaveBeenCalledTimes(2)
   })
 
   it('keeps payment and refund write capabilities independently gated', async () => {

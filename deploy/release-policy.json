@@ -7,5 +7,13 @@
     "expandRollback": "retain",
     "contractRollback": "down"
   },
-  "migrations": {}
+  "migrations": {
+    "20260810_021337_d7_provider_write_budgets": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增独立预算与幂等扣减表；旧代码忽略新表，新代码在迁移完成后才启用数据库预算围栏。",
+      "rollback": "retain"
+    }
+  }
 }

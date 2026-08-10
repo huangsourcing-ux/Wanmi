@@ -1,4 +1,4 @@
-import type { CollectionConfig } from 'payload'
+import type { CollectionConfig, Field } from 'payload'
 
 import {
   deny,
@@ -8,6 +8,18 @@ import {
   systemAdminOnly,
 } from '@/access/roles'
 import { ADMIN_GROUPS } from '@/lib/admin-navigation'
+
+const nonnegativeSafeInteger = (name: string, defaultValue?: number): Field => ({
+  name,
+  type: 'number',
+  ...(defaultValue === undefined ? {} : { defaultValue }),
+  min: 0,
+  required: true,
+  validate: (value: null | number | undefined) =>
+    value !== null && value !== undefined && Number.isSafeInteger(value) && value >= 0
+      ? true
+      : '字段必须是非负安全整数',
+})
 
 export const ProviderOperations: CollectionConfig = {
   slug: 'providerOperations',
@@ -49,6 +61,51 @@ export const ProviderOperations: CollectionConfig = {
     { name: 'submittedAt', type: 'date' },
     { name: 'lastCheckedAt', type: 'date' },
     { name: 'safeResult', type: 'json' },
+  ],
+}
+
+export const ProviderWriteBudgets: CollectionConfig = {
+  slug: 'providerWriteBudgets',
+  access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
+  admin: { group: ADMIN_GROUPS.fulfillment, hidden: systemAdminHidden },
+  lockDocuments: false,
+  fields: [
+    { name: 'scopeKey', type: 'text', index: true, required: true, unique: true },
+    {
+      name: 'provider',
+      type: 'select',
+      options: ['westdigital', 'wechatpay'],
+      required: true,
+    },
+    {
+      name: 'capability',
+      type: 'select',
+      options: ['register_renew', 'payment', 'refund'],
+      required: true,
+    },
+    nonnegativeSafeInteger('usedOperations', 0),
+    nonnegativeSafeInteger('usedAmountFen', 0),
+    nonnegativeSafeInteger('configuredOperationLimit', 0),
+    nonnegativeSafeInteger('configuredAmountLimitFen', 0),
+  ],
+}
+
+export const ProviderWriteBudgetDebits: CollectionConfig = {
+  slug: 'providerWriteBudgetDebits',
+  access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
+  admin: { group: ADMIN_GROUPS.fulfillment, hidden: systemAdminHidden },
+  lockDocuments: false,
+  fields: [
+    { name: 'debitKey', type: 'text', index: true, required: true, unique: true },
+    {
+      name: 'budget',
+      type: 'relationship',
+      relationTo: 'providerWriteBudgets',
+      index: true,
+      required: true,
+    },
+    nonnegativeSafeInteger('operationDelta'),
+    nonnegativeSafeInteger('amountFen'),
   ],
 }
 

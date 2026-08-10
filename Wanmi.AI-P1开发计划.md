@@ -661,6 +661,12 @@ D7-04 验证记录（2026-08-09）：开始前查阅仓库根目录只读《西�
 
 变异验证分别命中三道真正承重的西部围栏并全部恢复：仅移除白名单 membership 检查后，域名用例期望 `WESTDIGITAL_WRITE_DOMAIN_NOT_ALLOWLISTED`、实际进入 transport 并返回 `WESTDIGITAL_STATUS_UNKNOWN`；仅移除注册/续费次数比较后，第二笔从期望降级变为 `ready`；同时移除单笔与累计金额比较后，超额写从期望拒绝变为 `ready`。涉及新增 fixture 清理的 PostgreSQL 集成在 `docker compose down -v` 重建后连续两轮均为 26 文件、101/101。Gitleaks 自定义规则覆盖 WestDigital API password、微信 API v3 key 和商户私钥形态；规则最初因 `\s*` 跨行把注释空占位与下一行拼接而正确使工作树扫描失败，现限制为同一行水平空白并加入回归测试，工作树与 147 个提交/约 32.70 MB 完整历史均无泄漏。最终 `ALLOW_REAL_PROVIDER_WRITES=false make check` 通过生成物/schema 漂移、全部 migration 往返、Nginx/Runbook/发布契约、lint、TypeScript strict、602/602 单元测试、101/101 PostgreSQL/MinIO 集成测试、Node audit、两类 Gitleaks、linux/amd64 镜像/Trivy 和 Next.js 生产构建。本切片没有 migration、真实 provider 请求、资金/域名/短信/云写、部署或生产数据变更；11.1 第 2 项 staging contract test 明确保留未勾选。
 
+D7-05 验证记录（2026-08-09）：D7-04 的进程内注册/续费次数和微信/西部累计金额预算已改为 PostgreSQL 持久化。`provider_write_budgets` 按 `westdigital/register_renew`、`wechatpay/payment`、`wechatpay/refund` 分 scope 保存跨进程/重启累计值，`provider_write_budget_debits` 以 scope + operation key 的 SHA-256 摘要唯一去重；两者位于同一事务，承重扣减为单条 `UPDATE ... SET used = used + delta WHERE scope = ? AND used + delta <= limit RETURNING id`，命中 0 行即拒绝，不使用 Payload `update({ where })` 或读—改—写。WestDigital 仍在 `executeWestDigitalWriteOperation` 内、原子认领/provider 写之前扣减，Wechat Pay 仍在 adapter delegate 前扣减；配置缺失或为 0 继续 fail-closed。migration 对三个历史 scope 以 0 回填，并验证空库、历史升级、约束/索引、down/up 往返。
+
+并发验证使用 `Promise.all` 覆盖 8 笔竞争 3 次额度、4 笔竞争 250 分额度、同 operation key 5 路重放，以及微信 payment/refund 独立 scope；成功数严格等于额度，数据库 `used` 等于实际放行量。另覆盖调用方已有事务时的拒绝路径，确认本次 debit 会在上层提交前撤销，同 key 提高额度后可正常重试。只删除 SQL 中 `used_operations + delta <= operationLimit` 条件后，次数用例实际放行 8、期望 3，变异被杀死；恢复后预算集成 5/5。涉及 fixture/清理后对本项目 PostgreSQL/MinIO 执行 `docker compose down -v` 重建，完整集成连续两轮 102/102；最终 `ALLOW_REAL_PROVIDER_WRITES=false make check` 通过 605/605 单元、104/104 集成、全部 migration/构建/发布/安全门禁，工作树与 149 个提交/约 32.82 MB 历史 Gitleaks 均无泄漏。
+
+只读真实联调没有用 fixture 冒充完成：当前进程与 `apps/web/.env.local` 未注入 WestDigital、Wechat Pay、私有 OSS/KMS 和短信模板所需生产配置；受控 Aliyun CLI 只读预检中 STS 鉴权成功（2.12 s），KMS `DescribeAccountKmsStatus` 返回字段 `AccountStatus`/`RequestId` 且真实状态为 `NotEnabled`（4.55 s），OSS Bucket 列举成功并看到 3 个 Bucket、其中 1 个在上海（2.74 s，名称未记录）。因此未调用 WestDigital/Wechat Pay 目标接口，未创建 OSS 对象、未执行 KMS data key 往返、未发送短信，也未触发任何资金/域名写。脱敏契约入口、逐接口待补字段/schema/错误映射/时延和阻塞证据见 `docs/operations/d7-05-provider-read-contracts.md`；四类真实读侧尚未全部完成，11.1 第 2 项继续保持未勾选。
+
 ### 11.2 D8 P1 开发验收
 
 开发完成必须满足：
@@ -738,6 +744,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-09 | D7-02 监控、Runbook 与发布回滚 | 复用既有聚合、审计、账本、provider operation、人工复核和 background workflow 建立九类可配置阈值监控与原子单次告警；六份可执行 Runbook；静态先行、digest 镜像、兼容迁移与回滚门禁 | `make check`：572/572 单元测试、98/98 PostgreSQL/MinIO 集成测试及完整迁移/Runbook/发布/安全/构建门禁通过；监控 CAS、mutable tag、静态晚于切流三处变异均被杀死；`ALLOW_REAL_PROVIDER_WRITES=false` | 不新增 migration；没有部署或真实 provider/OSS/KMS/registry 写入；staging、生产告警渠道、真实发布/回滚和全部基础设施演练仍待授权 |
 | 2026-08-09 | D7-03 全链路 E2E 与性能基线 | 生产构建上新增交易主干与关键失败/越权旅程；修复 CSP nonce、路径级 Referrer-Policy 与 Linux Chrome profile 清理竞态；建立跨本机/CI 的接口负载和三页 Lighthouse 门槛 | 全新库连续两轮 `make test-e2e` 42/42；履约状态门变异被杀死；本机性能最终 p95 264.9/3978.6/149.1 ms；Linux 首轮实测公开页/IDN 810.9/274.9 ms、TBT 最差 104 ms，并据此固定有限余量；本地及 Linux `make check` 594/594 单元、98/98 集成与完整门禁通过 | `ALLOW_REAL_PROVIDER_WRITES=false`，无真实 provider/外网依赖；D7 余下五项等待真实凭据或基础设施授权，未提前勾选 |
 | 2026-08-09 | D7-04 provider 写通道与分级安全围栏 | 建立 WestDigital 与微信真实 transport；总闸下细分 provider/能力开关；在既有写入口内加入域名白名单、次数与金额围栏；CI 和测试永久禁止 live transport | 西部三类围栏变异分别被杀死；全新卷连续两轮集成 101/101；`make check` 602/602 单元、101/101 集成及完整迁移/构建/工作树与 147 提交历史 Gitleaks/Trivy 门禁通过 | 全程 `ALLOW_REAL_PROVIDER_WRITES=false`，未发起真实调用；通道建成不等于 staging 联调完成，11.1 第 2 项保持未勾选 |
+| 2026-08-09 | D7-05 持久化预算与只读联调入口 | provider/能力 scope 的 PostgreSQL 原子条件扣减与 operation key 幂等 debit；空库/历史/down-up migration；一次性脱敏只读契约脚本与默认/测试/CI 闸门固定 | 次数条件变异被杀死；全新卷连续两轮 102/102；`make check` 605/605 单元、104/104 集成及完整迁移/构建/工作树与 149 提交历史 Gitleaks/Trivy 门禁通过 | 真实联调受缺失生产配置及 KMS `NotEnabled` 阻塞；未调用目标接口或云对象写，11.1 第 2 项保持未勾选，证据见 `docs/operations/d7-05-provider-read-contracts.md` |
 
 ## 13. 范围追踪矩阵
 

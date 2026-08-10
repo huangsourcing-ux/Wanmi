@@ -20,6 +20,7 @@ import type { ProviderResult } from '@/lib/domain'
 import {
   assertLiveRuntimeTransportAllowed,
   authorizeWechatPayWrite,
+  type ProviderWriteBudgetAuthorization,
   ProviderWriteGuardError,
 } from '@/lib/provider-write-guardrails'
 import { LiveWechatPayTransport } from '@/providers/wechatpay-live'
@@ -930,8 +931,27 @@ export class MockWechatPayProvider implements PaymentProvider, RefundProvider {
   }
 }
 
+type WechatPayBudgetConsumer = (input: ProviderWriteBudgetAuthorization) => Promise<unknown>
+
+async function consumeRuntimeWechatPayBudget(
+  input: ProviderWriteBudgetAuthorization,
+): Promise<void> {
+  const [{ default: config }, { consumeProviderWriteBudget }, { createLocalReq, getPayload }] =
+    await Promise.all([
+      import('@payload-config'),
+      import('@/services/providers/provider-write-budget'),
+      import('payload'),
+    ])
+  const payload = await getPayload({ config })
+  const req = await createLocalReq({}, payload)
+  await consumeProviderWriteBudget(req, input)
+}
+
 export class SafetyFencedWechatPayProvider implements PaymentProvider, RefundProvider {
-  constructor(private readonly delegate: PaymentProvider & RefundProvider) {}
+  constructor(
+    private readonly delegate: PaymentProvider & RefundProvider,
+    private readonly consumeBudget: WechatPayBudgetConsumer = consumeRuntimeWechatPayBudget,
+  ) {}
 
   async health() {
     return this.delegate.health()
@@ -939,7 +959,12 @@ export class SafetyFencedWechatPayProvider implements PaymentProvider, RefundPro
 
   async createPayment(input: Parameters<PaymentProvider['createPayment']>[0]) {
     try {
-      authorizeWechatPayWrite('payment', input.amountMinor)
+      const authorization = authorizeWechatPayWrite(
+        'payment',
+        input.amountMinor,
+        `wechatpay:payment:${input.merchantOrderNumber}`,
+      )
+      if (authorization) await this.consumeBudget(authorization)
     } catch (error) {
       if (error instanceof ProviderWriteGuardError) {
         return mockFailure(error.code, { statusKnown: true })
@@ -951,7 +976,11 @@ export class SafetyFencedWechatPayProvider implements PaymentProvider, RefundPro
 
   async closeOrder(input: Parameters<PaymentProvider['closeOrder']>[0]) {
     try {
-      authorizeWechatPayWrite('payment_close', 0)
+      authorizeWechatPayWrite(
+        'payment_close',
+        0,
+        `wechatpay:payment-close:${input.merchantOrderNumber}`,
+      )
     } catch (error) {
       if (error instanceof ProviderWriteGuardError) {
         return mockFailure(error.code, { statusKnown: true })
@@ -967,7 +996,12 @@ export class SafetyFencedWechatPayProvider implements PaymentProvider, RefundPro
 
   async createRefund(input: Parameters<RefundProvider['createRefund']>[0]) {
     try {
-      authorizeWechatPayWrite('refund', input.amountMinor)
+      const authorization = authorizeWechatPayWrite(
+        'refund',
+        input.amountMinor,
+        `wechatpay:refund:${input.refundNumber}`,
+      )
+      if (authorization) await this.consumeBudget(authorization)
     } catch (error) {
       if (error instanceof ProviderWriteGuardError) {
         return mockFailure(error.code, { statusKnown: true })

@@ -1,6 +1,5 @@
 import { AppError, getTraceId, problemResponse, successResponse } from '@/lib/errors'
-import { FixtureWestDigitalTransport } from '@/providers/westdigital-fixtures'
-import { WestDigitalReadAdapter } from '@/providers/westdigital'
+import { createConfiguredWestDigitalReadProvider } from '@/providers/westdigital'
 import {
   DOMAIN_SEARCH_MAX_TLDS,
   domainSearchRequestSchema,
@@ -10,9 +9,8 @@ import { queryDomainAvailability } from '@/services/domain-search/query-availabi
 import { runtimeProviderObservability } from '@/services/observability/runtime'
 
 const MAX_REQUEST_BODY_BYTES = 4_096
-const provider = new WestDigitalReadAdapter({
+const provider = createConfiguredWestDigitalReadProvider({
   logger: runtimeProviderObservability.logger,
-  transport: new FixtureWestDigitalTransport(),
 })
 
 async function readJsonBody(request: Request): Promise<unknown> {
