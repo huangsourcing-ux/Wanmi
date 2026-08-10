@@ -673,6 +673,10 @@ D7-06 冻结项变更验证记录（2026-08-10）：项目负责人依据 D7-05 
 
 三处承重变异均被对应测试杀死：把逐对象随机数据密钥替换为固定 32 字节后，独立 key 断言失败；删除正文解密的 `decipher.final()` 后，篡改 GCM tag 的对象被错误读取且认证断言失败；缺失记录版本时回退 active version 后，严格单次版本查询断言失败。恢复后聚焦 9/9。对本项目执行 `docker compose down -v` 删除并重建 PostgreSQL/MinIO 卷后，完整集成连续两轮均为 104/104。最终 `ALLOW_REAL_PROVIDER_WRITES=false make check` 退出码 0，通过生成物/schema 漂移、空库/升级与全部 migration 往返、7 份 Runbook/14 个 endpoint 引用、2 项 release migration policy、lint、TypeScript strict、609/609 单元、104/104 集成、Next.js 与 linux/amd64 镜像构建、Node audit、Trivy、工作树及 151 个提交完整历史 Gitleaks；`make test-e2e` 42/42。全仓 `pnpm format:check` 仍报告 44 个既有生成/历史文件格式债，本切片全部非生成文件的定向 Prettier 检查通过，未改这些无关文件。
 
+D7-06 bootstrap 回归修复记录（2026-08-10）：干净环境中 `scripts/bootstrap.mjs` 此前只替换 Payload、Session 与 TOTP 三个占位符，漏掉新必填的 `REALNAME_DOCUMENT_MASTER_KEYS` 和 `REALNAME_DOCUMENT_MASTER_KEY_VERSION`。现按 `local-v1:标准 Base64 32 字节随机密钥` 生成本地专用 key ring，active version 与之一致，命令不输出密钥，`.env.example` 仍只保留注释空键。新 `make verify-bootstrap` 在系统临时目录生成 `.env.local`，隔离 CI/当前业务环境变量后执行完整 `getEnv()`，可使今后任一新必填变量遗漏立即使 `make check` 失败。schema 审计确认其余无默认必填项已由 `.env.example` 提供可用本地值或由 bootstrap 生成，无其他遗漏。
+
+验证使用不带 `.git`、`node_modules`、现有 `apps/web/.env.local` 或未跟踪 `docs/planning/` 的系统临时副本模拟干净仓库；首次手工校验因从仓库根目录启动 `tsx` 而未加载 Web tsconfig 别名，调整到 `apps/web` 后从头重跑。最终 `make bootstrap`、生成文件的完整 `getEnv()` 与 `make verify-bootstrap` 均通过，并将本次迁移进程的 `DATABASE_URL` 指向随机命名的隔离空库，从首个 migration 到 `20260810_040217_d7_app_master_key` 全部成功。临时库/目录精确清理后，完整 `ALLOW_REAL_PROVIDER_WRITES=false make check` 退出码 0，通过 609/609 单元、104/104 集成、全部迁移、构建、发布和安全门禁。既有 `.env.local` 与 `wanmi` 数据库未修改；D7-07 重建工具链、恢复实现和受限验证结论未改动。
+
 ### 11.2 D8 P1 开发验收
 
 开发完成必须满足：
@@ -752,6 +756,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-09 | D7-04 provider 写通道与分级安全围栏 | 建立 WestDigital 与微信真实 transport；总闸下细分 provider/能力开关；在既有写入口内加入域名白名单、次数与金额围栏；CI 和测试永久禁止 live transport | 西部三类围栏变异分别被杀死；全新卷连续两轮集成 101/101；`make check` 602/602 单元、101/101 集成及完整迁移/构建/工作树与 147 提交历史 Gitleaks/Trivy 门禁通过 | 全程 `ALLOW_REAL_PROVIDER_WRITES=false`，未发起真实调用；通道建成不等于 staging 联调完成，11.1 第 2 项保持未勾选 |
 | 2026-08-09 | D7-05 持久化预算与只读联调入口 | provider/能力 scope 的 PostgreSQL 原子条件扣减与 operation key 幂等 debit；空库/历史/down-up migration；一次性脱敏只读契约脚本与默认/测试/CI 闸门固定 | 次数条件变异被杀死；全新卷连续两轮 102/102；`make check` 605/605 单元、104/104 集成及完整迁移/构建/工作树与 149 提交历史 Gitleaks/Trivy 门禁通过 | 真实联调受缺失生产配置及 KMS `NotEnabled` 阻塞；未调用目标接口或云对象写，11.1 第 2 项保持未勾选，证据见 `docs/operations/d7-05-provider-read-contracts.md` |
 | 2026-08-10 | D7-06 应用自管主密钥冻结项变更 | 版本化应用主密钥 key ring 包裹逐对象随机数据密钥；保留 AES-256-GCM/fill(0)；移除 KMS 代码、探针、配置、闸门与 SDK；更新 ADR、Runbook、发布迁移策略及全套批准文档 | 三处承重变异均被杀死；全新卷连续两轮 104/104；`make check` 609/609 单元、104/104 集成及完整迁移/构建/151 提交历史 Gitleaks/Trivy 通过；E2E 42/42 | 旧 mock KMS 对象明确废弃，生产无真实数据；主密钥进入应用配置后服务器完整攻破可取得 key ring，生产注入、离线备份、轮换与紧急恢复演练仍是硬门槛 |
+| 2026-08-10 | D7-06 bootstrap 阻塞修复 | 为干净环境生成 `local-v1` 主密钥 key ring 与 active version；显式 0600；新增隔离环境的完整 `getEnv()` 回归并纳入 `make check` | 无现有 `.env.local` 的临时干净副本通过 bootstrap/getEnv；随机隔离空库完成全部 migration；`make check` 通过 609/609 单元、104/104 集成及完整构建/安全门禁 | `.env.example` 仍无主密钥值；生产注入/轮换/恢复门槛不变；D7-07 工具链与结论未改 |
 
 ## 13. 范围追踪矩阵
 

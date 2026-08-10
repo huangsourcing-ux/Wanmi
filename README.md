@@ -21,7 +21,7 @@ pnpm --filter @wanmi/web migrate
 make dev
 ```
 
-`make bootstrap` 只会在文件不存在时创建 `apps/web/.env.local`，并为本地 Payload、Session 与 TOTP 生成随机值；不会写入生产凭据。Web 启动后检查：
+`make bootstrap` 只会在文件不存在时创建 `apps/web/.env.local`，并为本地 Payload、Session、TOTP 与实名证件应用主密钥生成随机值；不会写入生产凭据。Web 启动后检查：
 
 ```bash
 curl -fsS http://127.0.0.1:3100/healthz

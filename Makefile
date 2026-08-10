@@ -1,4 +1,4 @@
-.PHONY: bootstrap dev worker generate verify-generated verify-oss-real verify-migrations verify-nginx verify-operations verify-provider-write-policy verify-release fmt lint test test-integration test-e2e performance security build smoke check down
+.PHONY: bootstrap dev worker generate verify-bootstrap verify-generated verify-oss-real verify-migrations verify-nginx verify-operations verify-provider-write-policy verify-release fmt lint test test-integration test-e2e performance security build smoke check down
 
 bootstrap:
 	corepack enable
@@ -15,6 +15,9 @@ worker:
 
 generate:
 	pnpm generate
+
+verify-bootstrap:
+	node scripts/verify-bootstrap.mjs
 
 verify-generated:
 	pnpm verify-generated
@@ -74,7 +77,7 @@ build:
 smoke:
 	node scripts/smoke.mjs
 
-check: verify-provider-write-policy verify-generated verify-migrations verify-nginx verify-operations verify-release lint test test-integration security build
+check: verify-bootstrap verify-provider-write-policy verify-generated verify-migrations verify-nginx verify-operations verify-release lint test test-integration security build
 
 down:
 	docker compose down
