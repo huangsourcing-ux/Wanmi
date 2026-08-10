@@ -31,6 +31,8 @@ make verify-release
 
 ## 可执行节点重建
 
+真实 ECS 执行前必须先通过 `docs/operations/recovery.md` 的“真实环境开工门禁”。该门禁任一项失败或无法确认时，不得运行 `make rebuild`；单纯存在 release manifest、镜像 digest 或部署授权不构成开工条件。
+
 准备 release manifest 以及只存在于受控运行环境的配置，然后执行：
 
 ```bash

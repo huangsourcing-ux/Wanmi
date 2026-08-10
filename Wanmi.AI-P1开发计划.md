@@ -109,17 +109,17 @@ Codex 必须：
 
 订单状态：
 
-| 中文状态 | 内部状态 | 进入条件 |
-| --- | --- | --- |
-| 待支付 | `pending_payment` | 订单已创建，微信尚未确认到账 |
-| 已支付 | `paid` | 微信服务端确认到账 |
-| 履约中 | `fulfilling` | Payload `commerce` Job 已接管注册或续费任务 |
-| 成功 | `succeeded` | 西部数码确认成功且资产已生成或更新 |
-| 失败待退款 | `refund_pending` | 上游明确失败，需要原路全额退款 |
-| 退款中 | `refunding` | 已向微信提交退款 |
-| 已退款 | `refunded` | 微信确认退款成功 |
-| 待人工处理 | `manual_review` | 上游状态不明、余额不足、退款失败或争议 |
-| 已取消 | `cancelled` | 未支付超时或用户取消，且未进入履约 |
+| 中文状态   | 内部状态          | 进入条件                                    |
+| ---------- | ----------------- | ------------------------------------------- |
+| 待支付     | `pending_payment` | 订单已创建，微信尚未确认到账                |
+| 已支付     | `paid`            | 微信服务端确认到账                          |
+| 履约中     | `fulfilling`      | Payload `commerce` Job 已接管注册或续费任务 |
+| 成功       | `succeeded`       | 西部数码确认成功且资产已生成或更新          |
+| 失败待退款 | `refund_pending`  | 上游明确失败，需要原路全额退款              |
+| 退款中     | `refunding`       | 已向微信提交退款                            |
+| 已退款     | `refunded`        | 微信确认退款成功                            |
+| 待人工处理 | `manual_review`   | 上游状态不明、余额不足、退款失败或争议      |
+| 已取消     | `cancelled`       | 未支付超时或用户取消，且未进入履约          |
 
 固定规则：
 
@@ -150,17 +150,17 @@ flowchart LR
     D7 --> D8["D8 P1 整体验收"]
 ```
 
-| 里程碑 | 参考周期 | 主要范围 | 完成标志 |
-| --- | ---: | --- | --- |
+| 里程碑              |                        参考周期 | 主要范围                               | 完成标志                                      |
+| ------------------- | ------------------------------: | -------------------------------------- | --------------------------------------------- |
 | D0 Payload 架构验证 | 第 1 周（建议 3～5 天，可延长） | Payload、认证、Jobs、OSS 和单 ECS 验证 | 核心退出条件通过；ECS 门槛经负责人批准转入 D7 |
-| D1 公共站基础 | 第 2～3 周 | Web 外壳、通用状态、管理基础 | 首页与后台骨架可运行 |
-| D2 六类域名工具 | 第 3～5 周 | M02～M07、M09 | 工具正常/失败/降级测试通过 |
-| D3 内容、广告与后台 | 第 5～7 周 | M08、M10～M12、M11 相关能力 | 内容与商业组件不影响工具 |
-| D4 账号与实名 | 第 7～9 周 | M13 | 登录、模板、加密与删除闭环通过 |
-| D5 报价、订单与支付 | 第 9～11 周 | M14 | 支付状态机和退款测试通过 |
-| D6 注册、续费与资产 | 第 11～13 周 | M15、M16 | 幂等履约和资产闭环通过 |
-| D7 集成、安全与运维 | 第 13～15 周 | 全链路、监控、恢复、Runbook | 关键故障演练通过 |
-| D8 P1 整体验收 | 第 15～16 周 | M01～M16、上线门槛核对 | 开发验收通过；上线条件单列 |
+| D1 公共站基础       |                      第 2～3 周 | Web 外壳、通用状态、管理基础           | 首页与后台骨架可运行                          |
+| D2 六类域名工具     |                      第 3～5 周 | M02～M07、M09                          | 工具正常/失败/降级测试通过                    |
+| D3 内容、广告与后台 |                      第 5～7 周 | M08、M10～M12、M11 相关能力            | 内容与商业组件不影响工具                      |
+| D4 账号与实名       |                      第 7～9 周 | M13                                    | 登录、模板、加密与删除闭环通过                |
+| D5 报价、订单与支付 |                     第 9～11 周 | M14                                    | 支付状态机和退款测试通过                      |
+| D6 注册、续费与资产 |                    第 11～13 周 | M15、M16                               | 幂等履约和资产闭环通过                        |
+| D7 集成、安全与运维 |                    第 13～15 周 | 全链路、监控、恢复、Runbook            | 关键故障演练通过                              |
+| D8 P1 整体验收      |                    第 15～16 周 | M01～M16、上线门槛核对                 | 开发验收通过；上线条件单列                    |
 
 外部权限确认、备案和生产资源核验从 D0 开始并行进行。它们不阻塞 mock 环境开发，但会阻塞真实收款上线。
 
@@ -212,22 +212,22 @@ wanmi/
 
 D0 必须建立并维护以下命令；后续里程碑不得绕过：
 
-| 命令 | 作用 |
-| --- | --- |
-| `make bootstrap` | 检查开发依赖并初始化本地配置，不写入真实密钥 |
-| `make dev` | 启动本地 Web/Payload、PostgreSQL 和 Who-Dat |
-| `make worker` | 启动独立 Payload Jobs Worker |
-| `make generate` | 生成 Payload 类型并检查迁移 |
-| `make verify-generated` | 检查生成类型和迁移没有漂移 |
-| `make fmt` | 格式化 TypeScript、YAML、Markdown 等受控文件 |
-| `make lint` | TypeScript、Payload 和配置静态检查 |
-| `make test` | 单元和组件测试 |
+| 命令                    | 作用                                                  |
+| ----------------------- | ----------------------------------------------------- |
+| `make bootstrap`        | 检查开发依赖并初始化本地配置，不写入真实密钥          |
+| `make dev`              | 启动本地 Web/Payload、PostgreSQL 和 Who-Dat           |
+| `make worker`           | 启动独立 Payload Jobs Worker                          |
+| `make generate`         | 生成 Payload 类型并检查迁移                           |
+| `make verify-generated` | 检查生成类型和迁移没有漂移                            |
+| `make fmt`              | 格式化 TypeScript、YAML、Markdown 等受控文件          |
+| `make lint`             | TypeScript、Payload 和配置静态检查                    |
+| `make test`             | 单元和组件测试                                        |
 | `make test-integration` | PostgreSQL、Payload Jobs 和 provider adapter 集成测试 |
-| `make test-e2e` | Playwright 核心用户流程测试 |
-| `make security` | Gitleaks、依赖与基础安全检查 |
-| `make build` | 构建 Next.js/Payload 和容器产物 |
-| `make smoke` | 对运行环境执行健康和核心路径冒烟测试 |
-| `make check` | 汇总生成物检查、lint、测试、安全和构建的合适子集 |
+| `make test-e2e`         | Playwright 核心用户流程测试                           |
+| `make security`         | Gitleaks、依赖与基础安全检查                          |
+| `make build`            | 构建 Next.js/Payload 和容器产物                       |
+| `make smoke`            | 对运行环境执行健康和核心路径冒烟测试                  |
+| `make check`            | 汇总生成物检查、lint、测试、安全和构建的合适子集      |
 
 若受本地环境限制无法运行某项，Codex 必须说明原因和替代验证，不得把“未运行”写成“通过”。
 
@@ -683,6 +683,8 @@ D7-06 bootstrap 回归修复记录（2026-08-10）：干净环境中 `scripts/bo
 
 验证使用不带 `.git`、`node_modules`、现有 `apps/web/.env.local` 或未跟踪 `docs/planning/` 的系统临时副本模拟干净仓库；首次手工校验因从仓库根目录启动 `tsx` 而未加载 Web tsconfig 别名，调整到 `apps/web` 后从头重跑。最终 `make bootstrap`、生成文件的完整 `getEnv()` 与 `make verify-bootstrap` 均通过，并将本次迁移进程的 `DATABASE_URL` 指向随机命名的隔离空库，从首个 migration 到 `20260810_040217_d7_app_master_key` 全部成功。临时库/目录精确清理后，完整 `ALLOW_REAL_PROVIDER_WRITES=false make check` 退出码 0，通过 609/609 单元、104/104 集成、全部迁移、构建、发布和安全门禁。既有 `.env.local` 与 `wanmi` 数据库未修改；D7-07 重建工具链、恢复实现和受限验证结论未改动。
 
+D7-08 开工前预检记录（2026-08-10）：PR #58 已合并至 `main@a4a659b`，但真实资源硬前置未全部成立。阿里云只读 API 确认上海唯一运行 ECS 为 2 vCPU/4096 MiB 且在 VPC，但当前 SSH 目标与该 ECS 不匹配，因此无法核对目标节点无其他负载、架构、磁盘或 secret 注入。RDS 为 VPC 内 PostgreSQL 16，近 7 日存在 7 个成功的每日自动全量备份、日志备份开启，且只读 API 返回 `2026-08-04T01:14:59Z` 至 `2026-08-10T12:09:47Z` 的 PITR 可恢复窗口；但 `SSLEnabled=off`，实例系列仍为 `Basic`。上海唯一 OSS Bucket 未启用版本控制，且 `NoSuchLifecycle`/`NoSuchWORMConfiguration`；生产主密钥受控生成、注入、离线备份及生产凭据轮换也无法复核。因此本次按 fail-closed 门禁停止，未执行部署、强杀、节点重置、PITR 恢复、OSS 删除/恢复、支付通知重放或密钥轮换；11.1 第 9、10、11 项、D0 单 ECS 项与对应上线门槛均保持未勾选。脱敏命令、字段、错误码、时间窗口和重开条件见 `docs/operations/d7-08-ecs-recovery-validation.md`。
+
 ### 11.2 D8 P1 开发验收
 
 开发完成必须满足：
@@ -733,58 +735,59 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 
 ### 12.2 当前执行记录
 
-| 日期 | 里程碑 | 已完成 | 验证 | 阻塞/备注 |
-| --- | --- | --- | --- | --- |
-| 2026-08-02 | 计划建立 | 五份批准文档已统一，创建 P1 开发计划 | Markdown 标题、表格、代码围栏和本地链接检查通过 | 开发尚未开始 |
-| 2026-08-02 | Payload 架构批准 | 七份文档统一为 Next.js + Payload + PostgreSQL + Payload Jobs；补充 D0 3～5 天验证 | 术语、版本、范围、状态和链接一致性检查 | 仅更新文档，D0 代码尚未开始 |
-| 2026-08-03 | 通用能力选型批准 | 固定 Payload SEO/Redirects/Form Builder、ali-oss 和 Alibaba Cloud TypeScript SDK；同步技术、计划、PRD、资源与代理规范 | Markdown 结构、术语和本地链接一致性检查 | 仅更新方案文档，开发尚未开始 |
-| 2026-08-03 | P1 文档基线冻结 | 修正 PRD 版本/广告表述和收入公式；补全订单迁移矩阵；明确 D0 可延长及代理合规上线门槛 | 跨文档、Markdown、本地链接与 Git 基线检查 | 文档审核通过；D0 尚未开始；生产上线仍附条件 |
-| 2026-08-03 | D0 本地架构切片 | 建立 Next.js/Payload/PostgreSQL/Who-Dat/MinIO 基线、全部最小 Collections 与 RBAC、TOTP/OTP/opaque Session、三队列与 commerce 幂等、provider mocks、迁移/类型漂移门禁、CI、六份 ADR 与 Runbook | lint、typecheck、25 个单元测试、5 个 PostgreSQL/MinIO 集成测试、2 个 Playwright 场景、Gitleaks 和生产/同镜像构建通过；本地 Worker 可独立启动 | D0 保持未完成：真实 OSS 与 2 vCPU/4 GiB ECS 验证待完成；ECS 仍承载其他项目，不执行会影响现有服务的压测、重启或重建 |
-| 2026-08-03 | D0 安全基线更新 | 项目负责人批准 Next.js 16.2.11，并批准受控使用现有 OSS/RDS/ECS；Payload 与官方插件保持 3.86.0 | `make check`、2 个 Playwright E2E、Next.js 16.2.11 本地生产构建及 linux/amd64 同镜像构建通过；高危依赖审计清零，剩余 2 low、2 moderate | 当前 Aliyun CLI 身份看不到文档所列 ECS/RDS；3 个可见 OSS Bucket 均无法明确识别为 D0 测试目标；真实云验证仍未完成，批准标签须在获提交授权后建立 |
-| 2026-08-04 | D0 阿里云隔离验证 | 核对正确云资源；创建上海私有 D0 Bucket；在隔离 RDS 数据库执行 migration；未修改现有业务库和 ECS 工作负载 | 公共 `storage-s3` 与私有 `ali-oss` 均通过真实 OSS 上传、读取、ETag、60 秒签名和删除；PostgreSQL 16.10 初始 migration 成功且二次执行无变更；隧道中断后的 processing lock 已恢复，最终无可运行测试 Job | commerce 长任务经 SSH 隧道超时/断连，必须在同 VPC ECS Worker 复测；ECS 压测、重启、重建延期到部署阶段；RDS SSL 未启用；本轮披露的云凭据必须轮换；批准标签仍待提交授权 |
-| 2026-08-04 | D0 条件通过 | 项目负责人批准进入 D1；仅将共享 ECS 无法安全执行的内存、独立重启、同 VPC Jobs 恢复、节点重建和 RTO 原样转入 D7 | D0 其他任务、真实 OSS/隔离 RDS 证据、`make check`、2 个 Playwright 场景和秘密扫描均通过 | D7/生产上线前必须补齐 ECS 门槛；现有项目迁出前不得在共享 ECS 部署或压测 Wanmi；云凭据必须轮换；新批准标签待提交授权 |
-| 2026-08-07 | D4-01 客户认证与短信 | 完成 SDK 短信发送/回执/失败分类、四维原子限频、OTP/opaque Session、全部会话退出、注销申请及客户/管理员认证隔离 | `make check`：520 个单元测试、44 个 PostgreSQL/MinIO 集成测试及完整构建/安全门禁通过；`make test-e2e` 35/35 通过；未发送真实短信 | D4 仍进行中；实名模板、私有证件、30 天清理和人工复核留给 D4-02 及后续切片，生产上线门槛不变 |
-| 2026-08-07 | D4-03 私有证件 | 完成魔术字节/结构/恶意内容检查、独立数据密钥信封加密、私有 OSS 生命周期、短时签名访问和查看/下载/提交/删除审计 | `make check`：529 个单元测试、47 个 PostgreSQL/MinIO 集成测试及完整构建/安全门禁通过；`make test-e2e` 36/36 通过；`ALLOW_REAL_PROVIDER_WRITES=false`，未连接真实 OSS/KMS | D4 仍进行中；30 天清理任务留给 D4-04，staging 最小权限与真实 provider contract test 仍须另行授权，生产上线门槛不变 |
-| 2026-08-07 | D4-04 实名生命周期 | 完成立即停用、精确 30 天 Payload Job 清理、OSS 主/备份与数据库删除幂等、拒绝修改重提、未知状态 fail-closed 和带证据的 system_admin 人工复核 | `make check`：530 个单元测试、48 个 PostgreSQL/MinIO 集成测试及完整构建/安全门禁通过；`make test-e2e` 36/36 通过；未连接真实 provider | D4 完成；live OSS/KMS 与西部数码 contract test、备份恢复和生产环境门槛仍须在 D7 另行授权验证 |
-| 2026-08-07 | D5-01 客户报价 | 复用 D2-07 整数分计算与价格快照，完成客户归属的域名/年限报价、完整成本与规则快照、精确 5 分钟有效期、完整性校验、六状态 API 和订单复用校验入口 | `make check`：537 个单元测试、49 个 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；`make test-e2e` 36/36 通过；未连接真实西部数码 | D5 进行中；后台可发布加价规则与审计、实际订单创建及报价重新验证留给后续切片，真实 provider 联调与生产门槛不变 |
-| 2026-08-07 | D5-02 订单创建与状态机 | 完成服务端金额订单创建、报价/实名/TLD/规则/金额/可售状态完整重新验证、`pending_payment` 起始状态、完整报价快照和追加事件；复用既有 CAS 状态机 | `make check`：544 个单元测试、50 个 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；`make test-e2e` 36/36 通过；未连接真实西部数码 | D5 进行中；后台可发布加价规则与审计、微信支付、退款和对账留给后续切片，真实 provider 联调与生产门槛不变 |
-| 2026-08-07 | D5-03 微信支付确认 | 完成 Native/H5 下单、通知验签/解密、经平台签名的主动查单、金额/标识核对、幂等入库、`pending_payment → paid/manual_review` 和四项数据库唯一索引 | `make check`：547/547 单元测试、54/54 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；`make test-e2e` 36/36 通过；`ALLOW_REAL_PROVIDER_WRITES=false` | D5 进行中；前端二维码/H5 跳转、超时关单、退款、补单/对账和真实商户联调待后续切片，生产门槛不变 |
-| 2026-08-07 | D5-04 微信退款与对账 | 完成注册失败自动全额退款、退款创建/查询/验签通知、请求未知后只查不重提、失败人工复核，以及微信资金/内部订单/西部预充值独立账本和追加式三方差异 | `make check`：548/548 单元测试、59/59 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；`make test-e2e` 36/36 通过；`ALLOW_REAL_PROVIDER_WRITES=false` | D5 进行中；履约仍留给 D6；前端支付流程、支付超时关单、补单工具、特殊退款/发票审计及真实商户联调仍未完成，生产门槛不变 |
-| 2026-08-08 | D6-01 西部数码写适配器与操作键 | 完成实名、注册、续费、资产查询、Name Server 可注入 fixture adapter；复用 providerOperations 建立数据库唯一操作键、CAS 单次提交、事务审计、有限重试和状态不明仅查询 | `make check`：559/559 单元测试、74/74 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；两处关键分支变异均被对应测试杀死；`ALLOW_REAL_PROVIDER_WRITES=false` | D6 进行中；commerce Job 履约、订单/人工复核、资产落库与 UI、主动续费闭环、余额停售及真实接口联调留给后续切片；未发出真实西部数码请求 |
-| 2026-08-08 | D6-02 支付后注册履约闭环 | 支付确认事务内原子单次入队；冻结报价/实名/域名/余额预检；复用 D6-01 写操作与 D5-04 全额退款；未知只查询；确认后落域名资产 | `make check`：559/559 单元测试、80/80 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；入队 CAS 与支付后不按过期时间重计价两处变异均被测试杀死；`ALLOW_REAL_PROVIDER_WRITES=false` | D6 进行中；主动续费、资产 UI/同步、余额停售/告警、人工处理后台和真实接口联调仍待后续切片；未发出真实资金或域名请求 |
-| 2026-08-08 | D6-03 余额监控与紧急停售 | 定时记录西部预充值独立账本；siteSettings 保存阈值及手动/自动 TLD 集；原子单次告警；下单前停售；已支付订单保持原状并由负责人原子选择恢复或退款 | `make check`：561/561 单元测试、85/85 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；migration 空库和独立 down/up 通过；停售检查与 CAS 条件两处变异均被测试杀死；`ALLOW_REAL_PROVIDER_WRITES=false` | D6 进行中；第 10.2 第 2 项等待主动续费；真实余额 contract test、运营阈值和告警渠道仍需 D7/staging 授权验证，生产门槛不变 |
-| 2026-08-08 | D6-05 主动续费闭环 | 复用报价、订单、支付、commerce 履约、自动退款和人工复核；续费写复用 D6-01，既有 renewals 与 domainAssets 以 PostgreSQL CAS 幂等落库 | `make check`：564/564 单元测试、91/91 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；全新卷连续三轮 91/91；续费落库 CAS 与支付后过期报价两处变异均被杀死；`ALLOW_REAL_PROVIDER_WRITES=false` | D6 进行中；D6-04 资产读侧、NS、提醒和越权门禁位于独立 PR；真实续费 contract test、资金/域名写联调和 D7 强制中断恢复仍未授权，生产门槛不变 |
-| 2026-08-08 | D6-04 域名资产、NS 与提醒 | 本人资产列表/详情/同步；NS commerce 写入、人工只查复核与事务审计；站内/短信到期提醒及原子去重；用户/订单/资产越权门禁 | `make check`：567/567 单元测试、90/90 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；全新卷后三轮完整集成均 90/90；归属门禁与提醒 CAS 两处变异均被杀死；`ALLOW_REAL_PROVIDER_WRITES=false` | D6 进行中；主动续费及第 10.2 第 2 项仍待 D6-05；真实短信模板、provider contract test 与生产门槛不变 |
-| 2026-08-09 | D6-05 累计迁移快照基线修复 | 普通 merge `main` 后删除旧 D6-05 migration，并基于含 D6-04 表结构的最新快照重新生成 `20260809_053302_d6_active_renewals`；新增累计快照门禁与 D6-05 独立往返验证 | 新快照命中 `domain_expiry_reminders=4`、`provider_operations=5`、`renewals=5`、`domain_assets=11`；全新卷连续两轮 96/96、整链 migrate、整批 down/up 与 `make check` 通过，最终 569/569 单元测试、96/96 集成测试；审计跨表 ID 碰撞变异稳定复现期望 4、实际 5 | 未修改 D6-05 业务逻辑；只调整测试审计/fixture 隔离与负载时限，只使用 fixture，真实 provider 联调和全部生产门槛不变 |
-| 2026-08-09 | D7-01 安全硬化与降级 | 补齐 SSRF/跳转/浏览器头/上传/越权安全矩阵；完整历史 Gitleaks、linux/amd64 Trivy 和精确 GHSA 例外；六类工具真实触发 CMS、广告、分析失败仍可用 | `make check`：586/586 单元、96/96 集成、完整迁移/构建/扫描通过；136 个提交无泄漏；关键分支变异均被杀死，冗余层与初始弱断言的存活过程已记录 | D7 第 3、4、12 项完成；staging contract、真实 ECS/RDS/OSS/KMS、密钥轮换和三方对账仍未授权且未勾选 |
-| 2026-08-09 | D7-02 监控、Runbook 与发布回滚 | 复用既有聚合、审计、账本、provider operation、人工复核和 background workflow 建立九类可配置阈值监控与原子单次告警；六份可执行 Runbook；静态先行、digest 镜像、兼容迁移与回滚门禁 | `make check`：572/572 单元测试、98/98 PostgreSQL/MinIO 集成测试及完整迁移/Runbook/发布/安全/构建门禁通过；监控 CAS、mutable tag、静态晚于切流三处变异均被杀死；`ALLOW_REAL_PROVIDER_WRITES=false` | 不新增 migration；没有部署或真实 provider/OSS/KMS/registry 写入；staging、生产告警渠道、真实发布/回滚和全部基础设施演练仍待授权 |
-| 2026-08-09 | D7-03 全链路 E2E 与性能基线 | 生产构建上新增交易主干与关键失败/越权旅程；修复 CSP nonce、路径级 Referrer-Policy 与 Linux Chrome profile 清理竞态；建立跨本机/CI 的接口负载和三页 Lighthouse 门槛 | 全新库连续两轮 `make test-e2e` 42/42；履约状态门变异被杀死；本机性能最终 p95 264.9/3978.6/149.1 ms；Linux 首轮实测公开页/IDN 810.9/274.9 ms、TBT 最差 104 ms，并据此固定有限余量；本地及 Linux `make check` 594/594 单元、98/98 集成与完整门禁通过 | `ALLOW_REAL_PROVIDER_WRITES=false`，无真实 provider/外网依赖；D7 余下五项等待真实凭据或基础设施授权，未提前勾选 |
-| 2026-08-09 | D7-04 provider 写通道与分级安全围栏 | 建立 WestDigital 与微信真实 transport；总闸下细分 provider/能力开关；在既有写入口内加入域名白名单、次数与金额围栏；CI 和测试永久禁止 live transport | 西部三类围栏变异分别被杀死；全新卷连续两轮集成 101/101；`make check` 602/602 单元、101/101 集成及完整迁移/构建/工作树与 147 提交历史 Gitleaks/Trivy 门禁通过 | 全程 `ALLOW_REAL_PROVIDER_WRITES=false`，未发起真实调用；通道建成不等于 staging 联调完成，11.1 第 2 项保持未勾选 |
-| 2026-08-09 | D7-05 持久化预算与只读联调入口 | provider/能力 scope 的 PostgreSQL 原子条件扣减与 operation key 幂等 debit；空库/历史/down-up migration；一次性脱敏只读契约脚本与默认/测试/CI 闸门固定 | 次数条件变异被杀死；全新卷连续两轮 102/102；`make check` 605/605 单元、104/104 集成及完整迁移/构建/工作树与 149 提交历史 Gitleaks/Trivy 门禁通过 | 真实联调受缺失生产配置及 KMS `NotEnabled` 阻塞；未调用目标接口或云对象写，11.1 第 2 项保持未勾选，证据见 `docs/operations/d7-05-provider-read-contracts.md` |
-| 2026-08-10 | D7-06 应用自管主密钥冻结项变更 | 版本化应用主密钥 key ring 包裹逐对象随机数据密钥；保留 AES-256-GCM/fill(0)；移除 KMS 代码、探针、配置、闸门与 SDK；更新 ADR、Runbook、发布迁移策略及全套批准文档 | 三处承重变异均被杀死；全新卷连续两轮 104/104；`make check` 609/609 单元、104/104 集成及完整迁移/构建/151 提交历史 Gitleaks/Trivy 通过；E2E 42/42 | 旧 mock KMS 对象明确废弃，生产无真实数据；主密钥进入应用配置后服务器完整攻破可取得 key ring，生产注入、离线备份、轮换与紧急恢复演练仍是硬门槛 |
-| 2026-08-10 | D7-07 重建工具链与本地受限验证 | 固定 ADR-0006 八步工具链、同 digest Web/Worker、readyz fail-closed、Payload Job 原子恢复；空目标节点 2 vCPU/4 GiB 下测量内存/轮转/独立重启/强杀恢复/RTO | 峰值/稳态 639.6/561.3 MiB；日志至少 9.5 MB 后留存 1,093,349 bytes；RTO 93.4 秒；两个恢复者 `[1,0]` 且 provider claim/attempt 均 1；两处变异被杀死；镜像层/日志 secret 检查通过 | 容器受限等价验证已完成，真实 ECS 验证待授权；未接触 ECS/RDS/OSS；11.1 第 2、10、11 项及 D0 单 ECS 项保持未勾选，真实环境须完整重跑 |
-| 2026-08-10 | D7-06 bootstrap 阻塞修复 | 为干净环境生成 `local-v1` 主密钥 key ring 与 active version；显式 0600；新增隔离环境的完整 `getEnv()` 回归并纳入 `make check` | 无现有 `.env.local` 的临时干净副本通过 bootstrap/getEnv；随机隔离空库完成全部 migration；`make check` 通过 609/609 单元、104/104 集成及完整构建/安全门禁 | `.env.example` 仍无主密钥值；生产注入/轮换/恢复门槛不变；D7-07 工具链与结论未改 |
+| 日期       | 里程碑                              | 已完成                                                                                                                                                                                        | 验证                                                                                                                                                                                                                                                        | 阻塞/备注                                                                                                                                                             |
+| ---------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-08-02 | 计划建立                            | 五份批准文档已统一，创建 P1 开发计划                                                                                                                                                          | Markdown 标题、表格、代码围栏和本地链接检查通过                                                                                                                                                                                                             | 开发尚未开始                                                                                                                                                          |
+| 2026-08-02 | Payload 架构批准                    | 七份文档统一为 Next.js + Payload + PostgreSQL + Payload Jobs；补充 D0 3～5 天验证                                                                                                             | 术语、版本、范围、状态和链接一致性检查                                                                                                                                                                                                                      | 仅更新文档，D0 代码尚未开始                                                                                                                                           |
+| 2026-08-03 | 通用能力选型批准                    | 固定 Payload SEO/Redirects/Form Builder、ali-oss 和 Alibaba Cloud TypeScript SDK；同步技术、计划、PRD、资源与代理规范                                                                         | Markdown 结构、术语和本地链接一致性检查                                                                                                                                                                                                                     | 仅更新方案文档，开发尚未开始                                                                                                                                          |
+| 2026-08-03 | P1 文档基线冻结                     | 修正 PRD 版本/广告表述和收入公式；补全订单迁移矩阵；明确 D0 可延长及代理合规上线门槛                                                                                                          | 跨文档、Markdown、本地链接与 Git 基线检查                                                                                                                                                                                                                   | 文档审核通过；D0 尚未开始；生产上线仍附条件                                                                                                                           |
+| 2026-08-03 | D0 本地架构切片                     | 建立 Next.js/Payload/PostgreSQL/Who-Dat/MinIO 基线、全部最小 Collections 与 RBAC、TOTP/OTP/opaque Session、三队列与 commerce 幂等、provider mocks、迁移/类型漂移门禁、CI、六份 ADR 与 Runbook | lint、typecheck、25 个单元测试、5 个 PostgreSQL/MinIO 集成测试、2 个 Playwright 场景、Gitleaks 和生产/同镜像构建通过；本地 Worker 可独立启动                                                                                                                | D0 保持未完成：真实 OSS 与 2 vCPU/4 GiB ECS 验证待完成；ECS 仍承载其他项目，不执行会影响现有服务的压测、重启或重建                                                    |
+| 2026-08-03 | D0 安全基线更新                     | 项目负责人批准 Next.js 16.2.11，并批准受控使用现有 OSS/RDS/ECS；Payload 与官方插件保持 3.86.0                                                                                                 | `make check`、2 个 Playwright E2E、Next.js 16.2.11 本地生产构建及 linux/amd64 同镜像构建通过；高危依赖审计清零，剩余 2 low、2 moderate                                                                                                                      | 当前 Aliyun CLI 身份看不到文档所列 ECS/RDS；3 个可见 OSS Bucket 均无法明确识别为 D0 测试目标；真实云验证仍未完成，批准标签须在获提交授权后建立                        |
+| 2026-08-04 | D0 阿里云隔离验证                   | 核对正确云资源；创建上海私有 D0 Bucket；在隔离 RDS 数据库执行 migration；未修改现有业务库和 ECS 工作负载                                                                                      | 公共 `storage-s3` 与私有 `ali-oss` 均通过真实 OSS 上传、读取、ETag、60 秒签名和删除；PostgreSQL 16.10 初始 migration 成功且二次执行无变更；隧道中断后的 processing lock 已恢复，最终无可运行测试 Job                                                        | commerce 长任务经 SSH 隧道超时/断连，必须在同 VPC ECS Worker 复测；ECS 压测、重启、重建延期到部署阶段；RDS SSL 未启用；本轮披露的云凭据必须轮换；批准标签仍待提交授权 |
+| 2026-08-04 | D0 条件通过                         | 项目负责人批准进入 D1；仅将共享 ECS 无法安全执行的内存、独立重启、同 VPC Jobs 恢复、节点重建和 RTO 原样转入 D7                                                                                | D0 其他任务、真实 OSS/隔离 RDS 证据、`make check`、2 个 Playwright 场景和秘密扫描均通过                                                                                                                                                                     | D7/生产上线前必须补齐 ECS 门槛；现有项目迁出前不得在共享 ECS 部署或压测 Wanmi；云凭据必须轮换；新批准标签待提交授权                                                   |
+| 2026-08-07 | D4-01 客户认证与短信                | 完成 SDK 短信发送/回执/失败分类、四维原子限频、OTP/opaque Session、全部会话退出、注销申请及客户/管理员认证隔离                                                                                | `make check`：520 个单元测试、44 个 PostgreSQL/MinIO 集成测试及完整构建/安全门禁通过；`make test-e2e` 35/35 通过；未发送真实短信                                                                                                                            | D4 仍进行中；实名模板、私有证件、30 天清理和人工复核留给 D4-02 及后续切片，生产上线门槛不变                                                                           |
+| 2026-08-07 | D4-03 私有证件                      | 完成魔术字节/结构/恶意内容检查、独立数据密钥信封加密、私有 OSS 生命周期、短时签名访问和查看/下载/提交/删除审计                                                                                | `make check`：529 个单元测试、47 个 PostgreSQL/MinIO 集成测试及完整构建/安全门禁通过；`make test-e2e` 36/36 通过；`ALLOW_REAL_PROVIDER_WRITES=false`，未连接真实 OSS/KMS                                                                                    | D4 仍进行中；30 天清理任务留给 D4-04，staging 最小权限与真实 provider contract test 仍须另行授权，生产上线门槛不变                                                    |
+| 2026-08-07 | D4-04 实名生命周期                  | 完成立即停用、精确 30 天 Payload Job 清理、OSS 主/备份与数据库删除幂等、拒绝修改重提、未知状态 fail-closed 和带证据的 system_admin 人工复核                                                   | `make check`：530 个单元测试、48 个 PostgreSQL/MinIO 集成测试及完整构建/安全门禁通过；`make test-e2e` 36/36 通过；未连接真实 provider                                                                                                                       | D4 完成；live OSS/KMS 与西部数码 contract test、备份恢复和生产环境门槛仍须在 D7 另行授权验证                                                                          |
+| 2026-08-07 | D5-01 客户报价                      | 复用 D2-07 整数分计算与价格快照，完成客户归属的域名/年限报价、完整成本与规则快照、精确 5 分钟有效期、完整性校验、六状态 API 和订单复用校验入口                                                | `make check`：537 个单元测试、49 个 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；`make test-e2e` 36/36 通过；未连接真实西部数码                                                                                                                   | D5 进行中；后台可发布加价规则与审计、实际订单创建及报价重新验证留给后续切片，真实 provider 联调与生产门槛不变                                                         |
+| 2026-08-07 | D5-02 订单创建与状态机              | 完成服务端金额订单创建、报价/实名/TLD/规则/金额/可售状态完整重新验证、`pending_payment` 起始状态、完整报价快照和追加事件；复用既有 CAS 状态机                                                 | `make check`：544 个单元测试、50 个 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；`make test-e2e` 36/36 通过；未连接真实西部数码                                                                                                                   | D5 进行中；后台可发布加价规则与审计、微信支付、退款和对账留给后续切片，真实 provider 联调与生产门槛不变                                                               |
+| 2026-08-07 | D5-03 微信支付确认                  | 完成 Native/H5 下单、通知验签/解密、经平台签名的主动查单、金额/标识核对、幂等入库、`pending_payment → paid/manual_review` 和四项数据库唯一索引                                                | `make check`：547/547 单元测试、54/54 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；`make test-e2e` 36/36 通过；`ALLOW_REAL_PROVIDER_WRITES=false`                                                                                                 | D5 进行中；前端二维码/H5 跳转、超时关单、退款、补单/对账和真实商户联调待后续切片，生产门槛不变                                                                        |
+| 2026-08-07 | D5-04 微信退款与对账                | 完成注册失败自动全额退款、退款创建/查询/验签通知、请求未知后只查不重提、失败人工复核，以及微信资金/内部订单/西部预充值独立账本和追加式三方差异                                                | `make check`：548/548 单元测试、59/59 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；`make test-e2e` 36/36 通过；`ALLOW_REAL_PROVIDER_WRITES=false`                                                                                                 | D5 进行中；履约仍留给 D6；前端支付流程、支付超时关单、补单工具、特殊退款/发票审计及真实商户联调仍未完成，生产门槛不变                                                 |
+| 2026-08-08 | D6-01 西部数码写适配器与操作键      | 完成实名、注册、续费、资产查询、Name Server 可注入 fixture adapter；复用 providerOperations 建立数据库唯一操作键、CAS 单次提交、事务审计、有限重试和状态不明仅查询                            | `make check`：559/559 单元测试、74/74 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；两处关键分支变异均被对应测试杀死；`ALLOW_REAL_PROVIDER_WRITES=false`                                                                                           | D6 进行中；commerce Job 履约、订单/人工复核、资产落库与 UI、主动续费闭环、余额停售及真实接口联调留给后续切片；未发出真实西部数码请求                                  |
+| 2026-08-08 | D6-02 支付后注册履约闭环            | 支付确认事务内原子单次入队；冻结报价/实名/域名/余额预检；复用 D6-01 写操作与 D5-04 全额退款；未知只查询；确认后落域名资产                                                                     | `make check`：559/559 单元测试、80/80 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；入队 CAS 与支付后不按过期时间重计价两处变异均被测试杀死；`ALLOW_REAL_PROVIDER_WRITES=false`                                                                    | D6 进行中；主动续费、资产 UI/同步、余额停售/告警、人工处理后台和真实接口联调仍待后续切片；未发出真实资金或域名请求                                                    |
+| 2026-08-08 | D6-03 余额监控与紧急停售            | 定时记录西部预充值独立账本；siteSettings 保存阈值及手动/自动 TLD 集；原子单次告警；下单前停售；已支付订单保持原状并由负责人原子选择恢复或退款                                                 | `make check`：561/561 单元测试、85/85 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；migration 空库和独立 down/up 通过；停售检查与 CAS 条件两处变异均被测试杀死；`ALLOW_REAL_PROVIDER_WRITES=false`                                                 | D6 进行中；第 10.2 第 2 项等待主动续费；真实余额 contract test、运营阈值和告警渠道仍需 D7/staging 授权验证，生产门槛不变                                              |
+| 2026-08-08 | D6-05 主动续费闭环                  | 复用报价、订单、支付、commerce 履约、自动退款和人工复核；续费写复用 D6-01，既有 renewals 与 domainAssets 以 PostgreSQL CAS 幂等落库                                                           | `make check`：564/564 单元测试、91/91 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；全新卷连续三轮 91/91；续费落库 CAS 与支付后过期报价两处变异均被杀死；`ALLOW_REAL_PROVIDER_WRITES=false`                                                        | D6 进行中；D6-04 资产读侧、NS、提醒和越权门禁位于独立 PR；真实续费 contract test、资金/域名写联调和 D7 强制中断恢复仍未授权，生产门槛不变                             |
+| 2026-08-08 | D6-04 域名资产、NS 与提醒           | 本人资产列表/详情/同步；NS commerce 写入、人工只查复核与事务审计；站内/短信到期提醒及原子去重；用户/订单/资产越权门禁                                                                         | `make check`：567/567 单元测试、90/90 PostgreSQL/MinIO 集成测试及完整迁移/构建/安全门禁通过；全新卷后三轮完整集成均 90/90；归属门禁与提醒 CAS 两处变异均被杀死；`ALLOW_REAL_PROVIDER_WRITES=false`                                                          | D6 进行中；主动续费及第 10.2 第 2 项仍待 D6-05；真实短信模板、provider contract test 与生产门槛不变                                                                   |
+| 2026-08-09 | D6-05 累计迁移快照基线修复          | 普通 merge `main` 后删除旧 D6-05 migration，并基于含 D6-04 表结构的最新快照重新生成 `20260809_053302_d6_active_renewals`；新增累计快照门禁与 D6-05 独立往返验证                               | 新快照命中 `domain_expiry_reminders=4`、`provider_operations=5`、`renewals=5`、`domain_assets=11`；全新卷连续两轮 96/96、整链 migrate、整批 down/up 与 `make check` 通过，最终 569/569 单元测试、96/96 集成测试；审计跨表 ID 碰撞变异稳定复现期望 4、实际 5 | 未修改 D6-05 业务逻辑；只调整测试审计/fixture 隔离与负载时限，只使用 fixture，真实 provider 联调和全部生产门槛不变                                                    |
+| 2026-08-09 | D7-01 安全硬化与降级                | 补齐 SSRF/跳转/浏览器头/上传/越权安全矩阵；完整历史 Gitleaks、linux/amd64 Trivy 和精确 GHSA 例外；六类工具真实触发 CMS、广告、分析失败仍可用                                                  | `make check`：586/586 单元、96/96 集成、完整迁移/构建/扫描通过；136 个提交无泄漏；关键分支变异均被杀死，冗余层与初始弱断言的存活过程已记录                                                                                                                  | D7 第 3、4、12 项完成；staging contract、真实 ECS/RDS/OSS/KMS、密钥轮换和三方对账仍未授权且未勾选                                                                     |
+| 2026-08-09 | D7-02 监控、Runbook 与发布回滚      | 复用既有聚合、审计、账本、provider operation、人工复核和 background workflow 建立九类可配置阈值监控与原子单次告警；六份可执行 Runbook；静态先行、digest 镜像、兼容迁移与回滚门禁              | `make check`：572/572 单元测试、98/98 PostgreSQL/MinIO 集成测试及完整迁移/Runbook/发布/安全/构建门禁通过；监控 CAS、mutable tag、静态晚于切流三处变异均被杀死；`ALLOW_REAL_PROVIDER_WRITES=false`                                                           | 不新增 migration；没有部署或真实 provider/OSS/KMS/registry 写入；staging、生产告警渠道、真实发布/回滚和全部基础设施演练仍待授权                                       |
+| 2026-08-09 | D7-03 全链路 E2E 与性能基线         | 生产构建上新增交易主干与关键失败/越权旅程；修复 CSP nonce、路径级 Referrer-Policy 与 Linux Chrome profile 清理竞态；建立跨本机/CI 的接口负载和三页 Lighthouse 门槛                            | 全新库连续两轮 `make test-e2e` 42/42；履约状态门变异被杀死；本机性能最终 p95 264.9/3978.6/149.1 ms；Linux 首轮实测公开页/IDN 810.9/274.9 ms、TBT 最差 104 ms，并据此固定有限余量；本地及 Linux `make check` 594/594 单元、98/98 集成与完整门禁通过          | `ALLOW_REAL_PROVIDER_WRITES=false`，无真实 provider/外网依赖；D7 余下五项等待真实凭据或基础设施授权，未提前勾选                                                       |
+| 2026-08-09 | D7-04 provider 写通道与分级安全围栏 | 建立 WestDigital 与微信真实 transport；总闸下细分 provider/能力开关；在既有写入口内加入域名白名单、次数与金额围栏；CI 和测试永久禁止 live transport                                           | 西部三类围栏变异分别被杀死；全新卷连续两轮集成 101/101；`make check` 602/602 单元、101/101 集成及完整迁移/构建/工作树与 147 提交历史 Gitleaks/Trivy 门禁通过                                                                                                | 全程 `ALLOW_REAL_PROVIDER_WRITES=false`，未发起真实调用；通道建成不等于 staging 联调完成，11.1 第 2 项保持未勾选                                                      |
+| 2026-08-09 | D7-05 持久化预算与只读联调入口      | provider/能力 scope 的 PostgreSQL 原子条件扣减与 operation key 幂等 debit；空库/历史/down-up migration；一次性脱敏只读契约脚本与默认/测试/CI 闸门固定                                         | 次数条件变异被杀死；全新卷连续两轮 102/102；`make check` 605/605 单元、104/104 集成及完整迁移/构建/工作树与 149 提交历史 Gitleaks/Trivy 门禁通过                                                                                                            | 真实联调受缺失生产配置及 KMS `NotEnabled` 阻塞；未调用目标接口或云对象写，11.1 第 2 项保持未勾选，证据见 `docs/operations/d7-05-provider-read-contracts.md`           |
+| 2026-08-10 | D7-06 应用自管主密钥冻结项变更      | 版本化应用主密钥 key ring 包裹逐对象随机数据密钥；保留 AES-256-GCM/fill(0)；移除 KMS 代码、探针、配置、闸门与 SDK；更新 ADR、Runbook、发布迁移策略及全套批准文档                              | 三处承重变异均被杀死；全新卷连续两轮 104/104；`make check` 609/609 单元、104/104 集成及完整迁移/构建/151 提交历史 Gitleaks/Trivy 通过；E2E 42/42                                                                                                            | 旧 mock KMS 对象明确废弃，生产无真实数据；主密钥进入应用配置后服务器完整攻破可取得 key ring，生产注入、离线备份、轮换与紧急恢复演练仍是硬门槛                         |
+| 2026-08-10 | D7-07 重建工具链与本地受限验证      | 固定 ADR-0006 八步工具链、同 digest Web/Worker、readyz fail-closed、Payload Job 原子恢复；空目标节点 2 vCPU/4 GiB 下测量内存/轮转/独立重启/强杀恢复/RTO                                       | 峰值/稳态 639.6/561.3 MiB；日志至少 9.5 MB 后留存 1,093,349 bytes；RTO 93.4 秒；两个恢复者 `[1,0]` 且 provider claim/attempt 均 1；两处变异被杀死；镜像层/日志 secret 检查通过                                                                              | 容器受限等价验证已完成，真实 ECS 验证待授权；未接触 ECS/RDS/OSS；11.1 第 2、10、11 项及 D0 单 ECS 项保持未勾选，真实环境须完整重跑                                    |
+| 2026-08-10 | D7-06 bootstrap 阻塞修复            | 为干净环境生成 `local-v1` 主密钥 key ring 与 active version；显式 0600；新增隔离环境的完整 `getEnv()` 回归并纳入 `make check`                                                                 | 无现有 `.env.local` 的临时干净副本通过 bootstrap/getEnv；随机隔离空库完成全部 migration；`make check` 通过 609/609 单元、104/104 集成及完整构建/安全门禁                                                                                                    | `.env.example` 仍无主密钥值；生产注入/轮换/恢复门槛不变；D7-07 工具链与结论未改                                                                                       |
+| 2026-08-10 | D7-08 真实环境预检                  | 只读确认 D7-07 已合并、ECS 云侧规格、RDS VPC/备份/PITR/SSL 字段与 OSS 版本/生命周期/WORM 状态；将开工门禁回写 Runbook 与 ADR-0006                                                             | ECS 云侧为 2 vCPU/4 GiB，但 SSH 目标不匹配；RDS 自动备份/PITR 窗口存在，但 `SSLEnabled=off`；OSS 无版本控制且无 30 天删除保护；主密钥/凭据轮换不可复核                                                                                                      | 硬前置失败，未执行任何部署或恢复操作；11.1 第 9、10、11 项和 D0 单 ECS 项均保持未勾选                                                                                 |
 
 ## 13. 范围追踪矩阵
 
-| PRD 模块 | 开发里程碑 | 核心验收焦点 |
-| --- | --- | --- |
-| M01 公共站与首页 | D1 | 主查询、响应式、单 canonical host |
-| M02 域名可注册查询 | D2 | 六种状态、最多 10 TLD、部分成功 |
-| M03 RDAP/WHOIS | D2 | 与可售状态分离、脱敏、降级 |
-| M04 DNS/NS 查询 | D2 | 常见记录、错误解释、只读与防滥用 |
-| M05 TLD 价格与成本 | D2、D5 | 快照、1/3 年成本、5 分钟报价 |
-| M06 IDN/Punycode | D2 | 双向转换、非法输入、风险提示 |
-| M07 SSL/CAA | D2 | 固定端口、证书状态、防 SSRF |
-| M08 内容与 SEO | D3 | CMS、发布状态、来源、收录控制 |
-| M09 本地历史与收藏 | D2 | 30 条、90 天、浏览器本地与可清除 |
-| M10 广告与导购 | D3 | “广告”标识、受控跳转、不影响工具 |
-| M11 运营后台 | D1、D3～D7 | 权限、配置、异常处理和审计 |
-| M12 数据分析与反馈 | D3、D7 | 第一方事件、隐私、基础报表与告警 |
-| M13 账号与实名 | D4 | 短信登录、模板归属、加密、删除 |
-| M14 订单与微信支付 | D5 | 状态机、验签、幂等、退款、对账 |
-| M15 代理注册与续费 | D6 | Payload commerce Jobs、写操作幂等、状态不明不重试 |
-| M16 域名资产 | D6 | 资产字段、主动续费、NS、越权保护 |
+| PRD 模块           | 开发里程碑 | 核心验收焦点                                      |
+| ------------------ | ---------- | ------------------------------------------------- |
+| M01 公共站与首页   | D1         | 主查询、响应式、单 canonical host                 |
+| M02 域名可注册查询 | D2         | 六种状态、最多 10 TLD、部分成功                   |
+| M03 RDAP/WHOIS     | D2         | 与可售状态分离、脱敏、降级                        |
+| M04 DNS/NS 查询    | D2         | 常见记录、错误解释、只读与防滥用                  |
+| M05 TLD 价格与成本 | D2、D5     | 快照、1/3 年成本、5 分钟报价                      |
+| M06 IDN/Punycode   | D2         | 双向转换、非法输入、风险提示                      |
+| M07 SSL/CAA        | D2         | 固定端口、证书状态、防 SSRF                       |
+| M08 内容与 SEO     | D3         | CMS、发布状态、来源、收录控制                     |
+| M09 本地历史与收藏 | D2         | 30 条、90 天、浏览器本地与可清除                  |
+| M10 广告与导购     | D3         | “广告”标识、受控跳转、不影响工具                  |
+| M11 运营后台       | D1、D3～D7 | 权限、配置、异常处理和审计                        |
+| M12 数据分析与反馈 | D3、D7     | 第一方事件、隐私、基础报表与告警                  |
+| M13 账号与实名     | D4         | 短信登录、模板归属、加密、删除                    |
+| M14 订单与微信支付 | D5         | 状态机、验签、幂等、退款、对账                    |
+| M15 代理注册与续费 | D6         | Payload commerce Jobs、写操作幂等、状态不明不重试 |
+| M16 域名资产       | D6         | 资产字段、主动续费、NS、越权保护                  |
 
 ## 14. 核心测试清单
 
