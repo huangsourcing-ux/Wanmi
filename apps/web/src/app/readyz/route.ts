@@ -4,7 +4,6 @@ import { getPayload } from 'payload'
 import { getTraceId, problemResponse, successResponse } from '@/lib/errors'
 import { getEnv } from '@/lib/env'
 import { createSmsProvider } from '@/providers/aliyunsms'
-import { createKmsProvider } from '@/providers/kms'
 import { createRealnameObjectProvider } from '@/providers/oss-realname'
 import type { HealthAwareProvider } from '@/providers/types'
 import { MockWechatPayProvider } from '@/providers/wechatpay'
@@ -30,12 +29,11 @@ export async function GET(request: Request) {
     const payload = await getPayload({ config })
     await payload.count({ collection: 'admins', overrideAccess: true })
     const env = getEnv()
-    const [whodat, westdigital, wechatpay, sms, kms, privateStorage] = await Promise.all([
+    const [whodat, westdigital, wechatpay, sms, privateStorage] = await Promise.all([
       optionalProviderHealth(() => new WhoDatProvider()),
       optionalProviderHealth(() => new MockWestDigitalProvider()),
       optionalProviderHealth(() => new MockWechatPayProvider()),
       optionalProviderHealth(createSmsProvider),
-      optionalProviderHealth(createKmsProvider),
       optionalProviderHealth(createRealnameObjectProvider),
     ])
     const publicStorage = {
@@ -54,7 +52,6 @@ export async function GET(request: Request) {
       {
         components: {
           database: { healthy: true, required: true },
-          kms,
           privateStorage,
           publicStorage,
           sms,

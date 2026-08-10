@@ -874,6 +874,7 @@ export interface RealnameDocument {
       }[]
     | null;
   encryptedDataKey: string;
+  masterKeyVersion: string;
   encryptionVersion: 'aes-256-gcm-v1';
   iv: string;
   authTag: string;
@@ -2618,6 +2619,7 @@ export interface RealnameDocumentsSelect<T extends boolean = true> {
         id?: T;
       };
   encryptedDataKey?: T;
+  masterKeyVersion?: T;
   encryptionVersion?: T;
   iv?: T;
   authTag?: T;

@@ -61,6 +61,7 @@ docker compose ps
 - commerce/Worker 必须在 ECS 与 RDS 同 VPC 的部署形态重新验证中断恢复和 provider 幂等。本机长时 SSH 隧道的超时/断连不能替代该证据。
 - RDS 当前未启用 SSL 且存在公网连接入口。为避免影响现有项目，本次未修改实例网络或 SSL；生产使用前必须启用 SSL，并收敛为 VPC 内网和最小白名单。
 - KMS 已按 D0 计划完成 SDK adapter、信封加密 mock 和最小权限边界；真实密钥验证属于后续实名功能和生产上线门槛，完成前真实实名文件不得投入使用。
+- 上一条是 2026-08-04 的历史 D0 结论；2026-08-10 D7-06 已因账号 `AccountStatus=NotEnabled` 按负责人指示移除 KMS，当前基线改为版本化应用主密钥，见 ADR-0005 与 `docs/operations/realname-master-key.md`。
 - 本轮通过对话提供的 AccessKey、ECS 管理密码和 RDS 密码必须全部轮换，后续改用 RAM 子账号/实例角色和受控 Secret；轮换前不得视为生产安全基线。
 - Gitleaks 对所有 Git 可见文件扫描通过；未执行任何真实短信、资金或域名写请求。
 

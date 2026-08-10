@@ -1,10 +1,10 @@
 # Wanmi.AI P1 开发计划
 
-> 文档版本：v2.6（D5-03 执行更新）
+> 文档版本：v2.7（D7-06 应用主密钥冻结项变更）
 >
-> 更新日期：2026-08-07
+> 更新日期：2026-08-10
 >
-> 冻结基线：`P1-BASELINE-2026-08-04.1`；批准标签 `p1-docs-approved-2026-08-04-1` 待本次批准变更提交后建立
+> 冻结基线：`P1-BASELINE-2026-08-10.1`；批准标签 `p1-docs-approved-2026-08-10-1`
 >
 > 状态：已批准作为 P1 开发执行计划；生产上线仍需通过独立门槛
 >
@@ -71,7 +71,7 @@ Codex 必须：
 
 ### 0.5 冻结与变更控制
 
-`P1-BASELINE-2026-08-04.1` 冻结 P1 产品范围、固定架构、订单状态与合法迁移、退款规则、实名归属、12～16 周工期口径和生产上线门槛。开发过程中可以更新本计划的任务勾选、验证证据、阻塞、ADR 和 Runbook；不得借进度更新改变冻结基线。
+`P1-BASELINE-2026-08-10.1` 冻结 P1 产品范围、固定架构、订单状态与合法迁移、退款规则、实名归属、12～16 周工期口径和生产上线门槛。相对上一基线，本次只按负责人指示将不可用的阿里云 KMS 替换为版本化应用主密钥；证件加密与生产门槛不降低。开发过程中可以更新本计划的任务勾选、验证证据、阻塞、ADR 和 Runbook；不得借进度更新改变冻结基线。
 
 需要改变冻结内容时，必须取得项目负责人明确指令，更新受影响文档版本与变更记录，完成跨文档一致性检查，并建立新的批准标签。D0 验证失败只触发延长、修正假设或重新提交架构决策，不自动解除冻结。
 
@@ -176,8 +176,8 @@ flowchart LR
 - Payload Jobs：`publishing`、`background`、`commerce`，独立 Worker；
 - Payload `payload-types.ts` + 共享 Zod request/response schemas；
 - 部署：Nginx + Next.js/Payload Web/Admin/API + Payload Jobs Worker + Who-Dat；
-- 存储：RDS、OSS/CDN、KMS/Secrets Manager；公共媒体使用 `@payloadcms/storage-s3`，私有实名文件使用 `ali-oss`；
-- 阿里云短信与 KMS 使用 Alibaba Cloud TypeScript SDK，不自行实现阿里云 API 签名；
+- 存储：RDS、OSS/CDN 与部署 secret；公共媒体使用 `@payloadcms/storage-s3`，私有实名文件使用 `ali-oss`；
+- 阿里云短信使用 Alibaba Cloud TypeScript SDK，不自行实现阿里云 API 签名；实名证件使用版本化应用主密钥信封加密；
 - 不引入第二套业务后端、Redis、独立消息队列或微服务。
 
 ### 3.2 目标仓库结构
@@ -240,7 +240,7 @@ D0 必须建立并维护以下命令；后续里程碑不得绕过：
 - `aliyunsms`：通过 Alibaba Cloud TypeScript SDK 发送验证码、重要订单状态和到期提醒；
 - `oss-public`：通过 `@payloadcms/storage-s3` 管理内容图片与广告素材；
 - `oss-realname`：通过 `ali-oss` 管理私有实名文件的上传、短时签名和删除；
-- `kms`：通过 Alibaba Cloud TypeScript SDK 完成信封加密与密钥引用；
+- `realname/master-key`：通过环境注入的版本化应用主密钥包裹每对象随机数据密钥；
 - `whodat`：RDAP/WHOIS。
 
 每个适配器必须提供：
@@ -257,10 +257,10 @@ D0 必须建立并维护以下命令；后续里程碑不得绕过：
 ### 3.5 数据与安全底线
 
 - 所有资金、履约、域名和实名状态由服务端决定；
-- 浏览器不得直连西部数码、微信支付、RDS、私有 OSS 或 KMS；
+- 浏览器不得直连西部数码、微信支付、RDS、私有 OSS 或部署 secret；
 - 手机号、验证码、证件、Cookie、支付密钥、provider token 不进入普通日志；
 - 查询结果页默认 noindex，不长期保存不必要的完整查询域名；
-- 实名证件进入私有 OSS，使用 KMS 加密、短时签名访问、最小权限和操作审计；
+- 实名证件进入私有 OSS，使用每对象数据密钥和版本化应用主密钥信封加密、短时访问、最小权限和操作审计；
 - 删除模板或注销账号后立即禁止继续使用，并在 30 天内清理主存储和备份；
 - DNS/TLS 工具必须防 SSRF、内网探测和 DNS rebinding；
 - 所有人工状态修改记录操作者、原状态、新状态、原因和时间；
@@ -290,14 +290,14 @@ D0 必须建立并维护以下命令；后续里程碑不得绕过：
 - [x] 定义内容、广告、身份、实名、报价、订单、支付、退款、provider 操作、域名资产和审计 Collections；
 - [x] 通过 `@payloadcms/storage-s3` 验证公共媒体的 OSS 上传、读取、删除、签名地址和 ETag；
 - [x] 验证私有实名文件与公共 Media Collection 分离，并用 `ali-oss` 完成私有对象上传、读取、短时签名和删除原型；
-- [x] 使用 Alibaba Cloud TypeScript SDK 建立短信与 KMS adapters 的 mock、错误映射和最小权限配置边界；
+- [x] 使用 Alibaba Cloud TypeScript SDK 建立短信 adapter；实名证件建立版本化应用主密钥的启动校验、轮换读取和失效边界；
 - [x] 建立 provider 接口、mock 和脱敏 fixture 目录；
 - [x] 建立 `.env.example`，只写变量名、用途和安全说明；
 - [x] 建立 Makefile 稳定命令和 CI；
 - [x] 建立测试框架：Vitest、React Testing Library、MSW、Playwright 和 PostgreSQL 集成测试；
 - [x] 建立 Gitleaks 和依赖扫描；
 - [ ] 在单 ECS 规格下验证 Web/Worker 内存、独立重启、Jobs 恢复和节点重建；
-- [x] 编写首批 ADR：Payload 主架构、Local API 权限、opaque Session、commerce 幂等、OSS/KMS、单 ECS 可重建策略。
+- [x] 编写首批 ADR：Payload 主架构、Local API 权限、opaque Session、commerce 幂等、公共/私有 OSS 与实名主密钥分离、单 ECS 可重建策略。
 - [x] 在 commerce ADR 中固化《技术栈与工程规范》第 6.1 节合法迁移矩阵，并测试全部 `manual_review` 出口。
 
 ### 4.3 退出条件
@@ -485,7 +485,7 @@ D3-07 验证记录（2026-08-07）：建立文章、专题、TLD 页面和帮助
 - [x] 普通用户登录与管理员认证完全分离；
 - [x] 实现个人/组织实名模板领域模型和西部数码实名适配器；
 - [x] 模板状态至少支持未提交、审核中、已通过、未通过、待人工处理和已停用；
-- [x] 使用 `ali-oss` 实现私有 OSS 上传，并完成文件类型/大小检查和恶意文件检查；使用 Alibaba Cloud TypeScript SDK 调用 KMS 完成信封加密；
+- [x] 使用 `ali-oss` 实现私有 OSS 上传，并完成文件类型/大小检查和恶意文件检查；使用每对象数据密钥与版本化应用主密钥完成 AES-256-GCM 信封加密；
 - [x] 实现短时签名访问、最小权限和证件查看/下载/提交/删除审计；
 - [x] 后台列表、日志和错误不得显示证件内容；
 - [x] 只有西部数码确认通过的模板可用于注册；
@@ -618,7 +618,7 @@ D6-02 返回语义补充验证记录（2026-08-08）：修正 `executeWestDigita
 ### 11.1 D7 集成与硬化
 
 - [x] 对 M01～M16 执行全链路 E2E 和回归测试；
-- [ ] 完成短信、微信支付、西部数码、OSS/KMS 的 staging contract test；
+- [ ] 完成短信、微信支付、西部数码、私有 OSS 的 staging contract test，并验证生产应用主密钥注入；
 - [x] 完成 DNS/TLS SSRF、开放跳转、CSRF、CORS、CSP、上传和越权安全测试；
 - [x] 完成 Gitleaks、Trivy 和 Node 依赖安全检查；
 - [x] 完成 k6/Lighthouse 或等价性能基线；
@@ -667,6 +667,12 @@ D7-05 验证记录（2026-08-09）：D7-04 的进程内注册/续费次数和微
 
 只读真实联调没有用 fixture 冒充完成：当前进程与 `apps/web/.env.local` 未注入 WestDigital、Wechat Pay、私有 OSS/KMS 和短信模板所需生产配置；受控 Aliyun CLI 只读预检中 STS 鉴权成功（2.12 s），KMS `DescribeAccountKmsStatus` 返回字段 `AccountStatus`/`RequestId` 且真实状态为 `NotEnabled`（4.55 s），OSS Bucket 列举成功并看到 3 个 Bucket、其中 1 个在上海（2.74 s，名称未记录）。因此未调用 WestDigital/Wechat Pay 目标接口，未创建 OSS 对象、未执行 KMS data key 往返、未发送短信，也未触发任何资金/域名写。脱敏契约入口、逐接口待补字段/schema/错误映射/时延和阻塞证据见 `docs/operations/d7-05-provider-read-contracts.md`；四类真实读侧尚未全部完成，11.1 第 2 项继续保持未勾选。
 
+D7-06 冻结项变更验证记录（2026-08-10）：项目负责人依据 D7-05 实测 `AccountStatus=NotEnabled` 明确取消阿里云 KMS。实名证件继续使用信封加密：每个对象由 `randomBytes(32)` 生成独立数据密钥，正文与数据密钥包裹层均为 AES-256-GCM，用完 plaintext data key 后 `fill(0)`；应用从 `REALNAME_DOCUMENT_MASTER_KEYS` 读取版本化 32 字节标准 Base64 主密钥 key ring，并以 `REALNAME_DOCUMENT_MASTER_KEY_VERSION` 选择写入版本。对象 header、OSS metadata 与 Payload 记录同时保存 `masterKeyVersion`，读取只查询记录指定版本，缺失时直接失败，不回退 active version；保留旧版本时，旧对象在 active version 轮换后继续可读。`providers/kms.ts`、KMS provider interface、readyz probe、KMS env/能力闸和独立 SDK 依赖均已移除，全部真实 provider 写闸默认、测试和 CI 继续固定为 `false`。
+
+命名 migration `20260810_040217_d7_app_master_key` 以 expand 方式增加数据库可空但 Payload 写入必填的版本列，保证旧代码在发布迁移后仍可运行；历史记录统一标为 `legacy-kms-unavailable` 与 `upload_failed`。本地/测试的旧 mock KMS key 仅在进程内随机生成且未持久化，无法安全转换，因此旧对象明确废弃并由既有生命周期清理；生产尚无真实对象，无生产密文迁移。release policy 与 example manifest 已登记 D7-05/D7-06 两项 expand migration。新增 `realname-master-key.md` 覆盖生成、受控注入、保留旧版本轮换、离线备份、缺失版本恢复和完整失陷处置；ADR-0005 如实记录主密钥进入应用配置后，服务器或部署 secret 完整攻破即可取得全部 key ring、相较 KMS 失去防御深度。冻结基线更新为 `P1-BASELINE-2026-08-10.1`，批准标签为 `p1-docs-approved-2026-08-10-1`。
+
+三处承重变异均被对应测试杀死：把逐对象随机数据密钥替换为固定 32 字节后，独立 key 断言失败；删除正文解密的 `decipher.final()` 后，篡改 GCM tag 的对象被错误读取且认证断言失败；缺失记录版本时回退 active version 后，严格单次版本查询断言失败。恢复后聚焦 9/9。对本项目执行 `docker compose down -v` 删除并重建 PostgreSQL/MinIO 卷后，完整集成连续两轮均为 104/104。最终 `ALLOW_REAL_PROVIDER_WRITES=false make check` 退出码 0，通过生成物/schema 漂移、空库/升级与全部 migration 往返、7 份 Runbook/14 个 endpoint 引用、2 项 release migration policy、lint、TypeScript strict、609/609 单元、104/104 集成、Next.js 与 linux/amd64 镜像构建、Node audit、Trivy、工作树及 151 个提交完整历史 Gitleaks；`make test-e2e` 42/42。全仓 `pnpm format:check` 仍报告 44 个既有生成/历史文件格式债，本切片全部非生成文件的定向 Prettier 检查通过，未改这些无关文件。
+
 ### 11.2 D8 P1 开发验收
 
 开发完成必须满足：
@@ -691,8 +697,8 @@ D7-05 验证记录（2026-08-09）：D7-04 的进程内注册/续费次数和微
 - [ ] Wanmi.net ICP 备案与公安联网备案完成；
 - [ ] 隐私、实名、支付、Cookie、广告和使用条款完成审核；
 - [ ] RDS 高可用、自动备份、PITR 和恢复演练通过；
-- [ ] OSS 私有访问、KMS 加密、版本控制、30 天删除和误删恢复通过；
-- [ ] 密钥最小权限、轮换和紧急恢复通过；
+- [ ] OSS 私有访问、应用主密钥信封加密、版本控制、30 天删除和误删恢复通过；
+- [ ] 应用主密钥最小读取权限、轮换、离线备份和紧急恢复通过；
 - [ ] 支付、退款、订单、余额、证件访问和对账告警可用；
 - [ ] 生产 ECS 可重建，支付通知可重放，订单数据全部位于 RDS；
 - [ ] 项目负责人明确批准真实收款和小流量上线。
@@ -745,6 +751,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-09 | D7-03 全链路 E2E 与性能基线 | 生产构建上新增交易主干与关键失败/越权旅程；修复 CSP nonce、路径级 Referrer-Policy 与 Linux Chrome profile 清理竞态；建立跨本机/CI 的接口负载和三页 Lighthouse 门槛 | 全新库连续两轮 `make test-e2e` 42/42；履约状态门变异被杀死；本机性能最终 p95 264.9/3978.6/149.1 ms；Linux 首轮实测公开页/IDN 810.9/274.9 ms、TBT 最差 104 ms，并据此固定有限余量；本地及 Linux `make check` 594/594 单元、98/98 集成与完整门禁通过 | `ALLOW_REAL_PROVIDER_WRITES=false`，无真实 provider/外网依赖；D7 余下五项等待真实凭据或基础设施授权，未提前勾选 |
 | 2026-08-09 | D7-04 provider 写通道与分级安全围栏 | 建立 WestDigital 与微信真实 transport；总闸下细分 provider/能力开关；在既有写入口内加入域名白名单、次数与金额围栏；CI 和测试永久禁止 live transport | 西部三类围栏变异分别被杀死；全新卷连续两轮集成 101/101；`make check` 602/602 单元、101/101 集成及完整迁移/构建/工作树与 147 提交历史 Gitleaks/Trivy 门禁通过 | 全程 `ALLOW_REAL_PROVIDER_WRITES=false`，未发起真实调用；通道建成不等于 staging 联调完成，11.1 第 2 项保持未勾选 |
 | 2026-08-09 | D7-05 持久化预算与只读联调入口 | provider/能力 scope 的 PostgreSQL 原子条件扣减与 operation key 幂等 debit；空库/历史/down-up migration；一次性脱敏只读契约脚本与默认/测试/CI 闸门固定 | 次数条件变异被杀死；全新卷连续两轮 102/102；`make check` 605/605 单元、104/104 集成及完整迁移/构建/工作树与 149 提交历史 Gitleaks/Trivy 门禁通过 | 真实联调受缺失生产配置及 KMS `NotEnabled` 阻塞；未调用目标接口或云对象写，11.1 第 2 项保持未勾选，证据见 `docs/operations/d7-05-provider-read-contracts.md` |
+| 2026-08-10 | D7-06 应用自管主密钥冻结项变更 | 版本化应用主密钥 key ring 包裹逐对象随机数据密钥；保留 AES-256-GCM/fill(0)；移除 KMS 代码、探针、配置、闸门与 SDK；更新 ADR、Runbook、发布迁移策略及全套批准文档 | 三处承重变异均被杀死；全新卷连续两轮 104/104；`make check` 609/609 单元、104/104 集成及完整迁移/构建/151 提交历史 Gitleaks/Trivy 通过；E2E 42/42 | 旧 mock KMS 对象明确废弃，生产无真实数据；主密钥进入应用配置后服务器完整攻破可取得 key ring，生产注入、离线备份、轮换与紧急恢复演练仍是硬门槛 |
 
 ## 13. 范围追踪矩阵
 
@@ -787,7 +794,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 - [x] 短信轰炸、验证码重放、错误次数和全局额度；
 - [x] Session 固定、轮换、撤销、退出全部会话和注销；
 - [x] 实名模板越权、审核失败、状态不明和修改重提；
-- [x] `ali-oss` 证件上传、恶意文件、KMS 加密、短时访问和审计；
+- [x] `ali-oss` 证件上传、恶意文件、每对象数据密钥 + 版本化应用主密钥信封加密、短时访问和审计；
 - [x] 模板删除、账号注销和 30 天清理。
 
 ### 14.3 交易与履约

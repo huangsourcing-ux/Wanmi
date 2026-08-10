@@ -9,7 +9,7 @@
 
 ## 节点重建
 
-1. 从受控环境恢复数据库、OSS、KMS 和 provider 配置引用，不复制旧 ECS 临时文件。
+1. 从受控环境恢复数据库、OSS、完整的实名应用主密钥 key ring 和 provider 配置引用，不复制旧 ECS 临时文件；主密钥步骤遵循 `docs/operations/realname-master-key.md`。
 2. 拉取同一不可变镜像，执行 `payload migrate:status` 和 `payload migrate`。
 3. 先启动 Web，确认 readyz，再启动 Worker，最后恢复流量。
 4. 重放支付通知前先以交易号和商户订单号唯一约束去重。

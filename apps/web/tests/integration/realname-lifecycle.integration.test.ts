@@ -4,7 +4,6 @@ import config from '@payload-config'
 import { createLocalReq, getPayload, type Payload } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { MockKmsProvider } from '@/providers/kms'
 import { MockRealnameObjectProvider } from '@/providers/oss-realname'
 import { requestCustomerDeletion } from '@/services/auth/otp'
 import { uploadRealnameDocument } from '@/services/realname/documents'
@@ -12,6 +11,7 @@ import { realnameCleanupDeadline, runRealnameCleanup } from '@/services/realname
 import { createRealnameTemplate } from '@/services/realname/templates'
 
 import { realnameTemplateFixture } from '../fixtures/realname'
+import { createTestRealnameDocumentMasterKeyring } from '../fixtures/realname-master-key'
 
 const fixturePrefix = `d4-lifecycle-${randomUUID()}`
 const created: Array<{ collection: 'customers'; id: number | string }> = []
@@ -72,7 +72,10 @@ describe('D4 real-name retention lifecycle', () => {
       req,
       realnameTemplateFixture({ displayName: `${fixturePrefix}-template` }),
     )
-    const providers = { kms: new MockKmsProvider(), objects: new TrackingObjectProvider() }
+    const providers = {
+      keyring: createTestRealnameDocumentMasterKeyring(),
+      objects: new TrackingObjectProvider(),
+    }
     const body = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n', 'utf8')
     const uploaded = await uploadRealnameDocument(req, { body, templateId: template.id }, providers)
     const document = await payload.findByID({

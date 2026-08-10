@@ -5,7 +5,6 @@ const realWritesEnabled = /^(?:1|true)$/iu.test(process.env.ALLOW_REAL_PROVIDER_
 
 const gates = [
   'ALLOW_REAL_PROVIDER_WRITES',
-  'ALLOW_REAL_ALIYUN_KMS',
   'ALLOW_REAL_ALIYUN_OSS_REALNAME',
   'ALLOW_REAL_ALIYUN_SMS_SENDS',
   'ALLOW_REAL_WECHATPAY',

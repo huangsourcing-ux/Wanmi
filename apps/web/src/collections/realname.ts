@@ -226,6 +226,15 @@ export const RealnameDocuments: CollectionConfig = {
       required: true,
     },
     {
+      name: 'masterKeyVersion',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      admin: { hidden: true },
+      maxLength: 64,
+      minLength: 1,
+      required: true,
+    },
+    {
       name: 'encryptionVersion',
       type: 'select',
       defaultValue: 'aes-256-gcm-v1',

@@ -27,9 +27,6 @@ importers:
       '@alicloud/dysmsapi20170525':
         specifier: 4.6.0
         version: 4.6.0
-      '@alicloud/kms20160120':
-        specifier: 3.1.0
-        version: 3.1.0
       '@alicloud/openapi-core':
         specifier: 1.0.8
         version: 1.0.8
@@ -250,14 +247,8 @@ packages:
   '@alicloud/gateway-pop@0.0.6':
     resolution: {integrity: sha512-KF4I+JvfYuLKc3fWeWYIZ7lOVJ9jRW0sQXdXidZn1DKZ978ncfGf7i0LBfONGk4OxvNb/HD3/0yYhkgZgPbKtA==}
 
-  '@alicloud/gateway-pop@0.0.8':
-    resolution: {integrity: sha512-2vYabazWDmIHgJFOBmYGK7Nrii9dDdbw4Xnl1cehVyB5Ce99RZzjbwYN05DMhr20mOJVbM7N04DyLQucwBJZUA==}
-
   '@alicloud/gateway-spi@0.0.8':
     resolution: {integrity: sha512-KM7fu5asjxZPmrz9sJGHJeSU+cNQNOxW+SFmgmAIrITui5hXL2LB+KNRuzWmlwPjnuA2X3/keq9h6++S9jcV5g==}
-
-  '@alicloud/kms20160120@3.1.0':
-    resolution: {integrity: sha512-HE3jc0WqbLzmNEznMImeAxJ2JsnCOBCzpa5gyZQcijFZ3l3EgjmEB6B8QpbMUden6QdUhRJP2cyH7x8Yn/AW7Q==}
 
   '@alicloud/openapi-core@1.0.8':
     resolution: {integrity: sha512-xs8LdgMDcEUqv13kZ4nl+Vd+Fc1mixTF0g1lm5QSrNWDaLUUD5vqpuMtvUZnKNnq9PITfUQ+8KunAvNQJpFo8g==}
@@ -6475,40 +6466,12 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@alicloud/gateway-pop@0.0.8':
-    dependencies:
-      '@alicloud/credentials': 2.4.5
-      '@alicloud/darabonba-array': 0.1.2
-      '@alicloud/darabonba-encode-util': 0.0.2
-      '@alicloud/darabonba-map': 0.0.1
-      '@alicloud/darabonba-signature-util': 0.0.4
-      '@alicloud/darabonba-string': 1.0.3
-      '@alicloud/endpoint-util': 0.0.1
-      '@alicloud/gateway-spi': 0.0.8
-      '@alicloud/openapi-util': 0.3.3
-      '@alicloud/tea-typescript': 1.8.0
-      '@alicloud/tea-util': 1.4.11
-    transitivePeerDependencies:
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-
   '@alicloud/gateway-spi@0.0.8':
     dependencies:
       '@alicloud/credentials': 2.4.5
       '@alicloud/tea-typescript': 1.8.0
     transitivePeerDependencies:
       - supports-color
-
-  '@alicloud/kms20160120@3.1.0':
-    dependencies:
-      '@alicloud/gateway-pop': 0.0.8
-      '@alicloud/openapi-core': 1.0.8
-      '@darabonba/typescript': 1.0.5
-    transitivePeerDependencies:
-      - bufferutil
-      - supports-color
-      - utf-8-validate
 
   '@alicloud/openapi-core@1.0.8':
     dependencies:

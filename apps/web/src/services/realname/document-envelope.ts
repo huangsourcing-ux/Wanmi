@@ -7,7 +7,12 @@ import {
 } from 'node:crypto'
 
 import { AppError } from '@/lib/errors'
-import type { KmsProvider } from '@/providers/types'
+
+import {
+  type RealnameDocumentMasterKeyring,
+  unwrapDocumentDataKey,
+  wrapDocumentDataKey,
+} from './master-key'
 
 const ENVELOPE_MAGIC = Buffer.from('WANMI-RN1', 'ascii')
 const AUTH_TAG_BYTES = 16
@@ -19,6 +24,7 @@ export type DocumentEnvelopeMetadata = {
   encryptedDataKey: string
   encryptionVersion: 'aes-256-gcm-v1'
   iv: string
+  masterKeyVersion: string
   sha256: string
   sizeBytes: number
 }
@@ -42,23 +48,18 @@ function equalText(left: string, right: string): boolean {
 export async function encryptDocumentEnvelope(input: {
   body: Uint8Array
   contentType: string
-  kms: KmsProvider
+  keyring: RealnameDocumentMasterKeyring
   sha256: string
-  traceId: string
 }): Promise<{ body: Uint8Array; metadata: DocumentEnvelopeMetadata }> {
-  const generated = await input.kms.generateDataKey({ traceId: input.traceId })
-  if (!generated.ok || generated.data.plaintext.byteLength !== 32) envelopeError()
-  const plaintextKey = Buffer.from(
-    generated.data.plaintext.buffer,
-    generated.data.plaintext.byteOffset,
-    generated.data.plaintext.byteLength,
-  )
+  const plaintextKey = randomBytes(32)
   try {
+    const wrapped = wrapDocumentDataKey(plaintextKey, input.keyring)
     const iv = randomBytes(12)
     const header: EnvelopeHeader = {
       contentType: input.contentType,
-      encryptedDataKey: generated.data.ciphertext,
+      encryptedDataKey: wrapped.encryptedDataKey,
       iv: iv.toString('base64url'),
+      masterKeyVersion: wrapped.masterKeyVersion,
       sha256: input.sha256,
       sizeBytes: input.body.byteLength,
       version: 1,
@@ -76,9 +77,10 @@ export async function encryptDocumentEnvelope(input: {
       metadata: {
         authTag: authTag.toString('base64url'),
         contentType: input.contentType,
-        encryptedDataKey: generated.data.ciphertext,
+        encryptedDataKey: wrapped.encryptedDataKey,
         encryptionVersion: 'aes-256-gcm-v1',
         iv: header.iv,
+        masterKeyVersion: wrapped.masterKeyVersion,
         sha256: input.sha256,
         sizeBytes: input.body.byteLength,
       },
@@ -115,6 +117,7 @@ function parseEnvelope(body: Uint8Array): {
       typeof header.contentType !== 'string' ||
       typeof header.encryptedDataKey !== 'string' ||
       typeof header.iv !== 'string' ||
+      typeof header.masterKeyVersion !== 'string' ||
       typeof header.sha256 !== 'string' ||
       typeof header.sizeBytes !== 'number'
     ) {
@@ -134,8 +137,7 @@ function parseEnvelope(body: Uint8Array): {
 export async function decryptDocumentEnvelope(input: {
   body: Uint8Array
   expected: DocumentEnvelopeMetadata
-  kms: KmsProvider
-  traceId: string
+  keyring: RealnameDocumentMasterKeyring
 }): Promise<Uint8Array> {
   const envelope = parseEnvelope(input.body)
   if (
@@ -144,21 +146,17 @@ export async function decryptDocumentEnvelope(input: {
     !equalText(envelope.header.contentType, input.expected.contentType) ||
     !equalText(envelope.header.encryptedDataKey, input.expected.encryptedDataKey) ||
     !equalText(envelope.header.iv, input.expected.iv) ||
+    !equalText(envelope.header.masterKeyVersion, input.expected.masterKeyVersion) ||
     !equalText(envelope.header.sha256, input.expected.sha256) ||
     !equalText(envelope.authTag.toString('base64url'), input.expected.authTag)
   ) {
     envelopeError()
   }
-  const decryptedKey = await input.kms.decryptDataKey({
-    ciphertext: envelope.header.encryptedDataKey,
-    traceId: input.traceId,
+  const plaintextKey = unwrapDocumentDataKey({
+    encryptedDataKey: envelope.header.encryptedDataKey,
+    keyring: input.keyring,
+    masterKeyVersion: envelope.header.masterKeyVersion,
   })
-  if (!decryptedKey.ok || decryptedKey.data.plaintext.byteLength !== 32) envelopeError()
-  const plaintextKey = Buffer.from(
-    decryptedKey.data.plaintext.buffer,
-    decryptedKey.data.plaintext.byteOffset,
-    decryptedKey.data.plaintext.byteLength,
-  )
   try {
     const decipher = createDecipheriv(
       'aes-256-gcm',

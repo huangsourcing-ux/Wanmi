@@ -4,7 +4,6 @@ import config from '@payload-config'
 import { createLocalReq, getPayload, type Payload } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { MockKmsProvider } from '@/providers/kms'
 import { MockRealnameObjectProvider } from '@/providers/oss-realname'
 import {
   createAdminRealnameDocumentAccess,
@@ -18,6 +17,7 @@ import {
 import { createRealnameTemplate } from '@/services/realname/templates'
 
 import { realnameTemplateFixture } from '../fixtures/realname'
+import { createTestRealnameDocumentMasterKeyring } from '../fixtures/realname-master-key'
 
 const fixturePrefix = `d4-documents-${randomUUID()}`
 const marker = `PRIVATE-DOCUMENT-CONTENT-${randomUUID()}`
@@ -25,7 +25,10 @@ const created: Array<{
   collection: 'customers' | 'realnameDocuments' | 'realnameTemplates'
   id: number | string
 }> = []
-const providers = { kms: new MockKmsProvider(), objects: new MockRealnameObjectProvider() }
+const providers = {
+  keyring: createTestRealnameDocumentMasterKeyring(),
+  objects: new MockRealnameObjectProvider(),
+}
 let payload: Payload
 
 async function requestFor(user: unknown, suffix: string) {
@@ -124,6 +127,7 @@ describe('D4 private real-name documents', () => {
     })
     expect(ownerVisible.objectKey).toBeUndefined()
     expect(ownerVisible.encryptedDataKey).toBeUndefined()
+    expect(ownerVisible.masterKeyVersion).toBeUndefined()
     await expect(
       payload.findByID({
         collection: 'realnameDocuments',

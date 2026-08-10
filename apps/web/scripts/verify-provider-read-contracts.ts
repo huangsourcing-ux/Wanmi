@@ -3,7 +3,6 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { getEnv } from '../src/lib/env'
 import type { ProviderResult } from '../src/lib/domain'
 import { validateAliyunSmsLiveConfiguration } from '../src/providers/aliyunsms'
-import { createKmsProvider } from '../src/providers/kms'
 import { createRealnameObjectProvider } from '../src/providers/oss-realname'
 import {
   createConfiguredWestDigitalBalanceProvider,
@@ -238,7 +237,6 @@ function assertReadOnlyPreflight(): void {
   assert(env.ALLOW_REAL_WESTDIGITAL, 'West Digital provider gate must be enabled')
   assert(env.ALLOW_REAL_WESTDIGITAL_READS, 'West Digital read gate must be enabled')
   assert(env.ALLOW_REAL_WECHATPAY, 'Wechat Pay provider gate must be enabled')
-  assert(env.ALLOW_REAL_ALIYUN_KMS, 'KMS contract gate must be enabled')
   assert(env.ALLOW_REAL_ALIYUN_OSS_REALNAME, 'Private OSS contract gate must be enabled')
 
   const forbiddenWriteGates: Array<[boolean, string]> = [
@@ -257,7 +255,6 @@ function assertReadOnlyPreflight(): void {
   )
   assert(env.WESTDIGITAL_MODE === 'live', 'WESTDIGITAL_MODE must be live')
   assert(env.WECHATPAY_MODE === 'live', 'WECHATPAY_MODE must be live')
-  assert(env.ALIYUN_KMS_MODE === 'live', 'ALIYUN_KMS_MODE must be live')
   assert(env.ALIYUN_OSS_REALNAME_MODE === 'live', 'ALIYUN_OSS_REALNAME_MODE must be live')
   assert(env.ALIYUN_SMS_MODE === 'live', 'ALIYUN_SMS_MODE must be live')
 }
@@ -382,46 +379,6 @@ async function verifyPrivateOss(): Promise<void> {
   }
 }
 
-async function verifyKms(): Promise<void> {
-  const provider = createKmsProvider()
-  const traceId = `d7-05-kms-${randomUUID()}`
-  const startedAt = performance.now()
-  const generated = await provider.generateDataKey({ traceId })
-  if (!generated.ok) {
-    observations.push({
-      actualFieldPaths: [],
-      ...mappedResult(generated),
-      durationMs: roundedDuration(startedAt),
-      interface: 'aliyun.kms_generate_decrypt_roundtrip',
-      mappedFieldPaths: ['ciphertext', 'plaintext'],
-    })
-  }
-  assertProviderOk(generated, 'KMS GenerateDataKey')
-  let decrypted: Awaited<ReturnType<typeof provider.decryptDataKey>> | undefined
-  try {
-    decrypted = await provider.decryptDataKey({ ciphertext: generated.data.ciphertext, traceId })
-    observations.push({
-      actualFieldPaths: [
-        ...fieldPaths(generated.data).map((field) => `generate.${field}`),
-        ...(decrypted.ok ? fieldPaths(decrypted.data).map((field) => `decrypt.${field}`) : []),
-      ],
-      adapterErrorCode: decrypted.ok ? undefined : decrypted.error.code,
-      adapterOk: decrypted.ok,
-      durationMs: roundedDuration(startedAt),
-      interface: 'aliyun.kms_generate_decrypt_roundtrip',
-      mappedFieldPaths: ['ciphertext', 'plaintext'],
-    })
-    assertProviderOk(decrypted, 'KMS Decrypt')
-    assert(
-      Buffer.from(decrypted.data.plaintext).equals(Buffer.from(generated.data.plaintext)),
-      'KMS decrypted data key did not match generated plaintext',
-    )
-  } finally {
-    Buffer.from(generated.data.plaintext).fill(0)
-    if (decrypted?.ok) Buffer.from(decrypted.data.plaintext).fill(0)
-  }
-}
-
 async function verifySmsConfiguration(): Promise<void> {
   const startedAt = performance.now()
   try {
@@ -450,7 +407,6 @@ async function main(): Promise<void> {
   await runCheck('westdigital', verifyWestDigital)
   await runCheck('wechatpay', verifyWechatPay)
   await runCheck('aliyun.oss_private', verifyPrivateOss)
-  await runCheck('aliyun.kms', verifyKms)
   await runCheck('aliyun.sms_configuration', verifySmsConfiguration)
 
   process.stdout.write(

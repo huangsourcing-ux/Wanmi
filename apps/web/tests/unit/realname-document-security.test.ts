@@ -3,14 +3,19 @@ import { createHash, randomBytes } from 'node:crypto'
 import sharp from 'sharp'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { resetEnvForTests } from '@/lib/env'
-import { createKmsProvider, MockKmsProvider } from '@/providers/kms'
+import { getEnv, resetEnvForTests } from '@/lib/env'
 import { AliOssRealnameProvider, createRealnameObjectProvider } from '@/providers/oss-realname'
 import {
   decryptDocumentEnvelope,
   encryptDocumentEnvelope,
 } from '@/services/realname/document-envelope'
 import { validateRealnameFile } from '@/services/realname/file-validation'
+import {
+  type RealnameDocumentMasterKeyring,
+  unwrapDocumentDataKey,
+} from '@/services/realname/master-key'
+
+import { createTestRealnameDocumentMasterKeyring } from '../fixtures/realname-master-key'
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -102,59 +107,160 @@ describe('real-name document file safety', () => {
 })
 
 describe('real-name document envelope encryption', () => {
-  it('uses independent KMS data keys, authenticates metadata and clears plaintext from storage', async () => {
-    const kms = new MockKmsProvider()
+  it('uses independent per-object data keys and keeps plaintext out of storage', async () => {
+    const keyring = createTestRealnameDocumentMasterKeyring()
     const plaintext = Buffer.from('unique-private-identity-document-content')
     const sha256 = createHash('sha256').update(plaintext).digest('hex')
     const first = await encryptDocumentEnvelope({
       body: plaintext,
       contentType: 'application/pdf',
-      kms,
+      keyring,
       sha256,
-      traceId: 'envelope-first',
     })
     const second = await encryptDocumentEnvelope({
       body: plaintext,
       contentType: 'application/pdf',
-      kms,
+      keyring,
       sha256,
-      traceId: 'envelope-second',
     })
     expect(first.metadata.encryptedDataKey).not.toBe(second.metadata.encryptedDataKey)
+    const firstDataKey = unwrapDocumentDataKey({
+      encryptedDataKey: first.metadata.encryptedDataKey,
+      keyring,
+      masterKeyVersion: first.metadata.masterKeyVersion,
+    })
+    const secondDataKey = unwrapDocumentDataKey({
+      encryptedDataKey: second.metadata.encryptedDataKey,
+      keyring,
+      masterKeyVersion: second.metadata.masterKeyVersion,
+    })
+    expect(firstDataKey).not.toEqual(secondDataKey)
+    firstDataKey.fill(0)
+    secondDataKey.fill(0)
     expect(Buffer.from(first.body).includes(plaintext)).toBe(false)
     await expect(
-      decryptDocumentEnvelope({ body: first.body, expected: first.metadata, kms, traceId: 'read' }),
+      decryptDocumentEnvelope({ body: first.body, expected: first.metadata, keyring }),
     ).resolves.toEqual(plaintext)
+  })
 
-    const tampered = Uint8Array.from(first.body)
-    tampered[tampered.length - 1] ^= 1
+  it('requires GCM final authentication instead of trusting a matching metadata copy', async () => {
+    const keyring = createTestRealnameDocumentMasterKeyring()
+    const plaintext = Buffer.from('authenticated-private-document')
+    const encrypted = await encryptDocumentEnvelope({
+      body: plaintext,
+      contentType: 'application/pdf',
+      keyring,
+      sha256: createHash('sha256').update(plaintext).digest('hex'),
+    })
+    const tampered = Buffer.from(encrypted.body)
+    const headerLength = tampered.readUInt32BE(Buffer.byteLength('WANMI-RN1'))
+    const tagStart = Buffer.byteLength('WANMI-RN1') + 4 + headerLength
+    tampered[tagStart] ^= 1
+    const expected = {
+      ...encrypted.metadata,
+      authTag: tampered.subarray(tagStart, tagStart + 16).toString('base64url'),
+    }
     await expect(
       decryptDocumentEnvelope({
         body: tampered,
-        expected: first.metadata,
-        kms,
-        traceId: 'tampered',
+        expected,
+        keyring,
       }),
     ).rejects.toMatchObject({ code: 'REALNAME_DOCUMENT_UNAVAILABLE' })
   })
 
-  it('does not construct live OSS or KMS clients while real provider access is disabled', async () => {
-    vi.stubEnv('ALIYUN_KMS_MODE', 'live')
+  it('keeps objects readable after active master-key rotation while the old version remains', async () => {
+    const oldKey = randomBytes(32)
+    const newKey = randomBytes(32)
+    const oldKeyring = createTestRealnameDocumentMasterKeyring({
+      activeVersion: 'v1',
+      keys: new Map([['v1', oldKey]]),
+    })
+    const plaintext = Buffer.from('rotation-safe-private-document')
+    const encrypted = await encryptDocumentEnvelope({
+      body: plaintext,
+      contentType: 'application/pdf',
+      keyring: oldKeyring,
+      sha256: createHash('sha256').update(plaintext).digest('hex'),
+    })
+    const rotatedKeyring = createTestRealnameDocumentMasterKeyring({
+      activeVersion: 'v2',
+      keys: new Map([
+        ['v1', oldKey],
+        ['v2', newKey],
+      ]),
+    })
+    await expect(
+      decryptDocumentEnvelope({
+        body: encrypted.body,
+        expected: encrypted.metadata,
+        keyring: rotatedKeyring,
+      }),
+    ).resolves.toEqual(plaintext)
+    oldKey.fill(0)
+    newKey.fill(0)
+  })
+
+  it('rejects a missing master-key version without falling back to the active key', async () => {
+    const oldKey = randomBytes(32)
+    const oldKeyring = createTestRealnameDocumentMasterKeyring({
+      activeVersion: 'v1',
+      keys: new Map([['v1', oldKey]]),
+    })
+    const plaintext = Buffer.from('no-master-key-version-fallback')
+    const encrypted = await encryptDocumentEnvelope({
+      body: plaintext,
+      contentType: 'application/pdf',
+      keyring: oldKeyring,
+      sha256: createHash('sha256').update(plaintext).digest('hex'),
+    })
+    const activeKey = randomBytes(32)
+    const keyForVersion = vi.fn((version: string) =>
+      version === 'v2' ? Buffer.from(activeKey) : undefined,
+    )
+    const rotatedWithoutOldKey: RealnameDocumentMasterKeyring = {
+      activeVersion: 'v2',
+      keyForVersion,
+    }
+    await expect(
+      decryptDocumentEnvelope({
+        body: encrypted.body,
+        expected: encrypted.metadata,
+        keyring: rotatedWithoutOldKey,
+      }),
+    ).rejects.toMatchObject({ code: 'REALNAME_DOCUMENT_UNAVAILABLE' })
+    expect(keyForVersion).toHaveBeenCalledTimes(1)
+    expect(keyForVersion).toHaveBeenCalledWith('v1')
+    oldKey.fill(0)
+    activeKey.fill(0)
+  })
+
+  it('validates master-key encoding, length and active version during startup parsing', () => {
+    vi.stubEnv('REALNAME_DOCUMENT_MASTER_KEYS', 'v1:not-base64')
+    vi.stubEnv('REALNAME_DOCUMENT_MASTER_KEY_VERSION', 'v1')
+    resetEnvForTests()
+    expect(() => getEnv()).toThrow(/base64-encoded-32-byte-key/u)
+
+    vi.stubEnv('REALNAME_DOCUMENT_MASTER_KEYS', `v1:${Buffer.alloc(31, 1).toString('base64')}`)
+    resetEnvForTests()
+    expect(() => getEnv()).toThrow(/base64-encoded-32-byte-key/u)
+
+    vi.stubEnv('REALNAME_DOCUMENT_MASTER_KEYS', `v1:${Buffer.alloc(32, 1).toString('base64')}`)
+    vi.stubEnv('REALNAME_DOCUMENT_MASTER_KEY_VERSION', 'v2')
+    resetEnvForTests()
+    expect(() => getEnv()).toThrow(/active real-name document master key version/u)
+  })
+
+  it('does not construct a live OSS client while real provider access is disabled', async () => {
     vi.stubEnv('ALIYUN_OSS_REALNAME_MODE', 'live')
     vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'true')
-    vi.stubEnv('ALLOW_REAL_ALIYUN_KMS', 'false')
     vi.stubEnv('ALLOW_REAL_ALIYUN_OSS_REALNAME', 'false')
     vi.stubEnv('CI', 'false')
     vi.stubEnv('ALIBABA_CLOUD_ACCESS_KEY_ID', '')
     vi.stubEnv('ALIBABA_CLOUD_ACCESS_KEY_SECRET', '')
     resetEnvForTests()
 
-    const kms = createKmsProvider()
     const objects = createRealnameObjectProvider()
-    await expect(kms.generateDataKey({ traceId: 'disabled-kms' })).resolves.toMatchObject({
-      error: { code: 'PROVIDER_WRITE_DISABLED' },
-      ok: false,
-    })
     await expect(
       objects.upload({
         body: randomBytes(32),

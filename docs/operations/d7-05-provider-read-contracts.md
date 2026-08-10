@@ -2,7 +2,9 @@
 
 日期：2026-08-09（America/New_York）
 
-状态：**预算持久化已完成；四类只读真实联调因生产配置/KMS 外部条件未满足而阻塞。** 本记录不构成开发计划 11.1 第 2 项完成证据，该项保持未勾选。
+状态（当日事实）：**预算持久化已完成；四类只读真实联调因生产配置/KMS 外部条件未满足而阻塞。** 本记录不构成开发计划 11.1 第 2 项完成证据，该项保持未勾选。
+
+2026-08-10 后续决策：项目负责人依据本记录中的 `AccountStatus=NotEnabled` 事实，批准 D7-06 移除 KMS 并改用应用自管主密钥。下列 KMS 预检与阻塞结论作为历史证据保留，不再是当前联调前提；当前执行入口已移除 KMS adapter、能力闸和往返检查。
 
 ## 1. 本轮安全边界
 
@@ -68,7 +70,7 @@ KMS 未启用意味着无法取得 `KMS_KEY_ID`，也不能完成 SDK `GenerateD
 | KMS `GenerateDataKey`/`Decrypt`      | `AccountStatus`, `RequestId`（仅账号状态预检） | SDK 往返要求 `ciphertextBlob/plaintext`                                             | 真实账号状态为 `NotEnabled`，与“已有可用 KMS key”的联调前提不符；实现未因该差异放宽 | 4.55 s（状态预检） |
 | 短信配置加载                         | N/A                                            | 要求 AK、Region、签名、OTP 模板、到期模板全部非空                                   | 当前未注入签名/模板配置；未发送短信                                                 |                N/A |
 
-由于目标业务接口尚未调用，本轮没有可比较的 WestDigital/Wechat Pay 真实错误码；实现断言未做任何迁就性修改。KMS 的真实 `NotEnabled` 是新增外部差异，需先在受控账号启用 KMS、建立最小权限 key，再执行契约脚本。
+由于目标业务接口尚未调用，本轮没有可比较的 WestDigital/Wechat Pay 真实错误码；实现断言未做任何迁就性修改。KMS 的真实 `NotEnabled` 是本轮新增外部差异；原“启用 KMS 后重试”方案已由 2026-08-10 D7-06 冻结项变更废止。
 
 ## 5. 一次性执行入口与补证要求
 
@@ -78,6 +80,6 @@ KMS 未启用意味着无法取得 `KMS_KEY_ID`，也不能完成 SDK `GenerateD
 pnpm --filter @wanmi/web verify:providers:read-contracts
 ```
 
-凭据必须由本地环境变量或部署密钥注入。除各 provider 既有配置外，还需显式提供 `WESTDIGITAL_READ_CONTRACT_LOOKUP_DOMAIN` 与属于该 WestDigital 账号的 `WESTDIGITAL_READ_CONTRACT_ASSET_DOMAIN`。运行时只临时开启总闸、西部 provider/只读、微信 provider、OSS 和 KMS 闸；所有写能力闸及短信发送闸必须保持 `false`。命令会输出脱敏 JSON 契约证据，任何一类失败均返回非零。
+凭据必须由本地环境变量或部署密钥注入。除各 provider 既有配置外，还需显式提供 `WESTDIGITAL_READ_CONTRACT_LOOKUP_DOMAIN` 与属于该 WestDigital 账号的 `WESTDIGITAL_READ_CONTRACT_ASSET_DOMAIN`。运行时只临时开启总闸、西部 provider/只读、微信 provider 和 OSS 闸；所有资金/域名写能力闸及短信发送闸必须保持 `false`。命令会输出脱敏 JSON 契约证据，任何一类失败均返回非零。
 
 补证后必须把本文件第 3、4 节替换为真实四类结果，逐接口记录字段路径、provider code、映射差异和响应时间；确认 OSS 测试对象已删除、短信发送数为 0、西部数码写数为 0、微信写数为 0。四类全部完成前，开发计划 11.1 第 2 项不得勾选。

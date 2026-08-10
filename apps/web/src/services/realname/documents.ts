@@ -6,9 +6,8 @@ import { hasRole, isActiveAdminUser, isCustomerUser } from '@/access/roles'
 import { getEnv } from '@/lib/env'
 import { AppError } from '@/lib/errors'
 import { getTraceId } from '@/lib/request-id'
-import { createKmsProvider } from '@/providers/kms'
 import { createRealnameObjectProvider } from '@/providers/oss-realname'
-import type { KmsProvider, RealnameObjectProvider } from '@/providers/types'
+import type { RealnameObjectProvider } from '@/providers/types'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
 
 import {
@@ -17,12 +16,19 @@ import {
   type DocumentEnvelopeMetadata,
 } from './document-envelope'
 import { validateRealnameFile } from './file-validation'
+import {
+  createRealnameDocumentMasterKeyring,
+  type RealnameDocumentMasterKeyring,
+} from './master-key'
 
 type CustomerIdentity = { collection?: string; id: number | string; status?: string | null }
 type DocumentRecord = Record<string, unknown> & { id: number | string }
 type TemplateRecord = Record<string, unknown> & { id: number | string }
 type DocumentAccessMode = 'download' | 'view'
-type DocumentProviders = { kms: KmsProvider; objects: RealnameObjectProvider }
+type DocumentProviders = {
+  keyring: RealnameDocumentMasterKeyring
+  objects: RealnameObjectProvider
+}
 
 type AccessTicket = {
   actorId: string
@@ -116,7 +122,10 @@ async function loadProtectedDocumentMaterial(
 }
 
 function defaultProviders(): DocumentProviders {
-  return { kms: createKmsProvider(), objects: createRealnameObjectProvider() }
+  return {
+    keyring: createRealnameDocumentMasterKeyring(),
+    objects: createRealnameObjectProvider(),
+  }
 }
 
 function safeSummary(document: DocumentRecord) {
@@ -185,6 +194,7 @@ function envelopeMetadata(document: DocumentRecord): DocumentEnvelopeMetadata {
     typeof document.contentType !== 'string' ||
     typeof document.encryptedDataKey !== 'string' ||
     typeof document.iv !== 'string' ||
+    typeof document.masterKeyVersion !== 'string' ||
     typeof document.sha256 !== 'string' ||
     typeof document.sizeBytes !== 'number'
   ) {
@@ -196,6 +206,7 @@ function envelopeMetadata(document: DocumentRecord): DocumentEnvelopeMetadata {
     encryptedDataKey: document.encryptedDataKey,
     encryptionVersion: document.encryptionVersion,
     iv: document.iv,
+    masterKeyVersion: document.masterKeyVersion,
     sha256: document.sha256,
     sizeBytes: document.sizeBytes,
   }
@@ -235,9 +246,8 @@ export async function uploadRealnameDocument(
   const encrypted = await encryptDocumentEnvelope({
     body: validated.body,
     contentType: validated.contentType,
-    kms: providers.kms,
+    keyring: providers.keyring,
     sha256: validated.sha256,
-    traceId,
   })
   const objectKey = `${env.OSS_REALNAME_PREFIX}/${randomUUID()}-${randomBytes(16).toString('hex')}.wrn`
   const document = (await req.payload.create({
@@ -370,8 +380,7 @@ async function decryptAndAuditDocument(
   const body = await decryptDocumentEnvelope({
     body: stored.data.body,
     expected: envelopeMetadata(document),
-    kms: providers.kms,
-    traceId,
+    keyring: providers.keyring,
   })
   await recordAuditEvent(req, {
     action: mode === 'download' ? 'realname.document.downloaded' : 'realname.document.viewed',
