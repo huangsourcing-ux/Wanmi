@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 import { executeRebuildPlan, REBUILD_STEP_NAMES } from './rebuild-plan.mjs'
 
@@ -32,9 +34,26 @@ const source = readFileSync(new URL('./rebuild.mjs', import.meta.url), 'utf8')
 assert(source.includes('scripts/verify-release-contract.mjs'))
 assert(source.includes("resolve(repositoryRoot, 'deploy/release-policy.json')"))
 assert(source.includes("'{{.Config.Image}}'"))
+assert(source.includes("digestImageEnvironment('WANMI_NGINX_IMAGE', defaultNginxImage)"))
+assert(source.includes("digestImageEnvironment('WANMI_WHODAT_IMAGE', defaultWhoDatImage)"))
+assert(source.includes('/^\\S+@sha256:[0-9a-f]{64}$/u'))
 assert(source.includes("'--queue',\n          'commerce',\n          '--limit',\n          '1'"))
 assert(!source.includes('docker compose down'))
 
+const rebuildScript = fileURLToPath(new URL('./rebuild.mjs', import.meta.url))
+for (const [name, value] of [
+  ['WANMI_NGINX_IMAGE', 'nginx:latest'],
+  ['WANMI_WHODAT_IMAGE', 'lissy93/who-dat:v2.0.0'],
+]) {
+  const result = spawnSync(process.execPath, [rebuildScript], {
+    encoding: 'utf8',
+    env: { ...process.env, [name]: value },
+  })
+  assert.equal(result.status, 11, `${name} mutable tag did not fail with environment exit code`)
+  assert.match(result.stderr, new RegExp(`${name} must use repository@sha256`))
+  assert(!result.stderr.includes(value), `${name} invalid value leaked to stderr`)
+}
+
 process.stdout.write(
-  'Verified fixed rebuild order, readyz fail-closed behavior, release-policy reuse, and same-image commerce Worker configuration.\n',
+  'Verified fixed rebuild order, digest-only runtime image overrides, readyz fail-closed behavior, release-policy reuse, and same-image commerce Worker configuration.\n',
 )

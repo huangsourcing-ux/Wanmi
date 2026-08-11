@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url'
 import { executeRebuildPlan } from './rebuild-plan.mjs'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const nginxImage =
+const defaultNginxImage =
   'nginx:1.30.4-alpine-slim@sha256:ddde39c6e51f02fde7410c2e9c234cf2d0a4c7bdbbe176aeb37d8ad7ab4eb58c'
-const whoDatImage =
+const defaultWhoDatImage =
   'lissy93/who-dat:v2.0.0@sha256:7bbfe95c6bc5aa6d7aeac033812621a30cc54d1208ab8e7bf9ce9318029e133a'
 
 const exitCodes = {
@@ -103,6 +103,14 @@ function requiredEnvironment(name) {
   return value
 }
 
+function digestImageEnvironment(name, fallback) {
+  const value = process.env[name]?.trim() || fallback
+  if (!/^\S+@sha256:[0-9a-f]{64}$/u.test(value)) {
+    throw new RebuildError(exitCodes.environment, `${name} must use repository@sha256:<64 hex>`)
+  }
+  return value
+}
+
 function integerEnvironment(name, fallback, minimum, maximum) {
   const value = Number(process.env[name] ?? fallback)
   if (!Number.isInteger(value) || value < minimum || value > maximum) {
@@ -130,6 +138,9 @@ process.on('uncaughtException', (error) => {
   process.stderr.write(`${redact(error instanceof Error ? error.message : 'Rebuild failed')}\n`)
   process.exit(code)
 })
+
+const nginxImage = digestImageEnvironment('WANMI_NGINX_IMAGE', defaultNginxImage)
+const whoDatImage = digestImageEnvironment('WANMI_WHODAT_IMAGE', defaultWhoDatImage)
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {

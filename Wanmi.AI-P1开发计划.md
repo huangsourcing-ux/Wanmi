@@ -296,7 +296,7 @@ D0 必须建立并维护以下命令；后续里程碑不得绕过：
 - [x] 建立 Makefile 稳定命令和 CI；
 - [x] 建立测试框架：Vitest、React Testing Library、MSW、Playwright 和 PostgreSQL 集成测试；
 - [x] 建立 Gitleaks 和依赖扫描；
-- [ ] 在单 ECS 规格下验证 Web/Worker 内存、独立重启、Jobs 恢复和节点重建；
+- [x] 在单 ECS 规格下验证 Web/Worker 内存、独立重启、Jobs 恢复和节点重建；
 - [x] 编写首批 ADR：Payload 主架构、Local API 权限、opaque Session、commerce 幂等、公共/私有 OSS 与实名主密钥分离、单 ECS 可重建策略。
 - [x] 在 commerce ADR 中固化《技术栈与工程规范》第 6.1 节合法迁移矩阵，并测试全部 `manual_review` 出口。
 
@@ -627,7 +627,7 @@ D6-02 返回语义补充验证记录（2026-08-08）：修正 `executeWestDigita
 - [x] 完成静态资源先上传后发布、镜像 digest、数据库兼容迁移和回滚流程；
 - [ ] 验证支付通知重放、ECS 重建、RDS 恢复、OSS 误删恢复和密钥轮换；
 - [ ] 在 2 vCPU/4 GiB 生产 Linux 环境验证 Web、Worker、Who-Dat 内存、日志轮转和 2 小时重建目标；
-- [ ] 验证 Web/Worker 独立重启，以及 ECS 与 RDS 同 VPC 的 `commerce` Job 强制中断恢复；
+- [x] 验证 Web/Worker 独立重启，以及 ECS 与 RDS 同 VPC 的 `commerce` Job 强制中断恢复；
 - [x] 验证广告关闭、分析失败或 CMS 故障时工具仍完整可用；
 - [ ] 完成微信、西部数码和内部订单三方对账演练。
 
@@ -686,6 +686,10 @@ D7-06 bootstrap 回归修复记录（2026-08-10）：干净环境中 `scripts/bo
 D7-08 开工前预检记录（2026-08-10）：PR #58 已合并至 `main@a4a659b`，但真实资源硬前置未全部成立。阿里云只读 API 确认上海唯一运行 ECS 为 2 vCPU/4096 MiB 且在 VPC，但当前 SSH 目标与该 ECS 不匹配，因此无法核对目标节点无其他负载、架构、磁盘或 secret 注入。RDS 为 VPC 内 PostgreSQL 16，近 7 日存在 7 个成功的每日自动全量备份、日志备份开启，且只读 API 返回 `2026-08-04T01:14:59Z` 至 `2026-08-10T12:09:47Z` 的 PITR 可恢复窗口；但 `SSLEnabled=off`，实例系列仍为 `Basic`。上海唯一 OSS Bucket 未启用版本控制，且 `NoSuchLifecycle`/`NoSuchWORMConfiguration`；生产主密钥受控生成、注入、离线备份及生产凭据轮换也无法复核。因此本次按 fail-closed 门禁停止，未执行部署、强杀、节点重置、PITR 恢复、OSS 删除/恢复、支付通知重放或密钥轮换；11.1 第 9、10、11 项、D0 单 ECS 项与对应上线门槛均保持未勾选。脱敏命令、字段、错误码、时间窗口和重开条件见 `docs/operations/d7-08-ecs-recovery-validation.md`。
 
 D7-08 目标地址更正与凭据安全补充（2026-08-10）：项目负责人后续提供的正确 ECS 地址已与既有 OAuth 只读身份返回的上海唯一 2 vCPU/4096 MiB ECS 精确匹配，SSH 22 可达；本轮没有尝试密码或 SSH 认证。同一次对话同时披露了明文云 AccessKey、ECS 密码和 RDS 密码，这些值未进入命令、配置、日志或仓库，但必须统一视为已暴露；“凭据轮换完成”前置因此再次失效。同时只读刷新确认 RDS 仍为 `VPC/Basic`、`SSLEnabled=off`、日志备份开启且保留 7 天，OSS 仍为 `unversioned`。因此只解除了“目标地址不明”，未解除受控认证、目标机空载、RDS SSL/HA、OSS 30 天保护、生产主密钥注入/备份或新凭据轮换阻塞；演练仍未开始，所有对应计划项保持未勾选。
+
+D7-08 真实 ECS 演练记录（2026-08-10～11）：负责人完成系统重置后，机内硬停止检查确认目标为 `x86_64` Ubuntu 24.04、2 CPU、宿主可见 3499 MiB，且无其他业务服务、容器、监听、计划任务或数据目录。使用包含 `a4a659b` 重建工具链的 `main@573005f` 和同一 `linux/amd64` 应用 digest 完成空 RDS 全量 migrations、Web、database-backed readyz、`commerce --limit 1` Worker、未完成 Job 扫描、Who-Dat 与 Nginx。真实三服务最大峰值/最终稳态合计为 685.0/362.2 MiB，相对 4096 MiB 峰值余量 3411.0 MiB；日志 probe 写入约 64.8 MiB 后只保留 3 段、表观 1,827,862 bytes。Web 重建不影响 processing Worker；Worker `SIGKILL` 时 Web 保持 ready，两个并发恢复者返回 `[0,1]`，provider operation/attempt/write claim 均恰好一次，续费和退款均为 0。因此 D0 单 ECS 项与 11.1 第 11 项有真实生产 Linux/VPC 证据并勾选。
+
+同轮恢复演练中，未验签归档不能进入支付 replay，已验签通知连续两次重放均 `idempotentReplay=true`、订单事件数不变；RDS PITR 到 `2026-08-11T05:12:17Z` 的临时同 VPC 副本在 7 张订单/实名表上行数和完整规范化哈希一致，验证后精确释放；应用主密钥在 ECS 内由 `prod-20260810-v1` 轮换到 `prod-20260811-v2`，旧对象、新对象和未知版本拒绝均通过。专用 Bucket 的只读版本状态为 `NotConfigured`，故只跳过 OSS 删除/恢复，11.1 第 9 项复合条目依指令整项不勾。完整重置 `2026-08-10T13:57:25Z` 到 Nginx ready `2026-08-11T04:43:25Z` 为 53,160 秒（14 小时 46 分），未达到 7,200 秒 RTO；镜像/依赖/secret 就绪后的八步工具链虽仅 30.4 秒，不能替代完整 RTO，所以 11.1 第 10 项整项不勾。RDS `Basic`/SSL off、OSS 版本与 30 天保护、主密钥离线双人备份、对话披露凭据轮换、正式 `system_admin` 接替演练 sentinel 和稳定受控 registry 均为上线前待办。完整脱敏证据见 `docs/operations/d7-08-ecs-recovery-validation.md`；D7-09 必须等待本切片 PR 审核合并后另开。
 
 ### 11.2 D8 P1 开发验收
 
@@ -827,12 +831,12 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 
 ### 14.4 发布与恢复
 
-- [ ] ECS 重建；
-- [ ] RDS PITR/恢复；
+- [x] ECS 重建；
+- [x] RDS PITR/恢复；
 - [ ] OSS 版本与误删恢复；
-- [ ] 支付通知重放与订单恢复；
+- [x] 支付通知重放与订单恢复；
 - [ ] 静态资源回滚和镜像回滚；
-- [ ] 密钥轮换与失效；
+- [x] 密钥轮换与失效；
 - [x] provider、广告、分析、CMS 故障不拖垮公开工具。
 
 ## 15. 建议给 Codex 的启动指令
