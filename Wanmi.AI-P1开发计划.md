@@ -625,7 +625,7 @@ D6-02 返回语义补充验证记录（2026-08-08）：修正 `executeWestDigita
 - [x] 建立工具、短信、支付、订单、履约、退款、余额、证件访问和对账监控；
 - [x] 建立异常订单、退款失败、余额不足、实名泄露、provider 故障和紧急停售 Runbook；
 - [x] 完成静态资源先上传后发布、镜像 digest、数据库兼容迁移和回滚流程；
-- [ ] 验证支付通知重放、ECS 重建、RDS 恢复、OSS 误删恢复和密钥轮换；
+- [x] 验证支付通知重放、ECS 重建、RDS 恢复、OSS 误删恢复和密钥轮换；
 - [ ] 在 2 vCPU/4 GiB 生产 Linux 环境验证 Web、Worker、Who-Dat 内存、日志轮转和 2 小时重建目标；
 - [x] 验证 Web/Worker 独立重启，以及 ECS 与 RDS 同 VPC 的 `commerce` Job 强制中断恢复；
 - [x] 验证广告关闭、分析失败或 CMS 故障时工具仍完整可用；
@@ -690,6 +690,8 @@ D7-08 目标地址更正与凭据安全补充（2026-08-10）：项目负责人�
 D7-08 真实 ECS 演练记录（2026-08-10～11）：负责人完成系统重置后，机内硬停止检查确认目标为 `x86_64` Ubuntu 24.04、2 CPU、宿主可见 3499 MiB，且无其他业务服务、容器、监听、计划任务或数据目录。使用包含 `a4a659b` 重建工具链的 `main@573005f` 和同一 `linux/amd64` 应用 digest 完成空 RDS 全量 migrations、Web、database-backed readyz、`commerce --limit 1` Worker、未完成 Job 扫描、Who-Dat 与 Nginx。真实三服务最大峰值/最终稳态合计为 685.0/362.2 MiB，相对 4096 MiB 峰值余量 3411.0 MiB；日志 probe 写入约 64.8 MiB 后只保留 3 段、表观 1,827,862 bytes。Web 重建不影响 processing Worker；Worker `SIGKILL` 时 Web 保持 ready，两个并发恢复者返回 `[0,1]`，provider operation/attempt/write claim 均恰好一次，续费和退款均为 0。因此 D0 单 ECS 项与 11.1 第 11 项有真实生产 Linux/VPC 证据并勾选。
 
 同轮恢复演练中，未验签归档不能进入支付 replay，已验签通知连续两次重放均 `idempotentReplay=true`、订单事件数不变；RDS PITR 到 `2026-08-11T05:12:17Z` 的临时同 VPC 副本在 7 张订单/实名表上行数和完整规范化哈希一致，验证后精确释放；应用主密钥在 ECS 内由 `prod-20260810-v1` 轮换到 `prod-20260811-v2`，旧对象、新对象和未知版本拒绝均通过。专用 Bucket 的只读版本状态为 `NotConfigured`，故只跳过 OSS 删除/恢复，11.1 第 9 项复合条目依指令整项不勾。完整重置 `2026-08-10T13:57:25Z` 到 Nginx ready `2026-08-11T04:43:25Z` 为 53,160 秒（14 小时 46 分），未达到 7,200 秒 RTO；镜像/依赖/secret 就绪后的八步工具链虽仅 30.4 秒，不能替代完整 RTO，所以 11.1 第 10 项整项不勾。RDS `Basic`/SSL off、OSS 版本与 30 天保护、主密钥离线双人备份、对话披露凭据轮换、正式 `system_admin` 接替演练 sentinel 和稳定受控 registry 均为上线前待办。完整脱敏证据见 `docs/operations/d7-08-ecs-recovery-validation.md`；D7-09 必须等待本切片 PR 审核合并后另开。
+
+D7-09 OSS 误删恢复记录（2026-08-11）：开工前只输出 12 个能力闸名称与布尔值；总闸及西部只读、微信 provider、私有 OSS 能力闸临时为 `true`，西部实名/注册/续费/NS、微信下单/退款和短信发送 7 个写闸全部为 `false`。真实 OSS 只读预检确认版本状态为 `Enabled`，无标签生命周期规则覆盖既有私有实名前缀，非当前版本到期为 30 天；私有存储与公共媒体分离。一次性脚本用既有文件验证、`WANMI-RN1` 信封和当前 2 版本 keyring 上传随机精确键测试 PNG，记录 `masterKeyVersion=prod-20260811-v2` 与内容 SHA-256 `118dba063cb418a0f1d26dbd7d8ec3e3c17292876db2a74cf95f7457bf6daf7b`；普通删除后当前版本不可读，删除本次 delete marker 后原版本恢复，并严格用上传时主密钥版本解密、通过 GCM 认证且摘要/字节一致。最后只删除本次精确键的全部版本和 marker，复查为 0。版本门禁、恢复解密和精确键范围三处变异均被 fixture 测试杀死；`docker compose down -v` 重建后完整 `make check` 退出码 0，通过 613/613 单元、105/105 集成及完整构建/安全门禁，同一全新库第二轮集成 105/105 通过。D7-08 已通过的其余四个子项加本次 OSS 子项使 11.1 第 9 项整项及 14.4“OSS 版本与误删恢复”勾选；其他未完成上线门槛不变。完整脱敏证据见 `docs/operations/d7-09-oss-delete-recovery.md`。
 
 ### 11.2 D8 P1 开发验收
 
@@ -833,7 +835,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 
 - [x] ECS 重建；
 - [x] RDS PITR/恢复；
-- [ ] OSS 版本与误删恢复；
+- [x] OSS 版本与误删恢复；
 - [x] 支付通知重放与订单恢复；
 - [ ] 静态资源回滚和镜像回滚；
 - [x] 密钥轮换与失效；
