@@ -107,6 +107,40 @@ describe('WestDigital write adapter fixtures', () => {
     })
   })
 
+  it('maps the registrar field observed in the real domain-detail response', async () => {
+    const transport = {
+      execute: vi.fn().mockResolvedValue({
+        body: {
+          clientid: 'fixture-client',
+          data: {
+            bizcnorder: 'observed-registrar',
+            dns1: 'ns1.example.com',
+            dns2: 'ns2.example.com',
+            dns3: '',
+            dns4: '',
+            dns5: '',
+            dns6: '',
+            domain: 'wanmi-test.com',
+            expdate: '2027-08-08 12:00:00',
+            id: '44169980',
+            proid: 'fixture-product',
+            regdate: '2026-08-08 12:00:00',
+          },
+          result: 200,
+        },
+        status: 200,
+      }),
+    }
+    const provider = new WestDigitalWriteAdapter({ transport })
+
+    await expect(
+      provider.queryAsset({ domainAscii: 'wanmi-test.com', traceId: 'trace-real-semantics' }),
+    ).resolves.toMatchObject({
+      data: { registrarCode: 'observed-registrar' },
+      ok: true,
+    })
+  })
+
   it('never constructs a live runtime transport', () => {
     vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'false')
     vi.stubEnv('WESTDIGITAL_MODE', 'fixture')
