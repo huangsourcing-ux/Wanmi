@@ -10,7 +10,7 @@
       "concurrency": 8,
       "iterationsPerWorker": 10,
       "maximumErrorRate": 0,
-      "maximumP95Ms": 225,
+      "maximumP95Ms": 180,
       "measurementRounds": 5
     },
     "public-tool-pages": {
