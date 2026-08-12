@@ -1,12 +1,43 @@
 import { describe, expect, it } from 'vitest'
 
-import { summarizeScenarioRounds } from '../../scripts/performance-statistics.mjs'
+import {
+  runScenariosSequentially,
+  summarizeScenarioRounds,
+} from '../../scripts/performance-statistics.mjs'
 
 function successfulRound(p95Ms: number) {
   return Array.from({ length: 20 }, () => ({ durationMs: p95Ms, ok: true }))
 }
 
 describe('performance scenario statistics', () => {
+  it('isolates scenarios while preserving their declared order', async () => {
+    let active = 0
+    let maximumActive = 0
+    const events: string[] = []
+    const scenario = (name: string) => async () => {
+      active += 1
+      maximumActive = Math.max(maximumActive, active)
+      events.push(`${name}:start`)
+      await Promise.resolve()
+      events.push(`${name}:end`)
+      active -= 1
+      return name
+    }
+
+    await expect(
+      runScenariosSequentially([scenario('public'), scenario('domain'), scenario('idn')]),
+    ).resolves.toEqual(['public', 'domain', 'idn'])
+    expect(maximumActive).toBe(1)
+    expect(events).toEqual([
+      'public:start',
+      'public:end',
+      'domain:start',
+      'domain:end',
+      'idn:start',
+      'idn:end',
+    ])
+  })
+
   it('uses the median round p95 so two noisy rounds cannot dominate the gate', () => {
     const result = summarizeScenarioRounds([
       successfulRound(100),

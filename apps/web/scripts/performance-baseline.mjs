@@ -11,7 +11,12 @@ import { chromium } from '@playwright/test'
 import { launch, Launcher } from 'chrome-launcher'
 import lighthouse from 'lighthouse'
 
-import { median, round, summarizeScenarioRounds } from './performance-statistics.mjs'
+import {
+  median,
+  round,
+  runScenariosSequentially,
+  summarizeScenarioRounds,
+} from './performance-statistics.mjs'
 
 const webDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const baselinePath = path.join(webDirectory, 'performance', 'baseline.json')
@@ -228,28 +233,31 @@ async function loadScenario(name, settings, requestFor) {
 
 async function measureApi() {
   const token = Date.now().toString(36)
-  return Promise.all([
-    loadScenario('public-tool-pages', baseline.api['public-tool-pages'], (worker, iteration) => ({
-      path:
-        (worker + iteration) % 2 === 0
-          ? '/tools/domain-search?q=wanmi.net'
-          : '/tools/idn?q=wanmi.net',
-      traceId: `perf-pages-${token}-${worker}-${iteration}`,
-    })),
-    loadScenario('domain-search', baseline.api['domain-search'], (worker, iteration) => ({
-      body: { query: `perf${token}${Math.max(worker, 0)}${iteration}.com` },
-      expectedStates: ['ready'],
-      path: '/api/v1/tools/domain-search',
-      traceId: `perf-domain-${token}-${worker}-${iteration}`,
-    })),
-    loadScenario('idn', baseline.api.idn, (worker, iteration, measurementRound) => ({
-      body: {
-        query: `perf-${token}-${Math.max(measurementRound, 0)}-${Math.max(worker, 0)}-${iteration}.com`,
-      },
-      expectedStates: ['ready'],
-      path: '/api/v1/tools/idn',
-      traceId: `perf-idn-${token}-${measurementRound}-${worker}-${iteration}`,
-    })),
+  return runScenariosSequentially([
+    () =>
+      loadScenario('public-tool-pages', baseline.api['public-tool-pages'], (worker, iteration) => ({
+        path:
+          (worker + iteration) % 2 === 0
+            ? '/tools/domain-search?q=wanmi.net'
+            : '/tools/idn?q=wanmi.net',
+        traceId: `perf-pages-${token}-${worker}-${iteration}`,
+      })),
+    () =>
+      loadScenario('domain-search', baseline.api['domain-search'], (worker, iteration) => ({
+        body: { query: `perf${token}${Math.max(worker, 0)}${iteration}.com` },
+        expectedStates: ['ready'],
+        path: '/api/v1/tools/domain-search',
+        traceId: `perf-domain-${token}-${worker}-${iteration}`,
+      })),
+    () =>
+      loadScenario('idn', baseline.api.idn, (worker, iteration, measurementRound) => ({
+        body: {
+          query: `perf-${token}-${Math.max(measurementRound, 0)}-${Math.max(worker, 0)}-${iteration}.com`,
+        },
+        expectedStates: ['ready'],
+        path: '/api/v1/tools/idn',
+        traceId: `perf-idn-${token}-${measurementRound}-${worker}-${iteration}`,
+      })),
   ])
 }
 
