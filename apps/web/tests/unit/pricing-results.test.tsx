@@ -97,6 +97,15 @@ afterEach(() => {
 })
 
 describe('D2-07 pricing presentation', () => {
+  it('reserves stable space while the asynchronous price table loads', () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => undefined)))
+
+    const { container } = render(<PricingResults />)
+
+    expect(screen.getByRole('status').textContent).toContain('正在计算默认 TLD')
+    expect(container.firstElementChild?.classList.contains('min-h-[36rem]')).toBe(true)
+  })
+
   it('shows all item states and integer-formatted totals without a purchase entry point', async () => {
     const fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       void init
