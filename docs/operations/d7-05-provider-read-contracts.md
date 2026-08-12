@@ -2,7 +2,7 @@
 
 日期：2026-08-09（America/New_York）
 
-状态（当日事实）：**预算持久化已完成；四类只读真实联调因生产配置/KMS 外部条件未满足而阻塞。** 本记录不构成开发计划 11.1 第 2 项完成证据，该项保持未勾选。
+状态（最新事实）：**预算持久化已完成；WestDigital 与私有 OSS 真实分项已完成，Wechat Pay 与短信按负责人指示暂记 N/A。** 四类尚未齐备，本记录不构成开发计划 11.1 第 2 项完成证据，该项保持未勾选。
 
 2026-08-10 后续决策：项目负责人依据本记录中的 `AccountStatus=NotEnabled` 事实，批准 D7-06 移除 KMS 并改用应用自管主密钥。下列 KMS 预检与阻塞结论作为历史证据保留，不再是当前联调前提；当前执行入口已移除 KMS adapter、能力闸和往返检查。
 
@@ -96,3 +96,40 @@ D7-07 开始前再次检查当前运行环境，只判断键是否存在，不�
 | 应用主密钥注入      | `REALNAME_DOCUMENT_MASTER_KEYS` 与 active version                         | N/A                      | 未以临时或推测密钥冒充生产注入验证              |
 
 仓库默认、测试、CI 和本次进程中的 `ALLOW_REAL_PROVIDER_WRITES` 及 WestDigital 注册/续费/实名/NS、Wechat Pay 支付/退款、短信发送、私有 OSS 写入能力闸均保持 `false`。因为四类前提仍不完整，没有执行一次性 `verify:providers:read-contracts`，没有取得可填入第 4 节的真实字段、错误码或响应时间，也没有修改 Zod schema/断言迁就 fixture。开发计划 11.1 第 2 项继续保持未勾选。
+
+## 7. D7-10 分项真实联调记录（2026-08-12）
+
+项目负责人指示先完成 WestDigital 与私有 OSS，Wechat Pay 和短信暂不调用。因此本轮对一次性脚本显式选择 `westdigital`、`aliyun.oss_private`；部分选择输出 `partial` 并返回非零，不能作为四类完整验收证据。执行前只输出能力闸名称与布尔值，状态如下：
+
+| 能力闸                                       |    状态 |
+| -------------------------------------------- | ------: |
+| `ALLOW_REAL_PROVIDER_WRITES`                 |  `true` |
+| `ALLOW_REAL_WESTDIGITAL`                     |  `true` |
+| `ALLOW_REAL_WESTDIGITAL_READS`               |  `true` |
+| `ALLOW_REAL_WESTDIGITAL_REALNAME_WRITES`     | `false` |
+| `ALLOW_REAL_WESTDIGITAL_REGISTRATION_WRITES` | `false` |
+| `ALLOW_REAL_WESTDIGITAL_RENEWAL_WRITES`      | `false` |
+| `ALLOW_REAL_WESTDIGITAL_NAMESERVER_WRITES`   | `false` |
+| `ALLOW_REAL_WECHATPAY`                       |  `true` |
+| `ALLOW_REAL_WECHATPAY_PAYMENTS`              | `false` |
+| `ALLOW_REAL_WECHATPAY_REFUNDS`               | `false` |
+| `ALLOW_REAL_ALIYUN_OSS_REALNAME`             |  `true` |
+| `ALLOW_REAL_ALIYUN_SMS_SENDS`                | `false` |
+
+真实调用结果如下。`N/A` 表示本轮没有调用，不以 fixture 或推测补齐：
+
+| 接口                                             | 真实响应字段/错误                                                                                                                                                                                                  | 当前 schema/映射                                                                                   | 差异与结论                                                                                                                                                        |                   真实响应时间 |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -----------------------------: |
+| WestDigital 可售性 `query`（初次默认 transport） | 无 provider 响应字段；transport `RESTRICTED_ADDRESS`                                                                                                                                                               | adapter 映射为 `WESTDIGITAL_UNAVAILABLE`                                                           | 本机强制代理把系统 DNS 结果映射到保留地址，现有公网地址检查 fail-closed；请求未到达 provider                                                                      |                        17.3 ms |
+| WestDigital 可售性 `query`（显式环境代理复测）   | `clientid`, `data[].avail`, `data[].name`, `result`；HTTP/provider code 均为 `200`                                                                                                                                 | `clientid`, `result`, `data[].name/avail/type?/price?` → `available/currency/domainAscii/premium`  | 普通非溢价域名省略本地文档成功示例中的 `type`、`price`，现有 Zod 已正确按 optional 接受；无断言修改                                                               |                      4996.2 ms |
+| WestDigital 价格 `getprice`                      | `clientid`, `data.buyprice`, `data.buyyear`, `data.proid`, `data.renewprice`, `result`；HTTP/provider code 均为 `200`                                                                                              | 同名上游字段 → `currency/domainAscii/productId/purchaseYears/registrationPriceFen/renewalPriceFen` | 真实字段与 Zod、本地文档一致                                                                                                                                      |                       956.7 ms |
+| WestDigital 域名详情 `view`                      | `clientid`, `data.bizcnorder`, `data.dns1..dns6`, `data.dom_em`, `data.dom_org_cn`, `data.dom_ph`, `data.domain`, `data.expdate`, `data.id`, `data.proid`, `data.regdate`, `result`；HTTP/provider code 均为 `200` | schema 接受必需资产字段并 passthrough；当前 registrar 映射只读取 `registrars?`                     | 真实响应新增本地 `view` 章节未列出的 `data.bizcnorder`；现有实现会忽略该 registrar 语义并回退默认值。已先记录，随后改为显式接受并映射该字段，fixture 覆盖真实语义 |                       522.8 ms |
+| WestDigital 余额 `checkbalance`                  | `clientid`, `data.balance`, `data.freezemoney`, `result`；HTTP/provider code 均为 `200`                                                                                                                            | `data.balance/freezemoney` → `availableMinor/frozenMinor`                                          | 真实字段与 Zod、本地文档一致；额外 `clientid` 由 passthrough 安全忽略                                                                                             |                       448.0 ms |
+| Wechat Pay 不存在订单查单                        | N/A                                                                                                                                                                                                                | 成功响应为 payment order schema；签名有效的非 2xx 映射 `WECHATPAY_REQUEST_REJECTED`                | 按项目负责人本轮指示暂不调用                                                                                                                                      |                            N/A |
+| 私有 OSS 测试对象上传                            | `etag`                                                                                                                                                                                                             | adapter 领域结果，无 Zod 网络 envelope                                                             | 字段一致，上传成功                                                                                                                                                |                      2981.5 ms |
+| 私有 OSS 测试对象读取                            | `body[]`, `etag`                                                                                                                                                                                                   | adapter 领域结果，无 Zod 网络 envelope                                                             | 字段一致；读取字节与上传前一致                                                                                                                                    |                       389.1 ms |
+| 私有 OSS 测试对象签名读取                        | `url`；HTTP `200`                                                                                                                                                                                                  | adapter 领域结果，无 Zod 网络 envelope                                                             | 签名地址可读，返回字节与上传前一致                                                                                                                                |                      2812.6 ms |
+| 私有 OSS 测试对象删除                            | `deleted`                                                                                                                                                                                                          | adapter 领域结果，无 Zod 网络 envelope                                                             | 普通删除成功；因 Bucket 已启用版本控制，随后按本轮时间窗、48 字节大小和 UUID 文件名格式只读锁定唯一测试键，精确移除 1 个对象版本与 1 个删除标记，复查两者均为 0   | 458.8 ms；版本清理与复查 8.7 s |
+| 短信配置加载                                     | N/A                                                                                                                                                                                                                | 要求凭据、Region、签名、OTP 模板、到期模板全部非空                                                 | 按项目负责人本轮指示暂不调用；短信发送数为 0                                                                                                                      |                            N/A |
+
+本轮 WestDigital 写入数为 0、Wechat Pay 写入数为 0、短信发送数为 0。私有 OSS 分项通过并完成全部版本清理；一次性脚本已补充相同的 exact-key 全版本清理与清理后 0 残留断言，默认四类全跑行为不变，显式分项执行不能冒充完整验收。WestDigital 四项在显式环境代理路径下全部取得真实成功响应；该路径仍固定目标、TLS 校验与请求路径白名单，生产默认 transport 与公网地址检查不变。Wechat Pay/短信尚未调用，所以 11.1 第 2 项保持未勾选。

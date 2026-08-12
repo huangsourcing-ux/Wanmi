@@ -79,6 +79,7 @@ const templateQueryDataSchema = z
   .passthrough()
 const assetDataSchema = z
   .object({
+    bizcnorder: z.string().optional(),
     dns1: z.string().default(''),
     dns2: z.string().default(''),
     dns3: z.string().default(''),
@@ -300,7 +301,7 @@ export class WestDigitalWriteAdapter implements WestDigitalWriteProvider {
           ),
           providerAssetId: data.id,
           registeredAt: providerDate(data.regdate),
-          registrarCode: data.registrars ?? 'westdigital',
+          registrarCode: data.registrars ?? data.bizcnorder ?? 'westdigital',
           status: Date.parse(expiresAt) <= this.now().getTime() ? 'expired' : 'active',
         }
       },

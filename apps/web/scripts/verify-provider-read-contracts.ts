@@ -1,9 +1,20 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 
+import OSS from 'ali-oss'
+
 import { getEnv } from '../src/lib/env'
 import type { ProviderResult } from '../src/lib/domain'
+import {
+  parseProviderReadContractSelection,
+  providerReadContractSelectionIsComplete,
+  shouldUseWestDigitalReadContractProxy,
+} from '../src/lib/provider-read-contract-selection'
 import { validateAliyunSmsLiveConfiguration } from '../src/providers/aliyunsms'
 import { createRealnameObjectProvider } from '../src/providers/oss-realname'
+import {
+  deleteAllOssContractObjectVersions,
+  type OssContractCleanupClient,
+} from '../src/services/realname/oss-contract-cleanup'
 import {
   createConfiguredWestDigitalBalanceProvider,
   type WestDigitalBalanceTransport,
@@ -273,7 +284,13 @@ async function runCheck(name: string, execute: () => Promise<void>): Promise<voi
 async function verifyWestDigital(): Promise<void> {
   const lookupDomain = required('WESTDIGITAL_READ_CONTRACT_LOOKUP_DOMAIN')
   const assetDomain = required('WESTDIGITAL_READ_CONTRACT_ASSET_DOMAIN')
-  const transport = new RecordingWestDigitalTransport(new LiveWestDigitalTransport())
+  const useEnvironmentProxy = shouldUseWestDigitalReadContractProxy({
+    nodeUseEnvProxy: process.env.NODE_USE_ENV_PROXY,
+    requested: process.env.WESTDIGITAL_READ_CONTRACT_USE_ENV_PROXY,
+  })
+  const transport = new RecordingWestDigitalTransport(
+    new LiveWestDigitalTransport(useEnvironmentProxy ? { fixedOriginFetchImpl: fetch } : undefined),
+  )
   const reads = createConfiguredWestDigitalReadProvider({ liveTransportFactory: () => transport })
   const assets = createConfiguredWestDigitalWriteAdapter({ liveTransportFactory: () => transport })
   const balance = createConfiguredWestDigitalBalanceProvider({
@@ -318,13 +335,27 @@ async function verifyWechatPay(): Promise<void> {
 
 async function verifyPrivateOss(): Promise<void> {
   const provider = createRealnameObjectProvider()
-  const prefix = getEnv().OSS_REALNAME_PREFIX
+  const env = getEnv()
+  const prefix = env.OSS_REALNAME_PREFIX
+  const accessKeyId = process.env.ALIBABA_CLOUD_ACCESS_KEY_ID
+  const accessKeySecret = process.env.ALIBABA_CLOUD_ACCESS_KEY_SECRET
+  assert(accessKeyId && accessKeySecret, 'Private OSS credentials must be provided')
+  assert(env.OSS_REALNAME_BUCKET && env.OSS_REALNAME_ENDPOINT, 'Private OSS location is required')
+  const cleanupClient = new OSS({
+    accessKeyId,
+    accessKeySecret,
+    bucket: env.OSS_REALNAME_BUCKET,
+    endpoint: env.OSS_REALNAME_ENDPOINT,
+    secure: true,
+    timeout: 15_000,
+  }) as OSS & OssContractCleanupClient
   const traceId = `d7-05-oss-${randomUUID()}`
   const key = `${prefix}/contract-tests/d7-05/${randomUUID()}.bin`
   const body = randomBytes(48)
-  let created = false
+  let uploadAttempted = false
   try {
     let startedAt = performance.now()
+    uploadAttempted = true
     const upload = await provider.upload({ body, key, traceId })
     observations.push({
       actualFieldPaths: upload.ok ? fieldPaths(upload.data) : [],
@@ -333,7 +364,6 @@ async function verifyPrivateOss(): Promise<void> {
       interface: 'aliyun.oss_private_upload_test_object',
     })
     assertProviderOk(upload, 'Private OSS test-object upload')
-    created = true
 
     startedAt = performance.now()
     const read = await provider.read({ key, traceId })
@@ -364,16 +394,32 @@ async function verifyPrivateOss(): Promise<void> {
       'Private OSS signed read returned different bytes',
     )
   } finally {
-    if (created) {
-      const startedAt = performance.now()
-      const deleted = await provider.deleteObject({ key, traceId })
-      observations.push({
-        actualFieldPaths: deleted.ok ? fieldPaths(deleted.data) : [],
-        ...mappedResult(deleted),
-        durationMs: roundedDuration(startedAt),
-        interface: 'aliyun.oss_private_delete_test_object',
-      })
-      assert(deleted.ok, 'Private OSS test-object cleanup failed')
+    if (uploadAttempted) {
+      try {
+        const startedAt = performance.now()
+        const deleted = await provider.deleteObject({ key, traceId })
+        observations.push({
+          actualFieldPaths: deleted.ok ? fieldPaths(deleted.data) : [],
+          ...mappedResult(deleted),
+          durationMs: roundedDuration(startedAt),
+          interface: 'aliyun.oss_private_delete_test_object',
+        })
+        assert(deleted.ok, 'Private OSS test-object cleanup failed')
+      } finally {
+        const startedAt = performance.now()
+        const cleanup = await deleteAllOssContractObjectVersions({
+          allowedPrefix: prefix,
+          client: cleanupClient,
+          key,
+        })
+        observations.push({
+          actualFieldPaths: fieldPaths(cleanup),
+          adapterOk: true,
+          durationMs: roundedDuration(startedAt),
+          interface: 'aliyun.oss_private_delete_all_test_object_versions',
+          mappedFieldPaths: fieldPaths(cleanup),
+        })
+      }
     }
     body.fill(0)
   }
@@ -404,10 +450,24 @@ async function verifySmsConfiguration(): Promise<void> {
 
 async function main(): Promise<void> {
   assertReadOnlyPreflight()
-  await runCheck('westdigital', verifyWestDigital)
-  await runCheck('wechatpay', verifyWechatPay)
-  await runCheck('aliyun.oss_private', verifyPrivateOss)
-  await runCheck('aliyun.sms_configuration', verifySmsConfiguration)
+  const selectedCategories = parseProviderReadContractSelection(
+    process.env.PROVIDER_READ_CONTRACT_CATEGORIES,
+  )
+  if (selectedCategories.includes('westdigital')) {
+    await runCheck('westdigital', verifyWestDigital)
+  }
+  if (selectedCategories.includes('wechatpay')) {
+    await runCheck('wechatpay', verifyWechatPay)
+  }
+  if (selectedCategories.includes('aliyun.oss_private')) {
+    await runCheck('aliyun.oss_private', verifyPrivateOss)
+  }
+  if (selectedCategories.includes('aliyun.sms_configuration')) {
+    await runCheck('aliyun.sms_configuration', verifySmsConfiguration)
+  }
+
+  const completeSelection = providerReadContractSelectionIsComplete(selectedCategories)
+  const status = failures.length > 0 ? 'failed' : completeSelection ? 'passed' : 'partial'
 
   process.stdout.write(
     `${JSON.stringify(
@@ -416,8 +476,9 @@ async function main(): Promise<void> {
         failures,
         observations,
         observedAt: new Date().toISOString(),
+        selectedCategories,
         smsSent: false,
-        status: failures.length === 0 ? 'passed' : 'failed',
+        status,
         westDigitalWrites: 0,
         wechatPayWrites: 0,
       },
@@ -426,6 +487,7 @@ async function main(): Promise<void> {
     )}\n`,
   )
   if (failures.length > 0) process.exitCode = 1
+  else if (!completeSelection) process.exitCode = 2
 }
 
 main().catch((error) => {
