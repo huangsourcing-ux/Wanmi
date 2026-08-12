@@ -69,6 +69,10 @@
 
 恢复实现后，TypeScript strict、定向 ESLint、4/4 聚焦单测和 diff 检查通过。随后先执行 `docker compose down -v` 删除本仓库测试卷并由 Compose 重建；只向测试进程注入一次性随机主密钥、显式关闭全部真实能力闸后，完整 `make check` 退出码 0，通过 bootstrap、`verify-provider-write-policy`、生成物/schema 漂移、全部 migration 往返、Nginx/运维/重建/发布契约、lint、TypeScript strict、82 文件 613/613 单元、28 文件 105/105 PostgreSQL/MinIO 集成、Next.js 生产构建、linux/amd64 镜像、Node audit、工作树/144 个提交完整历史 Gitleaks 和 Trivy。再在同一全新库上运行第二轮完整集成，28 文件 105/105 通过。
 
+PR #63 复审补证（2026-08-12）：新增第 5 个 fixture 用例，让伪造 OSS client 在删除标记恢复后返回由同一 keyring 正确加密、但明文及摘要均不同的历史对象；测试隔离下层 envelope metadata 绑定，使该合法信封实际解密成功，从而单独验证外层“恢复内容必须与上传前 SHA-256 及完整字节一致”断言。原实现返回 `RESTORED_CONTENT_MISMATCH`；失败路径仍只删除本次完整键的所有版本与 marker，相邻前缀对象保留。按复审标准只做一个整段变异：临时删除摘要计算及 `restoredSha256 !== input.sha256 || !sameBytes(...)` 判断后，新用例唯一失败，实际由应拒绝变为成功返回，原有 4 个用例仍通过；未分别删除两个子分支，避免互为冗余。恢复生产源码后聚焦测试 5/5 通过，生产实现最终无 diff。
+
+补证验证先以 `docker compose down -v` 重建本仓库测试卷；首轮完整门禁的 614/614 单元、105/105 集成与生产构建已通过，但镜像扫描器经现有代理更新漏洞数据库时下载中断，因此该轮未计为 `make check` 通过。随后通过 Trivy 自带的官方备用源更新同一个缓存，没有使用跳过更新或弱化扫描参数；仓库原样 `pnpm security` 通过后，从头重跑全 fixture/mock、全部真实能力闸 `false` 的 `make check`，最终退出码 0，通过 82 文件 614/614 单元、28 文件 105/105 集成及全部迁移、构建、写策略、秘密和最新漏洞库门禁。同一全新库第二轮完整集成再通过 28 文件 105/105。
+
 ## 结论与边界
 
 D7-08 已通过支付通知重放、ECS 重建、RDS PITR 和主密钥轮换；本次补齐 OSS 误删恢复后，开发计划 11.1 第 9 项的五个子项全部有真实演练证据，因此勾选 11.1 第 9 项与第 14 节“OSS 版本与误删恢复”。
