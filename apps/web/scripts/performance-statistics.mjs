@@ -19,6 +19,15 @@ export async function runScenariosSequentially(scenarios) {
   return results
 }
 
+export async function runWarmupThenMeasurements(warmup, measurements) {
+  if (!Array.isArray(measurements) || measurements.length < 1) {
+    throw new Error('Performance measurement requires at least one measured run')
+  }
+
+  await warmup()
+  return runScenariosSequentially(measurements)
+}
+
 export function summarizeScenarioRounds(roundResults) {
   if (!Array.isArray(roundResults) || roundResults.length === 0) {
     throw new Error('Performance scenario requires at least one measurement round')

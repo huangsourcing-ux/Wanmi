@@ -15,6 +15,7 @@ import {
   median,
   round,
   runScenariosSequentially,
+  runWarmupThenMeasurements,
   summarizeScenarioRounds,
 } from './performance-statistics.mjs'
 
@@ -277,57 +278,61 @@ async function launchChrome() {
   return { instance, port: instance.port, profile }
 }
 
+async function lighthouseRun(page, port, runLabel) {
+  const result = await withTimeout(
+    lighthouse(new URL(page.path, baseUrl).toString(), {
+      disableStorageReset: false,
+      formFactor: 'desktop',
+      logLevel: 'error',
+      maxWaitForLoad: 35_000,
+      onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
+      output: 'json',
+      port,
+      screenEmulation: {
+        deviceScaleFactor: 1,
+        disabled: false,
+        height: 900,
+        mobile: false,
+        width: 1440,
+      },
+      throttlingMethod: 'simulate',
+    }),
+    60_000,
+    `Lighthouse ${page.name} ${runLabel}`,
+  )
+  if (!result) throw new Error(`Lighthouse returned no result for ${page.name}`)
+  if (result.lhr.runtimeError) {
+    throw new Error(
+      `Lighthouse ${page.name} ${runLabel} failed: ${result.lhr.runtimeError.code}: ${result.lhr.runtimeError.message}`,
+    )
+  }
+  const measurements = {
+    accessibilityScore: result.lhr.categories.accessibility.score,
+    bestPracticesScore: result.lhr.categories['best-practices'].score,
+    cls: result.lhr.audits['cumulative-layout-shift'].numericValue,
+    fcpMs: result.lhr.audits['first-contentful-paint'].numericValue,
+    lcpMs: result.lhr.audits['largest-contentful-paint'].numericValue,
+    performanceScore: result.lhr.categories.performance.score,
+    seoScore: result.lhr.categories.seo.score,
+    speedIndexMs: result.lhr.audits['speed-index'].numericValue,
+    tbtMs: result.lhr.audits['total-blocking-time'].numericValue,
+    ttfbMs: result.lhr.audits['server-response-time'].numericValue,
+  }
+  const invalidMeasurements = Object.entries(measurements)
+    .filter(([, value]) => typeof value !== 'number' || !Number.isFinite(value))
+    .map(([name]) => name)
+  if (invalidMeasurements.length > 0) {
+    throw new Error(
+      `Lighthouse ${page.name} ${runLabel} returned non-numeric metrics: ${invalidMeasurements.join(', ')}`,
+    )
+  }
+  return measurements
+}
+
 async function lighthousePage(page, port) {
   const runs = []
   for (let run = 0; run < baseline.lighthouse.runs; run += 1) {
-    const result = await withTimeout(
-      lighthouse(new URL(page.path, baseUrl).toString(), {
-        disableStorageReset: false,
-        formFactor: 'desktop',
-        logLevel: 'error',
-        maxWaitForLoad: 35_000,
-        onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
-        output: 'json',
-        port,
-        screenEmulation: {
-          deviceScaleFactor: 1,
-          disabled: false,
-          height: 900,
-          mobile: false,
-          width: 1440,
-        },
-        throttlingMethod: 'simulate',
-      }),
-      60_000,
-      `Lighthouse ${page.name} run ${run + 1}`,
-    )
-    if (!result) throw new Error(`Lighthouse returned no result for ${page.name}`)
-    if (result.lhr.runtimeError) {
-      throw new Error(
-        `Lighthouse ${page.name} run ${run + 1} failed: ${result.lhr.runtimeError.code}: ${result.lhr.runtimeError.message}`,
-      )
-    }
-    const measurements = {
-      accessibilityScore: result.lhr.categories.accessibility.score,
-      bestPracticesScore: result.lhr.categories['best-practices'].score,
-      cls: result.lhr.audits['cumulative-layout-shift'].numericValue,
-      fcpMs: result.lhr.audits['first-contentful-paint'].numericValue,
-      lcpMs: result.lhr.audits['largest-contentful-paint'].numericValue,
-      performanceScore: result.lhr.categories.performance.score,
-      seoScore: result.lhr.categories.seo.score,
-      speedIndexMs: result.lhr.audits['speed-index'].numericValue,
-      tbtMs: result.lhr.audits['total-blocking-time'].numericValue,
-      ttfbMs: result.lhr.audits['server-response-time'].numericValue,
-    }
-    const invalidMeasurements = Object.entries(measurements)
-      .filter(([, value]) => typeof value !== 'number' || !Number.isFinite(value))
-      .map(([name]) => name)
-    if (invalidMeasurements.length > 0) {
-      throw new Error(
-        `Lighthouse ${page.name} run ${run + 1} returned non-numeric metrics: ${invalidMeasurements.join(', ')}`,
-      )
-    }
-    runs.push(measurements)
+    runs.push(await lighthouseRun(page, port, `run ${run + 1}`))
   }
   return {
     accessibilityScore: round(median(runs.map((run) => run.accessibilityScore)), 2),
@@ -383,10 +388,10 @@ try {
   await verifyLocalPageDependencies()
   const api = await measureApi()
   chrome = await launchChrome()
-  const pages = []
-  for (const page of baseline.lighthouse.pages) {
-    pages.push(await lighthousePage(page, chrome.port))
-  }
+  const pages = await runWarmupThenMeasurements(
+    () => lighthouseRun(baseline.lighthouse.pages[0], chrome.port, 'warmup'),
+    baseline.lighthouse.pages.map((page) => () => lighthousePage(page, chrome.port)),
+  )
   const report = {
     api,
     baseUrl: baseUrl.origin,
