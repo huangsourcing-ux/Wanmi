@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   runScenariosSequentially,
+  runWarmupThenMeasurements,
   summarizeScenarioRounds,
 } from '../../scripts/performance-statistics.mjs'
 
@@ -58,6 +59,31 @@ describe('performance scenario statistics', () => {
     })
   })
 
+  it('discards one warmup before returning the measured runs', async () => {
+    const events: string[] = []
+
+    await expect(
+      runWarmupThenMeasurements(async () => {
+        events.push('warmup')
+        return 'cold-start-outlier'
+      }, [
+        async () => {
+          events.push('measurement-0')
+          return 'measurement-0'
+        },
+        async () => {
+          events.push('measurement-1')
+          return 'measurement-1'
+        },
+        async () => {
+          events.push('measurement-2')
+          return 'measurement-2'
+        },
+      ]),
+    ).resolves.toEqual(['measurement-0', 'measurement-1', 'measurement-2'])
+    expect(events).toEqual(['warmup', 'measurement-0', 'measurement-1', 'measurement-2'])
+  })
+
   it('aggregates failures across every measurement round', () => {
     const rounds = [successfulRound(100), successfulRound(110)]
     rounds[1][0] = { durationMs: 120, ok: false }
@@ -73,5 +99,11 @@ describe('performance scenario statistics', () => {
   it('rejects missing or empty measurement rounds', () => {
     expect(() => summarizeScenarioRounds([])).toThrow(/at least one measurement round/u)
     expect(() => summarizeScenarioRounds([[]])).toThrow(/must not be empty/u)
+  })
+
+  it('rejects an invalid measured run count', async () => {
+    await expect(runWarmupThenMeasurements(async () => undefined, [])).rejects.toThrow(
+      /at least one measured run/u,
+    )
   })
 })

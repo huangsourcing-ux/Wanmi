@@ -34,7 +34,7 @@ ALLOW_REAL_PROVIDER_WRITES=false make performance
 
 该目标执行 migration、生产构建、随机分配 loopback 端口，并运行接口负载和 Lighthouse。脚本先用独立浏览器阻断所有非当前 loopback origin 的页面请求；发现任何外部依赖立即失败。接口只接受 HTTP 200 和预期 `ready` 状态，任何超时、非预期状态或错误都计入错误率。
 
-正式测量环境覆盖 macOS arm64 本机与 GitHub Actions Ubuntu runner，统一使用 Node.js 24.18.0、Lighthouse/chrome-launcher 13.4.1/1.2.1、Next.js 生产构建和本地 fixture；macOS 使用系统 Chrome 151.0.7922.76，Linux CI 使用 Playwright Chromium 145.0.7632.6。三个接口场景按公开工具页、域名接口、IDN 的顺序隔离执行，避免一个场景的门禁值混入另两个不同负载的 CPU/事件循环争抢；各场景内部并发形态不变。公开工具页和域名接口仍分别按单批全部请求计算 p95；IDN 在丢弃 3 个预热请求后执行 5 个独立轮次，每轮保持 8 workers × 10 请求，门禁指标取 5 个轮次 p95 的中位数，错误率仍聚合全部 400 请求。Lighthouse 使用 desktop simulated throttling，每页 3 次并取中值。本机连续执行三轮初始校准/门禁：第一轮公开工具页因 p95 357.7 ms 超过初始 300 ms 门槛失败，第二轮 IDN 因旧口径单次 p95 160.4 ms 超过初始 150 ms 门槛失败，第三轮通过。首轮 Linux CI 又如实失败于公开页 810.9 ms、IDN 旧口径 274.9 ms 和三页 TBT 89.5～104 ms；第三轮 Linux 实测 IDN TBT 中位数进一步达到 131.5 ms，第四轮公开页与 IDN 旧口径 p95 分别达到 898.9 ms、317.9 ms。域名接口、错误率、LCP 与四类分数均通过。跨环境最终门槛按各项最差有效实测增加约 8%～15% 抖动空间，不按本机最快值冒充 CI 可重复基线。
+正式测量环境覆盖 macOS arm64 本机与 GitHub Actions Ubuntu runner，统一使用 Node.js 24.18.0、Lighthouse/chrome-launcher 13.4.1/1.2.1、Next.js 生产构建和本地 fixture；macOS 使用系统 Chrome 151.0.7922.76，Linux CI 使用 Playwright Chromium 145.0.7632.6。三个接口场景按公开工具页、域名接口、IDN 的顺序隔离执行，避免一个场景的门禁值混入另两个不同负载的 CPU/事件循环争抢；各场景内部并发形态不变。公开工具页和域名接口仍分别按单批全部请求计算 p95；IDN 在丢弃 3 个预热请求后执行 5 个独立轮次，每轮保持 8 workers × 10 请求，门禁指标取 5 个轮次 p95 的中位数，错误率仍聚合全部 400 请求。Lighthouse 启动 Chrome 后先对首页执行 1 次完整但不计入报告或门禁的预热审计，再使用 desktop simulated throttling 对每页执行原有 3 次测量并取中值。本机连续执行三轮初始校准/门禁：第一轮公开工具页因 p95 357.7 ms 超过初始 300 ms 门槛失败，第二轮 IDN 因旧口径单次 p95 160.4 ms 超过初始 150 ms 门槛失败，第三轮通过。首轮 Linux CI 又如实失败于公开页 810.9 ms、IDN 旧口径 274.9 ms 和三页 TBT 89.5～104 ms；第三轮 Linux 实测 IDN TBT 中位数进一步达到 131.5 ms，第四轮公开页与 IDN 旧口径 p95 分别达到 898.9 ms、317.9 ms。域名接口、错误率、LCP 与四类分数均通过。跨环境最终门槛按各项最差有效实测增加约 8%～15% 抖动空间，不按本机最快值冒充 CI 可重复基线。
 
 ### 3.1 接口实测与门槛
 
@@ -85,6 +85,8 @@ PR #63 的代码与上一通过版本一致，但旧口径在 Linux CI 得到 `3
 硬门槛为 Performance ≥ 0.78、Accessibility ≥ 0.98、Best Practices ≥ 0.90、SEO ≥ 0.98、LCP ≤ 3500 ms、TBT ≤ 150 ms、CLS ≤ 0.02；任一页任一项失败即命令非零退出。TBT 门槛按最新 Linux 131.5 ms 中位数保留约 14% 抖动空间，仍严于 200 ms 的良好表现边界；其他门槛比跨环境最差实测留约 8%～15%，不是永远通过的宽松值。
 
 当前 simulated LCP 3.16～3.32 秒尚未达到 2.5 秒的优化目标，作为已知基线保留，不能通过继续放宽回归门槛掩盖。诊断中 TTFB 9～20 ms、FCP 0.76～1.00 秒且 Lighthouse LCP breakdown 没有可节省项；后续应针对渲染模型和首屏元素继续优化，达到后再下调 3500 ms 门槛。
+
+PR #63 合入 `main@2b3597b` 后的首轮 Linux 组合验证没有重跑规避失败：`make check` 通过，IDN 5 轮为 `223.7/162.1/157.0/138.1/133.2 ms`、中位数 `157.0 ms < 220 ms`；性能失败仅出现在 Chrome 启动后的第一个 Lighthouse 页面，首页 Performance/TBT 为 `0.73/222.5 ms`，而随后域名页和 IDN 页分别为 `0.80/97.5 ms`、`0.80/107.0 ms`。同一脚本此前三次 Linux 首页中位数稳定在 Performance `0.79`、TBT `109.5～112.0 ms`，本次异常同时集中在首个页面的 CPU 阻塞，判断为浏览器/Lighthouse 冷启动污染而非 #63 业务回归。修复只增加一次全局预热审计并丢弃其结果；单测锁定预热先执行、返回值不进入正式结果且三个正式测量保持顺序。本机恢复验证的接口 p95 为 `268.3/3995.8/40.6 ms`，IDN 仍为 5 轮中位数；三页 Performance 为 `0.81/0.82/0.82`，TBT 为 `5.0/5.5/5.0 ms`，命令退出码 0。公开页 `990 ms`、域名 `4300 ms`、IDN `220 ms`、LCP `3500 ms`、Performance `0.78`、TBT `150 ms` 及其余门槛全部未改。
 
 ## 4. 变异与回归缺陷证据
 
