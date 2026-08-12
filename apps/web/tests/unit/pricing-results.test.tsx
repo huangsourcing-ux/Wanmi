@@ -97,6 +97,15 @@ afterEach(() => {
 })
 
 describe('D2-07 pricing presentation', () => {
+  it('reserves stable space while the asynchronous price table loads', () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => undefined)))
+
+    const { container } = render(<PricingResults />)
+
+    expect(screen.getByRole('status').textContent).toContain('正在计算默认 TLD')
+    expect(container.firstElementChild?.classList.contains('min-h-[36rem]')).toBe(true)
+  })
+
   it('shows all item states and integer-formatted totals without a purchase entry point', async () => {
     const fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       void init
@@ -115,7 +124,7 @@ describe('D2-07 pricing presentation', () => {
     expect(screen.queryByText('未配置加价规则，不开放购买。')).not.toBeNull()
     expect(screen.queryByText(/溢价域名不在本表内/u)).not.toBeNull()
     expect(screen.queryByText(/交易功能尚未开放/u)).not.toBeNull()
-    expect(screen.getAllByRole('button', { name: /复制 \..+ 价格记录/u })).toHaveLength(5)
+    expect(screen.getAllByRole('button', { name: /复制此条价格：\..+/u })).toHaveLength(5)
     expect(screen.queryByRole('button', { name: /购买|注册/u })).toBeNull()
     expect(screen.queryByRole('link', { name: /购买|注册/u })).toBeNull()
 

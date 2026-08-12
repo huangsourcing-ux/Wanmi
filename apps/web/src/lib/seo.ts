@@ -83,7 +83,7 @@ const fixedRoutes: PublicSeoRoute[] = [
   },
   {
     changeFrequency: 'monthly',
-    description: 'Wanmi.net 隐私、使用条款、Cookie 和广告说明的开发期入口。',
+    description: 'Wanmi.net 隐私、实名、支付、Cookie、广告和使用条款的开发期合规入口。',
     path: '/legal',
     priority: 0.4,
     title: '帮助与合规',

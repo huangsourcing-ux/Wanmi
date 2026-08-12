@@ -102,6 +102,8 @@ describe('D1 SEO foundation', () => {
         '/articles',
         '/topics',
         '/legal/privacy',
+        '/legal/realname',
+        '/legal/payment',
       ]),
     )
     expect(sitemapEntries).toHaveLength(routes.length)

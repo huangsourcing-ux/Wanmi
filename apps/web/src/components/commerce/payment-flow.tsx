@@ -4,6 +4,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { RegistrarDisclosure } from '@/components/compliance/registrar-disclosure'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -57,10 +58,12 @@ function isSettled(status: Extract<PaymentStatusResult, { state: 'ready' }>['dat
 export function PaymentFlow({
   orderNumber,
   preferredChannel,
+  registrarName,
   returned = false,
 }: {
   orderNumber: string
   preferredChannel?: PaymentChannel
+  registrarName?: string
   returned?: boolean
 }) {
   const [channel, setChannel] = useState<PaymentChannel | undefined>(preferredChannel)
@@ -175,6 +178,8 @@ export function PaymentFlow({
         <p className="text-sm font-medium text-primary">订单 {orderNumber}</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight">微信支付</h1>
       </div>
+
+      <RegistrarDisclosure registrarName={registrarName} />
 
       {returned ? (
         <Alert>

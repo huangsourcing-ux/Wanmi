@@ -166,11 +166,7 @@ function PricingCard({ item }: { item: PricingItem }) {
             </div>
           ) : null}
         </dl>
-        <CopyAction
-          ariaLabel={`复制 .${item.tld} 价格记录`}
-          label="复制此条价格"
-          text={formatPricingRecord(item)}
-        />
+        <CopyAction label={`复制此条价格：.${item.tld}`} text={formatPricingRecord(item)} />
       </CardContent>
     </Card>
   )
@@ -273,7 +269,7 @@ export function PricingResults() {
 
   if (loading) {
     return (
-      <div className="mx-auto mb-16 w-[calc(100%-2rem)] max-w-7xl sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]">
+      <div className="mx-auto mb-16 min-h-[36rem] w-[calc(100%-2rem)] max-w-7xl sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]">
         <div aria-busy="true" className="rounded-xl border bg-card p-6" role="status">
           正在计算默认 TLD 的 1 年与 3 年成本，请稍候…
         </div>
@@ -282,7 +278,7 @@ export function PricingResults() {
   }
   if (problem) {
     return (
-      <div className="mx-auto mb-16 w-[calc(100%-2rem)] max-w-7xl sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]">
+      <div className="mx-auto mb-16 min-h-[36rem] w-[calc(100%-2rem)] max-w-7xl sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]">
         <ResultState
           dataSource={problem.dataSource}
           description={problem.detail}
@@ -301,7 +297,7 @@ export function PricingResults() {
   return (
     <section
       aria-labelledby="pricing-results-title"
-      className="mx-auto mb-16 w-[calc(100%-2rem)] max-w-7xl space-y-6 sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]"
+      className="mx-auto mb-16 min-h-[36rem] w-[calc(100%-2rem)] max-w-7xl space-y-6 sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)]"
     >
       <div>
         <h2 className="font-heading text-2xl font-semibold" id="pricing-results-title">

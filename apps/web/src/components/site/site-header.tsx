@@ -9,7 +9,6 @@ export function SiteHeader({ items }: { items: SiteNavigationItem[] }) {
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/85">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-8 px-4 sm:px-6 lg:px-8">
         <Link
-          aria-label="Wanmi.net 首页"
           className="group flex shrink-0 items-center gap-2 rounded-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
           href="/"
         >

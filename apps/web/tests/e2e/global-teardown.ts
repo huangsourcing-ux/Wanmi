@@ -5,8 +5,10 @@ import { removeContentCmsFixture } from './content-cms-fixture'
 import { removeAdvertisingFixture } from './advertising-fixture'
 import { removeFormBuilderFixture } from './form-builder-fixture'
 import { removeRealnameDocumentFixture } from './realname-document-fixture'
+import { removeComplianceFixture } from './compliance-fixture'
 
 export default async function globalTeardown() {
+  await removeComplianceFixture()
   await removeRealnameDocumentFixture()
   await removeFormBuilderFixture()
   await removeAdvertisingFixture()

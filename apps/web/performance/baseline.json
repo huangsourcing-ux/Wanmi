@@ -40,6 +40,18 @@
       {
         "name": "idn",
         "path": "/tools/idn"
+      },
+      {
+        "name": "pricing",
+        "path": "/pricing"
+      },
+      {
+        "name": "legal-realname",
+        "path": "/legal/realname"
+      },
+      {
+        "name": "legal-payment",
+        "path": "/legal/payment"
       }
     ],
     "runs": 3

@@ -1,6 +1,8 @@
 import Link from 'next/link'
 
+import { RegistrarDisclosure } from '@/components/compliance/registrar-disclosure'
 import { Separator } from '@/components/ui/separator'
+import { ICP_REGISTRATION_URL, type PublicComplianceConfig } from '@/lib/public-compliance'
 
 const footerGroups = [
   {
@@ -16,6 +18,8 @@ const footerGroups = [
     links: [
       { href: '/help', label: '帮助与数据来源' },
       { href: '/legal/privacy', label: '隐私说明' },
+      { href: '/legal/realname', label: '实名说明' },
+      { href: '/legal/payment', label: '支付说明' },
       { href: '/legal/terms', label: '使用条款' },
       { href: '/legal/cookies', label: 'Cookie 说明' },
       { href: '/legal/advertising', label: '广告说明' },
@@ -27,7 +31,7 @@ const footerGroups = [
   },
 ] as const
 
-export function SiteFooter() {
+export function SiteFooter({ compliance }: { compliance: PublicComplianceConfig }) {
   return (
     <footer className="border-t bg-card">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.5fr_1fr_1fr] lg:px-8">
@@ -38,6 +42,7 @@ export function SiteFooter() {
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
             面向中文用户的域名工具、实用内容与代理注册平台。当前注册、支付和履约能力尚未开放。
           </p>
+          <RegistrarDisclosure compact registrarName={compliance.registrarName} />
         </div>
         {footerGroups.map((group) => (
           <div key={group.title}>
@@ -58,9 +63,37 @@ export function SiteFooter() {
         ))}
       </div>
       <Separator />
-      <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-5 text-xs leading-5 text-muted-foreground sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
-        <p>© 2026 Wanmi.net。公开查询结果以所标注的数据来源和时间为准。</p>
-        <p>生产服务上线前仍需完成资质、备案、合规复核及最终批准。</p>
+      <div className="mx-auto grid max-w-7xl gap-2 px-4 py-5 text-xs leading-5 text-muted-foreground sm:px-6 md:grid-cols-2 lg:px-8">
+        <div>
+          <p>© 2026 Wanmi.net。公开查询结果以所标注的数据来源和时间为准。</p>
+          {compliance.icpRegistrationNumber ? (
+            <p>
+              <a
+                className="rounded-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-ring"
+                href={ICP_REGISTRATION_URL}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {compliance.icpRegistrationNumber}
+              </a>
+            </p>
+          ) : null}
+          {compliance.publicSecurityRegistration ? (
+            <p>
+              <a
+                className="rounded-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-ring"
+                href={compliance.publicSecurityRegistration.url}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {compliance.publicSecurityRegistration.number}
+              </a>
+            </p>
+          ) : null}
+        </div>
+        {compliance.showPrelaunchNotice ? (
+          <p className="md:text-right">生产服务上线前仍需完成资质、备案、合规复核及最终批准。</p>
+        ) : null}
       </div>
     </footer>
   )

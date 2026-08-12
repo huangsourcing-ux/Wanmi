@@ -314,6 +314,8 @@ test('planned public skeleton routes are available and unknown slugs return 404'
     '/help',
     '/legal',
     '/legal/privacy',
+    '/legal/realname',
+    '/legal/payment',
     '/legal/terms',
     '/legal/cookies',
     '/legal/advertising',
@@ -332,6 +334,39 @@ test('planned public skeleton routes are available and unknown slugs return 404'
   expect((await request.get('/legal/not-a-document')).status()).toBe(404)
 })
 
+test('configured compliance details render without pending placeholders on required public surfaces', async ({
+  page,
+}) => {
+  await page.goto('/')
+  const footer = page.locator('footer')
+  await expect(footer.getByRole('link', { name: '渝ICP备18017546-13' })).toHaveAttribute(
+    'href',
+    'https://beian.miit.gov.cn/',
+  )
+  await expect(footer.getByText('西部数码', { exact: true })).toBeVisible()
+  await expect(footer.getByText(/公安联网备案|公网安备/u)).toHaveCount(0)
+  await expect(footer.getByText(/生产服务上线前仍需完成资质/u)).toHaveCount(0)
+
+  await page.goto('/pricing')
+  await expect(page.locator('main [data-registrar-disclosure]')).toContainText(
+    '实际域名注册服务机构为西部数码',
+  )
+  await expect(
+    page.locator('main [data-registrar-disclosure]').getByRole('link', { name: '《使用条款》' }),
+  ).toHaveAttribute('href', '/legal/terms')
+
+  for (const [path, heading, section] of [
+    ['/legal/realname', '实名说明', '收集范围与最小化'],
+    ['/legal/payment', '支付说明', '退款规则与处理流程'],
+  ] as const) {
+    await page.goto(path)
+    await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 2, name: section })).toBeVisible()
+    await expect(page.getByText(/审核骨架 · 未生效/u)).toBeVisible()
+    await expect(page.getByText(/不构成承诺或已生效法律文本/u)).toBeVisible()
+  }
+})
+
 test('robots, sitemap and the branded Open Graph image expose only stable public URLs', async ({
   request,
 }) => {
@@ -348,6 +383,8 @@ test('robots, sitemap and the branded Open Graph image expose only stable public
   const sitemapText = await sitemap.text()
   expect(sitemapText).toContain(`<loc>${canonicalOrigin}/tools/domain-search</loc>`)
   expect(sitemapText).toContain(`<loc>${canonicalOrigin}/legal/privacy</loc>`)
+  expect(sitemapText).toContain(`<loc>${canonicalOrigin}/legal/realname</loc>`)
+  expect(sitemapText).toContain(`<loc>${canonicalOrigin}/legal/payment</loc>`)
   expect(sitemapText).toContain(`<loc>${canonicalOrigin}/contact</loc>`)
   expect(sitemapText).toContain(`<loc>${canonicalOrigin}/feedback</loc>`)
   expect(sitemapText).toContain(`<loc>${canonicalOrigin}/requests</loc>`)
