@@ -7,13 +7,13 @@ function successfulRound(p95Ms: number) {
 }
 
 describe('performance scenario statistics', () => {
-  it('uses the median round p95 so one noisy round cannot dominate the gate', () => {
+  it('uses the median round p95 so two noisy rounds cannot dominate the gate', () => {
     const result = summarizeScenarioRounds([
       successfulRound(100),
-      successfulRound(102),
       successfulRound(101),
       successfulRound(900),
       successfulRound(99),
+      successfulRound(800),
     ])
 
     expect(result).toMatchObject({
@@ -22,7 +22,7 @@ describe('performance scenario statistics', () => {
       maximumMs: 900,
       p95Ms: 101,
       requests: 100,
-      roundP95Ms: [100, 102, 101, 900, 99],
+      roundP95Ms: [100, 101, 900, 99, 800],
       rounds: 5,
     })
   })
