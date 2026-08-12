@@ -11,6 +11,8 @@ import { chromium } from '@playwright/test'
 import { launch, Launcher } from 'chrome-launcher'
 import lighthouse from 'lighthouse'
 
+import { median, round, summarizeScenarioRounds } from './performance-statistics.mjs'
+
 const webDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const baselinePath = path.join(webDirectory, 'performance', 'baseline.json')
 const measureOnly = process.argv.includes('--measure')
@@ -25,21 +27,6 @@ if (process.env.ALLOW_REAL_PROVIDER_WRITES === 'true') {
 }
 
 const baseline = JSON.parse(await readFile(baselinePath, 'utf8'))
-
-function percentile(values, ratio) {
-  const sorted = [...values].sort((left, right) => left - right)
-  const index = Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1)
-  return sorted[Math.max(0, index)] ?? 0
-}
-
-function median(values) {
-  return percentile(values, 0.5)
-}
-
-function round(value, digits = 1) {
-  const scale = 10 ** digits
-  return Math.round(value * scale) / scale
-}
 
 async function availablePort() {
   return new Promise((resolve, reject) => {
@@ -211,29 +198,31 @@ async function requestTimed(input) {
 
 async function loadScenario(name, settings, requestFor) {
   for (let warmup = 0; warmup < 3; warmup += 1) {
-    await requestTimed(requestFor(-1, warmup))
+    await requestTimed(requestFor(-1, warmup, -1))
   }
-  const results = (
-    await Promise.all(
-      Array.from({ length: settings.concurrency }, (_, worker) =>
-        Promise.all(
-          Array.from({ length: settings.iterationsPerWorker }, (_, iteration) =>
-            requestTimed(requestFor(worker, iteration)),
+  const roundResults = []
+  for (
+    let measurementRound = 0;
+    measurementRound < (settings.measurementRounds ?? 1);
+    measurementRound += 1
+  ) {
+    roundResults.push(
+      (
+        await Promise.all(
+          Array.from({ length: settings.concurrency }, (_, worker) =>
+            Promise.all(
+              Array.from({ length: settings.iterationsPerWorker }, (_, iteration) =>
+                requestTimed(requestFor(worker, iteration, measurementRound)),
+              ),
+            ),
           ),
-        ),
-      ),
+        )
+      ).flat(),
     )
-  ).flat()
-  const durations = results.map((result) => result.durationMs)
-  const failures = results.filter((result) => !result.ok)
+  }
   return {
-    errorRate: round(failures.length / results.length, 4),
-    failures: failures.length,
-    maximumMs: round(Math.max(...durations)),
     name,
-    p50Ms: round(percentile(durations, 0.5)),
-    p95Ms: round(percentile(durations, 0.95)),
-    requests: results.length,
+    ...summarizeScenarioRounds(roundResults),
   }
 }
 
@@ -253,11 +242,13 @@ async function measureApi() {
       path: '/api/v1/tools/domain-search',
       traceId: `perf-domain-${token}-${worker}-${iteration}`,
     })),
-    loadScenario('idn', baseline.api.idn, (worker, iteration) => ({
-      body: { query: `perf-${token}-${Math.max(worker, 0)}-${iteration}.com` },
+    loadScenario('idn', baseline.api.idn, (worker, iteration, measurementRound) => ({
+      body: {
+        query: `perf-${token}-${Math.max(measurementRound, 0)}-${Math.max(worker, 0)}-${iteration}.com`,
+      },
       expectedStates: ['ready'],
       path: '/api/v1/tools/idn',
-      traceId: `perf-idn-${token}-${worker}-${iteration}`,
+      traceId: `perf-idn-${token}-${measurementRound}-${worker}-${iteration}`,
     })),
   ])
 }
