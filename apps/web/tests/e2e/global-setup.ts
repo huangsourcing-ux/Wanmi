@@ -6,11 +6,13 @@ import { createAdvertisingFixture } from './advertising-fixture'
 import { createFormBuilderFixture } from './form-builder-fixture'
 import { createRealnameDocumentFixture } from './realname-document-fixture'
 import { createPriceRulesFixture } from './price-rules-fixture'
+import { createComplianceFixture } from './compliance-fixture'
 
 export default async function globalSetup() {
   await createRedirectFixture()
   await createAdminAuthFixture()
   await createPriceRulesFixture()
+  await createComplianceFixture()
   await createContentCmsFixture()
   await createFirstPartyEventFixture()
   await createAdvertisingFixture()

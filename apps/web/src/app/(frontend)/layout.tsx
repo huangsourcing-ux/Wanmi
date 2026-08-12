@@ -9,6 +9,7 @@ import { RequestIdProvider } from '@/components/request-context'
 import { SiteFooter } from '@/components/site/site-footer'
 import { SiteHeader } from '@/components/site/site-header'
 import { getPublicSiteData } from '@/lib/public-site-data'
+import { getPublicComplianceConfig } from '@/lib/public-compliance'
 import { getTraceId } from '@/lib/request-id'
 import { getSiteOrigin, SITE_DESCRIPTION, SITE_TITLE } from '@/lib/seo'
 
@@ -27,7 +28,11 @@ export const metadata: Metadata = {
 }
 
 export default async function FrontendLayout({ children }: { children: ReactNode }) {
-  const [data, requestHeaders] = await Promise.all([getPublicSiteData(), headers()])
+  const [compliance, data, requestHeaders] = await Promise.all([
+    getPublicComplianceConfig(),
+    getPublicSiteData(),
+    headers(),
+  ])
 
   return (
     <html data-scroll-behavior="smooth" lang="zh-CN">
@@ -48,7 +53,7 @@ export default async function FrontendLayout({ children }: { children: ReactNode
               <main className="flex-1" id="main-content" tabIndex={-1}>
                 {children}
               </main>
-              <SiteFooter />
+              <SiteFooter compliance={compliance} />
             </div>
           </LocalToolLibraryProvider>
         </RequestIdProvider>

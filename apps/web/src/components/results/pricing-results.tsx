@@ -166,11 +166,7 @@ function PricingCard({ item }: { item: PricingItem }) {
             </div>
           ) : null}
         </dl>
-        <CopyAction
-          ariaLabel={`复制 .${item.tld} 价格记录`}
-          label="复制此条价格"
-          text={formatPricingRecord(item)}
-        />
+        <CopyAction label={`复制此条价格：.${item.tld}`} text={formatPricingRecord(item)} />
       </CardContent>
     </Card>
   )

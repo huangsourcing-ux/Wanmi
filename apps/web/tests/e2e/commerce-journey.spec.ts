@@ -231,6 +231,9 @@ test.describe.serial('D7 M01-M16 customer commerce journey', () => {
     await startPayment(request, owner, registrationOrder, 'mainline')
 
     await page.goto(`/account/orders/${registrationOrder.orderNumber}/payment`)
+    await expect(page.locator('main [data-registrar-disclosure]')).toContainText(
+      '实际域名注册服务机构为西部数码',
+    )
     await expect(page.getByText('等待支付确认')).toBeVisible()
     await expect(page.getByText(/扫码动作本身不会被视为支付成功/u)).toBeVisible()
     await expect(
@@ -264,6 +267,9 @@ test.describe.serial('D7 M01-M16 customer commerce journey', () => {
     await expect(page.getByText('正常')).toBeVisible()
 
     await page.goto(`/account/domains/${mainAssetId}`)
+    await expect(page.locator('main [data-registrar-disclosure]')).toContainText(
+      '实际域名注册服务机构为西部数码',
+    )
     const nameservers = ['ns1.d7-journey.example', 'ns2.d7-journey.example']
     await page.getByLabel('每行一个，至少两组').fill(nameservers.join('\n'))
     await page.getByRole('button', { name: '提交变更' }).click()

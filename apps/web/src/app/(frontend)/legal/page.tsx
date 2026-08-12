@@ -14,7 +14,7 @@ export default function LegalPage() {
     <>
       <PageIntro
         badge="待专业复核"
-        description="以下页面只固化当前批准的产品与安全边界，不是生产法律文本。正式版本将在真实服务开放前完成外部专业复核并公布生效信息。"
+        description="以下页面包含当前批准边界与待审核骨架，不是生产法律文本。实名说明和支付说明中的全部条目均待负责人及外部法务确认。"
         title="帮助与合规"
       />
       <section className="mx-auto grid max-w-7xl gap-5 px-4 pb-16 sm:grid-cols-2 sm:px-6 lg:px-8">

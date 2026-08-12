@@ -115,7 +115,7 @@ describe('D2-07 pricing presentation', () => {
     expect(screen.queryByText('未配置加价规则，不开放购买。')).not.toBeNull()
     expect(screen.queryByText(/溢价域名不在本表内/u)).not.toBeNull()
     expect(screen.queryByText(/交易功能尚未开放/u)).not.toBeNull()
-    expect(screen.getAllByRole('button', { name: /复制 \..+ 价格记录/u })).toHaveLength(5)
+    expect(screen.getAllByRole('button', { name: /复制此条价格：\..+/u })).toHaveLength(5)
     expect(screen.queryByRole('button', { name: /购买|注册/u })).toBeNull()
     expect(screen.queryByRole('link', { name: /购买|注册/u })).toBeNull()
 

@@ -1,19 +1,22 @@
 import { Suspense } from 'react'
 
 import { AdvertisingSlot } from '@/components/advertising/advertising-slot'
+import { RegistrarDisclosure } from '@/components/compliance/registrar-disclosure'
 import { PublicRelations } from '@/components/content/public-relations'
 import { PricingResults } from '@/components/results/pricing-results'
 import { ContentLanding } from '@/components/site/content-landing'
 import { PageIntro } from '@/components/site/page-intro'
 import { ToolActions } from '@/components/tool-actions/tool-actions'
 import { getPublicSiteData } from '@/lib/public-site-data'
+import { getPublicComplianceConfig } from '@/lib/public-compliance'
 import { createStaticPageMetadata } from '@/lib/seo'
 import { readCachedPublicToolRelations } from '@/services/content/read-tool-relations'
 
 export const metadata = createStaticPageMetadata('/pricing')
 
 export default async function PricingPage() {
-  const [data, relations] = await Promise.all([
+  const [compliance, data, relations] = await Promise.all([
+    getPublicComplianceConfig(),
     getPublicSiteData(),
     readCachedPublicToolRelations('pricing'),
   ])
@@ -22,9 +25,14 @@ export default async function PricingPage() {
     <>
       <PageIntro
         badge="价格中心"
-        description="基于西部数码格式 fixture 展示普通域名注册价、续费价及 1 年/3 年成本，并为每次计算保留可追溯快照。"
+        description="基于上游注册服务机构格式 fixture 展示普通域名注册价、续费价及 1 年/3 年成本，并为每次计算保留可追溯快照。"
         title="TLD 价格与成本"
       />
+      {compliance.registrarName ? (
+        <section className="mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
+          <RegistrarDisclosure registrarName={compliance.registrarName} />
+        </section>
+      ) : null}
       <ToolActions currentTool="pricing" />
       <PricingResults />
       <Suspense fallback={null}>
