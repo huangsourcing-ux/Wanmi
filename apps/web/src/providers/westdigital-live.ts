@@ -30,6 +30,10 @@ type LiveResponse =
   | WestDigitalTransportResponse
   | WestDigitalWriteTransportResponse
 
+type LiveWestDigitalTransportOptions = {
+  fixedOriginFetchImpl?: typeof fetch
+}
+
 function livePath(
   path: LiveRequest['path'],
 ): '/v2/audit/' | '/v2/domain/' | '/v2/domain/query/' | '/v2/info/' {
@@ -41,7 +45,7 @@ function livePath(
 export class LiveWestDigitalTransport
   implements WestDigitalBalanceTransport, WestDigitalReadTransport, WestDigitalWriteTransport
 {
-  constructor() {
+  constructor(private readonly options: LiveWestDigitalTransportOptions = {}) {
     assertLiveRuntimeTransportAllowed('westdigital')
   }
 
@@ -60,6 +64,9 @@ export class LiveWestDigitalTransport
         },
         {
           apiPassword: env.WESTDIGITAL_API_PASSWORD,
+          ...(this.options.fixedOriginFetchImpl
+            ? { fetchImpl: this.options.fixedOriginFetchImpl }
+            : {}),
           maxResponseBytes: env.WESTDIGITAL_READ_RESPONSE_MAX_BYTES,
           username: env.WESTDIGITAL_USERNAME,
         },
