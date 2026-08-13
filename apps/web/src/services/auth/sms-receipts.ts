@@ -1,6 +1,8 @@
 import type { PayloadRequest } from 'payload'
 
+import { getEnv } from '@/lib/env'
 import { createSmsProvider } from '@/providers/aliyunsms'
+import type { SmsProvider } from '@/providers/types'
 
 const RECEIPT_BATCH_SIZE = 50
 const RECEIPT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1_000
@@ -11,7 +13,10 @@ function safeProviderCode(code: string | undefined): string | undefined {
   return /^[A-Z0-9._-]{1,80}$/u.test(normalized) ? normalized : 'UNKNOWN'
 }
 
-export async function reconcileSmsReceipts(req: PayloadRequest): Promise<{
+export async function reconcileSmsReceipts(
+  req: PayloadRequest,
+  options: { fixtureProvider?: SmsProvider } = {},
+): Promise<{
   checked: number
   delivered: number
   expiredRateBucketsDeleted: number
@@ -24,6 +29,14 @@ export async function reconcileSmsReceipts(req: PayloadRequest): Promise<{
     req,
     where: { expiresAt: { less_than: now.toISOString() } },
   })
+  if (getEnv().ALIYUN_SMS_MODE !== 'live' && !options.fixtureProvider) {
+    return {
+      checked: 0,
+      delivered: 0,
+      expiredRateBucketsDeleted: expiredRateBuckets.docs.length,
+      failed: 0,
+    }
+  }
   const candidates = await req.payload.find({
     collection: 'smsChallenges',
     depth: 0,
@@ -39,7 +52,7 @@ export async function reconcileSmsReceipts(req: PayloadRequest): Promise<{
       ],
     },
   })
-  const provider = createSmsProvider()
+  const provider = options.fixtureProvider ?? createSmsProvider()
   let checked = 0
   let delivered = 0
   let failed = 0

@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { getEnv } from '@/lib/env'
 import { hmac, randomOpaqueToken } from '@/lib/crypto'
+import { createSmsProvider } from '@/providers/aliyunsms'
 import { authenticatedAdminRequest } from '@/services/auth/admin-session'
 import { customerSessionStrategy } from '@/services/auth/customer-strategy'
 import {
@@ -395,7 +396,9 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
       overrideAccess: true,
     })
 
-    const result = await reconcileSmsReceipts(await createLocalReq({}, payload))
+    const result = await reconcileSmsReceipts(await createLocalReq({}, payload), {
+      fixtureProvider: createSmsProvider(),
+    })
     expect(result.checked).toBeGreaterThanOrEqual(1)
     expect(result.delivered).toBe(result.checked)
     expect(result.failed).toBe(0)
