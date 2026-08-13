@@ -290,10 +290,10 @@ const startedAt = Date.now()
 try {
   loadRuntimeEnvironmentFiles(process.env, repositoryRoot)
 } catch (error) {
-  throw new RebuildError(
-    exitCodes.environment,
-    error instanceof Error ? error.message : 'Runtime configuration invalid',
+  process.stderr.write(
+    `${redact(error instanceof Error ? error.message : 'Runtime configuration invalid')}\n`,
   )
+  process.exit(exitCodes.environment)
 }
 const manifestPath = resolve(repositoryRoot, argument('--manifest', 'deploy/release-manifest.json'))
 const policyPath = resolve(repositoryRoot, 'deploy/release-policy.json')
