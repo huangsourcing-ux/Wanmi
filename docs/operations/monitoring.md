@@ -15,6 +15,7 @@
 | 余额     | `reconciliations`、`auditLogs`                 | 独立余额观察缺失/过旧，或低余额告警数越线                      |
 | 证件访问 | `auditLogs`                                    | 查看/下载次数或不同证件数越线                                  |
 | 对账     | `reconciliations`                              | `difference` 记录数越线                                        |
+| Worker   | `siteSettings` 脱敏 commerce 心跳              | 心跳缺失或最后心跳年龄越线                                     |
 
 只评估已经闭合的时间窗。`siteSettings` 的 `operations.monitoring.state.v1` 只保存最后完成窗口，不保存业务指标；认领使用同一事务内的 PostgreSQL `UPDATE ... WHERE value = old_value RETURNING`。重复 Job 或并发 Worker 都可以读取同一聚合，但只有一个执行者写 `operations.monitoring.alerted`，不会重复计数或重复告警。
 
@@ -32,6 +33,7 @@
 - `balance.alertCount/maximumObservationAgeMinutes`；
 - `documents.accessCount/distinctDocumentCount`；
 - `reconciliation.differenceCount`。
+- `workers.commerceMaximumHeartbeatAgeMinutes`。
 
 修改后从下一个闭合窗口生效。配置解析失败会 fail-closed，使 Job 失败并留下 Worker 错误；不得为消除告警把阈值改成极大值。
 
@@ -52,3 +54,6 @@
 - `tools`、`sms` 或 provider 相关异常：`provider-outage.md`；
 - 主动停售或低余额联动：`emergency-sales-stop.md`；
 - `reconciliation`：先核对 `reconciliations` 的独立账本证据，真实三方演练仍等待单独授权。
+- `workers`：先检查 commerce Worker 容器状态、退出码和有限重启计数，再按 `release-rollback.md` 的持久配置契约重建；不得通过放宽心跳阈值或启用无界重启消除告警。
+
+commerce Worker 每分钟通过既有 `commerce` 队列更新 `operations.worker.heartbeat.commerce.v1`。该 `siteSettings` 值只含固定角色、schema version 和最后心跳时间，不含 Job、订单、域名、客户或 provider 数据。既有 background Worker 每五分钟执行统一运营监控并读取该心跳，所以 commerce Worker 停止时仍能产生 `operations.monitoring.alerted`，`category=workers`、`condition=commerce_heartbeat_age_minutes`。

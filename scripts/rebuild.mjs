@@ -4,6 +4,13 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { executeRebuildPlan } from './rebuild-plan.mjs'
+import {
+  loadRuntimeEnvironmentFiles,
+  PRODUCTION_PROVIDER_KEYS,
+  REAL_PROVIDER_GATE_KEYS,
+  RUNTIME_MODE_KEYS,
+  TRANSIENT_OVERRIDE_KEYS,
+} from '../apps/web/scripts/runtime-environment-contract.mjs'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const defaultNginxImage =
@@ -83,7 +90,17 @@ const runtimeEnvironmentKeys = [
   'WHO_DAT_URL',
   'WANMI_D7_FIXTURE_DELAY_MS',
   'WANMI_D7_REBUILD_VALIDATION',
+  'WANMI_RUNTIME_PROFILE',
 ]
+
+for (const key of [
+  ...PRODUCTION_PROVIDER_KEYS,
+  ...REAL_PROVIDER_GATE_KEYS,
+  ...RUNTIME_MODE_KEYS,
+  ...TRANSIENT_OVERRIDE_KEYS,
+]) {
+  if (!runtimeEnvironmentKeys.includes(key)) runtimeEnvironmentKeys.push(key)
+}
 
 class RebuildError extends Error {
   constructor(code, message) {
@@ -207,6 +224,29 @@ function waitForContainer(name, code, label) {
   if (state !== 'true|0') throw new RebuildError(code, `${label} is not running: ${state}`)
 }
 
+function waitForStableContainer(name, code, label, seconds = 5) {
+  const deadline = Date.now() + seconds * 1_000
+  while (Date.now() < deadline) {
+    const state = docker(
+      [
+        'inspect',
+        '--format',
+        '{{.State.Status}}|{{.State.Running}}|{{.State.ExitCode}}|{{.RestartCount}}',
+        name,
+      ],
+      { exitCode: code, label, print: false },
+    )
+    if (state !== 'running|true|0|0') {
+      throw new RebuildError(code, `${label} failed startup stability: ${state}`)
+    }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500)
+  }
+}
+
+function runtimeCommand(role, command, ...args) {
+  return ['node', 'scripts/runtime-entry.mjs', role, command, ...args]
+}
+
 function waitForHttpInContainer(container, url, code, label, timeoutSeconds) {
   const deadline = Date.now() + timeoutSeconds * 1_000
   let lastFailure = 'not attempted'
@@ -247,6 +287,14 @@ function waitForNginx(container, timeoutSeconds = 60) {
 }
 
 const startedAt = Date.now()
+try {
+  loadRuntimeEnvironmentFiles(process.env, repositoryRoot)
+} catch (error) {
+  throw new RebuildError(
+    exitCodes.environment,
+    error instanceof Error ? error.message : 'Runtime configuration invalid',
+  )
+}
 const manifestPath = resolve(repositoryRoot, argument('--manifest', 'deploy/release-manifest.json'))
 const policyPath = resolve(repositoryRoot, 'deploy/release-policy.json')
 const deploymentId = requiredEnvironment('WANMI_DEPLOYMENT_ID')
@@ -255,6 +303,7 @@ if (!/^[a-z0-9][a-z0-9-]{2,40}$/u.test(deploymentId)) {
 }
 const network = `wanmi-${deploymentId}`
 const names = {
+  backgroundWorker: `${deploymentId}-background-worker`,
   migration: `${deploymentId}-migrate`,
   nginx: `${deploymentId}-nginx`,
   recovery: `${deploymentId}-recover-commerce`,
@@ -396,7 +445,7 @@ try {
         ...resourceArguments(),
         ...runtimeEnvironmentArguments(),
         image,
-        'node_modules/.bin/payload',
+        ...runtimeCommand('maintenance', 'node', 'node_modules/payload/bin.js'),
       ]
       docker([...base, 'migrate'], {
         exitCode: exitCodes.migrations,
@@ -424,19 +473,19 @@ try {
           '--publish',
           `127.0.0.1:${webPort}:3000`,
           '--restart',
-          'unless-stopped',
+          'on-failure:3',
           ...resourceArguments(),
           ...logArguments(),
           '--env',
           'HOSTNAME=0.0.0.0',
           ...runtimeEnvironmentArguments(),
           image,
-          'node',
-          'server.js',
+          ...runtimeCommand('web', 'node', 'server.js'),
         ],
         { exitCode: exitCodes.web, label: 'Web start', print: false },
       )
       waitForContainer(names.web, exitCodes.web, 'Web')
+      waitForStableContainer(names.web, exitCodes.web, 'Web')
     },
     'verify-readyz': async () => {
       process.stdout.write('[5/8] Waiting for database-backed readyz.\n')
@@ -449,7 +498,7 @@ try {
       )
     },
     'start-commerce-worker': async () => {
-      process.stdout.write('[6/8] Starting the single-concurrency commerce Worker.\n')
+      process.stdout.write('[6/8] Starting isolated commerce and background Workers.\n')
       docker(
         [
           'run',
@@ -461,13 +510,12 @@ try {
           '--network',
           network,
           '--restart',
-          'unless-stopped',
+          'on-failure:3',
           ...resourceArguments(),
           ...logArguments(),
           ...runtimeEnvironmentArguments(),
           image,
-          'node_modules/.bin/payload',
-          'jobs:run',
+          ...runtimeCommand('commerce-worker', 'node', 'node_modules/payload/bin.js', 'jobs:run'),
           '--cron',
           workerCron,
           '--queue',
@@ -479,6 +527,36 @@ try {
         { exitCode: exitCodes.worker, label: 'Commerce Worker start', print: false },
       )
       waitForContainer(names.worker, exitCodes.worker, 'Commerce Worker')
+      waitForStableContainer(names.worker, exitCodes.worker, 'Commerce Worker')
+      docker(
+        [
+          'run',
+          '--detach',
+          '--platform',
+          'linux/amd64',
+          '--name',
+          names.backgroundWorker,
+          '--network',
+          network,
+          '--restart',
+          'on-failure:3',
+          ...resourceArguments(),
+          ...logArguments(),
+          ...runtimeEnvironmentArguments(),
+          image,
+          ...runtimeCommand('background-worker', 'node', 'node_modules/payload/bin.js', 'jobs:run'),
+          '--cron',
+          workerCron,
+          '--queue',
+          'background',
+          '--limit',
+          '1',
+          '--handle-schedules',
+        ],
+        { exitCode: exitCodes.worker, label: 'Background Worker start', print: false },
+      )
+      waitForContainer(names.backgroundWorker, exitCodes.worker, 'Background Worker')
+      waitForStableContainer(names.backgroundWorker, exitCodes.worker, 'Background Worker')
       const webImage = docker(['inspect', '--format', '{{.Config.Image}}', names.web], {
         exitCode: exitCodes.worker,
         label: 'Web image inspection',
@@ -489,8 +567,18 @@ try {
         label: 'Worker image inspection',
         print: false,
       })
-      if (webImage !== image || workerImage !== image || webImage !== workerImage) {
-        throw new RebuildError(exitCodes.worker, 'Web and Worker do not use the same digest')
+      const backgroundWorkerImage = docker(
+        ['inspect', '--format', '{{.Config.Image}}', names.backgroundWorker],
+        { exitCode: exitCodes.worker, label: 'Background Worker image inspection', print: false },
+      )
+      if (
+        webImage !== image ||
+        workerImage !== image ||
+        backgroundWorkerImage !== image ||
+        webImage !== workerImage ||
+        webImage !== backgroundWorkerImage
+      ) {
+        throw new RebuildError(exitCodes.worker, 'Web and Workers do not use the same digest')
       }
     },
     'recover-unfinished-commerce-jobs': async () => {
@@ -512,9 +600,13 @@ try {
           ...resourceArguments(),
           ...runtimeEnvironmentArguments(additional),
           image,
-          'node_modules/.bin/payload',
-          'run',
-          'scripts/recover-commerce-jobs.ts',
+          ...runtimeCommand(
+            'maintenance',
+            'node',
+            'node_modules/payload/bin.js',
+            'run',
+            'scripts/recover-commerce-jobs.ts',
+          ),
         ],
         {
           env: containerEnvironment(additional),
@@ -523,6 +615,11 @@ try {
         },
       )
       waitForContainer(names.worker, exitCodes.recovery, 'Commerce Worker after recovery')
+      waitForContainer(
+        names.backgroundWorker,
+        exitCodes.recovery,
+        'Background Worker after recovery',
+      )
     },
     'start-nginx': async () => {
       process.stdout.write('[8/8] Validating and starting Nginx.\n')

@@ -38,6 +38,13 @@ assert(source.includes("digestImageEnvironment('WANMI_NGINX_IMAGE', defaultNginx
 assert(source.includes("digestImageEnvironment('WANMI_WHODAT_IMAGE', defaultWhoDatImage)"))
 assert(source.includes('/^\\S+@sha256:[0-9a-f]{64}$/u'))
 assert(source.includes("'--queue',\n          'commerce',\n          '--limit',\n          '1'"))
+assert(source.includes("'--queue',\n          'background',\n          '--limit',\n          '1'"))
+assert(source.includes("'node_modules/payload/bin.js'"))
+assert(!source.includes("'node_modules/.bin/payload'"))
+assert(source.includes("'on-failure:3'"))
+assert(source.includes('waitForStableContainer(names.worker'))
+assert(source.includes('loadRuntimeEnvironmentFiles(process.env, repositoryRoot)'))
+assert(source.includes('...TRANSIENT_OVERRIDE_KEYS'))
 assert(!source.includes('docker compose down'))
 
 const rebuildScript = fileURLToPath(new URL('./rebuild.mjs', import.meta.url))
@@ -55,5 +62,5 @@ for (const [name, value] of [
 }
 
 process.stdout.write(
-  'Verified fixed rebuild order, digest-only runtime image overrides, readyz fail-closed behavior, release-policy reuse, and same-image commerce Worker configuration.\n',
+  'Verified fixed rebuild order, startup configuration fail-closed behavior, bounded same-image Workers, readyz fail-closed behavior, and release-policy reuse.\n',
 )

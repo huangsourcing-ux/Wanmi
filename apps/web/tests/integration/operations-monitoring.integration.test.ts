@@ -14,6 +14,10 @@ import {
   readRealnameDocumentAccessTrail,
   runOperationsMonitoring,
 } from '@/services/operations/monitoring'
+import {
+  COMMERCE_WORKER_HEARTBEAT_KEY,
+  recordCommerceWorkerHeartbeat,
+} from '@/services/operations/worker-heartbeat'
 
 import {
   ensureAnchorSystemAdmin,
@@ -32,6 +36,13 @@ const windowStart = new Date(windowEndMs - 3_600_000).toISOString()
 const windowEnd = new Date(windowEndMs).toISOString()
 const monitoringNow = new Date(windowEndMs + 5 * 60_000)
 let monitoringStateFixture:
+  | {
+      created: boolean
+      id: number | string
+      original?: { description?: null | string; value: SiteSetting['value'] }
+    }
+  | undefined
+let heartbeatFixture:
   | {
       created: boolean
       id: number | string
@@ -101,6 +112,51 @@ beforeAll(async () => {
     overrideAccess: true,
   })
 
+  const heartbeat = await findOrCreateUniqueFixture({
+    create: () =>
+      payload.create({
+        collection: 'siteSettings',
+        data: {
+          description: 'D7 commerce Worker heartbeat integration fixture',
+          key: COMMERCE_WORKER_HEARTBEAT_KEY,
+          value: { lastSeenAt: windowEnd, role: 'commerce', schemaVersion: 1 },
+        },
+        overrideAccess: true,
+      }),
+    find: async () => {
+      const found = await payload.find({
+        collection: 'siteSettings',
+        limit: 1,
+        overrideAccess: true,
+        where: { key: { equals: COMMERCE_WORKER_HEARTBEAT_KEY } },
+      })
+      return found.docs[0]
+    },
+    path: 'key',
+    tableName: 'site_settings',
+  })
+  heartbeatFixture = {
+    created: heartbeat.created,
+    id: heartbeat.value.id,
+    ...(heartbeat.created
+      ? {}
+      : {
+          original: {
+            description: heartbeat.value.description,
+            value: heartbeat.value.value,
+          },
+        }),
+  }
+  await payload.update({
+    collection: 'siteSettings',
+    data: {
+      description: 'D7 commerce Worker heartbeat integration fixture',
+      value: { lastSeenAt: windowEnd, role: 'commerce', schemaVersion: 1 },
+    },
+    id: heartbeat.value.id,
+    overrideAccess: true,
+  })
+
   const bucket = await payload.create({
     collection: 'toolObservabilityBuckets',
     data: {
@@ -160,6 +216,22 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
+  if (heartbeatFixture?.created) {
+    await ignorePayloadNotFound(() =>
+      payload.delete({
+        collection: 'siteSettings',
+        id: heartbeatFixture!.id,
+        overrideAccess: true,
+      }),
+    )
+  } else if (heartbeatFixture?.original) {
+    await payload.update({
+      collection: 'siteSettings',
+      data: heartbeatFixture.original,
+      id: heartbeatFixture.id,
+      overrideAccess: true,
+    })
+  }
   if (monitoringStateFixture?.created) {
     await ignorePayloadNotFound(() =>
       payload.delete({
@@ -196,6 +268,26 @@ afterAll(async () => {
 }, 30_000)
 
 describe('D7 operations monitoring persistence', () => {
+  it('records a commerce Worker heartbeat without business or credential dimensions', async () => {
+    const heartbeatReq = await req('commerce-worker-heartbeat')
+    await recordCommerceWorkerHeartbeat(heartbeatReq, new Date(windowEndMs - 60_000))
+    const stored = await payload.find({
+      collection: 'siteSettings',
+      limit: 1,
+      overrideAccess: true,
+      where: { key: { equals: COMMERCE_WORKER_HEARTBEAT_KEY } },
+    })
+    expect(stored.docs[0]?.value).toEqual({
+      lastSeenAt: new Date(windowEndMs - 60_000).toISOString(),
+      role: 'commerce',
+      schemaVersion: 1,
+    })
+    expect(JSON.stringify(stored.docs[0]?.value)).not.toMatch(
+      /phone|domain|customer|order|provider|credential|secret/iu,
+    )
+    await recordCommerceWorkerHeartbeat(heartbeatReq, new Date(windowEnd))
+  })
+
   it('uses a PostgreSQL CAS so five concurrent executions emit one alert for one closed window', async () => {
     const thresholds = operationsMonitoringThresholdsSchema.parse({
       ...DEFAULT_OPERATIONS_MONITORING_THRESHOLDS,

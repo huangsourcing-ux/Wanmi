@@ -10,6 +10,7 @@ import {
   type OperationsMonitoringThresholds,
 } from '@/schemas/operations-monitoring'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
+import { commerceWorkerHeartbeatAgeMinutes } from '@/services/operations/worker-heartbeat'
 
 export const OPERATIONS_MONITORING_THRESHOLDS_KEY = 'operations.monitoring.thresholds.v1'
 export const OPERATIONS_MONITORING_STATE_KEY = 'operations.monitoring.state.v1'
@@ -24,6 +25,7 @@ export const OPERATIONS_MONITORING_CATEGORIES = [
   'balance',
   'documents',
   'reconciliation',
+  'workers',
 ] as const
 
 type MonitoringCategory = (typeof OPERATIONS_MONITORING_CATEGORIES)[number]
@@ -54,6 +56,7 @@ export type MonitoringSnapshot = {
     requestCount: number
     timeoutCount: number
   }
+  workers: { commerceHeartbeatAgeMinutes: null | number }
 }
 
 export type MonitoringAlert = {
@@ -256,6 +259,24 @@ export function evaluateOperationsMonitoring(
       thresholds.reconciliation.differenceCount,
     )
   }
+  if (snapshot.workers.commerceHeartbeatAgeMinutes === null) {
+    add(
+      'workers',
+      'commerce_heartbeat_age_minutes',
+      'missing',
+      thresholds.workers.commerceMaximumHeartbeatAgeMinutes,
+    )
+  } else if (
+    snapshot.workers.commerceHeartbeatAgeMinutes >=
+    thresholds.workers.commerceMaximumHeartbeatAgeMinutes
+  ) {
+    add(
+      'workers',
+      'commerce_heartbeat_age_minutes',
+      snapshot.workers.commerceHeartbeatAgeMinutes,
+      thresholds.workers.commerceMaximumHeartbeatAgeMinutes,
+    )
+  }
   return alerts
 }
 
@@ -448,6 +469,7 @@ async function collectSnapshot(
       .filter((targetId): targetId is string => typeof targetId === 'string'),
   )
   const latestBalance = balanceObservation.docs[0]
+  const commerceHeartbeatAgeMinutes = await commerceWorkerHeartbeatAgeMinutes(req, end)
 
   return {
     balance: {
@@ -494,6 +516,7 @@ async function collectSnapshot(
       requestCount: toolRequestCount,
       timeoutCount: checkedSum(toolBuckets.docs.map((bucket) => bucket.timeoutErrorCount)),
     },
+    workers: { commerceHeartbeatAgeMinutes },
   }
 }
 

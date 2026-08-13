@@ -60,6 +60,12 @@ export const operationsMonitoringThresholdsSchema = z
         timeoutCount: countThreshold,
       })
       .strict(),
+    workers: z
+      .object({
+        commerceMaximumHeartbeatAgeMinutes: ageThreshold.default(5),
+      })
+      .strict()
+      .default({ commerceMaximumHeartbeatAgeMinutes: 5 }),
     windowMinutes: z
       .number()
       .int()
@@ -95,5 +101,6 @@ export const DEFAULT_OPERATIONS_MONITORING_THRESHOLDS = operationsMonitoringThre
     rejectedCount: 5,
     timeoutCount: 5,
   },
+  workers: { commerceMaximumHeartbeatAgeMinutes: 5 },
   windowMinutes: 60,
 })

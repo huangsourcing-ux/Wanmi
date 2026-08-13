@@ -9,7 +9,11 @@
     "verifiedAt": "2026-08-10T10:01:00.000Z"
   },
   "applicationPromotionNotBefore": "2026-08-10T10:02:00.000Z",
-  "migrations": ["20260810_021337_d7_provider_write_budgets", "20260810_040217_d7_app_master_key"],
+  "migrations": [
+    "20260810_021337_d7_provider_write_budgets",
+    "20260810_040217_d7_app_master_key",
+    "20260813_113927_d7_worker_heartbeat"
+  ],
   "rollback": {
     "database": "retain",
     "image": "registry.example.invalid/wanmi-web@sha256:3333333333333333333333333333333333333333333333333333333333333333",

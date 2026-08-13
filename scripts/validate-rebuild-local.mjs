@@ -26,6 +26,7 @@ const runId = `d707-${Date.now()}-${process.pid}`
 if (!/^d707-[0-9]+-[0-9]+$/u.test(runId)) throw new Error('Unsafe local validation id')
 
 const names = {
+  backgroundWorker: `${runId}-background-worker`,
   dindSource: `${runId}-dind-source`,
   dindTarget: `${runId}-dind-target`,
   imageExport: `${runId}-image-export`,
@@ -682,6 +683,7 @@ try {
     WANMI_NGINX_CONFIG_PATH: resolve('deploy/nginx/wanmi-rebuild-local.conf'),
     WANMI_NGINX_PORT: String(20_000 + (process.pid % 10_000)),
     WANMI_READYZ_TIMEOUT_SECONDS: '180',
+    WANMI_RUNTIME_PROFILE: 'validation',
     WANMI_WEB_PORT: String(30_000 + (process.pid % 10_000)),
     WANMI_WORKER_CRON: '*/2 * * * * *',
     WECHATPAY_MODE: 'fixture',
@@ -720,12 +722,40 @@ try {
   )
   if (rebuildResult.image !== digestReference) throw new Error('Rebuild used a different image')
 
-  const measuredContainers = { web: names.web, whodat: names.whodat, worker: names.worker }
+  const measuredContainers = {
+    backgroundWorker: names.backgroundWorker,
+    web: names.web,
+    whodat: names.whodat,
+    worker: names.worker,
+  }
   validateResourceLimits(measuredContainers)
   const webImage = docker(['inspect', '--format', '{{.Config.Image}}', names.web])
   const workerImage = docker(['inspect', '--format', '{{.Config.Image}}', names.worker])
-  if (webImage !== digestReference || workerImage !== digestReference || webImage !== workerImage) {
+  const backgroundWorkerImage = docker([
+    'inspect',
+    '--format',
+    '{{.Config.Image}}',
+    names.backgroundWorker,
+  ])
+  if (
+    webImage !== digestReference ||
+    workerImage !== digestReference ||
+    backgroundWorkerImage !== digestReference ||
+    webImage !== workerImage ||
+    webImage !== backgroundWorkerImage
+  ) {
     throw new Error('Web and Worker image references differ')
+  }
+  for (const name of [names.web, names.worker, names.backgroundWorker]) {
+    const state = docker([
+      'inspect',
+      '--format',
+      '{{.State.Status}}|{{.State.ExitCode}}|{{.RestartCount}}|{{.HostConfig.RestartPolicy.Name}}|{{.HostConfig.RestartPolicy.MaximumRetryCount}}',
+      name,
+    ])
+    if (state !== 'running|0|0|on-failure|3') {
+      throw new Error(`Runtime process did not remain stable with bounded restart: ${state}`)
+    }
   }
   verifySecrets(digestReference, runtimeEnvironment, rebuildOutput)
 
@@ -748,7 +778,11 @@ try {
       '4g',
       ...environmentArguments(probeVariables),
       digestReference,
-      'node_modules/.bin/payload',
+      'node',
+      'scripts/runtime-entry.mjs',
+      'maintenance',
+      'node',
+      'node_modules/payload/bin.js',
       'run',
       'scripts/d7-07-rebuild-probe.ts',
     ],
@@ -822,7 +856,11 @@ try {
     '4g',
     ...environmentArguments(recoveryVariables),
     digestReference,
-    'node_modules/.bin/payload',
+    'node',
+    'scripts/runtime-entry.mjs',
+    'maintenance',
+    'node',
+    'node_modules/payload/bin.js',
     'run',
     'scripts/recover-commerce-jobs.ts',
   ]
