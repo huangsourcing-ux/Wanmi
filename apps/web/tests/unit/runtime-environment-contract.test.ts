@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 
 import {
+  applyEntries,
   assertRuntimeEnvironment,
   BASE_RUNTIME_KEYS,
   PRODUCTION_PROVIDER_KEYS,
@@ -11,6 +12,20 @@ import {
   TRANSIENT_OVERRIDE_KEYS,
   parseRuntimeEnvironmentFile,
 } from '../../scripts/runtime-environment-contract.mjs'
+
+const WECHATPAY_TRANSIENT_OVERRIDE_KEYS = [
+  'ALLOW_REAL_WECHATPAY',
+  'ALLOW_REAL_WECHATPAY_PAYMENTS',
+  'ALLOW_REAL_WECHATPAY_REFUNDS',
+  'WECHATPAY_WRITE_SINGLE_AMOUNT_LIMIT_FEN',
+  'WECHATPAY_WRITE_CUMULATIVE_AMOUNT_LIMIT_FEN',
+] as const
+
+function configuredWechatPayTransientEntries() {
+  return new Map(
+    WECHATPAY_TRANSIENT_OVERRIDE_KEYS.map((key) => [key, key.endsWith('_FEN') ? '1' : 'true']),
+  )
+}
 
 function configuredProductionEnvironment(): NodeJS.ProcessEnv {
   return {
@@ -88,17 +103,51 @@ describe('D7 production runtime environment contract', () => {
     expect(REAL_PROVIDER_GATE_KEYS.every((key) => environment[key] === 'false')).toBe(true)
   })
 
-  it('limits transient overrides to contract-test gates and the test phone', () => {
+  it('limits transient overrides to the approved contract-test settings', () => {
     expect([...TRANSIENT_OVERRIDE_KEYS].sort()).toEqual(
       [
         'ALIYUN_SMS_MODE',
         'ALLOW_REAL_ALIYUN_SMS_SENDS',
         'ALLOW_REAL_PROVIDER_WRITES',
+        ...WECHATPAY_TRANSIENT_OVERRIDE_KEYS,
         'WANMI_CONTRACT_TEST_PHONE',
       ].sort(),
     )
     expect(TRANSIENT_OVERRIDE_KEYS.has('ALIBABA_CLOUD_ACCESS_KEY_SECRET')).toBe(false)
     expect(TRANSIENT_OVERRIDE_KEYS.has('OSS_REALNAME_BUCKET')).toBe(false)
+  })
+
+  it('accepts the Wechat Pay gates and amount limits as transient overrides', () => {
+    const environment: NodeJS.ProcessEnv = { NODE_ENV: 'test' }
+    const entries = configuredWechatPayTransientEntries()
+
+    expect(() =>
+      applyEntries(environment, entries, TRANSIENT_OVERRIDE_KEYS, 'Transient runtime override'),
+    ).not.toThrow()
+    expect(environment).toMatchObject(Object.fromEntries(entries))
+  })
+
+  it('leaves Wechat Pay settings subject to the existing persistent-file rules', () => {
+    const environment: NodeJS.ProcessEnv = { NODE_ENV: 'test' }
+    const entries = configuredWechatPayTransientEntries()
+
+    expect(() =>
+      applyEntries(environment, entries, undefined, 'Persistent runtime environment'),
+    ).not.toThrow()
+    expect(environment).toMatchObject(Object.fromEntries(entries))
+  })
+
+  it('continues to reject settings outside the transient override allowlist', () => {
+    expect(() =>
+      applyEntries(
+        {},
+        new Map([['WECHATPAY_API_V3_KEY', 'must-not-be-applied']]),
+        TRANSIENT_OVERRIDE_KEYS,
+        'Transient runtime override',
+      ),
+    ).toThrow(
+      'Transient runtime override contains a setting that cannot be overridden: WECHATPAY_API_V3_KEY',
+    )
   })
 
   it('rejects duplicate settings without echoing their values', () => {
