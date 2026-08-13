@@ -451,6 +451,8 @@ commerce Worker 每分钟通过 `commerce` 队列更新 `operations.worker.heart
 
 发送后既有 background Worker 在稳态 `mock` 模式下错误地把真实 `accepted` 记录更新成 `delivered`。该状态不能作为真实阿里云回执证据，已先如实记录；一次只读回执命令又在 SDK 构造阶段因模块导入形态失败，没有到达上游且未连续重试。因此本轮没有可采信的真实回执状态。实现已改为：稳态 mock 模式只清理过期限频桶，不查询或改写 accepted/pending/unknown 真实记录；自动化测试只有显式注入 fixture provider 才能演练确定性回执。typecheck、14 条短信单测和 9 条 OTP/回执集成测试通过。
 
+包含该修正的最终镜像再次按同 digest 三进程契约切换，耗时 **45 秒**，同样单独记录且不计入 D7-11 RTO。最终 Web、commerce/background Worker 均为 `running=true`、退出码 0、重启数 0、`on-failure:3`，readyz 与心跳复核通过，运行镜像已包含上述 mock 回执 fail-closed 修正。
+
 ### 12.5 收尾与完成判断
 
 一次性 Web、覆写文件和测试号码材料已删除。ECS 持久配置、Web、commerce Worker、background Worker 与开发机最终均为 `ALIYUN_SMS_MODE=mock`、`ALLOW_REAL_PROVIDER_WRITES=false`、`ALLOW_REAL_ALIYUN_SMS_SENDS=false`，其余 10 个真实能力闸同样为 `false`；稳态测试号码为 `missing`。负责人应再次核对这些值。生产未获最终上线批准前建议所有真实写闸保持关闭；正式运行若需要短信发送，应另行批准短信总闸/细分闸与 live 模式，支付、退款和 WestDigital 写闸不应因此联动开启。
