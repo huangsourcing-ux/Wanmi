@@ -7,6 +7,7 @@ import {
   createSmsProvider,
   validateAliyunSmsLiveConfiguration,
 } from '@/providers/aliyunsms'
+import { reconcileSmsReceipts } from '@/services/auth/sms-receipts'
 
 describe('Alibaba Cloud SMS adapter', () => {
   afterEach(() => {
@@ -113,5 +114,25 @@ describe('Alibaba Cloud SMS adapter', () => {
       traceId: 'unit-mock-receipt',
     })
     expect(receipt).toMatchObject({ data: { status: 'delivered' }, ok: true })
+  })
+
+  it('does not let the steady mock mode reconcile accepted live receipts', async () => {
+    vi.stubEnv('ALIYUN_SMS_MODE', 'mock')
+    resetEnvForTests()
+    const find = vi.fn()
+    const request = {
+      payload: {
+        delete: vi.fn().mockResolvedValue({ docs: [] }),
+        find,
+      },
+    }
+
+    await expect(reconcileSmsReceipts(request as never)).resolves.toEqual({
+      checked: 0,
+      delivered: 0,
+      expiredRateBucketsDeleted: 0,
+      failed: 0,
+    })
+    expect(find).not.toHaveBeenCalled()
   })
 })

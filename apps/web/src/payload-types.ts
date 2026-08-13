@@ -223,6 +223,7 @@ export interface Config {
       westdigitalBalanceMonitoring: WorkflowWestdigitalBalanceMonitoring;
       domainExpiryReminders: WorkflowDomainExpiryReminders;
       commerceFulfillment: WorkflowCommerceFulfillment;
+      commerceWorkerHeartbeat: WorkflowCommerceWorkerHeartbeat;
       nameserverChange: WorkflowNameserverChange;
       wechatRefund: WorkflowWechatRefund;
       paymentTimeoutClose: WorkflowPaymentTimeoutClose;
@@ -1881,6 +1882,7 @@ export interface PayloadJob {
         | 'westdigitalBalanceMonitoring'
         | 'domainExpiryReminders'
         | 'commerceFulfillment'
+        | 'commerceWorkerHeartbeat'
         | 'nameserverChange'
         | 'wechatRefund'
         | 'paymentTimeoutClose'
@@ -3498,6 +3500,13 @@ export interface WorkflowCommerceFulfillment {
     salesStopReviewId?: number | null;
     traceId: string;
   };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WorkflowCommerceWorkerHeartbeat".
+ */
+export interface WorkflowCommerceWorkerHeartbeat {
+  input?: unknown;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema

@@ -21,6 +21,13 @@
       "phase": "expand",
       "reason": "新增可空主密钥版本列并失效历史 mock KMS 对象；旧代码可忽略该列，新代码仅写入带版本的新对象。",
       "rollback": "retain"
+    },
+    "20260813_113927_d7_worker_heartbeat": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "仅向 Payload Jobs 工作流枚举增加 commerce Worker 心跳任务；旧代码不会调度该任务，新代码在迁移完成后才启动 Worker。",
+      "rollback": "retain"
     }
   }
 }

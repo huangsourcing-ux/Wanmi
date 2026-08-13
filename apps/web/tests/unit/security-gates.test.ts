@@ -81,6 +81,16 @@ describe('D7 repository security gates', () => {
     expect(workspace).toContain('esbuild: 0.28.1')
   })
 
+  it('starts Payload runtime commands without the generated shell shim', () => {
+    const rebuild = source('scripts/rebuild.mjs')
+    expect(rebuild).toContain("'node_modules/payload/bin.js'")
+    expect(rebuild).not.toContain("'node_modules/.bin/payload'")
+    expect(rebuild).toContain("'on-failure:3'")
+    expect(rebuild).toContain('waitForStableContainer(names.worker')
+    expect(rebuild).toContain('loadRuntimeEnvironmentFiles(process.env, repositoryRoot)')
+    expect(rebuild).toContain('process.exit(exitCodes.environment)')
+  })
+
   it('keeps image-size exceptions exact, package-scoped, and justified', () => {
     const security = source('scripts/security.mjs')
     expect(security.match(/id: 'GHSA-/gu)).toHaveLength(2)

@@ -23,6 +23,7 @@ function healthySnapshot(): MonitoringSnapshot {
       requestCount: 0,
       timeoutCount: 0,
     },
+    workers: { commerceHeartbeatAgeMinutes: 0 },
   }
 }
 
@@ -38,7 +39,7 @@ describe('D7 operations monitoring thresholds', () => {
     ).toEqual([])
   })
 
-  it('raises explicit alerts for all nine monitoring categories at their configured boundary', () => {
+  it('raises explicit alerts for all ten monitoring categories at their configured boundary', () => {
     const thresholds = DEFAULT_OPERATIONS_MONITORING_THRESHOLDS
     const snapshot = healthySnapshot()
     snapshot.tools = {
@@ -75,6 +76,8 @@ describe('D7 operations monitoring thresholds', () => {
       distinctDocumentCount: thresholds.documents.distinctDocumentCount,
     }
     snapshot.reconciliation.differenceCount = thresholds.reconciliation.differenceCount
+    snapshot.workers.commerceHeartbeatAgeMinutes =
+      thresholds.workers.commerceMaximumHeartbeatAgeMinutes
 
     const alerts = evaluateOperationsMonitoring(snapshot, thresholds)
     expect(new Set(alerts.map((alert) => alert.category))).toEqual(
@@ -88,6 +91,7 @@ describe('D7 operations monitoring thresholds', () => {
         'balance',
         'documents',
         'reconciliation',
+        'workers',
       ]),
     )
     expect(alerts).toContainEqual({
@@ -101,6 +105,28 @@ describe('D7 operations monitoring thresholds', () => {
       condition: 'failure_rate_basis_points',
       observed: 1_000,
       threshold: thresholds.tools.failureRateBasisPoints,
+    })
+  })
+
+  it('alerts when the commerce Worker heartbeat is missing or stale', () => {
+    const thresholds = DEFAULT_OPERATIONS_MONITORING_THRESHOLDS
+    const missing = healthySnapshot()
+    missing.workers.commerceHeartbeatAgeMinutes = null
+    expect(evaluateOperationsMonitoring(missing, thresholds)).toContainEqual({
+      category: 'workers',
+      condition: 'commerce_heartbeat_age_minutes',
+      observed: 'missing',
+      threshold: thresholds.workers.commerceMaximumHeartbeatAgeMinutes,
+    })
+
+    const stale = healthySnapshot()
+    stale.workers.commerceHeartbeatAgeMinutes =
+      thresholds.workers.commerceMaximumHeartbeatAgeMinutes
+    expect(evaluateOperationsMonitoring(stale, thresholds)).toContainEqual({
+      category: 'workers',
+      condition: 'commerce_heartbeat_age_minutes',
+      observed: thresholds.workers.commerceMaximumHeartbeatAgeMinutes,
+      threshold: thresholds.workers.commerceMaximumHeartbeatAgeMinutes,
     })
   })
 

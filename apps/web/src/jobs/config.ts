@@ -20,6 +20,7 @@ import {
 } from '@/services/domains/nameserver-changes'
 import { runConfiguredDomainExpiryReminders } from '@/services/domains/expiry-reminders'
 import { runOperationsMonitoring } from '@/services/operations/monitoring'
+import { recordCommerceWorkerHeartbeat } from '@/services/operations/worker-heartbeat'
 
 const probeInput = [{ name: 'traceId', type: 'text', required: true }] as const
 
@@ -149,6 +150,22 @@ export const commerceFulfillment: WorkflowConfig<FulfillmentInput> = {
   },
 }
 
+export const commerceWorkerHeartbeat: WorkflowConfig = {
+  slug: 'commerceWorkerHeartbeat',
+  concurrency: {
+    exclusive: true,
+    key: () => 'commerce:worker-heartbeat',
+    supersedes: true,
+  },
+  inputSchema: [],
+  queue: 'commerce',
+  retries: 0,
+  schedule: [{ cron: '0 * * * * *', queue: 'commerce' }],
+  handler: async ({ req }) => {
+    await recordCommerceWorkerHeartbeat(req)
+  },
+}
+
 export const nameserverChange: WorkflowConfig<NameserverChangeJobInput> = {
   slug: 'nameserverChange',
   concurrency: {
@@ -260,6 +277,7 @@ export const workflows = [
   westdigitalBalanceMonitoring,
   domainExpiryReminders,
   commerceFulfillment,
+  commerceWorkerHeartbeat,
   nameserverChange,
   wechatRefund,
   paymentTimeoutClose,
