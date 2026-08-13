@@ -43,4 +43,4 @@ OSS 版本控制不是 `Enabled` 时，只跳过 OSS 对象删除/恢复子项�
 
 D0 在隔离 RDS 中验证过一次隧道中断后的 processing lock 恢复，并将未完成测试 fixture 安全取消。2026-08-10 的 D7-07 本地受限容器演练用 60 秒异步 fixture 在 provider write claim 后保持 Promise 未完成，确认 Web 重启不影响 Worker 后对 Worker 发送 `SIGKILL`；重启后两个并发恢复者只恢复一行，既有 Payload handler 查询并完成，write claim/提交/成功均恰好一次。该证据见 `docs/operations/d7-07-local-rebuild-validation.md`，不替代 ECS 与 RDS 同 VPC 的真实环境门槛。
 
-2026-08-11 的 D7-08 已在真实 2 vCPU/4 GiB ECS 与同 VPC RDS 重演：Web 重建不影响 processing Worker，Worker `SIGKILL` 时 Web 保持 ready，两个并发恢复者返回 `[0,1]`，最终 operation/attempt/write claim 各为 1，续费/退款为 0。完整节点恢复耗时 53,160 秒，未达到两小时 RTO；详见 `docs/operations/d7-08-ecs-recovery-validation.md`。
+2026-08-11 的 D7-08 已在真实 2 vCPU/4 GiB ECS 与同 VPC RDS 重演：Web 重建不影响 processing Worker，Worker `SIGKILL` 时 Web 保持 ready，两个并发恢复者返回 `[0,1]`，最终 operation/attempt/write claim 各为 1，续费/退款为 0。D7-08 曾记录的完整节点 53,160 秒包含约 14 小时关机等待，不能作为 RTO 失败证据；2026-08-13 的 D7-11 从完全重置后的新系统可用到 Nginx ready 重测为 582 秒，人工等待 0 秒，达到两小时目标。详见 `docs/operations/d7-08-ecs-recovery-validation.md`。
