@@ -2,7 +2,7 @@
 
 日期：2026-08-09（America/New_York）
 
-状态（最新事实）：**预算持久化已完成；WestDigital、私有 OSS 和生产应用主密钥注入已有真实证据；Wechat Pay 因商户只能使用微信支付公钥验签但缺少公钥 ID/文件而未完成，短信因目标环境缺失真实配置仍未完成。** 四类尚未齐备，本记录不构成开发计划 11.1 第 2 项完成证据，该项保持未勾选。
+状态（最新事实）：**预算持久化已完成；WestDigital、私有 OSS、Wechat Pay 和生产应用主密钥注入已有真实证据，生产 ECS 已注入三类 provider 运行配置；短信因签名、两类模板和测试号码仍未配置而未完成。** 四类尚未齐备，本记录不构成开发计划 11.1 第 2 项完成证据，该项保持未勾选。
 
 2026-08-10 后续决策：项目负责人依据本记录中的 `AccountStatus=NotEnabled` 事实，批准 D7-06 移除 KMS 并改用应用自管主密钥。下列 KMS 预检与阻塞结论作为历史证据保留，不再是当前联调前提；当前执行入口已移除 KMS adapter、能力闸和往返检查。
 
@@ -213,3 +213,84 @@ WestDigital、私有 OSS、Wechat Pay 不存在订单查单和生产应用主密
 本地收尾完全使用 fixture/mock 和一次性随机测试主密钥，12 个真实 provider 能力闸显式为 `false`。商户材料补充前的完整 `make check` 已通过 639/639 单元与 105/105 集成。真实语义映射补充后，前两次重跑分别因测试 shell 未注入主密钥、临时 key ring 分隔符错误而在生成类型前 fail-closed，没有进入测试或真实接口；改为正确的一次性随机 `version:base64` 测试 key ring 后从头重跑，最终退出码 0：88 个文件 640/640 单元测试、28 个文件 105/105 PostgreSQL/MinIO 集成测试、全部 migration 往返、lint、TypeScript strict、Next.js 生产构建、linux/amd64 同镜像构建、Node audit、工作树/161 个提交完整历史 Gitleaks 与 Trivy 均通过。没有把真实联调写成 CI 测试，`verify-provider-write-policy` 未削弱。
 
 一次云 CLI 诊断请求超时时，CLI 的错误路径将本应脱敏的请求元数据写入了瞬时代理工具输出；本记录、代码库和 PR 不包含该值，后续命令也已关闭 CLI 原始标准错误并只保留白名单状态。负责人提供的配置附件还包含完整商户私钥和 API v3 key，两者应视为已披露，不能作为生产长期凭据；补齐微信支付公钥前后均须轮换商户 API 证书/私钥和 API v3 key。负责人应在本轮后复核所有真实能力闸为 `false`，并轮换已被列为必须轮换的云/provider 凭据。
+
+## 9. D7-13 生产 ECS 注入与部署侧补证（2026-08-13）
+
+### 9.1 注入、权限与重启
+
+目标部署在开工时已经运行，Nginx、Web、Worker 与 `/readyz` 均健康，因此没有执行 `make rebuild`；重建耗时单独记为 **0 秒**，不修改 D7-11 RTO。运行时环境文件在仓库检出目录之外，属主 root、权限 `0600`；两份 PEM 同样位于仓库外、权限 `0600`，属主收敛到生产镜像声明的非 root 运行身份，使 Web/Worker 可读而其他本机用户不可读。配置通过环境文件进入当前 shell，Docker 仅使用 `--env NAME` 传递变量名；没有把值放入 Docker 参数、镜像层或持久日志。
+
+8 项 Wechat Pay 配置、WestDigital 只读配置和私有 OSS 配置均为 `configured`。项目负责人本轮明确决定不轮换微信商户私钥与 API v3 key，并以微信支付侧 IP 白名单作为补偿控制；本次按该决定注入现有材料。该决定只取代 D7-12 对这两项微信材料的轮换提醒，不代表其他已披露云/provider 凭据或主密钥离线备份门槛完成。
+
+Web 与 Worker 仅精确重建这两个既有容器，保留同一 digest、网络、资源限制、日志轮转和 Worker `commerce --limit 1` 参数，并把两个 PEM 只读挂载；重启耗时 **35 秒**。重启后 Web/Worker 同 digest，Nginx health 与数据库-backed `/readyz` 均通过。运行配置、PEM 或任何资源标识均未写入仓库。
+
+### 9.2 ECS 开工前预检
+
+以下为 ECS 持久运行配置在任何一次性覆写之前的脱敏结果；只记录布尔值或配置状态：
+
+| 名称                                    | 结果         |
+| --------------------------------------- | ------------ |
+| `ALLOW_REAL_PROVIDER_WRITES`            | `false`      |
+| `ALLOW_REAL_WECHATPAY`                  | `false`      |
+| `ALLOW_REAL_WECHATPAY_PAYMENTS`         | `false`      |
+| `ALLOW_REAL_WECHATPAY_REFUNDS`          | `false`      |
+| `ALLOW_REAL_ALIYUN_SMS_SENDS`           | `false`      |
+| `WECHATPAY_MODE`                        | `configured` |
+| `WECHATPAY_MERCHANT_ID`                 | `configured` |
+| `WECHATPAY_APP_ID`                      | `configured` |
+| `WECHATPAY_MERCHANT_CERTIFICATE_SERIAL` | `configured` |
+| `WECHATPAY_MERCHANT_PRIVATE_KEY_PATH`   | `configured` |
+| `WECHATPAY_API_V3_KEY`                  | `configured` |
+| `WECHATPAY_NOTIFY_URL`                  | `configured` |
+| `WECHATPAY_PLATFORM_CERTIFICATE_SERIAL` | `configured` |
+| `WECHATPAY_PLATFORM_PUBLIC_KEY_PATH`    | `configured` |
+
+两个资金写闸均为 `false`，硬停止条件未触发。一次性进程只临时开启总闸和微信 provider 闸以允许只读查单；没有开启下单、支付或退款闸。
+
+### 9.3 从 ECS 发起的 Wechat Pay 查单
+
+一次性脚本在生产 digest 的业务源码上，对随机生成且不存在的商户订单号发起 **1 次**只读查单。前序执行器与文件权限诊断均在 provider 构造或 transport 之前失败，没有产生上游请求；修正为 PEM `0600` 且由容器运行身份持有后，唯一真实请求取得完整证据：
+
+| 验证项                   | ECS 真实结果                                                |
+| ------------------------ | ----------------------------------------------------------- |
+| HTTP/真实错误码          | `404` / `ORDER_NOT_EXIST`                                   |
+| 真实响应字段             | `code`, `message`                                           |
+| 与 Zod schema 的差异     | 无；非 2xx schema 要求 `code` 并允许透传 `message`          |
+| 与既有错误映射的差异     | 无；D7-12 已将该查单语义映射为 `WECHATPAY_ORDER_NOT_FOUND`  |
+| 商户 RSA-SHA256 请求签名 | 通过；微信接受请求并返回订单语义                            |
+| 响应验签/公钥 ID 匹配    | 通过/匹配                                                   |
+| 验签模式                 | 微信支付公钥模式                                            |
+| 响应时间                 | 316.3 ms                                                    |
+| IP 白名单实际行为        | ECS 来源被接受；未返回 IP 白名单拒绝，无需补充本次 ECS 来源 |
+| 下单/支付/退款           | `0/0/0`                                                     |
+
+真实语义与 D7-12 已修正的实现一致，本轮没有再改 Zod schema、错误映射或 fixture，也没有修改断言迁就上游。
+
+### 9.4 生产应用主密钥与真实证件对象
+
+复用 D7-09 的真实私有 OSS 证件对象恢复路径，直接使用 ECS 注入的 key ring：`getEnv` 对版本名合法性、重复版本、标准 Base64、解码后精确 32 字节和 active membership 的完整校验通过。随机新对象使用 active version `prod-20260811-v2` 加密；对象普通删除后，通过移除本轮 delete marker 恢复原版本，并严格按对象记录的原主密钥版本解密回原文。最后只清理本轮精确键的全部版本与删除标记，零残留复查通过。记录不包含 key ring、密钥值、对象键、Bucket、端点或路径。
+
+生产主密钥的离线双人备份仍由负责人完成，本轮不代为标记完成。
+
+### 9.5 短信分支
+
+`ALLOW_REAL_ALIYUN_SMS_SENDS=false`，且 `WANMI_CONTRACT_TEST_PHONE=missing`，因此严格走不发送分支。ECS 可加载云访问凭据与 Region，但短信签名、OTP 模板和到期模板均为 `missing`；一次性配置校验返回失败，live provider 不能正确构造。没有从账号内候选签名/模板推测或替负责人选择配置，没有进入 OTP 发送路径或绕过四维限频。
+
+| 验证项                        | 结果                              |
+| ----------------------------- | --------------------------------- |
+| 凭据与 Region                 | `configured`                      |
+| 签名、OTP 模板、到期模板      | `missing` / `missing` / `missing` |
+| 测试号码                      | `missing`                         |
+| 配置加载/live provider 构造   | 未通过；缺少签名和两类模板        |
+| BizId/RequestId、回执与响应码 | N/A；没有发送                     |
+| 本轮短信发送数                | **0**                             |
+
+短信项为**部分完成**，仍缺负责人明确选定并注入的真实签名、OTP/到期模板，以及在发送闸明确开启且提供测试号码后，通过既有 OTP 路径和四维限频发送恰好一条并在可用时取得回执的证据。
+
+### 9.6 收尾、勾选与长期闸建议
+
+一次性容器和探针文件均已清理。ECS 运行配置、Web、Worker 与开发机两侧的 12 个真实能力闸最终全部为 `false`；Web/Worker 同 digest，Nginx health 与 `/readyz` 仍通过。请负责人再次核对这些实际布尔值。
+
+当前尚未取得最终生产上线批准，建议所有能力闸继续保持 `false`。正式启用时由负责人按功能逐项决定：只读 WestDigital 需要总闸、provider 闸和只读闸；私有证件 OSS 需要总闸与私有 OSS 闸；Wechat Pay 收款需要总闸、微信 provider 闸和支付闸；真实短信登录需要总闸与短信发送闸；退款和西部数码四类写闸只在对应业务、预算、白名单与上线门槛全部批准后开启。这里仅给出依赖关系，没有替负责人改变任何长期运行开关。
+
+D7-10 的 WestDigital/私有 OSS、D7-12 与本轮 ECS 查单、以及本轮生产主密钥真实对象证据均有效；短信仍没有配置加载/真实发送证据。因此 11.1 第 2 项**保持未勾选**，第 13 项及任何生产硬门槛均未修改。
