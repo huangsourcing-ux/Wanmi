@@ -294,3 +294,58 @@ Web 与 Worker 仅精确重建这两个既有容器，保留同一 digest、网�
 当前尚未取得最终生产上线批准，建议所有能力闸继续保持 `false`。正式启用时由负责人按功能逐项决定：只读 WestDigital 需要总闸、provider 闸和只读闸；私有证件 OSS 需要总闸与私有 OSS 闸；Wechat Pay 收款需要总闸、微信 provider 闸和支付闸；真实短信登录需要总闸与短信发送闸；退款和西部数码四类写闸只在对应业务、预算、白名单与上线门槛全部批准后开启。这里仅给出依赖关系，没有替负责人改变任何长期运行开关。
 
 D7-10 的 WestDigital/私有 OSS、D7-12 与本轮 ECS 查单、以及本轮生产主密钥真实对象证据均有效；短信仍没有配置加载/真实发送证据。因此 11.1 第 2 项**保持未勾选**，第 13 项及任何生产硬门槛均未修改。
+
+## 10. D7-14 短信契约（2026-08-13）
+
+首次执行前同时检查 ECS 运行容器和仓库外持久运行配置，二者结果一致：
+
+| 名称                                            | 结果      |
+| ----------------------------------------------- | --------- |
+| `ALIYUN_SMS_MODE`                               | `mock`    |
+| `ALLOW_REAL_PROVIDER_WRITES`                    | `false`   |
+| `ALLOW_REAL_ALIYUN_SMS_SENDS`                   | `false`   |
+| `ALIBABA_CLOUD_SMS_SIGN_NAME`                   | `missing` |
+| `ALIBABA_CLOUD_SMS_OTP_TEMPLATE_CODE`           | `missing` |
+| `ALIBABA_CLOUD_SMS_DOMAIN_EXPIRY_TEMPLATE_CODE` | `missing` |
+| `WANMI_CONTRACT_TEST_PHONE`                     | `missing` |
+
+硬预检不通过，按约束立即停止。没有以负责人提供的单个模板编号推测两个不同用途的模板配置，没有临时切换 live 模式或开启能力闸，没有进入 OTP 服务、四维限频或 provider transport；首次预检阶段短信发送数为 **0**。
+
+负责人随后提供了独立到期提醒模板配置。签名、OTP 模板、到期提醒模板和测试号码经仓库外 root-only 运行配置安全注入；记录、日志和提交物均未保存其值。一次性、无自动重启的 Web 容器在执行前确认：
+
+| 名称                                            | 结果         |
+| ----------------------------------------------- | ------------ |
+| `ALIYUN_SMS_MODE`                               | `live`       |
+| `ALLOW_REAL_PROVIDER_WRITES`                    | `true`       |
+| `ALLOW_REAL_ALIYUN_SMS_SENDS`                   | `true`       |
+| `ALIBABA_CLOUD_SMS_SIGN_NAME`                   | `configured` |
+| `ALIBABA_CLOUD_SMS_OTP_TEMPLATE_CODE`           | `configured` |
+| `ALIBABA_CLOUD_SMS_DOMAIN_EXPIRY_TEMPLATE_CODE` | `configured` |
+| `WANMI_CONTRACT_TEST_PHONE`                     | `configured` |
+
+### 10.1 唯一一次 OTP 服务路径尝试
+
+从该一次性 Web 容器内向既有 `/api/v1/auth/sms/request` 发起恰好 1 个请求，号码为“负责人提供的测试号码”。请求通过共享 Zod 输入校验、Payload 服务和手机号/IP/设备/全局四维限频后创建 challenge，并调用 live provider；没有直接调用 SDK，也没有绕过任一门禁。真实结果：
+
+- 服务层发送尝试数：**1**；被 provider 接受数：**0**；成功发送证据数：**0**；重试数：**0**。本切片没有第二次发送。
+- HTTP 状态：`503`；稳定错误码：`SMS_UNAVAILABLE`；响应时间：339.4 ms；未返回 challengeId。
+- 实际响应字段：`action`、`code`、`detail`、`message`、`retryable`、`status`、`title`、`traceId`、`type`。这些字段可由现有 `problemDetailsSchema` 完整验证，没有 schema 差异。
+- 数据库脱敏核对：`deliveryStatus=failed`、provider 映射码 `SMS_PROVIDER_UNAVAILABLE`、`sentAt` 已记录；provider message ID/BizId 缺失，provider request ID 是适配器本地生成的关联 UUID，不是可作为真实阿里云 RequestId 形态证据的值。
+- 只读 ActionTrail 在执行时间窗内未找到 `SendSms` 事件。因此原始阿里云响应字段、原始错误码、BizId 和真实 RequestId 均不可观察；不得推测为签名、模板或其他具体错误。现有适配器把 SDK 异常统一归为 `SMS_PROVIDER_UNAVAILABLE`，服务层再稳定映射为 `SMS_UNAVAILABLE`。没有拿到与既有 `SIGN_NAME_ILLEGAL` / `template_unapproved` 映射对比所需的真实原始码，故未修改实现、断言或 fixture。
+- 到期提醒模板已由 live provider 配置校验加载，但按约束没有发送。由于没有 BizId/accepted 状态，不具备回执查询输入，回执对账状态与结果均为不适用。
+
+### 10.2 恢复与完成判断
+
+唯一尝试后立即删除两个一次性 live 容器，并删除 ECS 临时脚本/配置、开发机临时配置、一次性 SSH 私钥与对应 ECS 授权项；这些临时材料不可恢复。生产 Web 与 commerce Worker 随后用仓库外持久配置重新创建，二者运行于同一镜像，Worker 保持 `commerce` 队列并发 1，`/readyz` 返回 2xx。生产 Web/Worker 均确认四项短信配置为 `configured`；ECS 持久配置、两个生产容器和开发机最终状态如下：
+
+| 名称                          | ECS 持久配置 | 生产 Web | 生产 Worker | 开发机  |
+| ----------------------------- | ------------ | -------- | ----------- | ------- |
+| `ALIYUN_SMS_MODE`             | `mock`       | `mock`   | `mock`      | `mock`  |
+| `ALLOW_REAL_PROVIDER_WRITES`  | `false`      | `false`  | `false`     | `false` |
+| `ALLOW_REAL_ALIYUN_SMS_SENDS` | `false`      | `false`  | `false`     | `false` |
+
+额外复核 ECS Web/Worker 与开发机全部 12 个能力闸均为 `false`，一次性 live 容器为 0。负责人应继续核对这些恢复状态；在取得最终上线批准前建议维持关闭，是否长期开启由负责人另行决定。
+
+本地最终回归使用一次性随机测试主密钥、`WECHATPAY_MODE=fixture`、`WESTDIGITAL_MODE=fixture`、短信/私有 OSS mock 和显式关闭的 12 个真实能力闸执行完整 `make check`，退出码 0：88 个文件 640/640 单元测试、28 个文件 105/105 PostgreSQL/MinIO 集成测试、全部 migration 空库/升级/回滚往返、bootstrap/generated/Nginx/operations/rebuild/release/provider-write-policy 门禁、lint、TypeScript strict、Next.js 生产构建、linux/amd64 同镜像构建、依赖审计、工作树与 165 个提交完整历史 Gitleaks、Trivy 均通过。第一次本地门禁调用把微信 fixture 枚举误写为不存在的 `mock`，在 `verify-generated` 的 `getEnv` 校验阶段即停止；修正为 `fixture` 后从头完整重跑并通过，全程没有真实 provider 调用。自动化仍完全依赖 fixture/mock，真实短信尝试没有写入 CI 测试，provider 写策略未削弱。
+
+D7-10 西部数码/私有 OSS、D7-13 ECS 微信查单与生产主密钥证据仍有效，但本轮没有得到短信被 provider 接受或真实发送成功证据。故 11.1 第 2 项**继续保持未勾选**，第 13 项及生产硬门槛未修改。若要补齐，只能先查明本次 SDK 异常的上游原因，再在新的、明确授权的切片执行一次新的真实发送；本切片不得重试。
