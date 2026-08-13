@@ -112,6 +112,29 @@ describe('Wechat Pay API v3 fixture adapter', () => {
     })
   })
 
+  it('maps the signed ORDER_NOT_EXIST query response observed from Wechat Pay', async () => {
+    const fixture = createWechatPayFixture({ now: () => now })
+    fixture.setOrderQueryError({
+      code: 'ORDER_NOT_EXIST',
+      merchantOrderNumber: 'WMMISSING0001',
+      status: 404,
+    })
+
+    await expect(
+      fixture.provider.queryOrder({
+        merchantOrderNumber: 'WMMISSING0001',
+        traceId: 'trace-wechat-order-not-exist',
+      }),
+    ).resolves.toMatchObject({
+      error: {
+        code: 'WECHATPAY_ORDER_NOT_FOUND',
+        retryable: false,
+        statusKnown: true,
+      },
+      ok: false,
+    })
+  })
+
   it('verifies RSA notification signatures, decrypts AES-GCM only afterwards and rejects tampering', async () => {
     let currentTime = now
     const fixture = createWechatPayFixture({ now: () => currentTime })

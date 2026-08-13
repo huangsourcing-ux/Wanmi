@@ -51,8 +51,12 @@ type ContractObservation = {
   mappedFieldPaths?: string[]
   providerCode?: string
   requestIdHash?: string
+  responseSerialMatched?: boolean
+  responseSignaturePresent?: boolean
+  responseSignatureVerified?: boolean
   status?: number
   transportErrorCode?: string
+  verificationMode?: 'platform_certificate' | 'wechatpay_public_key'
 }
 
 type WestDigitalRequest =
@@ -205,12 +209,26 @@ class RecordingWechatPayTransport implements WechatPayTransport {
       } catch {
         body = undefined
       }
+      const configuredSerial = getEnv().WECHATPAY_PLATFORM_CERTIFICATE_SERIAL
+      const responseSerial = response.headers.get('wechatpay-serial')?.trim()
       observations.push({
         actualFieldPaths: fieldPaths(body),
         durationMs: roundedDuration(startedAt),
         interface: 'wechatpay.order_query',
         ...(providerCode(body) ? { providerCode: providerCode(body) } : {}),
+        responseSerialMatched: Boolean(
+          configuredSerial && responseSerial && configuredSerial === responseSerial,
+        ),
+        responseSignaturePresent: Boolean(
+          response.headers.get('wechatpay-nonce')?.trim() &&
+            responseSerial &&
+            response.headers.get('wechatpay-signature')?.trim() &&
+            response.headers.get('wechatpay-timestamp')?.trim(),
+        ),
         status: response.status,
+        verificationMode: configuredSerial?.startsWith('PUB_KEY_ID_')
+          ? 'wechatpay_public_key'
+          : 'platform_certificate',
       })
       return response
     } catch (error) {
@@ -233,6 +251,11 @@ class RecordingWechatPayTransport implements WechatPayTransport {
       .find((candidate) => candidate.interface === 'wechatpay.order_query')
     if (!observation) throw new Error('Missing Wechat Pay transport observation')
     Object.assign(observation, mappedResult(result))
+    observation.responseSignatureVerified = Boolean(
+      observation.responseSignaturePresent &&
+        observation.responseSerialMatched &&
+        (result.ok || result.error.code !== 'WECHATPAY_RESPONSE_SIGNATURE_INVALID'),
+    )
   }
 }
 
@@ -328,9 +351,13 @@ async function verifyWechatPay(): Promise<void> {
   transport.attachMapped(result)
   assert(!result.ok, 'Wechat Pay read contract order unexpectedly exists')
   assert(
-    result.error.code === 'WECHATPAY_REQUEST_REJECTED',
+    result.error.code === 'WECHATPAY_ORDER_NOT_FOUND',
     `Wechat Pay signed error mapping differed: ${result.error.code}`,
   )
+  const observation = [...observations]
+    .reverse()
+    .find((candidate) => candidate.interface === 'wechatpay.order_query')
+  assert(observation?.responseSignatureVerified, 'Wechat Pay response signature was not verified')
 }
 
 async function verifyPrivateOss(): Promise<void> {
