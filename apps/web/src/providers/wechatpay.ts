@@ -304,14 +304,18 @@ export class WechatPayApiV3Adapter implements PaymentProvider {
       } catch {
         providerCode = undefined
       }
-      const refundError = path.startsWith('/v3/refund/')
+      const mappedError = path.startsWith('/v3/refund/')
         ? providerCode === 'NOT_ENOUGH'
           ? 'WECHATPAY_REFUND_BALANCE_INSUFFICIENT'
           : providerCode === 'REFUND_ABNORMAL' || providerCode === 'TRADE_STATE_ERROR'
             ? 'WECHATPAY_REFUND_DISPUTED'
             : 'WECHATPAY_REFUND_REJECTED'
-        : 'WECHATPAY_REQUEST_REJECTED'
-      return mockFailure(refundError, {
+        : method === 'GET' &&
+            path.startsWith('/v3/pay/transactions/out-trade-no/') &&
+            providerCode === 'ORDER_NOT_EXIST'
+          ? 'WECHATPAY_ORDER_NOT_FOUND'
+          : 'WECHATPAY_REQUEST_REJECTED'
+      return mockFailure(mappedError, {
         retryable: response.status >= 500,
         statusKnown: response.status < 500,
       })
@@ -625,6 +629,7 @@ export type WechatPayFixture = {
     > & { notificationId?: string },
   ): { body: string; headers: Headers }
   setOrder(input: FixtureState): void
+  setOrderQueryError(input: { code: string; merchantOrderNumber: string; status: number }): void
   setRefund(input: FixtureRefundState): void
 }
 
@@ -644,9 +649,10 @@ export function createWechatPayFixture(options: { now?: () => Date } = {}): Wech
   const apiV3Key = randomBytes(32)
   const wechatSerial = 'WECHATPAY_FIXTURE_SERIAL'
   const orders = new Map<string, FixtureState>()
+  const orderQueryErrors = new Map<string, { code: string; status: number }>()
   const refunds = new Map<string, FixtureRefundState>()
   const now = options.now ?? (() => new Date())
-  const signedResponse = (body: unknown, requestId = `fixture-${randomUUID()}`) => {
+  const signedResponse = (body: unknown, requestId = `fixture-${randomUUID()}`, status = 200) => {
     const rawBody = JSON.stringify(body)
     const timestamp = String(Math.floor(now().getTime() / 1000))
     const nonce = randomBytes(8).toString('hex')
@@ -664,7 +670,7 @@ export function createWechatPayFixture(options: { now?: () => Date } = {}): Wech
         'wechatpay-signature': signature,
         'wechatpay-timestamp': timestamp,
       }),
-      status: 200,
+      status,
     }
   }
   const transport: WechatPayTransport = {
@@ -741,6 +747,14 @@ export function createWechatPayFixture(options: { now?: () => Date } = {}): Wech
       }
       const match = request.path.match(/out-trade-no\/([^?]+)/u)
       const merchantOrderNumber = decodeURIComponent(match?.[1] ?? '')
+      const queryError = orderQueryErrors.get(merchantOrderNumber)
+      if (queryError) {
+        return signedResponse(
+          { code: queryError.code, message: 'Wechat Pay fixture query rejection' },
+          `fixture-${randomUUID()}`,
+          queryError.status,
+        )
+      }
       const order = orders.get(merchantOrderNumber)
       if (!order) {
         return signedResponse({
@@ -869,6 +883,12 @@ export function createWechatPayFixture(options: { now?: () => Date } = {}): Wech
     provider,
     setOrder(input) {
       orders.set(input.merchantOrderNumber, input)
+    },
+    setOrderQueryError(input) {
+      orderQueryErrors.set(input.merchantOrderNumber, {
+        code: input.code,
+        status: input.status,
+      })
     },
     setRefund(input) {
       refunds.set(input.refundNumber, input)
