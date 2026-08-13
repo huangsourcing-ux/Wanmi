@@ -62,7 +62,12 @@ export const TRANSIENT_OVERRIDE_KEYS = new Set([
   'ALIYUN_SMS_MODE',
   'ALLOW_REAL_ALIYUN_SMS_SENDS',
   'ALLOW_REAL_PROVIDER_WRITES',
+  'ALLOW_REAL_WECHATPAY',
+  'ALLOW_REAL_WECHATPAY_PAYMENTS',
+  'ALLOW_REAL_WECHATPAY_REFUNDS',
   'WANMI_CONTRACT_TEST_PHONE',
+  'WECHATPAY_WRITE_CUMULATIVE_AMOUNT_LIMIT_FEN',
+  'WECHATPAY_WRITE_SINGLE_AMOUNT_LIMIT_FEN',
 ])
 
 const FORBIDDEN_PERSISTENT_KEYS = new Set([
@@ -163,7 +168,7 @@ function safeRuntimeFile(path, repositoryRoot, label) {
   return real
 }
 
-function applyEntries(environment, entries, allowedNames, label) {
+export function applyEntries(environment, entries, allowedNames, label) {
   for (const [name, value] of entries) {
     if (allowedNames && !allowedNames.has(name)) {
       throw new Error(`${label} contains a setting that cannot be overridden: ${name}`)

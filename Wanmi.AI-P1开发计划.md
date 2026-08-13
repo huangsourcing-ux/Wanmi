@@ -727,6 +727,8 @@ commerce Worker 每分钟写脱敏 `siteSettings` 心跳，background Worker 沿
 
 最终全 fixture/mock、12 个真实能力闸为 `false` 的 `make check` 退出码 0：89 个文件 648/648 单元、28 个文件 106/106 PostgreSQL/MinIO 集成、全部 migration/发布/重建/provider-write-policy 门禁、lint、TypeScript strict、生产构建、linux/amd64 同镜像、完整历史 Gitleaks 与 Trivy 均通过。
 
+D7-17 微信小额联调前置（2026-08-13）：将微信 provider、支付、退款三项能力闸与单笔/累计金额上限五个键加入 D7-16 的一次性覆写白名单，使联调值可随仓库外 root-only 覆写文件注入和清除；未改持久配置禁用键规则、生产必需集合、`.env.example`、金额上限默认值或任何能力闸默认值。单元测试覆盖五键临时接受、持久文件沿用既有规则和集合外密钥拒绝；从白名单移除五键的变异使目标测试 2/8 失败，恢复后 Web 单元 89 文件 651/651、lint、TypeScript strict 和定向格式检查通过。全程未调用真实微信或其他 provider，未部署、未改生产配置，D7-17 正式小额联调及其授权、金额和收尾证据仍待后续切片。
+
 ### 11.2 D8 P1 开发验收
 
 开发完成必须满足：
@@ -815,6 +817,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-13 | D7-11 真实 RTO 更正与重测             | 更正 D7-08 含约 14 小时关机等待的无效失败结论；重新初始化唯一系统盘，从完全重置空节点安装工具、获取镜像并执行固定八步到 Nginx ready                                                           | 有效 RTO 582 秒，余量 6,618 秒；人工等待 0 秒；migrations/Web/readyz/Worker/Job 恢复/Nginx 分别 14.598/0.201/3.948/0.325/7.934/0.651 秒；最终 health/readyz/Worker/Job 清零与 12 个全关闭能力闸复核通过                                                     | 11.1 第 10 项勾选；外部 registry 直连超时仍是真实约束，后续建议 CI 预构建并通过稳定受控 registry 按不可变引用交付，本切片未实施改造                                   |
 | 2026-08-13 | D7-13 生产 provider 注入与 ECS 补证   | 在仓库外以 `0600` 运行配置和 PEM 注入微信、WestDigital 只读与私有 OSS；同 digest 重启 Web/Worker；从 ECS 补做不存在订单查单并复用 D7-09 完成生产主密钥真实对象往返                            | ECS 查单 `404/ORDER_NOT_EXIST`、公钥验签/ID 匹配与 IP 白名单接受均通过（316.3 ms）；主密钥 active version `prod-20260811-v2` 的加密、恢复、解密和 exact-key 清理通过；`make check` 640/640 单元、105/105 集成及完整迁移、构建、安全门禁通过                 | 短信签名、OTP/到期模板和测试号码缺失，发送 0；12 个能力闸收尾均为 `false`；11.1 第 2 项保持未勾选，第 13 项未改                                                       |
 | 2026-08-13 | D7-16 Worker 配置契约、心跳与短信补证 | 修复 `.bin/payload` shell shim 导致的 commerce 重启循环；持久/临时配置分层、启动 fail-closed、有界重启；新增 commerce 心跳与 background 告警；OTP 完整路径真实发送 1 条                       | Web/commerce/background 同 digest 且 `running/exit 0/restart 0`，readyz 通过；心跳连续完成；两处变异被杀死；短信 HTTP `202`/897 ms、`accepted`、BizId 20 位、RequestId UUID-like，第二条为 0；短信目标与 OTP 集成通过                                       | 11.1 第 2 项勾选；mock 回执污染已 fail-closed 且不冒充真实回执；第 13 项、主密钥双人离线备份及生产硬门槛均未勾选                                                      |
+| 2026-08-13 | D7-17 微信小额联调覆写前置            | 临时覆写白名单增加微信 provider/支付/退款三闸与单笔/累计金额上限；持久配置规则、生产必需集合及默认值不变                                                                                      | 五键临时/持久路径与集合外拒绝单测通过；移除五键的变异使 2/8 失败；恢复后 Web 单元 89 文件 651/651、lint、TypeScript strict、定向格式检查通过                                                                                                                | 未执行真实调用、部署或生产配置变更，闸与金额默认仍关闭/为 0；正式小额联调及收尾证据留待后续授权切片                                                                   |
 
 ## 13. 范围追踪矩阵
 
