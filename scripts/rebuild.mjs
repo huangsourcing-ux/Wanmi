@@ -156,9 +156,6 @@ process.on('uncaughtException', (error) => {
   process.exit(code)
 })
 
-const nginxImage = digestImageEnvironment('WANMI_NGINX_IMAGE', defaultNginxImage)
-const whoDatImage = digestImageEnvironment('WANMI_WHODAT_IMAGE', defaultWhoDatImage)
-
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: repositoryRoot,
@@ -295,6 +292,8 @@ try {
   )
   process.exit(exitCodes.environment)
 }
+const nginxImage = digestImageEnvironment('WANMI_NGINX_IMAGE', defaultNginxImage)
+const whoDatImage = digestImageEnvironment('WANMI_WHODAT_IMAGE', defaultWhoDatImage)
 const manifestPath = resolve(repositoryRoot, argument('--manifest', 'deploy/release-manifest.json'))
 const policyPath = resolve(repositoryRoot, 'deploy/release-policy.json')
 const deploymentId = requiredEnvironment('WANMI_DEPLOYMENT_ID')

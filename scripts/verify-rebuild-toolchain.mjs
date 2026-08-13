@@ -36,6 +36,14 @@ assert(source.includes("resolve(repositoryRoot, 'deploy/release-policy.json')"))
 assert(source.includes("'{{.Config.Image}}'"))
 assert(source.includes("digestImageEnvironment('WANMI_NGINX_IMAGE', defaultNginxImage)"))
 assert(source.includes("digestImageEnvironment('WANMI_WHODAT_IMAGE', defaultWhoDatImage)"))
+assert(
+  source.indexOf('loadRuntimeEnvironmentFiles(process.env, repositoryRoot)') <
+    source.indexOf("digestImageEnvironment('WANMI_NGINX_IMAGE', defaultNginxImage)"),
+)
+assert(
+  source.indexOf('loadRuntimeEnvironmentFiles(process.env, repositoryRoot)') <
+    source.indexOf("digestImageEnvironment('WANMI_WHODAT_IMAGE', defaultWhoDatImage)"),
+)
 assert(source.includes('/^\\S+@sha256:[0-9a-f]{64}$/u'))
 assert(source.includes("'--queue',\n          'commerce',\n          '--limit',\n          '1'"))
 assert(source.includes("'--queue',\n          'background',\n          '--limit',\n          '1'"))
@@ -48,13 +56,25 @@ assert(source.includes('...TRANSIENT_OVERRIDE_KEYS'))
 assert(!source.includes('docker compose down'))
 
 const rebuildScript = fileURLToPath(new URL('./rebuild.mjs', import.meta.url))
+const validationEnvironment = {
+  DATABASE_URL: 'postgres://runtime-check.invalid/wanmi',
+  NEXT_PUBLIC_SERVER_URL: 'https://runtime-check.invalid',
+  PAYLOAD_SECRET: 'runtime-check',
+  REALNAME_DOCUMENT_MASTER_KEYS: 'runtime-check',
+  REALNAME_DOCUMENT_MASTER_KEY_VERSION: 'runtime-check',
+  SESSION_PEPPER: 'runtime-check',
+  TOTP_ENCRYPTION_KEY: 'runtime-check',
+  WANMI_RUNTIME_PROFILE: 'validation',
+  WHO_DAT_AUTH_KEY: 'runtime-check',
+  WHO_DAT_URL: 'http://runtime-check.invalid',
+}
 for (const [name, value] of [
   ['WANMI_NGINX_IMAGE', 'nginx:latest'],
   ['WANMI_WHODAT_IMAGE', 'lissy93/who-dat:v2.0.0'],
 ]) {
   const result = spawnSync(process.execPath, [rebuildScript], {
     encoding: 'utf8',
-    env: { ...process.env, [name]: value },
+    env: { ...process.env, ...validationEnvironment, [name]: value },
   })
   assert.equal(result.status, 11, `${name} mutable tag did not fail with environment exit code`)
   assert.match(result.stderr, new RegExp(`${name} must use repository@sha256`))
