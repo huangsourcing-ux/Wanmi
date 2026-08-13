@@ -44,18 +44,18 @@ make rebuild
 
 `scripts/rebuild-plan.mjs` 将以下顺序固定为唯一执行路径，不得跳步或手工换序：
 
-| 序号 | 步骤                        | 成功判定                                                                | 失败退出码 |
-| ---: | --------------------------- | ----------------------------------------------------------------------- | ---------: |
-|    1 | 准备环境变量与网络          | 必填变量非空、部署 ID/端口/资源限制合法，容器名可用，隔离网络存在       |      11/13 |
-|    2 | 按 digest 拉取同一镜像      | 既有 release-policy 门禁通过，切流时间已到，应用为 `linux/amd64` digest |      12/14 |
-|    3 | 运行 Payload migrations     | 同一镜像内 `payload migrate` 与 `payload migrate:status` 均退出 0       |         16 |
-|    4 | 启动 Web                    | digest 容器处于 `running` 且进程退出码为 0                              |         17 |
-|    5 | 验证 readyz                 | 有界时间内 HTTP 成功且 JSON 顶层 `status=ready`                         |         18 |
-|    6 | 启动 commerce 单并发 Worker | `jobs:run --queue commerce --limit 1` 运行，且 Web/Worker 镜像引用相同  |         19 |
-|    7 | 查询并恢复未完成 Job        | Payload runner 退出 0，原子恢复完成后 Worker 仍运行                     |         20 |
-|    8 | 启动 Nginx                  | `nginx -t`、容器运行和 `/nginx-healthz=ready` 全部通过                  |         21 |
+| 序号 | 步骤                            | 成功判定                                                                | 失败退出码 |
+| ---: | ------------------------------- | ----------------------------------------------------------------------- | ---------: |
+|    1 | 准备环境变量与网络              | 必填变量非空、部署 ID/端口/资源限制合法，容器名可用，隔离网络存在       |      11/13 |
+|    2 | 按 digest 拉取同一镜像          | 既有 release-policy 门禁通过，切流时间已到，应用为 `linux/amd64` digest |      12/14 |
+|    3 | 运行 Payload migrations         | 同一镜像内 `payload migrate` 与 `payload migrate:status` 均退出 0       |         16 |
+|    4 | 启动 Web                        | digest 容器处于 `running` 且进程退出码为 0                              |         17 |
+|    5 | 验证 readyz                     | 有界时间内 HTTP 成功且 JSON 顶层 `status=ready`                         |         18 |
+|    6 | 启动 commerce/background Worker | 两个队列均 `--limit 1` 运行，且 Web/两个 Worker 镜像引用相同            |         19 |
+|    7 | 查询并恢复未完成 Job            | Payload runner 退出 0，原子恢复完成后 Worker 仍运行                     |         20 |
+|    8 | 启动 Nginx                      | `nginx -t`、容器运行和 `/nginx-healthz=ready` 全部通过                  |         21 |
 
-readyz 不通过时第 5 步以 18 退出，执行器不会调用第 6～8 步。Web 与 Worker 的容器配置都直接使用 manifest 的同一个 digest，工具同时检查两者 `.Config.Image`，只允许启动命令不同。Who-Dat 与 Nginx 也使用仓库固定的 digest 引用。
+readyz 不通过时第 5 步以 18 退出，执行器不会调用第 6～8 步。Web 与两个 Worker 的容器配置都直接使用 manifest 的同一个 digest，工具同时检查三者 `.Config.Image`，只允许启动命令不同。Who-Dat 与 Nginx 也使用仓库固定的 digest 引用。
 
 必填 secret 为 `PAYLOAD_SECRET`、`SESSION_PEPPER`、`TOTP_ENCRYPTION_KEY`、完整的 `REALNAME_DOCUMENT_MASTER_KEYS` 和 `WHO_DAT_AUTH_KEY`；数据库、provider、对象存储配置及其他凭据同样只能通过当前进程环境传给容器。工具不读取 `.env`、不生成凭据文件、不把值放入镜像参数，并按敏感键名在 stdout/stderr 中替换为 `[REDACTED]`。不要使用 `set -x`，不要把环境转存到故障工单；镜像构建与日志泄漏的机械检查见 `make validate-rebuild-local` 的镜像元数据、每层应用路径、最终 rootfs 与运行日志扫描。
 

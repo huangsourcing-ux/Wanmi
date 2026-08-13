@@ -389,3 +389,74 @@ ECS 内使用生产 Web 镜像、当前短信 SDK 和当前运行环境执行只
 另发现 commerce Worker 当前处于重启循环且重启计数非零；这是独立运行异常，不构成 endpoint 假设的证据。本轮因假设已被否定而按规则停止，没有扩大授权去修复 Worker 或重新注入运行配置。
 
 收尾复核中，ECS Web/Worker 的 `ALIYUN_SMS_MODE=mock`，总闸、短信闸及其余真实 provider 能力闸全部为 `false`，未曾为本轮临时开启。D7-15 没有新增短信真实发送证据，11.1 第 2 项**继续保持未勾选**；第 13 项和所有生产硬门槛均未修改。
+
+## 12. D7-16 commerce Worker、运行时配置契约与短信补证（2026-08-13）
+
+### 12.1 先诊断：Worker 重启循环与 Web 状态
+
+修改配置或代码前先读取生产容器退出状态与 commerce Worker 原始日志。Worker 为 `exit 1`、`OOMKilled=false`，重启计数从 `79` 增长到 `89`；失败发生在业务 Job 启动前。原始错误类别为 shell shim 运行时依赖缺失与错误模块入口：`node_modules/.bin/payload` 第 2 行报告 `sed: not found`、第 5 行报告 `uname: not found`，随后尝试错误入口并得到 `MODULE_NOT_FOUND`。该生产 runtime 镜像不包含这两个 shell 工具，因此崩溃与短信凭据无关。同期 Web 为 `running`、退出码 0、重启数 0，database-backed `/readyz` 返回 `ready`。
+
+同一只读预检确认 Web 与 commerce Worker 中 `ALIBABA_CLOUD_ACCESS_KEY_ID`、`ALIBABA_CLOUD_ACCESS_KEY_SECRET`、`ALIBABA_CLOUD_REGION_ID` 均为 `missing`。这是 D7-13/D7-14 清理临时运行配置时误删稳态 provider 值的独立问题，不是上述 Worker 崩溃的触发条件；D7-14 的一次性容器已删除，历史异常又被适配器归并，故该事实只能说明当前缺项，不能单独证明 D7-14 的历史根因。
+
+### 12.2 持久配置与一次性覆写契约
+
+生产稳态配置改为仓库外、root-owned `0600` 持久文件，并在创建网络或容器前完整校验。基础应用配置、12 个真实能力闸、五项 provider 模式、阿里云基础凭据、短信三项业务配置、私有 OSS、WestDigital 与 8 项 Wechat Pay 配置均属稳态必需项；能力闸可为且本轮最终均为 `false`，关闭闸不再等同于删除 provider 稳态配置。两个 PEM 仍为仓库外 root-owned `0600`。缺失或非法稳态项只输出变量名并以环境错误码快速失败，不创建容器。
+
+一次性联调另用仓库外、root-owned `0600` 覆写文件；白名单严格只有 `ALIYUN_SMS_MODE`、`ALLOW_REAL_PROVIDER_WRITES`、`ALLOW_REAL_ALIYUN_SMS_SENDS`、`WANMI_CONTRACT_TEST_PHONE`。凭据、provider 标识、Bucket 和 PEM 路径不能覆写。清理只删除该覆写文件和指针，不编辑持久文件。Docker 继续仅以 `--env NAME` 传变量名，值不进入命令行、镜像层或日志。
+
+### 12.3 启动 fail-closed、部署恢复与心跳
+
+Web、commerce Worker、background Worker 统一先执行启动期契约；Payload CLI 改由 Node 直接运行，不再经过 `.bin` shell shim。三者均使用 `on-failure:3`，重建工具要求连续稳定、退出码 0、重启数 0 后才继续。缺少运行时文件或必需变量时以明确变量名和固定环境错误码退出，不产生未捕获堆栈，也不会进入无界重启。
+
+第一次生产切换在重建第 2 步被目标节点访问外部 Who-Dat registry 失败阻断；自动恢复了配置和源码，但旧工具没有加载运行时文件，旧部署恢复也在容器创建前停止，服务短时不可用。第二次恢复已把应用、Who-Dat、Nginx 的已验证 digest 预置到节点 loopback registry；预拉取通过后，重建仍回退外部 Who-Dat 引用。记录后确认 `WANMI_WHODAT_IMAGE`/`WANMI_NGINX_IMAGE` 在持久环境加载前被求值；修正顺序并新增静态回归断言后，第三次恢复成功。切换、readyz 与稳定性检查共 **44 秒**，单独记录，不计入 D7-11 RTO。
+
+恢复后 Web、commerce Worker、background Worker 均为 `running=true`、退出码 0、重启数 0、`on-failure:3`；三者使用同一应用 digest，Who-Dat/Nginx 运行，`/readyz=ready`。commerce 日志不再出现 `sed`、`uname`、`.bin/payload` 或 `MODULE_NOT_FOUND` 错误。
+
+commerce Worker 每分钟通过 `commerce` 队列更新 `operations.worker.heartbeat.commerce.v1`，值只含 schema version、固定角色和最后心跳时间；生产数据库观察到连续两个无错误完成的 heartbeat Job，下一轮已排队，心跳年龄低于 `siteSettings` 默认 5 分钟阈值。background Worker 使用既有监控设施评估缺失/过期心跳并产生 `category=workers` 告警，不含 Job、订单、客户或 provider 数据。
+
+两处要求的承重变异均已执行并恢复：关闭生产必需配置 fail-closed 后，目标运行时契约测试 2/5 失败；恢复后 5/5 通过。关闭 Worker 心跳告警分支后，监控测试 2/4 失败；恢复后 4/4 通过。
+
+### 12.4 短信真实契约
+
+稳态配置完成后先在隔离的一次性 Web 容器做脱敏预检；容器使用生产同 digest、相同数据库和完整 OTP 服务路径，重启策略为 `no`。预检只记录状态：
+
+| 名称                                            | 预检结果     |
+| ----------------------------------------------- | ------------ |
+| `ALIYUN_SMS_MODE`                               | `live`       |
+| `ALLOW_REAL_PROVIDER_WRITES`                    | `true`       |
+| `ALLOW_REAL_ALIYUN_SMS_SENDS`                   | `true`       |
+| `ALIBABA_CLOUD_ACCESS_KEY_ID`                   | `configured` |
+| `ALIBABA_CLOUD_ACCESS_KEY_SECRET`               | `configured` |
+| `ALIBABA_CLOUD_REGION_ID`                       | `configured` |
+| `ALIBABA_CLOUD_SMS_SIGN_NAME`                   | `configured` |
+| `ALIBABA_CLOUD_SMS_OTP_TEMPLATE_CODE`           | `configured` |
+| `ALIBABA_CLOUD_SMS_DOMAIN_EXPIRY_TEMPLATE_CODE` | `configured` |
+| `WANMI_CONTRACT_TEST_PHONE`                     | `configured` |
+
+经 `/api/v1/auth/sms/request` 的 Zod 请求校验、Payload service 和手机号/IP/设备/全局四维限频，向“负责人提供的测试号码”执行**恰好 1 次**请求。没有直接调用 `SendSms` 绕过服务层，没有第二次请求：
+
+| 验证项                | 真实结果                                                                                      |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| 发送请求/第二次请求   | **1/0**                                                                                       |
+| HTTP 与响应时间       | `202` / **897 ms**                                                                            |
+| 应用响应字段          | `accepted`, `challengeId`, `message`；与既有 typed/E2E 服务契约一致，不含手机号               |
+| 上游成功字段          | `code=OK`、非空 `bizId`、`requestId`；SDK adapter 没有独立 Zod 响应 schema，故无 Zod 字段差异 |
+| BizId 形态            | 20 位不透明标识                                                                               |
+| RequestId 形态        | UUID-like                                                                                     |
+| 数据库送达状态        | `accepted`                                                                                    |
+| 上游拒绝/错误映射差异 | 无；本次成功，没有 `SIGN_NAME_ILLEGAL`、`template_unapproved` 或其他错误码                    |
+| 到期模板              | 只验证 configured/provider 可加载，发送 0 条                                                  |
+
+该结果证明当前持久 AccessKey/Region 配置能够完成 SDK 签名并到达阿里云，支持“D7-14 当时请求未到达上游与认证运行配置缺失一致”的假设；但因 D7-14 一次性容器和原始异常已清理，不能把本次成功反推成对历史单一根因的绝对证明。
+
+发送后既有 background Worker 在稳态 `mock` 模式下错误地把真实 `accepted` 记录更新成 `delivered`。该状态不能作为真实阿里云回执证据，已先如实记录；一次只读回执命令又在 SDK 构造阶段因模块导入形态失败，没有到达上游且未连续重试。因此本轮没有可采信的真实回执状态。实现已改为：稳态 mock 模式只清理过期限频桶，不查询或改写 accepted/pending/unknown 真实记录；自动化测试只有显式注入 fixture provider 才能演练确定性回执。typecheck、14 条短信单测和 9 条 OTP/回执集成测试通过。
+
+### 12.5 收尾与完成判断
+
+一次性 Web、覆写文件和测试号码材料已删除。ECS 持久配置、Web、commerce Worker、background Worker 与开发机最终均为 `ALIYUN_SMS_MODE=mock`、`ALLOW_REAL_PROVIDER_WRITES=false`、`ALLOW_REAL_ALIYUN_SMS_SENDS=false`，其余 10 个真实能力闸同样为 `false`；稳态测试号码为 `missing`。负责人应再次核对这些值。生产未获最终上线批准前建议所有真实写闸保持关闭；正式运行若需要短信发送，应另行批准短信总闸/细分闸与 live 模式，支付、退款和 WestDigital 写闸不应因此联动开启。
+
+D7-10 的 WestDigital/私有 OSS、D7-13 的 ECS Wechat Pay 查单/生产主密钥和本节的短信真实成功证据共同满足四类契约与主密钥注入要求，因此勾选 11.1 第 2 项。第 13 项“三方对账”和所有生产上线硬门槛保持未勾选；生产主密钥离线双人备份仍由负责人完成。
+
+一次云诊断命令的瞬时错误输出包含签名请求中的云访问标识；该值未进入仓库、验证记录、应用日志或提交。相关云访问凭据应轮换，本记录不包含其值。所有临时 SSH/联调材料在最终部署验证后精确清理。
+
+最终本地回归仅使用一次性随机测试主密钥、fixture/mock provider 和显式关闭的 12 个真实能力闸。完整 `make check` 退出码为 0，覆盖 28 个文件 106/106 PostgreSQL/MinIO 集成测试、全部 migration 与发布/重建/provider-write-policy 门禁、lint、TypeScript strict、Next.js 生产构建、linux/amd64 同镜像构建、依赖审计、工作树与 173 个提交完整历史 Gitleaks 和 Trivy；最终单元套件另行复核为 89 个文件 648/648。自动化没有真实 provider 调用。
