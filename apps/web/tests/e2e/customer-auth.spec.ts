@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+const captchaVerifyParam = 'wanmi-captcha-fixture-pass'
+
 function cookiePair(setCookie: string): string {
   return setCookie.split(';', 1)[0]!
 }
@@ -18,7 +20,7 @@ test('customer OTP, all-session logout, deletion, and admin isolation work end t
 
   async function login() {
     const requested = await request.post('/api/v1/auth/sms/request', {
-      data: { deviceId, phone },
+      data: { captchaVerifyParam, deviceId, phone },
     })
     expect(requested.status()).toBe(202)
     const requestBody = await requested.json()
@@ -30,15 +32,30 @@ test('customer OTP, all-session logout, deletion, and admin isolation work end t
     expect(JSON.stringify(requestBody)).not.toContain(phone)
     expect(JSON.stringify(requestBody)).not.toContain('246810')
 
-    const verified = await request.post('/api/v1/auth/sms/verify', {
+    let authenticated = await request.post('/api/v1/auth/sms/verify', {
       data: { challengeId: requestBody.challengeId, code: '246810', deviceId },
     })
-    expect(verified.status()).toBe(200)
-    const verifiedBody = await verified.json()
+    expect(authenticated.status()).toBe(200)
+    const verificationBody = await authenticated.json()
+    if (verificationBody.kind === 'registration_required') {
+      expect(authenticated.headers()['set-cookie']).toBeUndefined()
+      authenticated = await request.post('/api/v1/auth/register', {
+        data: {
+          acceptedPrivacyPolicy: true,
+          acceptedServiceTerms: true,
+          confirmsAdultOrAuthorizedRepresentative: true,
+          defaultCustomerProfileType: 'individual',
+          deviceId,
+          registrationToken: verificationBody.registrationToken,
+        },
+      })
+      expect(authenticated.status()).toBe(200)
+    }
+    const verifiedBody = await authenticated.json()
     expect(verifiedBody.customer.phoneMasked).toMatch(/\*{4}/u)
     expect(JSON.stringify(verifiedBody)).not.toContain(phone)
     expect(JSON.stringify(verifiedBody)).not.toContain('246810')
-    const setCookie = verified.headers()['set-cookie']
+    const setCookie = authenticated.headers()['set-cookie']
     expect(setCookie).toContain('wanmi_customer_session=')
     expect(setCookie).toContain('HttpOnly')
     expect(setCookie).toContain('Secure')
@@ -120,7 +137,7 @@ test('customer OTP, all-session logout, deletion, and admin isolation work end t
   expect(deletion.headers()['set-cookie']).toContain('wanmi_customer_session=;')
 
   const postDeletionRequest = await request.post('/api/v1/auth/sms/request', {
-    data: { deviceId, phone },
+    data: { captchaVerifyParam, deviceId, phone },
   })
   expect(postDeletionRequest.status()).toBe(202)
   const postDeletionBody = await postDeletionRequest.json()

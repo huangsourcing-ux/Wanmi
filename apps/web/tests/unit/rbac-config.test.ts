@@ -62,6 +62,8 @@ const publicReads = [
 ]
 const customerReads = [
   ...publicReads,
+  'consentRecords',
+  'customerIdentities',
   'customerSecurityEvents',
   'customers',
   'domainAssets',
@@ -111,10 +113,23 @@ const analyticalAdminCollections = [...advertisingAdminCollections, 'toolObserva
 const alwaysHiddenCollections = [
   'adminInvitations',
   'adminMfaCredentials',
+  'customerRegistrationIntents',
   'customerSessions',
   'realnameDocuments',
   'smsChallenges',
   'smsRateLimits',
+  'wechatAuthorizationCodes',
+  'wechatLoginScenes',
+  'wechatOAuthStates',
+]
+
+const systemUnreadableCollections = [
+  'adminInvitations',
+  'adminMfaCredentials',
+  'customerRegistrationIntents',
+  'wechatAuthorizationCodes',
+  'wechatLoginScenes',
+  'wechatOAuthStates',
 ]
 
 const expected: Record<Persona, Record<Operation, string[]>> = {
@@ -146,7 +161,7 @@ const expected: Record<Persona, Record<Operation, string[]>> = {
     delete: [...advertisingWrites, ...contentWrites, 'admins', 'priceRules', 'siteSettings'],
     read: collections
       .map(({ slug }) => slug)
-      .filter((slug) => !['adminInvitations', 'adminMfaCredentials'].includes(slug)),
+      .filter((slug) => !systemUnreadableCollections.includes(slug)),
     readVersions: ['articles', 'helpPages', 'tldPages', 'topics'],
     update: [
       ...advertisingWrites,
@@ -291,6 +306,9 @@ describe('D1 administrator navigation groups', () => {
     articles: ADMIN_GROUPS.content,
     categories: ADMIN_GROUPS.content,
     auditLogs: ADMIN_GROUPS.operations,
+    consentRecords: ADMIN_GROUPS.identity,
+    customerIdentities: ADMIN_GROUPS.identity,
+    customerRegistrationIntents: ADMIN_GROUPS.identity,
     customerSecurityEvents: ADMIN_GROUPS.operations,
     customerSessions: ADMIN_GROUPS.identity,
     customers: ADMIN_GROUPS.identity,
@@ -328,6 +346,9 @@ describe('D1 administrator navigation groups', () => {
     topics: ADMIN_GROUPS.content,
     toolObservabilityBuckets: ADMIN_GROUPS.operations,
     userFeedback: ADMIN_GROUPS.operations,
+    wechatAuthorizationCodes: ADMIN_GROUPS.identity,
+    wechatLoginScenes: ADMIN_GROUPS.identity,
+    wechatOAuthStates: ADMIN_GROUPS.identity,
   }
 
   it('assigns every core and plugin collection to its frozen domain', () => {

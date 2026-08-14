@@ -72,6 +72,12 @@ export interface Config {
     adminMfaCredentials: AdminMfaCredential;
     adminInvitations: AdminInvitation;
     customers: Customer;
+    customerIdentities: CustomerIdentity;
+    consentRecords: ConsentRecord;
+    customerRegistrationIntents: CustomerRegistrationIntent;
+    wechatOAuthStates: WechatOAuthState;
+    wechatAuthorizationCodes: WechatAuthorizationCode;
+    wechatLoginScenes: WechatLoginScene;
     smsChallenges: SmsChallenge;
     smsRateLimits: SmsRateLimit;
     customerSessions: CustomerSession;
@@ -143,6 +149,12 @@ export interface Config {
     adminMfaCredentials: AdminMfaCredentialsSelect<false> | AdminMfaCredentialsSelect<true>;
     adminInvitations: AdminInvitationsSelect<false> | AdminInvitationsSelect<true>;
     customers: CustomersSelect<false> | CustomersSelect<true>;
+    customerIdentities: CustomerIdentitiesSelect<false> | CustomerIdentitiesSelect<true>;
+    consentRecords: ConsentRecordsSelect<false> | ConsentRecordsSelect<true>;
+    customerRegistrationIntents: CustomerRegistrationIntentsSelect<false> | CustomerRegistrationIntentsSelect<true>;
+    wechatOAuthStates: WechatOAuthStatesSelect<false> | WechatOAuthStatesSelect<true>;
+    wechatAuthorizationCodes: WechatAuthorizationCodesSelect<false> | WechatAuthorizationCodesSelect<true>;
+    wechatLoginScenes: WechatLoginScenesSelect<false> | WechatLoginScenesSelect<true>;
     smsChallenges: SmsChallengesSelect<false> | SmsChallengesSelect<true>;
     smsRateLimits: SmsRateLimitsSelect<false> | SmsRateLimitsSelect<true>;
     customerSessions: CustomerSessionsSelect<false> | CustomerSessionsSelect<true>;
@@ -335,11 +347,141 @@ export interface Customer {
   id: number;
   phone: string;
   phoneMasked: string;
+  accountType?: ('registered' | 'legacy_unknown') | null;
+  registrationSource?: ('phone' | 'wechat_oauth' | 'wechat_qrcode' | 'legacy_unknown') | null;
+  defaultCustomerProfileType?: ('individual' | 'organization') | null;
+  inviteCode?: string | null;
+  invitedByCustomer?: (number | null) | Customer;
+  identityRiskCooldownStartedAt?: string | null;
   status: 'active' | 'disabled' | 'deletion_requested';
   deletionRequestedAt?: string | null;
   updatedAt: string;
   createdAt: string;
   collection: 'customers';
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "customerIdentities".
+ */
+export interface CustomerIdentity {
+  id: number;
+  customer: number | Customer;
+  provider: 'phone' | 'wechat';
+  providerInstanceId: string;
+  identifierHash: string;
+  identifierEncrypted: string;
+  /**
+   * 预留字段；D9-A-1 不读取、不写入、不用于账号合并。
+   */
+  unionid?: string | null;
+  status: 'active' | 'unbound';
+  verifiedAt: string;
+  boundAt: string;
+  unboundAt?: string | null;
+  lastUsedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "consentRecords".
+ */
+export interface ConsentRecord {
+  id: number;
+  customer: number | Customer;
+  consentType:
+    | 'service_terms'
+    | 'privacy_policy'
+    | 'sensitive_personal_information'
+    | 'wechat_profile'
+    | 'commercial_sms'
+    | 'automatic_renewal'
+    | 'invitation_attribution'
+    | 'device_identifier_notice';
+  documentVersion: string;
+  documentHash: string;
+  acceptedAt: string;
+  revokedAt?: string | null;
+  source: 'phone_registration' | 'wechat_oauth_registration' | 'wechat_qrcode_registration';
+  ipMasked: string;
+  userAgentSummary: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "customerRegistrationIntents".
+ */
+export interface CustomerRegistrationIntent {
+  id: number;
+  tokenHash: string;
+  provider: 'phone' | 'wechat';
+  providerInstanceId: string;
+  identifierHash: string;
+  identifierEncrypted: string;
+  phoneMasked?: string | null;
+  source: 'phone' | 'wechat_oauth' | 'wechat_qrcode';
+  deviceHash: string;
+  ipHash: string;
+  expiresAt: string;
+  consumedAt?: string | null;
+  claimedCustomer?: (number | null) | Customer;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "wechatOAuthStates".
+ */
+export interface WechatOAuthState {
+  id: number;
+  stateHash: string;
+  browserSessionHash: string;
+  providerInstanceId: string;
+  purpose: 'login' | 'bind';
+  bindingCustomer?: (number | null) | Customer;
+  expiresAt: string;
+  consumedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "wechatAuthorizationCodes".
+ */
+export interface WechatAuthorizationCode {
+  id: number;
+  codeHash: string;
+  processedAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "wechatLoginScenes".
+ */
+export interface WechatLoginScene {
+  id: number;
+  sceneHash: string;
+  browserSessionHash: string;
+  providerInstanceId: string;
+  purpose: 'login' | 'bind';
+  bindingCustomer?: (number | null) | Customer;
+  status: 'created' | 'scanned' | 'confirmed' | 'consumed' | 'rejected' | 'expired';
+  deviceSummary: string;
+  identifierHash?: string | null;
+  identifierEncrypted?: string | null;
+  confirmationTokenHash?: string | null;
+  providerTicketHash?: string | null;
+  expiresAt: string;
+  scannedAt?: string | null;
+  confirmedAt?: string | null;
+  consumedAt?: string | null;
+  rejectedAt?: string | null;
+  lastPolledAt?: string | null;
+  pollCount: number;
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -1311,6 +1453,8 @@ export interface NameserverChange {
  */
 export interface ManualReview {
   id: number;
+  customer?: (number | null) | Customer;
+  customerIdentity?: (number | null) | CustomerIdentity;
   order?: (number | null) | Order;
   realnameTemplate?: (number | null) | RealnameTemplate;
   domainAsset?: (number | null) | DomainAsset;
@@ -1932,6 +2076,30 @@ export interface PayloadLockedDocument {
         value: number | Customer;
       } | null)
     | ({
+        relationTo: 'customerIdentities';
+        value: number | CustomerIdentity;
+      } | null)
+    | ({
+        relationTo: 'consentRecords';
+        value: number | ConsentRecord;
+      } | null)
+    | ({
+        relationTo: 'customerRegistrationIntents';
+        value: number | CustomerRegistrationIntent;
+      } | null)
+    | ({
+        relationTo: 'wechatOAuthStates';
+        value: number | WechatOAuthState;
+      } | null)
+    | ({
+        relationTo: 'wechatAuthorizationCodes';
+        value: number | WechatAuthorizationCode;
+      } | null)
+    | ({
+        relationTo: 'wechatLoginScenes';
+        value: number | WechatLoginScene;
+      } | null)
+    | ({
         relationTo: 'smsChallenges';
         value: number | SmsChallenge;
       } | null)
@@ -2216,8 +2384,121 @@ export interface AdminInvitationsSelect<T extends boolean = true> {
 export interface CustomersSelect<T extends boolean = true> {
   phone?: T;
   phoneMasked?: T;
+  accountType?: T;
+  registrationSource?: T;
+  defaultCustomerProfileType?: T;
+  inviteCode?: T;
+  invitedByCustomer?: T;
+  identityRiskCooldownStartedAt?: T;
   status?: T;
   deletionRequestedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "customerIdentities_select".
+ */
+export interface CustomerIdentitiesSelect<T extends boolean = true> {
+  customer?: T;
+  provider?: T;
+  providerInstanceId?: T;
+  identifierHash?: T;
+  identifierEncrypted?: T;
+  unionid?: T;
+  status?: T;
+  verifiedAt?: T;
+  boundAt?: T;
+  unboundAt?: T;
+  lastUsedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "consentRecords_select".
+ */
+export interface ConsentRecordsSelect<T extends boolean = true> {
+  customer?: T;
+  consentType?: T;
+  documentVersion?: T;
+  documentHash?: T;
+  acceptedAt?: T;
+  revokedAt?: T;
+  source?: T;
+  ipMasked?: T;
+  userAgentSummary?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "customerRegistrationIntents_select".
+ */
+export interface CustomerRegistrationIntentsSelect<T extends boolean = true> {
+  tokenHash?: T;
+  provider?: T;
+  providerInstanceId?: T;
+  identifierHash?: T;
+  identifierEncrypted?: T;
+  phoneMasked?: T;
+  source?: T;
+  deviceHash?: T;
+  ipHash?: T;
+  expiresAt?: T;
+  consumedAt?: T;
+  claimedCustomer?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "wechatOAuthStates_select".
+ */
+export interface WechatOAuthStatesSelect<T extends boolean = true> {
+  stateHash?: T;
+  browserSessionHash?: T;
+  providerInstanceId?: T;
+  purpose?: T;
+  bindingCustomer?: T;
+  expiresAt?: T;
+  consumedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "wechatAuthorizationCodes_select".
+ */
+export interface WechatAuthorizationCodesSelect<T extends boolean = true> {
+  codeHash?: T;
+  processedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "wechatLoginScenes_select".
+ */
+export interface WechatLoginScenesSelect<T extends boolean = true> {
+  sceneHash?: T;
+  browserSessionHash?: T;
+  providerInstanceId?: T;
+  purpose?: T;
+  bindingCustomer?: T;
+  status?: T;
+  deviceSummary?: T;
+  identifierHash?: T;
+  identifierEncrypted?: T;
+  confirmationTokenHash?: T;
+  providerTicketHash?: T;
+  expiresAt?: T;
+  scannedAt?: T;
+  confirmedAt?: T;
+  consumedAt?: T;
+  rejectedAt?: T;
+  lastPolledAt?: T;
+  pollCount?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -2976,6 +3257,8 @@ export interface NameserverChangesSelect<T extends boolean = true> {
  * via the `definition` "manualReviews_select".
  */
 export interface ManualReviewsSelect<T extends boolean = true> {
+  customer?: T;
+  customerIdentity?: T;
   order?: T;
   realnameTemplate?: T;
   domainAsset?: T;

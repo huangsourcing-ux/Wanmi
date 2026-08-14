@@ -5,6 +5,8 @@ import {
   realnameDocumentFixturePhone,
 } from './realname-document-fixture'
 
+const captchaVerifyParam = 'wanmi-captcha-fixture-pass'
+
 function cookiePair(setCookie: string): string {
   return setCookie.split(';', 1)[0]!
 }
@@ -16,7 +18,7 @@ test('private identity documents stay encrypted and use audited short-lived acce
   const tracePrefix = 'e2e-d4-private-document'
   const deviceId = `${tracePrefix}-device`
   const otp = await request.post('/api/v1/auth/sms/request', {
-    data: { deviceId, phone: realnameDocumentFixturePhone },
+    data: { captchaVerifyParam, deviceId, phone: realnameDocumentFixturePhone },
   })
   const challenge = await otp.json()
   const verified = await request.post('/api/v1/auth/sms/verify', {

@@ -63,7 +63,7 @@ readyz 不通过时第 5 步以 18 退出，执行器不会调用第 6～8 步�
 
 ### 生产持久配置与联调覆写边界
 
-生产重建必须设置 `WANMI_RUNTIME_PROFILE=production`，并通过 `WANMI_RUNTIME_ENV_FILE` 指向仓库外、root-owned `0600` 的持久环境文件。工具在创建网络或容器之前读取并完整校验该文件；缺失项只按变量名一次列出并以环境错误退出。生产稳态必需项包括基础应用配置、12 个真实能力闸、五项 provider 模式，以及已批准的阿里云基础凭据、短信三项配置、私有 OSS、西部数码和微信配置。能力闸可以且默认应为 `false`；“闸关闭”不等于可以删除稳态 provider 配置。
+生产重建必须设置 `WANMI_RUNTIME_PROFILE=production`，并通过 `WANMI_RUNTIME_ENV_FILE` 指向仓库外、root-owned `0600` 的持久环境文件。工具在创建网络或容器之前读取并完整校验该文件；缺失项只按变量名一次列出并以环境错误退出。生产稳态必需项包括基础应用配置、13 个真实能力闸、七项 provider 模式，以及已批准的阿里云基础凭据、短信签名与三类模板、验证码 2.0 场景、私有 OSS、西部数码、微信支付和微信服务号配置。验证码 2.0 与微信服务号模式在生产 profile 下必须为 `live`，不得使用 fixture；能力闸可以且默认应为 `false`，“闸关闭”不等于可以删除稳态 provider 配置。
 
 一次性真实联调只能另建仓库外、root-owned `0600` 的 `WANMI_RUNTIME_OVERRIDE_FILE`。当前覆写白名单只有 `ALIYUN_SMS_MODE`、`ALLOW_REAL_PROVIDER_WRITES`、`ALLOW_REAL_ALIYUN_SMS_SENDS` 和 `WANMI_CONTRACT_TEST_PHONE`；任何凭据、provider 标识、Bucket 或 PEM 路径都不允许进入覆写文件。联调收尾只删除覆写文件并清除 `WANMI_RUNTIME_OVERRIDE_FILE` 指针，不编辑或删除持久文件中的稳态值。
 

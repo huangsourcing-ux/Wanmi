@@ -12,9 +12,14 @@ export async function POST(request: Request) {
     const payload = await getPayload({ config })
     const req = await createLocalReq({ req: { headers: request.headers } }, payload)
     const result = await verifyOtp(req, input, request.headers)
-    return successResponse({ customer: result.customer, expiresAt: result.expiresAt }, traceId, {
-      headers: { 'set-cookie': customerCookie(result.token, result.expiresAt) },
-    })
+    if (result.kind === 'registration_required') {
+      return successResponse(result, traceId)
+    }
+    return successResponse(
+      { customer: result.customer, expiresAt: result.expiresAt, kind: result.kind },
+      traceId,
+      { headers: { 'set-cookie': customerCookie(result.token, result.expiresAt) } },
+    )
   } catch (error) {
     return problemResponse(error, traceId)
   }

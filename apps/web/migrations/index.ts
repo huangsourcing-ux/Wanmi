@@ -31,6 +31,7 @@ import * as migration_20260809_053302_d6_active_renewals from './20260809_053302
 import * as migration_20260810_021337_d7_provider_write_budgets from './20260810_021337_d7_provider_write_budgets'
 import * as migration_20260810_040217_d7_app_master_key from './20260810_040217_d7_app_master_key'
 import * as migration_20260813_113927_d7_worker_heartbeat from './20260813_113927_d7_worker_heartbeat'
+import * as migration_20260814_103904_d9a_identity_registration from './20260814_103904_d9a_identity_registration'
 
 export const migrations = [
   {
@@ -197,5 +198,10 @@ export const migrations = [
     up: migration_20260813_113927_d7_worker_heartbeat.up,
     down: migration_20260813_113927_d7_worker_heartbeat.down,
     name: '20260813_113927_d7_worker_heartbeat',
+  },
+  {
+    up: migration_20260814_103904_d9a_identity_registration.up,
+    down: migration_20260814_103904_d9a_identity_registration.down,
+    name: '20260814_103904_d9a_identity_registration',
   },
 ]

@@ -150,6 +150,34 @@ export const Customers: CollectionConfig = {
     },
     { name: 'phoneMasked', type: 'text', required: true },
     {
+      name: 'accountType',
+      type: 'select',
+      defaultValue: 'legacy_unknown',
+      index: true,
+      options: ['registered', 'legacy_unknown'],
+    },
+    {
+      name: 'registrationSource',
+      type: 'select',
+      defaultValue: 'legacy_unknown',
+      index: true,
+      options: ['phone', 'wechat_oauth', 'wechat_qrcode', 'legacy_unknown'],
+    },
+    {
+      name: 'defaultCustomerProfileType',
+      type: 'select',
+      index: true,
+      options: ['individual', 'organization'],
+    },
+    { name: 'inviteCode', type: 'text', index: true, unique: true },
+    {
+      name: 'invitedByCustomer',
+      type: 'relationship',
+      relationTo: 'customers',
+      index: true,
+    },
+    { name: 'identityRiskCooldownStartedAt', type: 'date', index: true },
+    {
       name: 'status',
       type: 'select',
       defaultValue: 'active',
@@ -157,6 +185,214 @@ export const Customers: CollectionConfig = {
       required: true,
     },
     { name: 'deletionRequestedAt', type: 'date', index: true },
+  ],
+}
+
+export const CustomerIdentities: CollectionConfig = {
+  slug: 'customerIdentities',
+  access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
+  admin: { group: ADMIN_GROUPS.identity, hidden: systemAdminHidden },
+  indexes: [
+    {
+      fields: ['provider', 'providerInstanceId', 'identifierHash'],
+      unique: true,
+    },
+  ],
+  fields: [
+    {
+      name: 'customer',
+      type: 'relationship',
+      relationTo: 'customers',
+      index: true,
+      required: true,
+    },
+    {
+      name: 'provider',
+      type: 'select',
+      index: true,
+      options: ['phone', 'wechat'],
+      required: true,
+    },
+    { name: 'providerInstanceId', type: 'text', index: true, required: true },
+    {
+      name: 'identifierHash',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
+      required: true,
+    },
+    {
+      name: 'identifierEncrypted',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      required: true,
+    },
+    {
+      name: 'unionid',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      admin: { description: '预留字段；D9-A-1 不读取、不写入、不用于账号合并。' },
+    },
+    {
+      name: 'status',
+      type: 'select',
+      defaultValue: 'active',
+      index: true,
+      options: ['active', 'unbound'],
+      required: true,
+    },
+    { name: 'verifiedAt', type: 'date', index: true, required: true },
+    { name: 'boundAt', type: 'date', index: true, required: true },
+    { name: 'unboundAt', type: 'date', index: true },
+    { name: 'lastUsedAt', type: 'date', index: true },
+  ],
+}
+
+export const ConsentRecords: CollectionConfig = {
+  slug: 'consentRecords',
+  access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
+  admin: { group: ADMIN_GROUPS.identity, hidden: systemAdminHidden },
+  indexes: [{ fields: ['customer', 'consentType', 'acceptedAt'] }],
+  fields: [
+    {
+      name: 'customer',
+      type: 'relationship',
+      relationTo: 'customers',
+      index: true,
+      required: true,
+    },
+    {
+      name: 'consentType',
+      type: 'select',
+      index: true,
+      options: [
+        'service_terms',
+        'privacy_policy',
+        'sensitive_personal_information',
+        'wechat_profile',
+        'commercial_sms',
+        'automatic_renewal',
+        'invitation_attribution',
+        'device_identifier_notice',
+      ],
+      required: true,
+    },
+    { name: 'documentVersion', type: 'text', required: true },
+    { name: 'documentHash', type: 'text', required: true },
+    { name: 'acceptedAt', type: 'date', index: true, required: true },
+    { name: 'revokedAt', type: 'date', index: true },
+    {
+      name: 'source',
+      type: 'select',
+      options: ['phone_registration', 'wechat_oauth_registration', 'wechat_qrcode_registration'],
+      required: true,
+    },
+    { name: 'ipMasked', type: 'text', required: true },
+    { name: 'userAgentSummary', type: 'text', maxLength: 160, required: true },
+  ],
+}
+
+export const CustomerRegistrationIntents: CollectionConfig = {
+  slug: 'customerRegistrationIntents',
+  access: { create: deny, delete: deny, read: deny, update: deny },
+  admin: { group: ADMIN_GROUPS.identity, hidden: true },
+  indexes: [{ fields: ['provider', 'providerInstanceId', 'identifierHash'] }],
+  fields: [
+    { name: 'tokenHash', type: 'text', index: true, required: true, unique: true },
+    { name: 'provider', type: 'select', options: ['phone', 'wechat'], required: true },
+    { name: 'providerInstanceId', type: 'text', required: true },
+    { name: 'identifierHash', type: 'text', access: { read: sensitiveFieldRead }, required: true },
+    {
+      name: 'identifierEncrypted',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      required: true,
+    },
+    { name: 'phoneMasked', type: 'text' },
+    {
+      name: 'source',
+      type: 'select',
+      options: ['phone', 'wechat_oauth', 'wechat_qrcode'],
+      required: true,
+    },
+    { name: 'deviceHash', type: 'text', access: { read: sensitiveFieldRead }, required: true },
+    { name: 'ipHash', type: 'text', access: { read: sensitiveFieldRead }, required: true },
+    { name: 'expiresAt', type: 'date', index: true, required: true },
+    { name: 'consumedAt', type: 'date', index: true },
+    {
+      name: 'claimedCustomer',
+      type: 'relationship',
+      relationTo: 'customers',
+      index: true,
+    },
+  ],
+}
+
+export const WechatOAuthStates: CollectionConfig = {
+  slug: 'wechatOAuthStates',
+  access: { create: deny, delete: deny, read: deny, update: deny },
+  admin: { group: ADMIN_GROUPS.identity, hidden: true },
+  fields: [
+    { name: 'stateHash', type: 'text', index: true, required: true, unique: true },
+    { name: 'browserSessionHash', type: 'text', required: true },
+    { name: 'providerInstanceId', type: 'text', required: true },
+    { name: 'purpose', type: 'select', options: ['login', 'bind'], required: true },
+    {
+      name: 'bindingCustomer',
+      type: 'relationship',
+      relationTo: 'customers',
+      index: true,
+    },
+    { name: 'expiresAt', type: 'date', index: true, required: true },
+    { name: 'consumedAt', type: 'date', index: true },
+  ],
+}
+
+export const WechatAuthorizationCodes: CollectionConfig = {
+  slug: 'wechatAuthorizationCodes',
+  access: { create: deny, delete: deny, read: deny, update: deny },
+  admin: { group: ADMIN_GROUPS.identity, hidden: true },
+  fields: [
+    { name: 'codeHash', type: 'text', index: true, required: true, unique: true },
+    { name: 'processedAt', type: 'date', index: true, required: true },
+  ],
+}
+
+export const WechatLoginScenes: CollectionConfig = {
+  slug: 'wechatLoginScenes',
+  access: { create: deny, delete: deny, read: deny, update: deny },
+  admin: { group: ADMIN_GROUPS.identity, hidden: true },
+  fields: [
+    { name: 'sceneHash', type: 'text', index: true, required: true, unique: true },
+    { name: 'browserSessionHash', type: 'text', required: true },
+    { name: 'providerInstanceId', type: 'text', required: true },
+    { name: 'purpose', type: 'select', options: ['login', 'bind'], required: true },
+    {
+      name: 'bindingCustomer',
+      type: 'relationship',
+      relationTo: 'customers',
+      index: true,
+    },
+    {
+      name: 'status',
+      type: 'select',
+      defaultValue: 'created',
+      index: true,
+      options: ['created', 'scanned', 'confirmed', 'consumed', 'rejected', 'expired'],
+      required: true,
+    },
+    { name: 'deviceSummary', type: 'text', maxLength: 160, required: true },
+    { name: 'identifierHash', type: 'text', access: { read: sensitiveFieldRead } },
+    { name: 'identifierEncrypted', type: 'text', access: { read: sensitiveFieldRead } },
+    { name: 'confirmationTokenHash', type: 'text', index: true, unique: true },
+    { name: 'providerTicketHash', type: 'text', access: { read: sensitiveFieldRead } },
+    { name: 'expiresAt', type: 'date', index: true, required: true },
+    { name: 'scannedAt', type: 'date', index: true },
+    { name: 'confirmedAt', type: 'date', index: true },
+    { name: 'consumedAt', type: 'date', index: true },
+    { name: 'rejectedAt', type: 'date', index: true },
+    { name: 'lastPolledAt', type: 'date' },
+    { name: 'pollCount', type: 'number', defaultValue: 0, min: 0, required: true },
   ],
 }
 

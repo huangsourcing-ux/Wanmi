@@ -721,7 +721,12 @@ export class CommerceJourneyFixture {
     }
 
     for (const customerId of this.customerIds) {
-      for (const collection of ['customerSessions', 'customerSecurityEvents'] as const) {
+      for (const collection of [
+        'consentRecords',
+        'customerIdentities',
+        'customerSessions',
+        'customerSecurityEvents',
+      ] as const) {
         await this.payload.delete({
           collection,
           overrideAccess: true,

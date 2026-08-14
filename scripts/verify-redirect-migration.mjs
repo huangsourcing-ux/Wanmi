@@ -5,6 +5,12 @@ if (!/^wanmi_redirect_migration_[0-9]+_[0-9]+$/.test(databaseName)) {
   throw new Error(`Unexpected migration verification database name: ${databaseName}`)
 }
 
+const expectedPhoneIdentityInstance =
+  process.env.CUSTOMER_PHONE_IDENTITY_INSTANCE_ID || 'wanmi-sms-cn'
+if (!/^[A-Za-z0-9._:-]{1,128}$/u.test(expectedPhoneIdentityInstance)) {
+  throw new Error('Unexpected CUSTOMER_PHONE_IDENTITY_INSTANCE_ID for migration verification')
+}
+
 const databaseUrl = `postgresql://wanmi:wanmi_local_only@127.0.0.1:55432/${databaseName}`
 const run = (command, args, options = {}) =>
   execFileSync(command, args, {
@@ -1603,6 +1609,76 @@ function verifyProviderWriteBudgetSchema(stage) {
   }
 }
 
+function verifyD9AIdentityRegistrationSchema(stage) {
+  const shape = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (COUNT(*) FILTER (WHERE table_name = 'customer_identities' AND column_name IN (
+           'customer_id', 'provider', 'provider_instance_id', 'identifier_hash',
+           'identifier_encrypted', 'unionid', 'status', 'verified_at', 'bound_at',
+           'unbound_at', 'last_used_at'
+         )))::text || ':' ||
+         (COUNT(*) FILTER (WHERE table_name = 'consent_records' AND column_name IN (
+           'customer_id', 'consent_type', 'document_version', 'document_hash',
+           'accepted_at', 'revoked_at', 'source', 'ip_masked', 'user_agent_summary'
+         )))::text || ':' ||
+         (COUNT(*) FILTER (WHERE table_name = 'customers' AND column_name IN (
+           'account_type', 'registration_source', 'default_customer_profile_type',
+           'invite_code', 'invited_by_customer_id', 'identity_risk_cooldown_started_at'
+         )))::text || ':' ||
+         (COUNT(*) FILTER (WHERE table_name = 'manual_reviews' AND column_name IN (
+           'customer_id', 'customer_identity_id'
+         )))::text
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name IN ('customer_identities', 'consent_records', 'customers', 'manual_reviews')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (shape !== '11:9:6:2') {
+    throw new Error(`D9-A-1 identity/consent columns invalid after ${stage}: ${shape}`)
+  }
+
+  const tablesAndIndex = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (to_regclass('public.customer_registration_intents') IS NOT NULL)::text || ':' ||
+         (to_regclass('public.wechat_o_auth_states') IS NOT NULL)::text || ':' ||
+         (to_regclass('public.wechat_authorization_codes') IS NOT NULL)::text || ':' ||
+         (to_regclass('public.wechat_login_scenes') IS NOT NULL)::text || ':' ||
+         (EXISTS (
+           SELECT 1 FROM pg_indexes
+           WHERE schemaname = 'public' AND tablename = 'customer_identities'
+             AND indexname = 'provider_providerInstanceId_identifierHash_idx'
+             AND indexdef ILIKE 'CREATE UNIQUE INDEX%'
+             AND indexdef LIKE '%(provider, provider_instance_id, identifier_hash)%'
+         ))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (tablesAndIndex !== 'true:true:true:true:true') {
+    throw new Error(
+      `D9-A-1 state tables or identity unique index invalid after ${stage}: ${tablesAndIndex}`,
+    )
+  }
+}
+
 let created = false
 try {
   postgres(['createdb', '--username', 'wanmi', databaseName])
@@ -1631,6 +1707,7 @@ try {
   verifyWechatRefundReconciliationSchema('empty-database migration')
   verifyDomainAssetOperationsSchema('empty-database migration')
   verifyProviderWriteBudgetSchema('empty-database migration')
+  verifyD9AIdentityRegistrationSchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -3475,8 +3552,131 @@ try {
     throw new Error(`D7-06 legacy mock-KMS backfill was unsafe: ${appMasterKeyBackfill}`)
   }
 
+  // Earlier migration fixtures predate D4's phone contract and intentionally use labels
+  // instead of phone numbers. Normalize only those isolated verification rows before
+  // exercising the D9 historical-account backfill; the dedicated row inserted below
+  // remains the evidence for a real pre-D9 E.164 customer.
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `WITH invalid AS (
+       SELECT id, row_number() OVER (ORDER BY id) AS position
+       FROM customers
+       WHERE phone !~ '^\\+861[3-9][0-9]{9}$'
+     )
+     UPDATE customers c
+     SET
+       phone = '+86188' || lpad(invalid.position::text, 8, '0'),
+       phone_masked = '+86188****' || right(lpad(invalid.position::text, 8, '0'), 4),
+       updated_at = NOW()
+     FROM invalid
+     WHERE c.id = invalid.id;`,
+  ])
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 117
+     WHERE name = '20260814_103904_d9a_identity_registration';`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const d9aAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (to_regclass('public.customer_identities') IS NULL)::text || ':' ||
+         (to_regclass('public.consent_records') IS NULL)::text || ':' ||
+         (to_regclass('public.customer_registration_intents') IS NULL)::text || ':' ||
+         (to_regclass('public.wechat_o_auth_states') IS NULL)::text || ':' ||
+         (to_regclass('public.wechat_authorization_codes') IS NULL)::text || ':' ||
+         (to_regclass('public.wechat_login_scenes') IS NULL)::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'customers'
+             AND column_name IN (
+               'account_type', 'registration_source', 'default_customer_profile_type',
+               'invite_code', 'invited_by_customer_id', 'identity_risk_cooldown_started_at'
+             )
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'manual_reviews'
+             AND column_name IN ('customer_id', 'customer_identity_id')
+         ))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (d9aAfterDown !== 'true:true:true:true:true:true:true:true') {
+    throw new Error(`D9-A-1 migration down was incomplete: ${d9aAfterDown}`)
+  }
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `INSERT INTO customers (phone, phone_masked, status, updated_at, created_at)
+     VALUES ('+8613900000000', '+86139****0000', 'active', NOW(), NOW());`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyD9AIdentityRegistrationSchema('historical backfill and down/up round trip')
+  const historicalIdentity = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         c.account_type::text || ':' || c.registration_source::text || ':' ||
+         (length(c.invite_code) = 12)::text || ':' ||
+         (COUNT(i.id) = 1)::text || ':' ||
+         (MIN(i.provider::text) = 'phone')::text || ':' ||
+         (MIN(i.provider_instance_id) = '${expectedPhoneIdentityInstance}')::text || ':' ||
+         (MIN(length(i.identifier_hash)) = 64)::text || ':' ||
+         (MIN(i.identifier_hash) <> c.phone)::text || ':' ||
+         (MIN(i.identifier_encrypted) NOT LIKE '%' || c.phone || '%')::text || ':' ||
+         (COUNT(cr.id) = 0)::text
+       FROM customers c
+       LEFT JOIN customer_identities i ON i.customer_id = c.id
+       LEFT JOIN consent_records cr ON cr.customer_id = c.id
+       WHERE c.phone = '+8613900000000'
+       GROUP BY c.id`,
+    ],
+    { capture: true },
+  ).trim()
+  if (
+    historicalIdentity !== 'legacy_unknown:legacy_unknown:true:true:true:true:true:true:true:true'
+  ) {
+    throw new Error(`D9-A-1 historical customer backfill was unsafe: ${historicalIdentity}`)
+  }
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, the D6-02 commerce-fulfillment migration, the D6-03 West Digital balance-monitoring workflow migration, the D6-04 domain-asset operations migration, the D6-05 active-renewal migration, the D7-05 provider write budget historical backfill/down-up round trips, and the D7-06 application master-key historical invalidation/down-up round trip.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, the D6-02 commerce-fulfillment migration, the D6-03 West Digital balance-monitoring workflow migration, the D6-04 domain-asset operations migration, the D6-05 active-renewal migration, the D7-05 provider write budget historical backfill/down-up round trips, the D7-06 application master-key historical invalidation/down-up round trip, and the D9-A-1 identity/consent historical backfill/down-up round trip without fabricated consent.\n',
   )
 } finally {
   if (created) {

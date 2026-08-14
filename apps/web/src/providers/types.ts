@@ -83,6 +83,13 @@ export interface SmsProvider extends HealthAwareProvider {
       providerMessageId: string
     }>
   >
+  sendIdentityChanged?(input: { phone: string; traceId: string }): Promise<
+    ProviderResult<{
+      accepted: true
+      deliveryStatus: 'accepted' | 'delivered'
+      providerMessageId: string
+    }>
+  >
   queryReceipt(input: {
     phone: string
     providerMessageId: string

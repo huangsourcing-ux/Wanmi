@@ -37,6 +37,7 @@
     "worker": "cross-env NODE_OPTIONS=--no-deprecation payload jobs:run --cron '* * * * *' --all-queues --limit 1 --handle-schedules"
   },
   "dependencies": {
+    "@alicloud/captcha20230305": "1.1.4",
     "@alicloud/dysmsapi20170525": "4.6.0",
     "@alicloud/openapi-core": "1.0.8",
     "@payloadcms/db-postgres": "3.86.0",
