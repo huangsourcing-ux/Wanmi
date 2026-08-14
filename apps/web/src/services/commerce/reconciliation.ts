@@ -208,6 +208,7 @@ export async function reconcileWestdigitalPrepaidBalance(
     summary: {
       closingAvailableMinor: input.statement.closingAvailableMinor,
       closingFrozenMinor: input.statement.closingFrozenMinor,
+      correctionApplied: false,
       creditsMinor: input.statement.creditsMinor,
       debitCount: input.statement.debits.length,
       debitsMinor,

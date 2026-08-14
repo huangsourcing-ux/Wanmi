@@ -54,6 +54,18 @@ assert(source.includes('waitForStableContainer(names.worker'))
 assert(source.includes('loadRuntimeEnvironmentFiles(process.env, repositoryRoot)'))
 assert(source.includes('...TRANSIENT_OVERRIDE_KEYS'))
 assert(!source.includes('docker compose down'))
+assert(source.includes("key: 'WECHATPAY_MERCHANT_PRIVATE_KEY_PATH'"))
+assert(source.includes("key: 'WECHATPAY_PLATFORM_PUBLIC_KEY_PATH'"))
+assert(source.includes("target: '/tmp/wanmi-wechatpay-merchant-private.pem'"))
+assert(source.includes("target: '/tmp/wanmi-wechatpay-platform-public.pem'"))
+assert(source.includes('type=bind,source=${source},target=${target},readonly'))
+assert.equal(
+  source.match(/\.\.\.runtimeFileArguments\(\)/gu)?.length,
+  5,
+  'Wechat Pay PEM mounts must cover migrations, Web, both Workers, and recovery',
+)
+assert(source.includes('(statistics.mode & 0o777) !== 0o600'))
+assert(source.includes('statistics.uid !== 1001'))
 
 const rebuildScript = fileURLToPath(new URL('./rebuild.mjs', import.meta.url))
 const validationEnvironment = {
@@ -81,6 +93,17 @@ for (const [name, value] of [
   assert(!result.stderr.includes(value), `${name} invalid value leaked to stderr`)
 }
 
+for (const name of ['WECHATPAY_MERCHANT_PRIVATE_KEY_PATH', 'WECHATPAY_PLATFORM_PUBLIC_KEY_PATH']) {
+  const invalidPath = '/dev/null'
+  const result = spawnSync(process.execPath, [rebuildScript], {
+    encoding: 'utf8',
+    env: { ...process.env, ...validationEnvironment, [name]: invalidPath },
+  })
+  assert.equal(result.status, 11, `${name} invalid file did not fail with environment exit code`)
+  assert.match(result.stderr, new RegExp(`Runtime file missing or invalid: ${name}`))
+  assert(!result.stderr.includes(invalidPath), `${name} invalid path leaked to stderr`)
+}
+
 process.stdout.write(
-  'Verified fixed rebuild order, startup configuration fail-closed behavior, bounded same-image Workers, readyz fail-closed behavior, and release-policy reuse.\n',
+  'Verified fixed rebuild order, startup configuration fail-closed behavior, secure Wechat Pay PEM mounts, bounded same-image Workers, readyz fail-closed behavior, and release-policy reuse.\n',
 )

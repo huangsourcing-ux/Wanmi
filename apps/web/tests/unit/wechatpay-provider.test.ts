@@ -1,3 +1,8 @@
+import { generateKeyPairSync } from 'node:crypto'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { resetEnvForTests } from '@/lib/env'
@@ -378,6 +383,70 @@ describe('Wechat Pay API v3 fixture adapter', () => {
       ok: false,
     })
     expect(createRefund).not.toHaveBeenCalled()
+  })
+
+  it('constructs the live read and notification adapter with write gates closed while writes fail closed', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'wanmi-wechatpay-closed-gates-'))
+    try {
+      const merchant = generateKeyPairSync('rsa', { modulusLength: 2048 })
+      const platform = generateKeyPairSync('rsa', { modulusLength: 2048 })
+      const merchantPrivateKeyPath = join(directory, 'merchant-private.pem')
+      const platformPublicKeyPath = join(directory, 'platform-public.pem')
+      writeFileSync(
+        merchantPrivateKeyPath,
+        merchant.privateKey.export({ format: 'pem', type: 'pkcs8' }),
+        { mode: 0o600 },
+      )
+      writeFileSync(
+        platformPublicKeyPath,
+        platform.publicKey.export({ format: 'pem', type: 'spki' }),
+        { mode: 0o600 },
+      )
+      vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'false')
+      vi.stubEnv('ALLOW_REAL_WECHATPAY', 'false')
+      vi.stubEnv('ALLOW_REAL_WECHATPAY_PAYMENTS', 'false')
+      vi.stubEnv('ALLOW_REAL_WECHATPAY_REFUNDS', 'false')
+      vi.stubEnv('CI', 'false')
+      vi.stubEnv('NODE_ENV', 'production')
+      vi.stubEnv('VITEST', '')
+      vi.stubEnv('WECHATPAY_API_V3_KEY', 'x'.repeat(32))
+      vi.stubEnv('WECHATPAY_APP_ID', 'wx-d7-17-closed-gates')
+      vi.stubEnv('WECHATPAY_MERCHANT_CERTIFICATE_SERIAL', 'D717MERCHANTSERIAL')
+      vi.stubEnv('WECHATPAY_MERCHANT_ID', 'D717MERCHANT')
+      vi.stubEnv('WECHATPAY_MERCHANT_PRIVATE_KEY_PATH', merchantPrivateKeyPath)
+      vi.stubEnv('WECHATPAY_MODE', 'live')
+      vi.stubEnv('WECHATPAY_NOTIFY_URL', 'https://wanmi.net/api/v1/payments/wechat/notify')
+      vi.stubEnv('WECHATPAY_PLATFORM_CERTIFICATE_SERIAL', 'D717PLATFORMSERIAL')
+      vi.stubEnv('WECHATPAY_PLATFORM_PUBLIC_KEY_PATH', platformPublicKeyPath)
+      resetEnvForTests()
+      const request = vi.fn()
+      const provider = createConfiguredWechatPayProvider({
+        liveTransportFactory: () => ({ request }),
+      })
+
+      await expect(
+        provider.createPayment({
+          amountMinor: 1,
+          channel: 'native',
+          description: 'closed-gate regression',
+          expiresAt: '2026-08-08T01:04:00.000Z',
+          merchantOrderNumber: 'WMCLOSEDGATEPAY',
+          traceId: 'trace-closed-gate-payment',
+        }),
+      ).resolves.toMatchObject({ error: { code: 'PROVIDER_WRITE_DISABLED' }, ok: false })
+      await expect(
+        provider.createRefund({
+          amountMinor: 1,
+          merchantOrderNumber: 'WMCLOSEDGATEREFUND',
+          reason: 'closed-gate regression',
+          refundNumber: 'WRCLOSEDGATEREFUND',
+          traceId: 'trace-closed-gate-refund',
+        }),
+      ).resolves.toMatchObject({ error: { code: 'PROVIDER_WRITE_DISABLED' }, ok: false })
+      expect(request).not.toHaveBeenCalled()
+    } finally {
+      rmSync(directory, { force: true, recursive: true })
+    }
   })
 
   it('never constructs a live Wechat Pay runtime transport in tests', () => {
