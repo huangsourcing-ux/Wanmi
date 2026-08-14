@@ -601,6 +601,157 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     expect(rejected.docs[0]?.status).toBe('rejected')
   })
 
+  it('requires QR confirmation before session exchange and rejects terminal scenes', async () => {
+    const openid = randomBytes(24).toString('base64url')
+    const existingPhone = phone()
+    const customer = await payload.create({
+      collection: 'customers',
+      data: { phone: existingPhone, phoneMasked: maskPhone(existingPhone), status: 'active' },
+      overrideAccess: true,
+    })
+    const protectedOpenid = protectedIdentifier(openid)
+    await payload.create({
+      collection: 'customerIdentities',
+      data: {
+        ...protectedOpenid,
+        boundAt: new Date().toISOString(),
+        customer: customer.id,
+        provider: 'wechat',
+        providerInstanceId: identityProviderInstance('wechat'),
+        status: 'active',
+        verifiedAt: new Date().toISOString(),
+      },
+      overrideAccess: true,
+    })
+    const requestHeaders = headers()
+    const sessionCount = () =>
+      payload.count({
+        collection: 'customerSessions',
+        overrideAccess: true,
+        where: { customer: { equals: customer.id } },
+      })
+    const consume = async (scene: string, flowToken: string) =>
+      consumeWechatQr(await request(requestHeaders), {
+        deviceId: `d9a-confirmation-gate-${randomUUID()}`,
+        flowToken,
+        headers: requestHeaders,
+        scene,
+        traceId: `d9a-confirmation-gate-${randomUUID()}`,
+      })
+
+    let confirmationUrl = ''
+    const provider = wechatProvider({ confirmationUrl: (value) => (confirmationUrl = value) })
+    const flowToken = randomBytes(32).toString('base64url')
+    const created = await createWechatQrScene(
+      await request(requestHeaders),
+      {
+        captchaVerifyParam: CAPTCHA_FIXTURE_TOKEN,
+        deviceId: `d9a-confirmation-gate-${randomUUID()}`,
+        flowToken,
+        headers: requestHeaders,
+        purpose: 'login',
+        traceId: `d9a-confirmation-gate-${randomUUID()}`,
+      },
+      { provider },
+    )
+    await handleWechatQrEvent(
+      await request(requestHeaders),
+      { event: 'SCAN', eventKey: created.scene, fromUserName: openid },
+      `d9a-confirmation-gate-scan-${randomUUID()}`,
+      { provider },
+    )
+    await expect(
+      pollWechatQr(await request(requestHeaders), created.scene, flowToken),
+    ).resolves.toMatchObject({ status: 'scanned' })
+
+    const sessionsBefore = await sessionCount()
+    await expect(consume(created.scene, flowToken)).rejects.toMatchObject({
+      code: 'WECHAT_QR_ALREADY_CONSUMED',
+    })
+    await expect(sessionCount()).resolves.toEqual(sessionsBefore)
+
+    const confirmationToken = new URLSearchParams(new URL(confirmationUrl).hash.slice(1)).get(
+      'token',
+    )
+    expect(confirmationToken).toMatch(/^[A-Za-z0-9_-]{43}$/u)
+    await expect(
+      confirmWechatQr(await request(requestHeaders), confirmationToken!),
+    ).resolves.toMatchObject({ status: 'confirmed' })
+    await expect(consume(created.scene, flowToken)).resolves.toMatchObject({
+      customer: { id: customer.id },
+      kind: 'authenticated',
+    })
+    await expect(sessionCount()).resolves.toEqual({ totalDocs: sessionsBefore.totalDocs + 1 })
+
+    const expiredFlowToken = randomBytes(32).toString('base64url')
+    const expiredScene = await createWechatQrScene(
+      await request(requestHeaders),
+      {
+        captchaVerifyParam: CAPTCHA_FIXTURE_TOKEN,
+        deviceId: `d9a-expired-${randomUUID()}`,
+        flowToken: expiredFlowToken,
+        headers: requestHeaders,
+        purpose: 'login',
+        traceId: `d9a-expired-${randomUUID()}`,
+      },
+      { provider },
+    )
+    await handleWechatQrEvent(
+      await request(requestHeaders),
+      { event: 'SCAN', eventKey: expiredScene.scene, fromUserName: openid },
+      `d9a-expired-scan-${randomUUID()}`,
+      { provider },
+    )
+    const expiredRecord = await payload.find({
+      collection: 'wechatLoginScenes',
+      limit: 1,
+      overrideAccess: true,
+      where: { sceneHash: { equals: hmac(expiredScene.scene, getEnv().SESSION_PEPPER) } },
+    })
+    await payload.update({
+      collection: 'wechatLoginScenes',
+      data: { expiresAt: new Date(Date.now() - 1_000).toISOString() },
+      id: expiredRecord.docs[0]!.id,
+      overrideAccess: true,
+    })
+    await expect(
+      pollWechatQr(await request(requestHeaders), expiredScene.scene, expiredFlowToken),
+    ).resolves.toMatchObject({ status: 'expired' })
+    const sessionsAfterConfirmed = await sessionCount()
+    await expect(consume(expiredScene.scene, expiredFlowToken)).rejects.toMatchObject({
+      code: 'WECHAT_QR_ALREADY_CONSUMED',
+    })
+    await expect(sessionCount()).resolves.toEqual(sessionsAfterConfirmed)
+
+    const rejectedFlowToken = randomBytes(32).toString('base64url')
+    const rejectProvider = wechatProvider({ rejectConfirmation: true })
+    const rejectedScene = await createWechatQrScene(
+      await request(requestHeaders),
+      {
+        captchaVerifyParam: CAPTCHA_FIXTURE_TOKEN,
+        deviceId: `d9a-rejected-${randomUUID()}`,
+        flowToken: rejectedFlowToken,
+        headers: requestHeaders,
+        purpose: 'login',
+        traceId: `d9a-rejected-${randomUUID()}`,
+      },
+      { provider: rejectProvider },
+    )
+    await handleWechatQrEvent(
+      await request(requestHeaders),
+      { event: 'SCAN', eventKey: rejectedScene.scene, fromUserName: openid },
+      `d9a-rejected-scan-${randomUUID()}`,
+      { provider: rejectProvider },
+    )
+    await expect(
+      pollWechatQr(await request(requestHeaders), rejectedScene.scene, rejectedFlowToken),
+    ).resolves.toMatchObject({ status: 'rejected' })
+    await expect(consume(rejectedScene.scene, rejectedFlowToken)).rejects.toMatchObject({
+      code: 'WECHAT_QR_ALREADY_CONSUMED',
+    })
+    await expect(sessionCount()).resolves.toEqual(sessionsAfterConfirmed)
+  })
+
   it('atomically refuses the last identity and permits only one concurrent unbind', async () => {
     const customerPhone = phone()
     const customer = await payload.create({
