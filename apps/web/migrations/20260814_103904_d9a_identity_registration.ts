@@ -1,13 +1,32 @@
 import { MigrateUpArgs, MigrateDownArgs, sql } from '@payloadcms/db-postgres'
 import { createCipheriv, createHmac, randomBytes } from 'node:crypto'
 
-function legacyPhone(value: string): string {
-  const compact = value.replace(/[\s-]/gu, '')
-  const normalized = compact.startsWith('+86') ? compact : `+86${compact}`
-  if (!/^\+861[3-9]\d{9}$/u.test(normalized)) {
-    throw new Error('D9-A migration found a customer phone that cannot be normalized to E.164')
+const LEGACY_PHONE_REVIEW_REASON = 'd9a_legacy_phone_normalization_failed'
+
+function foldFullWidthAscii(value: string): string {
+  return Array.from(value, (character) => {
+    const codePoint = character.codePointAt(0)
+    if (codePoint === 0x3000) return ' '
+    if (codePoint !== undefined && codePoint >= 0xff01 && codePoint <= 0xff5e) {
+      return String.fromCodePoint(codePoint - 0xfee0)
+    }
+    return character
+  }).join('')
+}
+
+function legacyPhone(value: string): string | undefined {
+  const compact = foldFullWidthAscii(value).replace(/[\s()\p{Dash_Punctuation}]/gu, '')
+  let nationalNumber = compact
+  if (compact.startsWith('+86')) {
+    nationalNumber = compact.slice(3)
+  } else if (compact.startsWith('0086')) {
+    nationalNumber = compact.slice(4)
+  } else if (compact.startsWith('86')) {
+    nationalNumber = compact.slice(2)
   }
-  return normalized
+
+  const normalized = `+86${nationalNumber}`
+  return /^\+861[3-9]\d{9}$/u.test(normalized) ? normalized : undefined
 }
 
 function migrationIdentityKey(): Buffer {
@@ -41,6 +60,11 @@ function encryptLegacyIdentifier(value: string): string {
 }
 
 export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
+  const pepper = process.env.SESSION_PEPPER
+  if (!pepper) throw new Error('D9-A migration SESSION_PEPPER is missing')
+  const validationKey = migrationIdentityKey()
+  validationKey.fill(0)
+
   await db.execute(sql`
    CREATE TYPE "public"."enum_customers_account_type" AS ENUM('registered', 'legacy_unknown');
   CREATE TYPE "public"."enum_customers_registration_source" AS ENUM('phone', 'wechat_oauth', 'wechat_qrcode', 'legacy_unknown');
@@ -239,13 +263,11 @@ export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
   CREATE INDEX "payload_locked_documents_rels_wechat_authorization_codes_idx" ON "payload_locked_documents_rels" USING btree ("wechat_authorization_codes_id");
   CREATE INDEX "payload_locked_documents_rels_wechat_login_scenes_id_idx" ON "payload_locked_documents_rels" USING btree ("wechat_login_scenes_id");`)
 
-  const pepper = process.env.SESSION_PEPPER
-  if (!pepper) throw new Error('D9-A migration SESSION_PEPPER is missing')
   const providerInstanceId = process.env.CUSTOMER_PHONE_IDENTITY_INSTANCE_ID || 'wanmi-sms-cn'
   const customers = await db.execute(sql`SELECT id, phone FROM customers ORDER BY id`)
+  let isolatedCount = 0
   for (const row of customers.rows as Array<{ id: number; phone: string }>) {
     const phone = legacyPhone(row.phone)
-    const identifierHash = createHmac('sha256', pepper).update(phone).digest('hex')
     const inviteCode = createHmac('sha256', pepper)
       .update(`wanmi-invite:${row.id}`)
       .digest('hex')
@@ -260,6 +282,20 @@ export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
         updated_at = NOW()
       WHERE id = ${row.id}
     `)
+
+    if (!phone) {
+      await db.execute(sql`
+        INSERT INTO manual_reviews (
+          customer_id, reason_code, status, updated_at, created_at
+        ) VALUES (
+          ${row.id}, ${LEGACY_PHONE_REVIEW_REASON}, 'open', NOW(), NOW()
+        )
+      `)
+      isolatedCount += 1
+      continue
+    }
+
+    const identifierHash = createHmac('sha256', pepper).update(phone).digest('hex')
     await db.execute(sql`
       INSERT INTO customer_identities (
         customer_id, provider, provider_instance_id, identifier_hash, identifier_encrypted,
@@ -271,9 +307,19 @@ export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
       ON CONFLICT (provider, provider_instance_id, identifier_hash) DO NOTHING
     `)
   }
+
+  payload.logger.info({
+    isolatedCount,
+    msg: 'D9-A legacy phone migration completed',
+  })
 }
 
 export async function down({ db, payload, req }: MigrateDownArgs): Promise<void> {
+  await db.execute(sql`
+    DELETE FROM "manual_reviews"
+    WHERE "reason_code" = ${LEGACY_PHONE_REVIEW_REASON}
+  `)
+
   await db.execute(sql`
    ALTER TABLE "customers" DROP CONSTRAINT "customers_invited_by_customer_id_customers_id_fk";
   
