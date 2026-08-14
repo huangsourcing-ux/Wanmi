@@ -552,6 +552,7 @@ describe('D5-04 separated reconciliation ledgers', () => {
       kind: 'westdigital',
       ledger: 'westdigital_prepaid',
       status: 'difference',
+      summary: { correctionApplied: false },
     })
     const threeWay = await recordThreeWayDifference(req, {
       orderNumber: setup.order.orderNumber,

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, realpathSync, readFileSync } from 'node:fs'
+import { existsSync, lstatSync, realpathSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -93,6 +93,18 @@ const runtimeEnvironmentKeys = [
   'WANMI_RUNTIME_PROFILE',
 ]
 
+const runtimeFileDefinitions = [
+  {
+    key: 'WECHATPAY_MERCHANT_PRIVATE_KEY_PATH',
+    target: '/tmp/wanmi-wechatpay-merchant-private.pem',
+  },
+  {
+    key: 'WECHATPAY_PLATFORM_PUBLIC_KEY_PATH',
+    target: '/tmp/wanmi-wechatpay-platform-public.pem',
+  },
+]
+const runtimeFileBindings = []
+
 for (const key of [
   ...PRODUCTION_PROVIDER_KEYS,
   ...REAL_PROVIDER_GATE_KEYS,
@@ -141,7 +153,10 @@ function redactionValues(extra = []) {
     .filter((key) => /(SECRET|PASSWORD|KEY|PRIVATE|PEPPER|TOKEN)/u.test(key))
     .map((key) => process.env[key])
     .filter((value) => typeof value === 'string' && value.length >= 6)
-  return [...new Set([...values, ...extra])].sort((left, right) => right.length - left.length)
+  const runtimeFileSources = runtimeFileBindings.map(({ source }) => source)
+  return [...new Set([...values, ...runtimeFileSources, ...extra])].sort(
+    (left, right) => right.length - left.length,
+  )
 }
 
 function redact(value, extra = []) {
@@ -193,6 +208,40 @@ function runtimeEnvironmentArguments(additional = {}) {
   }
   for (const key of Object.keys(additional)) args.push('--env', key)
   return args
+}
+
+function prepareRuntimeFileBindings() {
+  for (const { key, target } of runtimeFileDefinitions) {
+    const configuredPath = process.env[key]?.trim()
+    if (!configuredPath) continue
+
+    try {
+      const source = resolve(configuredPath)
+      const statistics = lstatSync(source)
+      if (
+        !statistics.isFile() ||
+        statistics.isSymbolicLink() ||
+        realpathSync(source) !== source ||
+        (statistics.mode & 0o777) !== 0o600 ||
+        statistics.uid !== 1001
+      ) {
+        throw new Error('invalid runtime file')
+      }
+      if (!/^\/[A-Za-z0-9._/-]+$/u.test(source)) throw new Error('unsafe runtime file path')
+
+      runtimeFileBindings.push({ key, source, target })
+      process.env[key] = target
+    } catch {
+      throw new RebuildError(exitCodes.environment, `Runtime file missing or invalid: ${key}`)
+    }
+  }
+}
+
+function runtimeFileArguments() {
+  return runtimeFileBindings.flatMap(({ source, target }) => [
+    '--mount',
+    `type=bind,source=${source},target=${target},readonly`,
+  ])
 }
 
 function containerEnvironment(additional = {}) {
@@ -286,6 +335,7 @@ function waitForNginx(container, timeoutSeconds = 60) {
 const startedAt = Date.now()
 try {
   loadRuntimeEnvironmentFiles(process.env, repositoryRoot)
+  prepareRuntimeFileBindings()
 } catch (error) {
   process.stderr.write(
     `${redact(error instanceof Error ? error.message : 'Runtime configuration invalid')}\n`,
@@ -443,6 +493,7 @@ try {
         network,
         ...resourceArguments(),
         ...runtimeEnvironmentArguments(),
+        ...runtimeFileArguments(),
         image,
         ...runtimeCommand('maintenance', 'node', 'node_modules/payload/bin.js'),
       ]
@@ -478,6 +529,7 @@ try {
           '--env',
           'HOSTNAME=0.0.0.0',
           ...runtimeEnvironmentArguments(),
+          ...runtimeFileArguments(),
           image,
           ...runtimeCommand('web', 'node', 'server.js'),
         ],
@@ -513,6 +565,7 @@ try {
           ...resourceArguments(),
           ...logArguments(),
           ...runtimeEnvironmentArguments(),
+          ...runtimeFileArguments(),
           image,
           ...runtimeCommand('commerce-worker', 'node', 'node_modules/payload/bin.js', 'jobs:run'),
           '--cron',
@@ -542,6 +595,7 @@ try {
           ...resourceArguments(),
           ...logArguments(),
           ...runtimeEnvironmentArguments(),
+          ...runtimeFileArguments(),
           image,
           ...runtimeCommand('background-worker', 'node', 'node_modules/payload/bin.js', 'jobs:run'),
           '--cron',
@@ -598,6 +652,7 @@ try {
           network,
           ...resourceArguments(),
           ...runtimeEnvironmentArguments(additional),
+          ...runtimeFileArguments(),
           image,
           ...runtimeCommand(
             'maintenance',

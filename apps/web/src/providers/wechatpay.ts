@@ -1063,9 +1063,6 @@ export function createConfiguredWechatPayProvider(
 ): PaymentProvider & RefundProvider {
   const env = getEnv()
   if (env.WECHATPAY_MODE === 'fixture') return createWechatPayFixture().provider
-  if (!env.ALLOW_REAL_PROVIDER_WRITES || !env.ALLOW_REAL_WECHATPAY) {
-    throw new Error('Wechat Pay live mode requires the total and provider safety gates')
-  }
   assertLiveRuntimeTransportAllowed('wechatpay')
   if (
     !env.WECHATPAY_API_V3_KEY ||

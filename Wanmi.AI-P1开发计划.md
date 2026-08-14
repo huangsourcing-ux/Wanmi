@@ -629,7 +629,7 @@ D6-02 返回语义补充验证记录（2026-08-08）：修正 `executeWestDigita
 - [x] 在 2 vCPU/4 GiB 生产 Linux 环境验证 Web、Worker、Who-Dat 内存、日志轮转和 2 小时重建目标；
 - [x] 验证 Web/Worker 独立重启，以及 ECS 与 RDS 同 VPC 的 `commerce` Job 强制中断恢复；
 - [x] 验证广告关闭、分析失败或 CMS 故障时工具仍完整可用；
-- [ ] 完成微信、西部数码和内部订单三方对账演练。
+- [ ] 完成微信、西部数码和内部订单三方对账演练（部分完成：微信资金侧与内部订单侧为本轮真实数据，西部数码成本侧仍为 fixture）。
 
 D7-01 验证记录（2026-08-09）：在不重写既有地址分类、固定 IP 连接、上传魔数/结构校验和 RBAC 的前提下，补齐 DNS/TLS SSRF、DNS rebinding、内网重定向、连接后目标复核、IPv4-mapped IPv6、开放跳转混淆、CSRF/CORS/CSP、恶意上传、跨客户七类业务数据和全部特权后台路由的系统化安全契约；发现并修复缓存重定向最终目标未复核、CMS 初始化失败会拖垮工具两处真实缺陷。六类工具在 CMS provider 抛错、广告 provider 抛错/广告位为空和分析请求拒绝时仍保留完整入口及核心能力，明确闭合此前未单独验证的 D1 第 5.3 节最后一条退出条件。`make security` 现在分别扫描工作树和带 `.git` 的完整历史，历史配置不继承 `.env.local` allowlist；linux/amd64 生产镜像改为固定 digest 的最小 Alpine 运行层，并由固定 digest Trivy 对 HIGH/CRITICAL 扫描。`image-size` 上游最新版仍为 2.0.2、尚无修复版本，因此保留现有本地补丁；Node audit 和 Trivy 仅通过包名、版本及 Trivy `VendorIDs` 中的两条精确 GHSA 放行并输出理由。变异验证覆盖 IPv4-mapped 防护、连接后地址/端口双层复核、最终重定向复核、CMS/广告/分析失败处理、历史扫描参数和 Trivy 例外匹配；其中只移除 remoteAddress 复核时端口冗余层使变异存活，同时移除两层后目标变更用例按预期失败；分析 catch 的初始弱断言同样先存活，强化为观察实际 rejected Promise 的 catch 后按预期失败。最终原样 `ALLOW_REAL_PROVIDER_WRITES=false make check` 退出码 0，通过生成物/schema 漂移、全部 migration 往返、Nginx、lint、TypeScript strict、586/586 单元测试、96/96 PostgreSQL/MinIO 集成测试、Next.js 生产构建、linux/amd64 镜像、136 个提交的完整历史 Gitleaks 及 Trivy 门禁。未修改测试 fixture 身份或清理范围，未新增 migration；全部 provider 均为本地 fixture/mock，未连接真实微信、西部数码、短信、OSS/KMS 或生产基础设施。
 
@@ -729,6 +729,16 @@ commerce Worker 每分钟写脱敏 `siteSettings` 心跳，background Worker 沿
 
 D7-17 微信小额联调前置（2026-08-13）：将微信 provider、支付、退款三项能力闸与单笔/累计金额上限五个键加入 D7-16 的一次性覆写白名单，使联调值可随仓库外 root-only 覆写文件注入和清除；未改持久配置禁用键规则、生产必需集合、`.env.example`、金额上限默认值或任何能力闸默认值。单元测试覆盖五键临时接受、持久文件沿用既有规则和集合外密钥拒绝；从白名单移除五键的变异使目标测试 2/8 失败，恢复后 Web 单元 89 文件 651/651、lint、TypeScript strict 和定向格式检查通过。全程未调用真实微信或其他 provider，未部署、未改生产配置，D7-17 正式小额联调及其授权、金额和收尾证据仍待后续切片。
 
+D7-17 微信小额支付联调与部分三方对账记录（2026-08-14）：全部真实操作在生产 ECS 上针对同 VPC RDS 执行，通知地址为公网 HTTPS。预检只输出布尔值/数值：总闸、微信 provider/支付/退款闸为 `true`，单笔/累计上限为 `1/10` 分；西部数码实名/注册/续费/Name Server 四个写闸和短信闸均为 `false`。这些值只存在于仓库外 root-only 一次性覆写；持久配置未加入闸或金额上限。真实报价、订单和服务端校验路径共创建 3 个一分 Native 支付会话，前 2 个二维码过期且主动查单均为未支付，第 3 个由负责人扫码。实际入账严格为 1 笔；服务端主动查单确认 `paid`、金额/商户订单标识一致、平台验签通过、HTTP `200`，耗时 286.4 ms，回调不作为付款结论。三次 Native 下单均 HTTP `200`、平台验签通过，耗时 531.6/423.6/441.9 ms；真实原始响应只有 `code_url`，项目 schema 另规范化 `channel/codeUrl/expiresAt/merchantOrderNumber`。H5 因授权域名要求未覆盖。
+
+同一笔款项经 D5-04 退款服务和精确 commerce Job 发起 1 分原路退款；创建 HTTP `200`、平台验签通过、917.2 ms，当时状态为异步处理中；随后只查询同一退款，HTTP `200`、平台验签通过、266.2 ms，金额/标识一致并进入 `succeeded/refunded`。最终 D7-17 范围内为 3 个订单（2 个 `pending_payment` 过期未付、1 个 `refunded`）、实际入账 1 笔、成功退款 1 笔、已收款未退款 0。真实支付回调已验签、归档并由既有 `system_admin` 入口重放恰好一次；未验签归档被拒且 provider 调用为 0，已退款订单重放仍主动查单得到 `refunded`，没有第二次状态迁移，事件序列保持 `pending_payment → paid → refund_pending → refunding → refunded`。
+
+对账只部分完成且第 13 项保持不勾选：`wechat_funds` 与 `internal_orders` 使用本轮真实支付/退款/订单数据，`westdigital_prepaid` 明确使用 fixture；三类 ledger 独立保存，差异只追加 1 分 evidence，三处均为 `correctionApplied: false`，订单、退款和余额未被对账修正，审计记录可还原结果。缺少的是西部数码真实成本侧。单笔限额判断移除后定向单测 1/11 失败；累计数据库条件移除后预算集成 2/5 失败，恢复后分别 11/11、5/5 通过，证明两层均在 provider 调用前承重。
+
+收尾删除一次性覆写并按新 digest 重建；Web、commerce/background Worker 同 digest 且 `running/exit 0/restart 0`，公网 `/readyz=200`、通知路径 `GET=405`。联调暴露两项运行缺口并修复：PEM 路径原先未映射入容器，现以 owner/mode/symlink 校验后的只读 bind mount 注入 migrations、Web、两类 Worker 和恢复 probe；`WECHATPAY_MODE=live` 在写闸关闭后原先会于通知路由模块加载时抛错，现允许只读查单/验签 adapter 构造，而支付和退款仍由 `SafetyFencedWechatPayProvider` 在 transport 前拒绝。第一次最终镜像切换因执行器漏传 `WANMI_RUNTIME_PROFILE=production` 在启动配置校验前失败，自动回滚同因失败；从首次切换开始到旧 digest ready 的不可用窗口约 100 秒，旧 digest 固定八步恢复耗时 46 秒。修正执行参数后新 digest 42 秒切换成功。最终总闸、微信三闸、西部四个写闸和短信闸均为 `false`，金额上限为 `0/0`，覆写、临时 SSH 公钥、传输包和回滚工件均已清除。最新 Trivy 数据库还检出 `nanoid@3.3.17` 的 HIGH `CVE-2026-67213`，未加例外，锁定升级到官方修复的 `3.3.18`。
+
+最终以同一进程随机测试主密钥、全 fixture/mock、全部真实能力闸 `false` 和微信金额上限 `0/0` 执行 `make check`，退出码 0：bootstrap/provider 写策略、生成物/schema 漂移、全部 migration 往返、Nginx/运维/重建/发布契约、lint、TypeScript strict、89 文件 652/652 单元、28 文件 106/106 PostgreSQL/MinIO 集成、Next.js 生产构建、linux/amd64 同镜像、Node audit、工作树及 178 次提交完整历史 Gitleaks 和 Trivy 全部通过；`nanoid` 高危项已消失，Trivy 只保留 `image-size@2.0.2` 两项既有且有本地补丁的精确例外。
+
 ### 11.2 D8 P1 开发验收
 
 开发完成必须满足：
@@ -818,6 +828,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-13 | D7-13 生产 provider 注入与 ECS 补证   | 在仓库外以 `0600` 运行配置和 PEM 注入微信、WestDigital 只读与私有 OSS；同 digest 重启 Web/Worker；从 ECS 补做不存在订单查单并复用 D7-09 完成生产主密钥真实对象往返                            | ECS 查单 `404/ORDER_NOT_EXIST`、公钥验签/ID 匹配与 IP 白名单接受均通过（316.3 ms）；主密钥 active version `prod-20260811-v2` 的加密、恢复、解密和 exact-key 清理通过；`make check` 640/640 单元、105/105 集成及完整迁移、构建、安全门禁通过                 | 短信签名、OTP/到期模板和测试号码缺失，发送 0；12 个能力闸收尾均为 `false`；11.1 第 2 项保持未勾选，第 13 项未改                                                       |
 | 2026-08-13 | D7-16 Worker 配置契约、心跳与短信补证 | 修复 `.bin/payload` shell shim 导致的 commerce 重启循环；持久/临时配置分层、启动 fail-closed、有界重启；新增 commerce 心跳与 background 告警；OTP 完整路径真实发送 1 条                       | Web/commerce/background 同 digest 且 `running/exit 0/restart 0`，readyz 通过；心跳连续完成；两处变异被杀死；短信 HTTP `202`/897 ms、`accepted`、BizId 20 位、RequestId UUID-like，第二条为 0；短信目标与 OTP 集成通过                                       | 11.1 第 2 项勾选；mock 回执污染已 fail-closed 且不冒充真实回执；第 13 项、主密钥双人离线备份及生产硬门槛均未勾选                                                      |
 | 2026-08-13 | D7-17 微信小额联调覆写前置            | 临时覆写白名单增加微信 provider/支付/退款三闸与单笔/累计金额上限；持久配置规则、生产必需集合及默认值不变                                                                                      | 五键临时/持久路径与集合外拒绝单测通过；移除五键的变异使 2/8 失败；恢复后 Web 单元 89 文件 651/651、lint、TypeScript strict、定向格式检查通过                                                                                                                | 未执行真实调用、部署或生产配置变更，闸与金额默认仍关闭/为 0；正式小额联调及收尾证据留待后续授权切片                                                                   |
+| 2026-08-14 | D7-17 微信一分联调与部分三方对账      | 生产 ECS/RDS 完成 Native 下单、负责人扫码、主动查单确认、D5-04 commerce 原路退款、真实通知重放；微信/内部使用真实数据，西部成本明确为 fixture                                                | 实际入账/成功退款均 1 笔、未退款 0；支付查询 286.4 ms、退款创建/查询 917.2/266.2 ms，均 HTTP 200/验签通过；重放不产生第二次迁移；金额两层变异被杀死；新 digest 三进程与 readyz/通知路径通过                                                               | 第 13 项部分完成且不勾选，缺西部真实成本侧；H5 未覆盖；一次失败切换产生约 100 秒不可用窗口并如实保留；收尾全部闸 false、限额 0/0、临时材料清除；生产硬门槛仍由负责人勾选 |
 
 ## 13. 范围追踪矩阵
 
