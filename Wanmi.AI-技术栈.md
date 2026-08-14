@@ -1,6 +1,6 @@
 # Wanmi.AI 技术栈与工程规范
 
-> 文档版本：v5.7（D9 用户系统依赖与边界）
+> 文档版本：v5.8（生产发布与存储边界）
 >
 > 更新日期：2026-08-14
 >
@@ -8,7 +8,7 @@
 >
 > 适用范围：Wanmi.AI P1 Web 域名工具与代理注册平台
 >
-> 冻结基线：`P1-BASELINE-2026-08-14.1`；批准标签 `p1-docs-approved-2026-08-14-1`
+> 冻结基线：`P1-BASELINE-2026-08-14.2`；批准标签 `p1-docs-approved-2026-08-14-2`
 
 ## 1. 技术结论
 
@@ -29,7 +29,7 @@ P1 使用单一 TypeScript 代码库：
 | 微信服务号 | 服务号内网页授权、带参数二维码 PC 扫码、客服/模板消息；不引入微信开放平台网站应用 |
 | 支付 | 微信支付 API v3，桌面 Native 二维码与移动 H5 |
 | 域名上游 | 西部数码 provider adapter，只允许服务端调用 |
-| 部署 | Nginx + Next.js/Payload Web + Payload Jobs Worker + Who-Dat |
+| 部署 | Nginx + Next.js/Payload Web + Payload Jobs Worker + Who-Dat；已合并 `main` 的 linux/amd64 镜像经 SSH 直传 ECS、`docker load`、节点 loopback registry 和 digest 校验后执行 ADR-0006 八步 |
 
 不再保留第二套业务后端、迁移、认证、任务系统或跨语言接口生成链路。Payload 同时承担 CMS、后台、认证集合、业务数据、REST/Local API 和任务队列，但交易正确性仍由 Wanmi 自有 service 层保证。
 
@@ -392,6 +392,10 @@ D9-A 在同一 `customers.id`、opaque Session 和 Custom Strategy 上扩展，�
 - 支付通知原始报文可审计、可重放；
 - Web 和 Worker 可独立重启；
 - 节点可由镜像、迁移和密钥配置重建；
+- 真实环境只发布已合并到 `main` 的提交；未合并分支、本地提交和未通过审核的 PR 不得进入任何真实环境；
+- 当前 `.next/static` 随应用镜像由 Next standalone 服务，不单独上传公共静态设施；镜像只经 SSH 直传 ECS、`docker load` 和节点 loopback registry 交付，节点校验 registry digest 与 release manifest 一致后才执行 `make rebuild`；
+- 镜像和源码不经过对象存储，不向服务器上传源码包，也不在目标节点构建应用；
+- 存放实名证件的存储只能写入证件对象；缺少存储、registry、Bucket 或凭据目标时停止，不得自行选择、创建或复用其他资源；
 - 单 ECS 内存、并发和重启在 D0 实测；
 - 第二台 ECS 和 ALB 按订单量与停机影响扩容，不作为 P1 开工前置。
 
@@ -470,6 +474,7 @@ D0 失败时先修正架构假设，不在业务模块中引入第二套后端�
 
 | 版本 | 日期 | 结论 |
 |---|---|---|
+| v5.8 | 2026-08-14 | 冻结生产发布与存储边界：仅发布已合并 `main`；静态资源随镜像服务；linux/amd64 镜像经 SSH 直传、节点 loopback registry 与 release manifest digest 校验后执行 ADR-0006；禁止对象存储/实名证件存储中转非证件产物及源码包上传；产品范围与 D9 决定不变 |
 | v5.7 | 2026-08-14 | 新增 D9 用户系统冻结范围；阿里云验证码 2.0 与微信服务号网页授权、带参数二维码、客服/模板消息成为依赖；D9-A 阻塞首次上线与 D8，D9-B～D9-E 不阻塞；本切片不创建 Collection 或 migration |
 | v5.6 | 2026-08-10 | D7-05 实测 KMS `AccountStatus=NotEnabled` 后，项目负责人批准移除 KMS；保留 AES-256-GCM、每对象 32 字节数据密钥和明文密钥清零，改为版本化应用主密钥包裹；如实接受服务器完整攻破可取得主密钥的防御纵深下降，并把注入、轮换、离线备份和紧急恢复保留为生产硬门槛 |
 | v5.5 | 2026-08-07 | 按项目负责人 D5-03 资金安全指令，明确经验签通知触发的主动查单状态不明，或查单确认到账但金额/标识不一致时，允许 `pending_payment → manual_review`；其他交易状态、退款和上线门槛不变 |

@@ -8,7 +8,7 @@
 make verify-release
 ```
 
-门禁要求当前镜像和回滚镜像都使用 `repository@sha256:<64 hex>`，拒绝仅有可变 tag 的引用；静态资源必须使用 `_next/static/<releaseId>/` 不可变前缀，并具有内容 manifest SHA-256。`uploadedAt <= verifiedAt < applicationPromotionNotBefore`，因此应用不能先切流再补静态资源。旧静态前缀至少保留到回滚窗口结束。
+门禁要求当前镜像和回滚镜像都使用 `repository@sha256:<64 hex>`，拒绝仅有可变 tag 的引用；静态资源必须使用 `_next/static/<releaseId>/` 不可变前缀，并具有内容 manifest SHA-256。当前没有配置公共静态资源存储或 CDN 发布设施，`.next/static` 随同一应用镜像由 Next standalone 直接服务；`uploadedAt`/`verifiedAt` 在现有 manifest schema 中分别记录写入最终镜像和从最终镜像读回核验的时间，仍须满足 `uploadedAt <= verifiedAt < applicationPromotionNotBefore`。当前与上一镜像及其静态内容都必须保留到回滚窗口结束。将来只有在公共存储或 CDN 经负责人明确批准并实际建成后，才可把本段改为 release-scoped immutable prefix 的外部上传与读回流程。
 
 ## 迁移兼容规则
 
@@ -23,8 +23,8 @@ make verify-release
 ## 发布步骤
 
 1. 在 CI 运行完整 `make check`；`make build` 会生成 Next.js 生产构建和 linux/amd64 同镜像。本步骤不推送 registry、不部署。
-2. 由已批准的静态资源发布设施上传 `.next/static` 到 release-scoped immutable prefix，生成逐文件内容 manifest 和 SHA-256；上传后实际读回验证，再记录 `uploadedAt`/`verifiedAt`。仓库没有凭据或生产上传命令，取得部署授权前不得自行补写。
-3. 将 linux/amd64 镜像推送到批准 registry，解析 registry 返回的 digest；release manifest 只写 digest 引用，不写 `latest` 或环境 tag 作为部署目标。
+2. 当前不单独上传 `.next/static`。在受控环境构建最终 linux/amd64 镜像后，对镜像内 `.next/static` 生成逐文件内容 manifest 和 SHA-256，并从最终镜像读回校验；Next standalone 直接服务该目录。现有 release manifest 的不可变前缀、内容摘要和时序字段继续保留，不得用“随镜像服务”绕过内容一致性检查。将来接入经批准的 CDN 或公共存储时，再改为 release-scoped immutable prefix 的外部上传与读回流程。
+3. 镜像交付使用 D7-08/D7-11 已验证的唯一现状路径：受控环境构建 linux/amd64 镜像 → `docker save` 通过 SSH 直接送到目标 ECS → ECS `docker load` → 推入节点 loopback registry → 校验节点 registry 返回的 digest 与 release manifest 完全一致 → 执行 `make rebuild`。整个镜像交付不经过任何对象存储，不上传源码包；release manifest 只写节点 loopback registry 的 digest 引用，不写 `latest` 或环境 tag 作为部署目标。若该路径的 SSH 或 loopback registry 不可用，立即停止并报告，不得临场选择其他 Bucket、registry 或中转设施。
 4. 若有 migration，先运行既有 Payload migration 流程并核对 status；每项必须已进入 compatibility policy。expand migration 可安全保留，contract migration 必须具备已验证 down。
 5. 在 manifest 填入当前/上一镜像 digest、当前/上一静态 manifest、迁移列表和 rollback.database；运行 `make verify-release`。
 6. 只有门禁通过且已取得生产部署授权，才可在 `applicationPromotionNotBefore` 之后执行下述可重建流程。检查 `/healthz`、`/readyz`、Worker 队列和 Nginx 后再恢复流量。
@@ -71,18 +71,21 @@ Web、commerce Worker 和 background Worker 全部先经过同一启动契约，
 
 ## 回滚步骤
 
-1. 停止继续切流，保留当前与上一静态前缀、镜像 digest、migration status、Job ID 和 trace ID。
-2. 若 release 只有 expand 或可保留的 data migration，数据库不 down：直接把 Web/Worker 切回 manifest 中上一镜像 digest，并让页面引用上一静态前缀。旧代码必须仍能在扩展后的 schema 上运行。
+1. 停止继续切流，保留当前与上一镜像 digest、镜像内静态内容 manifest、migration status、Job ID 和 trace ID。
+2. 若 release 只有 expand 或可保留的 data migration，数据库不 down：直接把 Web/Worker 切回 manifest 中上一镜像 digest；上一镜像同时恢复其内置 `.next/static`。旧代码必须仍能在扩展后的 schema 上运行。
 3. 若 release 含 contract migration，先停止新代码写入，执行该 migration 已验证的 down，确认旧列/约束恢复后，才能切回旧镜像。不得先启动会依赖已删除列的旧代码。
 4. 代码已回滚但 expand migration 已应用时，保留该 migration；不要为追求“版本号一致”删除兼容列。等后续批准版本再决定 contract 清理。
-5. 恢复上一 digest 和静态前缀后检查 health/readiness、Payload migration status、`commerce` Job 与 provider operation；未知 provider 写请求按 `recovery.md` 只查询。
+5. 恢复上一 digest 及其镜像内静态内容后检查 health/readiness、Payload migration status、`commerce` Job 与 provider operation；未知 provider 写请求按 `recovery.md` 只查询。
 
 ## 不可做
 
 - 不部署 mutable tag，不让 Web 与 Worker 使用不同 digest；
-- 不覆盖旧静态前缀，不在回滚窗口内清理上一版本资源；
+- 不在回滚窗口内清理上一镜像及其静态内容；
 - 不使用 `push`、`migrate:fresh` 或运行时 schema 同步；
 - 不把 contract migration 留在数据库后直接启动依赖已删除列的旧代码；
 - 不在 readyz 失败时单独手工启动 Worker，不让恢复脚本绕过 Payload runner；
 - 不把 secret 写入 manifest、Dockerfile、镜像构建参数、日志或临时配置文件；
+- 不得使用存放实名证件的存储作为镜像、构建产物、静态产物或源码中转；该存储的任何其他前缀也不例外；
+- 不得向服务器上传源码包；ADR-0006 的目标节点只加载已构建镜像，永不在节点上构建应用；
+- 不得自行选择或创建 Bucket、registry、存储或凭据目标来补齐缺失的发布设施；
 - 不把本 Runbook 视为生产部署、OSS、registry 或数据库变更授权。
