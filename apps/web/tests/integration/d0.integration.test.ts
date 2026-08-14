@@ -9,8 +9,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { getEnv } from '@/lib/env'
 import { hmac, randomOpaqueToken } from '@/lib/crypto'
 import { createSmsProvider } from '@/providers/aliyunsms'
+import { CAPTCHA_FIXTURE_TOKEN } from '@/providers/aliyuncaptcha'
 import { authenticatedAdminRequest } from '@/services/auth/admin-session'
 import { customerSessionStrategy } from '@/services/auth/customer-strategy'
+import { registerCustomer } from '@/services/auth/customer-identities'
 import {
   authenticatedCustomerRequest,
   rawCustomerToken,
@@ -27,6 +29,26 @@ import { approvedRealnameProviderFixture, realnameTemplateFixture } from '../fix
 
 let payload: Payload
 const createdJobIds: Array<number | string> = []
+
+async function completePhoneRegistration(
+  registrationToken: string,
+  deviceId: string,
+  headers: Headers,
+) {
+  return registerCustomer(
+    await createLocalReq({ req: { headers } }, payload),
+    {
+      acceptedPrivacyPolicy: true,
+      acceptedServiceTerms: true,
+      confirmsAdultOrAuthorizedRepresentative: true,
+      defaultCustomerProfileType: 'individual',
+      deviceId,
+      registrationToken,
+    },
+    headers,
+    null,
+  )
+}
 
 beforeAll(async () => {
   payload = await getPayload({ config })
@@ -157,14 +179,25 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
       'user-agent': 'wanmi-integration-test',
       'x-forwarded-for': '192.0.2.10',
     })
-    const requested = await requestOtp(payload, { deviceId, phone }, headers, 'trace-otp-request')
+    const requested = await requestOtp(
+      payload,
+      { captchaVerifyParam: CAPTCHA_FIXTURE_TOKEN, deviceId, phone },
+      headers,
+      'trace-otp-request',
+    )
     const req = await createLocalReq({ req: { headers } }, payload)
     const verified = await verifyOtp(
       req,
       { challengeId: requested.challengeId, code: getEnv().MOCK_SMS_OTP_CODE, deviceId },
       headers,
     )
-    expect(Buffer.from(verified.token, 'base64url')).toHaveLength(32)
+    if (verified.kind !== 'registration_required') throw new Error('expected explicit registration')
+    const registered = await completePhoneRegistration(
+      verified.registrationToken,
+      deviceId,
+      headers,
+    )
+    expect(Buffer.from(registered.token, 'base64url')).toHaveLength(32)
     await expect(
       verifyOtp(
         await createLocalReq({ req: { headers } }, payload),
@@ -173,12 +206,12 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
       ),
     ).rejects.toThrow(/已过期/)
 
-    const cookieHeaders = new Headers({ cookie: `wanmi_customer_session=${verified.token}` })
+    const cookieHeaders = new Headers({ cookie: `wanmi_customer_session=${registered.token}` })
     const authenticated = await customerSessionStrategy.authenticate({
       headers: cookieHeaders,
       payload,
     })
-    expect(authenticated.user?.id).toBe(verified.customer.id)
+    expect(authenticated.user?.id).toBe(registered.customer.id)
     await revokeSessions(
       await createLocalReq({ req: { headers: cookieHeaders } }, payload),
       rawCustomerToken(cookieHeaders),
@@ -196,7 +229,12 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
       'user-agent': 'wanmi-integration-test',
       'x-forwarded-for': '192.0.2.11',
     })
-    const requested = await requestOtp(payload, { deviceId, phone }, headers, 'trace-otp-race')
+    const requested = await requestOtp(
+      payload,
+      { captchaVerifyParam: CAPTCHA_FIXTURE_TOKEN, deviceId, phone },
+      headers,
+      'trace-otp-race',
+    )
     const maxAttempts = getEnv().OTP_MAX_ATTEMPTS
 
     // Each concurrent guess gets its own request/transaction, matching how independent
@@ -246,7 +284,11 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
       Array.from({ length: getEnv().OTP_PHONE_LIMIT_PER_HOUR * 2 }, (_, index) =>
         requestOtp(
           payload,
-          { deviceId: `quota-device-${randomUUID()}-${index}`, phone },
+          {
+            captchaVerifyParam: CAPTCHA_FIXTURE_TOKEN,
+            deviceId: `quota-device-${randomUUID()}-${index}`,
+            phone,
+          },
           new Headers({
             'user-agent': 'wanmi-integration-test',
             'x-forwarded-for': `198.51.100.${index + 1}`,
@@ -287,13 +329,24 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
       'user-agent': 'wanmi-integration-test',
       'x-forwarded-for': '203.0.113.70',
     })
-    const requested = await requestOtp(payload, { deviceId, phone }, headers, 'trace-deletion')
+    const requested = await requestOtp(
+      payload,
+      { captchaVerifyParam: CAPTCHA_FIXTURE_TOKEN, deviceId, phone },
+      headers,
+      'trace-deletion',
+    )
     const verified = await verifyOtp(
       await createLocalReq({ req: { headers } }, payload),
       { challengeId: requested.challengeId, code: getEnv().MOCK_SMS_OTP_CODE, deviceId },
       headers,
     )
-    const customerCookie = `${getEnv().CUSTOMER_SESSION_COOKIE}=${verified.token}`
+    if (verified.kind !== 'registration_required') throw new Error('expected explicit registration')
+    const registered = await completePhoneRegistration(
+      verified.registrationToken,
+      deviceId,
+      headers,
+    )
+    const customerCookie = `${getEnv().CUSTOMER_SESSION_COOKIE}=${registered.token}`
     const customerRequest = new Request('http://wanmi.local/api/v1/auth/deletion-request', {
       headers: { cookie: customerCookie },
     })
@@ -302,7 +355,7 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
     await payload.create({
       collection: 'customerSessions',
       data: {
-        customer: verified.customer.id,
+        customer: registered.customer.id,
         deviceHash: hmac('secondary-device', getEnv().SESSION_PEPPER),
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
         ipHash: hmac('secondary-ip', getEnv().SESSION_PEPPER),
@@ -330,7 +383,7 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
       (
         await payload.findByID({
           collection: 'customers',
-          id: verified.customer.id,
+          id: registered.customer.id,
           overrideAccess: true,
         })
       ).status,
@@ -339,7 +392,7 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
       collection: 'customerSessions',
       limit: 10,
       overrideAccess: true,
-      where: { customer: { equals: verified.customer.id } },
+      where: { customer: { equals: registered.customer.id } },
     })
     expect(sessions.docs).toHaveLength(2)
     expect(sessions.docs.every((session) => Boolean(session.revokedAt))).toBe(true)
@@ -356,7 +409,7 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
       overrideAccess: true,
       where: {
         and: [
-          { customer: { equals: verified.customer.id } },
+          { customer: { equals: registered.customer.id } },
           { event: { equals: 'deletion_requested' } },
         ],
       },

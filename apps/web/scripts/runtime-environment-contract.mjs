@@ -5,6 +5,7 @@ export const REAL_PROVIDER_GATE_KEYS = [
   'ALLOW_REAL_PROVIDER_WRITES',
   'ALLOW_REAL_ALIYUN_OSS_REALNAME',
   'ALLOW_REAL_ALIYUN_SMS_SENDS',
+  'ALLOW_REAL_WECHAT_OFFICIAL_MESSAGES',
   'ALLOW_REAL_WECHATPAY',
   'ALLOW_REAL_WECHATPAY_PAYMENTS',
   'ALLOW_REAL_WECHATPAY_REFUNDS',
@@ -34,7 +35,12 @@ export const PRODUCTION_PROVIDER_KEYS = [
   'ALIBABA_CLOUD_REGION_ID',
   'ALIBABA_CLOUD_SMS_DOMAIN_EXPIRY_TEMPLATE_CODE',
   'ALIBABA_CLOUD_SMS_OTP_TEMPLATE_CODE',
+  'ALIBABA_CLOUD_SMS_SECURITY_TEMPLATE_CODE',
   'ALIBABA_CLOUD_SMS_SIGN_NAME',
+  'ALIYUN_CAPTCHA_PREFIX',
+  'ALIYUN_CAPTCHA_QRCODE_SCENE_ID',
+  'ALIYUN_CAPTCHA_SMS_SCENE_ID',
+  'CUSTOMER_IDENTITY_ENCRYPTION_KEY',
   'OSS_REALNAME_BUCKET',
   'OSS_REALNAME_ENDPOINT',
   'OSS_REALNAME_PREFIX',
@@ -46,15 +52,22 @@ export const PRODUCTION_PROVIDER_KEYS = [
   'WECHATPAY_NOTIFY_URL',
   'WECHATPAY_PLATFORM_CERTIFICATE_SERIAL',
   'WECHATPAY_PLATFORM_PUBLIC_KEY_PATH',
+  'WECHAT_OFFICIAL_APP_ID',
+  'WECHAT_OFFICIAL_APP_SECRET',
+  'WECHAT_OFFICIAL_CALLBACK_TOKEN',
+  'WECHAT_OFFICIAL_ENCODING_AES_KEY',
+  'WECHAT_OFFICIAL_OAUTH_DOMAIN',
   'WESTDIGITAL_API_PASSWORD',
   'WESTDIGITAL_USERNAME',
 ]
 
 export const RUNTIME_MODE_KEYS = [
+  'ALIYUN_CAPTCHA_MODE',
   'ALIYUN_OSS_REALNAME_MODE',
   'ALIYUN_SMS_MODE',
   'PUBLIC_STORAGE_MODE',
   'WECHATPAY_MODE',
+  'WECHAT_OFFICIAL_MODE',
   'WESTDIGITAL_MODE',
 ]
 
@@ -86,12 +99,16 @@ const productionRequiredKeys = [
   ...RUNTIME_MODE_KEYS,
 ]
 
+const productionLiveModeKeys = ['ALIYUN_CAPTCHA_MODE', 'WECHAT_OFFICIAL_MODE']
+
 const booleanKeys = new Set(REAL_PROVIDER_GATE_KEYS)
 const modeValues = new Map([
+  ['ALIYUN_CAPTCHA_MODE', new Set(['fixture', 'live'])],
   ['ALIYUN_OSS_REALNAME_MODE', new Set(['mock', 'live'])],
   ['ALIYUN_SMS_MODE', new Set(['mock', 'live'])],
   ['PUBLIC_STORAGE_MODE', new Set(['local', 's3'])],
   ['WECHATPAY_MODE', new Set(['fixture', 'live'])],
+  ['WECHAT_OFFICIAL_MODE', new Set(['fixture', 'live'])],
   ['WESTDIGITAL_MODE', new Set(['fixture', 'live'])],
 ])
 
@@ -111,6 +128,13 @@ export function assertRuntimeEnvironment(environment, profile = environment.WANM
   }
   const required = profile === 'production' ? productionRequiredKeys : BASE_RUNTIME_KEYS
   const invalid = invalidNames(environment, required)
+  if (profile === 'production') {
+    invalid.push(
+      ...productionLiveModeKeys.filter(
+        (key) => environment[key]?.trim() && environment[key]?.trim() !== 'live',
+      ),
+    )
+  }
   if (invalid.length > 0) {
     throw new Error(
       `${profile === 'production' ? 'Production' : 'Validation'} runtime configuration missing or invalid: ${invalid.join(', ')}`,

@@ -36,6 +36,8 @@ function configuredProductionEnvironment(): NodeJS.ProcessEnv {
         key.startsWith('ALLOW_REAL_') ? 'false' : 'configured',
       ]),
     ),
+    ALIYUN_CAPTCHA_MODE: 'live',
+    WECHAT_OFFICIAL_MODE: 'live',
   }
 }
 
@@ -44,9 +46,11 @@ describe('D7 production runtime environment contract', () => {
     const environment = configuredProductionEnvironment()
     for (const [key, value] of [
       ['ALIYUN_OSS_REALNAME_MODE', 'mock'],
+      ['ALIYUN_CAPTCHA_MODE', 'live'],
       ['ALIYUN_SMS_MODE', 'mock'],
       ['PUBLIC_STORAGE_MODE', 'local'],
       ['WECHATPAY_MODE', 'fixture'],
+      ['WECHAT_OFFICIAL_MODE', 'live'],
       ['WESTDIGITAL_MODE', 'fixture'],
     ]) {
       environment[key] = value
@@ -62,11 +66,13 @@ describe('D7 production runtime environment contract', () => {
     const environment = configuredProductionEnvironment()
     Object.assign(environment, {
       ALIYUN_OSS_REALNAME_MODE: 'mock',
+      ALIYUN_CAPTCHA_MODE: 'live',
       ALIYUN_SMS_MODE: 'mock',
       NODE_ENV: 'production',
       PUBLIC_STORAGE_MODE: 'local',
       WANMI_RUNTIME_PROFILE: 'production',
       WECHATPAY_MODE: 'fixture',
+      WECHAT_OFFICIAL_MODE: 'live',
       WESTDIGITAL_MODE: 'fixture',
     })
     const secret = 'runtime-secret-must-not-appear'
@@ -93,14 +99,33 @@ describe('D7 production runtime environment contract', () => {
     const environment = configuredProductionEnvironment()
     Object.assign(environment, {
       ALIYUN_OSS_REALNAME_MODE: 'mock',
+      ALIYUN_CAPTCHA_MODE: 'live',
       ALIYUN_SMS_MODE: 'mock',
       PUBLIC_STORAGE_MODE: 'local',
       WECHATPAY_MODE: 'fixture',
+      WECHAT_OFFICIAL_MODE: 'live',
       WESTDIGITAL_MODE: 'fixture',
     })
     expect(() => assertRuntimeEnvironment(environment, 'production')).not.toThrow()
     expect(RUNTIME_MODE_KEYS.every((key) => Boolean(environment[key]))).toBe(true)
     expect(REAL_PROVIDER_GATE_KEYS.every((key) => environment[key] === 'false')).toBe(true)
+  })
+
+  it('rejects captcha and Wechat Official fixture modes in the production profile', () => {
+    const environment = configuredProductionEnvironment()
+    Object.assign(environment, {
+      ALIYUN_OSS_REALNAME_MODE: 'mock',
+      ALIYUN_CAPTCHA_MODE: 'fixture',
+      ALIYUN_SMS_MODE: 'mock',
+      PUBLIC_STORAGE_MODE: 'local',
+      WECHATPAY_MODE: 'fixture',
+      WECHAT_OFFICIAL_MODE: 'fixture',
+      WESTDIGITAL_MODE: 'fixture',
+    })
+
+    expect(() => assertRuntimeEnvironment(environment, 'production')).toThrow(
+      /ALIYUN_CAPTCHA_MODE, WECHAT_OFFICIAL_MODE/u,
+    )
   })
 
   it('limits transient overrides to the approved contract-test settings', () => {

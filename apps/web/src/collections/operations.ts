@@ -26,6 +26,13 @@ export const ManualReviews: CollectionConfig = {
   access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
   admin: { group: ADMIN_GROUPS.operations, hidden: systemAdminHidden },
   fields: [
+    { name: 'customer', type: 'relationship', relationTo: 'customers', index: true },
+    {
+      name: 'customerIdentity',
+      type: 'relationship',
+      relationTo: 'customerIdentities',
+      index: true,
+    },
     { name: 'order', type: 'relationship', relationTo: 'orders', index: true },
     {
       name: 'realnameTemplate',

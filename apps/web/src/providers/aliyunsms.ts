@@ -110,6 +110,17 @@ class MockSmsProvider implements SmsProvider {
     )
   }
 
+  async sendIdentityChanged(input: { traceId: string }) {
+    return mockSuccess(
+      {
+        accepted: true as const,
+        deliveryStatus: 'delivered' as const,
+        providerMessageId: `mock-security-sms-${input.traceId}`,
+      },
+      `mock-security-request-${input.traceId}`,
+    )
+  }
+
   async queryReceipt() {
     return mockSuccess({ status: 'delivered' as const })
   }
@@ -125,6 +136,10 @@ class DisabledSmsProvider implements SmsProvider {
   }
 
   async sendDomainExpiry() {
+    return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
+  }
+
+  async sendIdentityChanged() {
     return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
   }
 
@@ -145,12 +160,14 @@ const liveSmsConfigurationKeys = [
   'ALIBABA_CLOUD_SMS_SIGN_NAME',
   'ALIBABA_CLOUD_SMS_OTP_TEMPLATE_CODE',
   'ALIBABA_CLOUD_SMS_DOMAIN_EXPIRY_TEMPLATE_CODE',
+  'ALIBABA_CLOUD_SMS_SECURITY_TEMPLATE_CODE',
 ] as const
 
 export function validateAliyunSmsLiveConfiguration(): {
   credentialsConfigured: true
   domainExpiryTemplateConfigured: true
   otpTemplateConfigured: true
+  securityTemplateConfigured: true
   signConfigured: true
 } {
   const missing = liveSmsConfigurationKeys.filter((key) => !process.env[key]?.trim())
@@ -161,6 +178,7 @@ export function validateAliyunSmsLiveConfiguration(): {
     credentialsConfigured: true,
     domainExpiryTemplateConfigured: true,
     otpTemplateConfigured: true,
+    securityTemplateConfigured: true,
     signConfigured: true,
   }
 }
@@ -282,6 +300,39 @@ class LiveSmsProvider implements SmsProvider {
         category === 'unknown' ? 'SMS_PROVIDER_UNAVAILABLE' : `SMS_${category.toUpperCase()}`,
         { retryable: category === 'rate_limited' || category === 'unknown', statusKnown: false },
       )
+    }
+  }
+
+  async sendIdentityChanged(input: { phone: string; traceId: string }) {
+    if (!liveSmsAllowed()) {
+      return mockFailure('PROVIDER_WRITE_DISABLED', { statusKnown: true })
+    }
+    if (!process.env.ALIBABA_CLOUD_SMS_SECURITY_TEMPLATE_CODE?.trim()) {
+      return mockFailure('SMS_TEMPLATE_UNAPPROVED', { statusKnown: true })
+    }
+    try {
+      const response = await this.client.sendSms(
+        new SendSmsRequest({
+          outId: input.traceId,
+          phoneNumbers: providerPhone(input.phone),
+          signName: process.env.ALIBABA_CLOUD_SMS_SIGN_NAME,
+          templateCode: process.env.ALIBABA_CLOUD_SMS_SECURITY_TEMPLATE_CODE,
+        }),
+      )
+      if (response.body?.code !== 'OK' || !response.body.bizId) {
+        const category = classifySmsFailure(response.body?.code)
+        return mockFailure(`SMS_${category.toUpperCase()}`, { statusKnown: true })
+      }
+      return mockSuccess(
+        {
+          accepted: true as const,
+          deliveryStatus: 'accepted' as const,
+          providerMessageId: response.body.bizId,
+        },
+        response.body.requestId,
+      )
+    } catch {
+      return mockFailure('SMS_PROVIDER_UNAVAILABLE', { retryable: true, statusKnown: false })
     }
   }
 

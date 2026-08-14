@@ -28,6 +28,13 @@
       "phase": "expand",
       "reason": "仅向 Payload Jobs 工作流枚举增加 commerce Worker 心跳任务；旧代码不会调度该任务，新代码在迁移完成后才启动 Worker。",
       "rollback": "retain"
+    },
+    "20260814_103904_d9a_identity_registration": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增身份、注册确认、同意与微信登录状态表，并为历史客户回填兼容字段和手机号身份；旧代码可忽略新增表与列，新代码在迁移完成后才使用它们。",
+      "rollback": "retain"
     }
   }
 }

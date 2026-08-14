@@ -34,6 +34,7 @@ const schema = z
     ALLOW_REAL_PROVIDER_WRITES: booleanFromString,
     ALLOW_REAL_ALIYUN_OSS_REALNAME: booleanFromString,
     ALLOW_REAL_ALIYUN_SMS_SENDS: booleanFromString,
+    ALLOW_REAL_WECHAT_OFFICIAL_MESSAGES: booleanFromString,
     ALLOW_REAL_WECHATPAY: booleanFromString,
     ALLOW_REAL_WECHATPAY_PAYMENTS: booleanFromString,
     ALLOW_REAL_WECHATPAY_REFUNDS: booleanFromString,
@@ -44,7 +45,19 @@ const schema = z
     ALLOW_REAL_WESTDIGITAL_REGISTRATION_WRITES: booleanFromString,
     ALLOW_REAL_WESTDIGITAL_RENEWAL_WRITES: booleanFromString,
     ALIYUN_OSS_REALNAME_MODE: z.enum(['mock', 'live']).default('mock'),
+    ALIYUN_CAPTCHA_MODE: z.enum(['fixture', 'live']).default('fixture'),
+    ALIYUN_CAPTCHA_PREFIX: z.string().min(1).max(128).optional(),
+    ALIYUN_CAPTCHA_QRCODE_SCENE_ID: z.string().min(1).max(128).optional(),
+    ALIYUN_CAPTCHA_SMS_SCENE_ID: z.string().min(1).max(128).optional(),
     ALIYUN_SMS_MODE: z.enum(['mock', 'live']).default('mock'),
+    CUSTOMER_AUTH_FLOW_COOKIE: z
+      .string()
+      .regex(/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u)
+      .default('wanmi_auth_flow'),
+    CUSTOMER_AUTH_FLOW_SECONDS: z.coerce.number().int().min(60).max(1_800).default(600),
+    CUSTOMER_IDENTITY_ENCRYPTION_KEY: z.string().min(1).optional(),
+    CUSTOMER_PHONE_IDENTITY_INSTANCE_ID: z.string().min(1).max(128).default('wanmi-sms-cn'),
+    CUSTOMER_REGISTRATION_SECONDS: z.coerce.number().int().min(60).max(1_800).default(600),
     CUSTOMER_SESSION_COOKIE: z
       .string()
       .regex(/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u)
@@ -172,6 +185,16 @@ const schema = z
       .nonnegative()
       .safe()
       .default(0),
+    WECHAT_OFFICIAL_APP_ID: z.string().min(1).max(64).optional(),
+    WECHAT_OFFICIAL_APP_SECRET: z.string().min(1).max(256).optional(),
+    WECHAT_OFFICIAL_CALLBACK_TOKEN: z.string().min(1).max(256).optional(),
+    WECHAT_OFFICIAL_ENCODING_AES_KEY: z.string().length(43).optional(),
+    WECHAT_OFFICIAL_MODE: z.enum(['fixture', 'live']).default('fixture'),
+    WECHAT_OFFICIAL_OAUTH_DOMAIN: z.string().min(1).max(253).optional(),
+    WECHAT_OFFICIAL_RESPONSE_MAX_BYTES: z.coerce.number().int().positive().default(262_144),
+    WECHAT_OFFICIAL_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+    WECHAT_QR_POLL_MIN_INTERVAL_MS: z.coerce.number().int().min(0).max(10_000).default(800),
+    WECHAT_QR_TTL_SECONDS: z.coerce.number().int().min(60).max(1_800).default(300),
     WHO_DAT_AUTH_KEY: z.string().optional(),
     WHO_DAT_READ_BURST: z.coerce.number().int().positive().default(10),
     WHO_DAT_READ_QUEUE_CAPACITY: z.coerce.number().int().positive().default(32),
@@ -182,6 +205,33 @@ const schema = z
     WHO_DAT_URL: z.url().default('http://127.0.0.1:8080'),
   })
   .superRefine((env, context) => {
+    if (env.CUSTOMER_AUTH_FLOW_COOKIE === env.CUSTOMER_SESSION_COOKIE) {
+      context.addIssue({
+        code: 'custom',
+        message: 'customer auth-flow and session cookies must be distinct',
+        path: ['CUSTOMER_AUTH_FLOW_COOKIE'],
+      })
+    }
+    if (
+      env.CUSTOMER_IDENTITY_ENCRYPTION_KEY &&
+      !isBase64Aes256Key(env.CUSTOMER_IDENTITY_ENCRYPTION_KEY)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'customer identity encryption key must be a base64-encoded 32-byte key',
+        path: ['CUSTOMER_IDENTITY_ENCRYPTION_KEY'],
+      })
+    }
+    if (
+      env.WECHAT_OFFICIAL_ENCODING_AES_KEY &&
+      Buffer.from(`${env.WECHAT_OFFICIAL_ENCODING_AES_KEY}=`, 'base64').length !== 32
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Wechat Official callback AES key must decode to 32 bytes',
+        path: ['WECHAT_OFFICIAL_ENCODING_AES_KEY'],
+      })
+    }
     try {
       const keys = parseRealnameDocumentMasterKeys(env.REALNAME_DOCUMENT_MASTER_KEYS)
       if (!keys.has(env.REALNAME_DOCUMENT_MASTER_KEY_VERSION)) {

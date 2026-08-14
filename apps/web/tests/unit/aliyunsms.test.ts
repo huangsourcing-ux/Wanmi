@@ -62,11 +62,13 @@ describe('Alibaba Cloud SMS adapter', () => {
     vi.stubEnv('ALIBABA_CLOUD_SMS_SIGN_NAME', 'fixture-sign')
     vi.stubEnv('ALIBABA_CLOUD_SMS_OTP_TEMPLATE_CODE', 'SMS_OTP_FIXTURE')
     vi.stubEnv('ALIBABA_CLOUD_SMS_DOMAIN_EXPIRY_TEMPLATE_CODE', 'SMS_EXPIRY_FIXTURE')
+    vi.stubEnv('ALIBABA_CLOUD_SMS_SECURITY_TEMPLATE_CODE', 'SMS_SECURITY_FIXTURE')
 
     expect(validateAliyunSmsLiveConfiguration()).toEqual({
       credentialsConfigured: true,
       domainExpiryTemplateConfigured: true,
       otpTemplateConfigured: true,
+      securityTemplateConfigured: true,
       signConfigured: true,
     })
   })

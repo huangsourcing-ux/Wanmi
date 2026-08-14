@@ -1001,17 +1001,17 @@ I（年龄要求）、K（自动续费金额上限）已并入 9.2 第 10、11�
 - [ ] scene 一次性、带过期、与浏览器会话绑定；消息回调必须验签，**未验签事件一律丢弃**；
 - [ ] **阿里云验证码 2.0 只在短信发送前、二维码创建或频繁刷新前校验**；轮询接口只校验浏览器
       会话、scene 绑定与限频，**不重复做人机校验**；异常刷新或触发风险阈值后再要求重新校验；
-- [ ] 注册显式化：记录**默认客户类型**、条款同意、注册来源、可选邀请码；登录与注册分离，
+- [x] 注册显式化：记录**默认客户类型**、条款同意、注册来源、可选邀请码；登录与注册分离，
       禁止静默建号。
 
 #### A2 身份模型与绑定
 
-- [ ] 新增 `customerIdentities`：`provider`、`providerInstanceId`（微信 AppID / 短信身份域）、
+- [x] 新增 `customerIdentities`：`provider`、`providerInstanceId`（微信 AppID / 短信身份域）、
       `identifierHash`、`identifierEncrypted`、`status`、`verifiedAt`、`boundAt`、`unboundAt`、
       `lastUsedAt`；唯一索引 `(provider, providerInstanceId, identifierHash)`。
       **即使 P1 只有一个服务号也要带 `providerInstanceId`**，避免将来增加应用时重构；
-- [ ] 微信身份用 `openid`（单应用，不涉及 unionid 统一）；预留 `unionid` 字段不使用；
-- [ ] **解绑最后一个可登录身份必须 fail-closed 拒绝**；绑定/解绑写 `customerSecurityEvents`
+- [x] 微信身份用 `openid`（单应用，不涉及 unionid 统一）；预留 `unionid` 字段不使用；
+- [x] **解绑最后一个可登录身份必须 fail-closed 拒绝**；绑定/解绑写 `customerSecurityEvents`
       与审计；
 - [ ] 手机号变更、微信换绑完成后**撤销全部旧会话**，向全部旧绑定渠道告知，并进入高风险操作
       冷静期；
@@ -1084,11 +1084,35 @@ I（年龄要求）、K（自动续费金额上限）已并入 9.2 第 10、11�
 
 #### A8 默认客户类型
 
-- [ ] 字段命名为 `defaultCustomerProfileType`（个人 / 企业），**只用于**：默认推荐创建的实名
+- [x] 字段命名为 `defaultCustomerProfileType`（个人 / 企业），**只用于**：默认推荐创建的实名
       模板类型、默认资料表单、后台筛选、默认发票资料入口；
-- [ ] **不作为域名所有权或订单主体的事实来源** —— 法律与交易主体分别由实名模板、订单购买主体、
+- [x] **不作为域名所有权或订单主体的事实来源** —— 法律与交易主体分别由实名模板、订单购买主体、
       发票抬头决定。P1 无子账号与团队授权，「企业用户」仅为标签，须避免给用户造成错误预期；
-- [ ] 变更允许但必须审计，**不回溯改动已有实名模板、订单、发票与域名主体**。
+- [x] 变更允许但必须审计，**不回溯改动已有实名模板、订单、发票与域名主体**。
+
+D9-A-1 验证记录（2026-08-14）：开工前脱敏预检仅输出名称与状态，服务号 AppID、AppSecret、
+消息回调 Token、EncodingAESKey、网页授权域名及阿里云验证码 2.0 场景配置均为 `missing`；因此三条
+入口中的手机号入口、显式注册和独立身份模型完成，服务号网页授权、带参数二维码及真实验证码路径
+保持未勾选，fixture 自动化不作为真实前置证据。新增 `customerIdentities`、`consentRecords`、注册
+意图、OAuth state/授权码与扫码 scene 等受保护 Collection；手机号按 E.164 规范化后使用既有
+pepper 派生的服务端 HMAC，身份标识加密保存，微信保留 `providerInstanceId` 与未使用的 `unionid`。
+既有 `customers.phone` 列未改；历史账号只回填 `legacy_unknown` 与 phone 身份，未生成条款同意。
+OTP 验证不再静默建号；注册确认原子创建客户、手机号身份、服务协议/隐私政策实际版本与文本哈希、
+默认客户类型、来源、年龄/企业授权声明及可选邀请绑定。同手机号或 openid 并发注册、scene 并发消费和
+最后身份并发解绑均使用 `Promise.all` 验证唯一索引 raced fallback 或事务内原子 claim；手机号换绑、
+微信换绑、碰撞人工复核、旧会话撤销、旧渠道通知尝试与冷静期起点的 fixture 路径已实现，但因真实
+服务号前置缺失，其组合计划项继续不勾。
+
+命名 migration `20260814_103904_d9a_identity_registration` 已覆盖空库、历史 E.164 回填、无虚假
+同意及 down/up 往返；删除并重建本地 PostgreSQL/MinIO fixture volumes 后，D9-A 集成测试连续两次
+12/12 通过。五组独立变异分别得到预期失败：仅 `SCAN` 建会话使会话数由期望 0 变为 1；接受未验签
+回调使期望 `null` 实得 `SCAN`；放行最后身份使预期拒绝变为成功；scene 二次消费使成功数由 1 变为
+2；移除短信验证码校验使拒绝用例意外成功、给轮询增加验证码校验使 `created` 查询错误返回
+`CAPTCHA_REJECTED`。恢复后完整 `make check` 退出码 0，通过 658/658 单元测试、118/118 PostgreSQL/
+MinIO 集成测试、全部 migration/生成物、lint、TypeScript strict、Next.js 生产构建、linux/amd64
+同镜像、provider/bootstrap/release 门禁、依赖与秘密扫描；生产 profile 现在同时拒绝服务号或验证码
+配置缺失以及显式 fixture 模式。完整 Playwright 为 43/43。全部自动化仅用 fixture/mock，未调用真实
+微信、验证码或短信接口。
 
 ---
 
@@ -1277,7 +1301,7 @@ D9-D 的基础解析联调如证明必须先开通付费智能 DNS，应将对�
 - [ ] **历史账号不得生成伪造的条款同意时间**；未补条款的历史用户仍可处理到期域名；
 - [ ] 持有域名、处理中订单或资金差异时不能完成注销；
 - [ ] step-up 未完成时风险分级表中的动作全部 fail-closed；操作密码连续失败锁定生效；
-- [ ] **生产环境配置缺失或为 fixture 时启动失败**（扩展既有 `assertRuntimeEnvironment` 的 production
+- [x] **生产环境配置缺失或为 fixture 时启动失败**（扩展既有 `assertRuntimeEnvironment` 的 production
   profile 与 `PRODUCTION_PROVIDER_KEYS`，不新造机制）。
 
 **D9-B**

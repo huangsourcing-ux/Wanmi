@@ -25,6 +25,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@alicloud/captcha20230305':
+        specifier: 1.1.4
+        version: 1.1.4
       '@alicloud/dysmsapi20170525':
         specifier: 4.6.0
         version: 4.6.0
@@ -217,6 +220,9 @@ packages:
 
   '@acemir/cssom@0.9.31':
     resolution: {integrity: sha512-ZnR3GSaH+/vJ0YlHau21FjfLYjMpYVIzTD8M8vIEQvIGxeOXyXdzCI140rrCY862p/C/BbzWsjc1dgnM9mkoTA==}
+
+  '@alicloud/captcha20230305@1.1.4':
+    resolution: {integrity: sha512-WG0xaJReho0iJIaU/3c+WpTZc9IBlWRnPbLh95vxs+p6RACgmV3Sj9kyRtKlbTr7i+nH98r5sNwsPCudHzINrg==}
 
   '@alicloud/credentials@2.4.5':
     resolution: {integrity: sha512-od1ufCxOO7cP2R4EVFliOB0kGo9lUXCibyj/mzmI6yLhxeqhqsegTzVsx5p2NJJsceKJnYcmye7FWKyLJAFBkw==}
@@ -6093,6 +6099,15 @@ packages:
 snapshots:
 
   '@acemir/cssom@0.9.31': {}
+
+  '@alicloud/captcha20230305@1.1.4':
+    dependencies:
+      '@alicloud/openapi-core': 1.0.8
+      '@darabonba/typescript': 1.0.5
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
+      - utf-8-validate
 
   '@alicloud/credentials@2.4.5':
     dependencies:

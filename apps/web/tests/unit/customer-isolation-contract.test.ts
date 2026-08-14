@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { Orders, Quotes } from '@/collections/commerce'
 import { DomainAssets, NameserverChanges, Renewals } from '@/collections/fulfillment'
+import { ConsentRecords, CustomerIdentities } from '@/collections/identity'
 import { RealnameDocuments, RealnameTemplates } from '@/collections/realname'
 
 const sensitiveCustomerCollections: CollectionConfig[] = [
@@ -13,6 +14,8 @@ const sensitiveCustomerCollections: CollectionConfig[] = [
   DomainAssets,
   NameserverChanges,
   Renewals,
+  CustomerIdentities,
+  ConsentRecords,
 ]
 
 const owner = { collection: 'customers', id: 'customer-owner', status: 'active' }

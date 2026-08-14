@@ -8,15 +8,18 @@ import {
   type PayloadRequest,
 } from 'payload'
 
-import { hmac, randomOpaqueToken, safeEqualHex } from '@/lib/crypto'
+import { hmac, safeEqualHex } from '@/lib/crypto'
 import { getEnv } from '@/lib/env'
 import { AppError } from '@/lib/errors'
 import { createSmsProvider } from '@/providers/aliyunsms'
+import { createCaptchaProvider, type CaptchaProvider } from '@/providers/aliyuncaptcha'
 import type { SmsRequestInput, SmsVerifyInput } from '@/schemas/auth'
 import type { Customer } from '@/payload-types'
 import { disableCustomerRealnameTemplates } from '@/services/realname/lifecycle'
 
-import { clientHashes, maskPhone, normalizeChinesePhone } from './client-facts'
+import { clientHashes, normalizeChinesePhone } from './client-facts'
+import { authenticateVerifiedPhone, type IdentityAuthenticationResult } from './customer-identities'
+import { recordCustomerSecurityEvent } from './security-events'
 import { enforceSmsRateLimits } from './sms-rate-limit'
 
 const genericRequestResult = {
@@ -44,30 +47,12 @@ function providerFailureCategory(code: string) {
     : 'unknown'
 }
 
-async function recordCustomerSecurityEvent(
-  req: PayloadRequest,
-  customerId: number,
-  event: string,
-  safeMetadata?: Record<string, unknown>,
-) {
-  await req.payload.create({
-    collection: 'customerSecurityEvents',
-    data: {
-      customer: customerId,
-      event,
-      occurredAt: new Date().toISOString(),
-      safeMetadata,
-    },
-    overrideAccess: true,
-    req,
-  })
-}
-
 export async function requestOtp(
   payload: Payload,
   input: SmsRequestInput,
   headers: Headers,
   traceId: string,
+  options: { captchaProvider?: CaptchaProvider } = {},
 ) {
   const env = getEnv()
   let phone: string
@@ -75,6 +60,14 @@ export async function requestOtp(
     phone = normalizeChinesePhone(input.phone)
   } catch {
     throw new AppError('INVALID_PHONE', '请输入有效的中国大陆手机号', 400)
+  }
+  const captcha = await (options.captchaProvider ?? createCaptchaProvider()).verify({
+    captchaVerifyParam: input.captchaVerifyParam,
+    purpose: 'sms',
+    traceId,
+  })
+  if (!captcha.ok) {
+    throw new AppError('CAPTCHA_REJECTED', '人机校验未通过', 403)
   }
   const { deviceHash, ipHash } = clientHashes(headers, input.deviceId)
   const phoneHash = hmac(phone, env.SESSION_PEPPER)
@@ -143,11 +136,7 @@ export async function verifyOtp(
   req: PayloadRequest,
   input: SmsVerifyInput,
   headers: Headers,
-): Promise<{
-  customer: { id: number; phoneMasked: string }
-  expiresAt: string
-  token: string
-}> {
+): Promise<IdentityAuthenticationResult> {
   const payload = req.payload
   const env = getEnv()
   const challenges = await payload.find({
@@ -201,61 +190,13 @@ export async function verifyOtp(
     })
     if (!consumed.docs.length) throw invalid()
 
-    const existing = await payload.find({
-      collection: 'customers',
-      limit: 1,
-      overrideAccess: true,
-      req,
-      where: { phone: { equals: challenge.phone } },
-    })
-    const customer =
-      existing.docs[0] ??
-      (await payload.create({
-        collection: 'customers',
-        data: {
-          phone: challenge.phone,
-          phoneMasked: maskPhone(challenge.phone),
-          status: 'active',
-        },
-        overrideAccess: true,
-        req,
-      }))
-    if (customer.status !== 'active') throw new AppError('AUTH_DISABLED', '账号当前不可登录', 403)
-
-    const expiresAt = new Date(now.getTime() + env.CUSTOMER_SESSION_SECONDS * 1_000).toISOString()
-    const token = randomOpaqueToken()
-    await payload.update({
-      collection: 'customerSessions',
-      data: { revokedAt: now.toISOString() },
-      overrideAccess: true,
-      req,
-      where: {
-        and: [
-          { customer: { equals: customer.id } },
-          { deviceHash: { equals: deviceHash } },
-          { revokedAt: { exists: false } },
-        ],
-      },
-    })
-    await payload.create({
-      collection: 'customerSessions',
-      data: {
-        customer: customer.id,
-        deviceHash,
-        expiresAt,
-        ipHash,
-        lastSeenAt: now.toISOString(),
-        tokenHash: hmac(token, env.SESSION_PEPPER),
-      },
-      overrideAccess: true,
-      req,
-    })
-    await recordCustomerSecurityEvent(req, customer.id, 'login_succeeded', {
+    const result = await authenticateVerifiedPhone(req, {
       deviceHash,
       ipHash,
+      phone: challenge.phone,
     })
     if (startedTransaction) await commitTransaction(req)
-    return { customer: { id: customer.id, phoneMasked: customer.phoneMasked }, expiresAt, token }
+    return result
   } catch (error) {
     if (startedTransaction) await killTransaction(req)
     throw error

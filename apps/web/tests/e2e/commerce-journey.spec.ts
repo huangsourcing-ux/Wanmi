@@ -8,6 +8,7 @@ import {
 
 const origin = 'http://127.0.0.1:3100'
 const fixture = new CommerceJourneyFixture()
+const captchaVerifyParam = 'wanmi-captcha-fixture-pass'
 
 type Session = {
   cookie: string
@@ -48,7 +49,7 @@ async function login(request: APIRequestContext, index: number): Promise<Session
   const phone = commerceFixturePhone(index)
   const deviceId = `${commerceFixturePrefix}-device-${index}`
   const requested = await request.post('/api/v1/auth/sms/request', {
-    data: { deviceId, phone },
+    data: { captchaVerifyParam, deviceId, phone },
     headers: {
       'x-forwarded-for': `192.0.2.${40 + index}`,
       'x-request-id': `${commerceFixturePrefix}-otp-request-${index}`,
@@ -62,18 +63,36 @@ async function login(request: APIRequestContext, index: number): Promise<Session
   })
   expect(JSON.stringify(challenge)).not.toContain(phone)
 
-  const verified = await request.post('/api/v1/auth/sms/verify', {
+  let authenticated = await request.post('/api/v1/auth/sms/verify', {
     data: { challengeId: challenge.challengeId, code: '246810', deviceId },
     headers: {
       'x-forwarded-for': `192.0.2.${40 + index}`,
       'x-request-id': `${commerceFixturePrefix}-otp-verify-${index}`,
     },
   })
-  expect(verified.status()).toBe(200)
-  const body = (await verified.json()) as { customer: { phoneMasked: string } }
+  expect(authenticated.status()).toBe(200)
+  const verificationBody = await authenticated.json()
+  if (verificationBody.kind === 'registration_required') {
+    authenticated = await request.post('/api/v1/auth/register', {
+      data: {
+        acceptedPrivacyPolicy: true,
+        acceptedServiceTerms: true,
+        confirmsAdultOrAuthorizedRepresentative: true,
+        defaultCustomerProfileType: 'individual',
+        deviceId,
+        registrationToken: verificationBody.registrationToken,
+      },
+      headers: {
+        'x-forwarded-for': `192.0.2.${40 + index}`,
+        'x-request-id': `${commerceFixturePrefix}-register-${index}`,
+      },
+    })
+  }
+  expect(authenticated.status()).toBe(200)
+  const body = (await authenticated.json()) as { customer: { phoneMasked: string } }
   expect(body.customer.phoneMasked).toMatch(/\*{4}/u)
   expect(JSON.stringify(body)).not.toContain(phone)
-  const cookie = cookiePair(verified.headers()['set-cookie'])
+  const cookie = cookiePair(authenticated.headers()['set-cookie'])
   expect(cookie).toContain('wanmi_customer_session=')
   return { cookie, customer: await fixture.customerByPhone(phone) }
 }

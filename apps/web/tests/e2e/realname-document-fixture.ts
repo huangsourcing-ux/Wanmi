@@ -92,6 +92,13 @@ export async function removeRealnameDocumentFixture() {
   for (const session of sessions.docs) {
     await payload.delete({ collection: 'customerSessions', id: session.id, overrideAccess: true })
   }
+  for (const collection of ['consentRecords', 'customerIdentities'] as const) {
+    await payload.delete({
+      collection,
+      overrideAccess: true,
+      where: { customer: { equals: state.customerId } },
+    })
+  }
   const challenges = await payload.find({
     collection: 'smsChallenges',
     limit: 100,

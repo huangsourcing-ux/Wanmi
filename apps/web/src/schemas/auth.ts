@@ -144,6 +144,7 @@ export type AdminInvitationCreateInput = z.infer<typeof adminInvitationCreateSch
 export type AdminLoginInput = z.infer<typeof adminLoginSchema>
 
 export const smsRequestSchema = z.object({
+  captchaVerifyParam: z.string().min(1).max(8_192),
   deviceId: z.string().min(16).max(128),
   phone: z.string().trim().min(11).max(16),
 })
@@ -158,6 +159,60 @@ export const logoutSchema = z.object({
   scope: z.enum(['current', 'all']).default('current'),
 })
 
+export const customerRegistrationSchema = z
+  .object({
+    acceptedPrivacyPolicy: z.literal(true),
+    acceptedServiceTerms: z.literal(true),
+    confirmsAdultOrAuthorizedRepresentative: z.literal(true),
+    defaultCustomerProfileType: z.enum(['individual', 'organization']),
+    deviceId: z.string().min(16).max(128),
+    invitationCode: z
+      .string()
+      .trim()
+      .regex(/^[A-Z0-9]{12}$/u)
+      .optional(),
+    phoneRegistrationToken: z.string().min(32).max(128).optional(),
+    registrationToken: z.string().min(32).max(128),
+  })
+  .strict()
+
+export const defaultCustomerProfileTypeSchema = z
+  .object({ defaultCustomerProfileType: z.enum(['individual', 'organization']) })
+  .strict()
+
+export const identityBindSchema = z
+  .object({ registrationToken: z.string().min(32).max(128) })
+  .strict()
+
+export const identityIdParamsSchema = z.object({ identityId: z.coerce.number().int().positive() })
+
+export const wechatOAuthStartSchema = z
+  .object({ purpose: z.enum(['login', 'bind']).default('login') })
+  .strict()
+
+export const wechatOAuthCallbackSchema = z.object({
+  code: z.string().min(1).max(512),
+  state: z.string().min(32).max(128),
+})
+
+export const wechatQrCreateSchema = z
+  .object({
+    captchaVerifyParam: z.string().min(1).max(8_192),
+    deviceId: z.string().min(16).max(128),
+    purpose: z.enum(['login', 'bind']).default('login'),
+  })
+  .strict()
+
+export const wechatQrPollSchema = z.object({ scene: z.string().min(32).max(128) }).strict()
+
+export const wechatQrConfirmSchema = z
+  .object({ confirmationToken: z.string().min(32).max(128) })
+  .strict()
+
+export const wechatQrConsumeSchema = z
+  .object({ deviceId: z.string().min(16).max(128), scene: z.string().min(32).max(128) })
+  .strict()
+
 export const customerDeletionRequestSchema = z.object({
   confirmation: z.literal('DELETE_MY_ACCOUNT'),
 })
@@ -169,3 +224,5 @@ export const customerDeletionResponseSchema = z.object({
 
 export type SmsRequestInput = z.infer<typeof smsRequestSchema>
 export type SmsVerifyInput = z.infer<typeof smsVerifySchema>
+export type CustomerRegistrationInput = z.infer<typeof customerRegistrationSchema>
+export type WechatQrCreateInput = z.infer<typeof wechatQrCreateSchema>

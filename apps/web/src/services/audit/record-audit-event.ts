@@ -9,6 +9,19 @@ export const AUDIT_REDACTED_VALUE = REDACTED_VALUE
 export type AuditActorType = 'admin' | 'anonymous' | 'customer' | 'provider' | 'system'
 
 export const auditEventDefinitions = {
+  'customer.default_profile_type.changed': {
+    actorTypes: ['customer'],
+    targetType: 'customer',
+  },
+  'customer.identity.bound': {
+    actorTypes: ['customer', 'system'],
+    targetType: 'customer-identity',
+  },
+  'customer.identity.unbound': {
+    actorTypes: ['customer', 'system'],
+    targetType: 'customer-identity',
+  },
+  'customer.registered': { actorTypes: ['customer'], targetType: 'customer' },
   'advertising.change': { actorTypes: ['admin'], targetType: 'advertising' },
   'advertising.delete': { actorTypes: ['admin'], targetType: 'advertising' },
   'advertising.maintenance': { actorTypes: ['system'], targetType: 'advertising' },
