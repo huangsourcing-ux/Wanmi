@@ -1162,6 +1162,15 @@ customer id，再仅对这些 customer 的既有 `phone` 做内存候选归一�
 linux/amd64 同镜像、provider/bootstrap/release、依赖与秘密扫描。未修改生产数据，未部署或执行外部
 写操作，现有任务勾选保持不变。
 
+D9-A-1b 集成测试并行隔离修正（2026-08-15）：归一化失败用例的前后 customer 计数均以
+`where.phone.equals = verifiedPhone` 收窄并明确断言为 0；同号冲突用例以 `where.or` 同时覆盖归一化值
+和带分隔符原值，确认基线为 2 且前后不变。原 assertion message 保持不变。临时移除认证入口与注册
+落库前的两处 `assertLegacyPhoneIsNotQuarantined` 后，两条用例均失败；归一化失败原文为
+`AssertionError: a quarantined legacy phone must not create an additional customers row: expected 1 to be +0 // Object.is equality`，
+明确显示该号码新增 1 行，重复冲突用例则以 `AssertionError: promise resolved ... instead of rejecting`
+证明会错误进入认证。恢复生产文件后目标用例 2/2、D9-A 16/16、完整 `make check` 退出码 0，通过
+658/658 单元、122/122 PostgreSQL/MinIO 集成及全部既有门禁；未修改生产代码、数据或部署状态。
+
 ---
 
 ### 16.7 D9-B 钱包与对账
