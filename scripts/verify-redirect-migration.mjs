@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { createDecipheriv, createHmac } from 'node:crypto'
 
 const databaseName = `wanmi_redirect_migration_${process.pid}_${Date.now()}`
 if (!/^wanmi_redirect_migration_[0-9]+_[0-9]+$/.test(databaseName)) {
@@ -9,6 +10,63 @@ const expectedPhoneIdentityInstance =
   process.env.CUSTOMER_PHONE_IDENTITY_INSTANCE_ID || 'wanmi-sms-cn'
 if (!/^[A-Za-z0-9._:-]{1,128}$/u.test(expectedPhoneIdentityInstance)) {
   throw new Error('Unexpected CUSTOMER_PHONE_IDENTITY_INSTANCE_ID for migration verification')
+}
+
+const migrationSessionPepper = process.env.SESSION_PEPPER
+if (!migrationSessionPepper) {
+  throw new Error('SESSION_PEPPER is required for migration verification')
+}
+
+const migrationIdentityKeyEncoded =
+  process.env.CUSTOMER_IDENTITY_ENCRYPTION_KEY ?? process.env.TOTP_ENCRYPTION_KEY ?? ''
+const migrationIdentityKey = Buffer.from(migrationIdentityKeyEncoded, 'base64')
+if (
+  migrationIdentityKey.length !== 32 ||
+  migrationIdentityKey.toString('base64') !== migrationIdentityKeyEncoded
+) {
+  migrationIdentityKey.fill(0)
+  throw new Error('A valid customer identity encryption key is required for migration verification')
+}
+
+const normalizablePhoneFixtures = [
+  { expected: '+8613900000001', stored: '13900000001' },
+  { expected: '+8613900000002', stored: '+8613900000002' },
+  { expected: '+8613900000003', stored: '8613900000003' },
+  { expected: '+8613900000004', stored: '008613900000004' },
+  { expected: '+8613900000005', stored: ' +86 139 0000 0005 ' },
+  { expected: '+8613900000006', stored: '139-0000-0006' },
+  { expected: '+8613900000007', stored: '(+86) (139) 0000 0007' },
+  { expected: '+8613900000008', stored: '＋８６（１３９）００００－０００８' },
+]
+const duplicateNormalizedPhoneFixture = {
+  expected: '+8613900000099',
+  firstStored: '13900000099',
+  conflictingStored: '(139) 0000-0099',
+}
+const isolatedPhoneFixtures = [
+  '013900000009',
+  '+852390000010',
+  '1390000001',
+  '',
+  'not-provided',
+  '139/0000/0012',
+]
+
+const sqlLiteral = (value) => `'${value.replaceAll("'", "''")}'`
+const sqlValues = (values) => values.map((value) => `(${sqlLiteral(value)})`).join(',\n')
+
+function decryptMigrationIdentifier(value) {
+  const envelope = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
+  const decipher = createDecipheriv(
+    'aes-256-gcm',
+    migrationIdentityKey,
+    Buffer.from(envelope.iv, 'base64'),
+  )
+  decipher.setAuthTag(Buffer.from(envelope.tag, 'base64'))
+  return Buffer.concat([
+    decipher.update(Buffer.from(envelope.ciphertext, 'base64')),
+    decipher.final(),
+  ]).toString('utf8')
 }
 
 const databaseUrl = `postgresql://wanmi:wanmi_local_only@127.0.0.1:55432/${databaseName}`
@@ -3627,6 +3685,12 @@ try {
   if (d9aAfterDown !== 'true:true:true:true:true:true:true:true') {
     throw new Error(`D9-A-1 migration down was incomplete: ${d9aAfterDown}`)
   }
+  const migrationPhoneFixtures = [
+    ...normalizablePhoneFixtures.map(({ stored }) => stored),
+    duplicateNormalizedPhoneFixture.firstStored,
+    duplicateNormalizedPhoneFixture.conflictingStored,
+    ...isolatedPhoneFixtures,
+  ]
   postgres([
     'psql',
     '--username',
@@ -3637,11 +3701,248 @@ try {
     'ON_ERROR_STOP=1',
     '--command',
     `INSERT INTO customers (phone, phone_masked, status, updated_at, created_at)
-     VALUES ('+8613900000000', '+86139****0000', 'active', NOW(), NOW());`,
+     SELECT phone, 'migration-fixture', 'active', NOW(), NOW()
+     FROM (VALUES ${sqlValues(migrationPhoneFixtures)}) AS fixtures(phone);`,
   ])
-  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  const d9MigrationOutput = run('pnpm', ['--filter', '@wanmi/web', 'migrate'], { capture: true })
+  const normalizationFailureCountMatch = d9MigrationOutput.match(
+    /"normalizationFailureCount":(?<count>[0-9]+)/u,
+  )
+  if (normalizationFailureCountMatch?.groups?.count !== String(isolatedPhoneFixtures.length)) {
+    throw new Error(
+      `D9-A-1 migration normalization failure count mismatch: expected ${isolatedPhoneFixtures.length}, received ${normalizationFailureCountMatch?.groups?.count ?? 'missing'}`,
+    )
+  }
+  const identityConflictCountMatch = d9MigrationOutput.match(
+    /"identityConflictCount":(?<count>[0-9]+)/u,
+  )
+  if (identityConflictCountMatch?.groups?.count !== '1') {
+    throw new Error(
+      `D9-A-1 migration identity conflict count mismatch: expected 1, received ${identityConflictCountMatch?.groups?.count ?? 'missing'}`,
+    )
+  }
   verifyD9AIdentityRegistrationSchema('historical backfill and down/up round trip')
-  const historicalIdentity = postgres(
+
+  const expectedIdentityRows = normalizablePhoneFixtures
+    .map(({ expected, stored }, index) => {
+      const identifierHash = createHmac('sha256', migrationSessionPepper)
+        .update(expected)
+        .digest('hex')
+      return `(${index + 1}, ${sqlLiteral(stored)}, ${sqlLiteral(identifierHash)})`
+    })
+    .join(',\n')
+  const normalizedIdentityResult = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `WITH expected(position, phone, identifier_hash) AS (
+         VALUES ${expectedIdentityRows}
+       ), observed AS (
+         SELECT
+           expected.position,
+           c.id,
+           c.account_type::text AS account_type,
+           c.registration_source::text AS registration_source,
+           c.invite_code,
+           i.id AS identity_id,
+           i.provider::text AS provider,
+           i.provider_instance_id,
+           i.identifier_hash,
+           i.identifier_encrypted,
+           COUNT(cr.id) OVER (PARTITION BY c.id) AS consent_count
+         FROM expected
+         JOIN customers c ON c.phone = expected.phone
+         LEFT JOIN customer_identities i ON i.customer_id = c.id
+         LEFT JOIN consent_records cr ON cr.customer_id = c.id
+       )
+       SELECT
+         (COUNT(*) = ${normalizablePhoneFixtures.length})::text || ':' ||
+         BOOL_AND(account_type = 'legacy_unknown')::text || ':' ||
+         BOOL_AND(registration_source = 'legacy_unknown')::text || ':' ||
+         BOOL_AND(length(invite_code) = 12)::text || ':' ||
+         BOOL_AND(identity_id IS NOT NULL)::text || ':' ||
+         BOOL_AND(provider = 'phone')::text || ':' ||
+         BOOL_AND(provider_instance_id = '${expectedPhoneIdentityInstance}')::text || ':' ||
+         BOOL_AND(observed.identifier_hash = expected.identifier_hash)::text || ':' ||
+         BOOL_AND(consent_count = 0)::text
+       FROM observed
+       JOIN expected USING (position)`,
+    ],
+    { capture: true },
+  ).trim()
+  if (normalizedIdentityResult !== 'true:true:true:true:true:true:true:true:true') {
+    throw new Error(
+      `D9-A-1 unambiguous legacy phone normalization was unsafe: ${normalizedIdentityResult}`,
+    )
+  }
+
+  const encryptedIdentifiers = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `WITH expected(position, phone) AS (
+         VALUES ${normalizablePhoneFixtures
+           .map(({ stored }, index) => `(${index + 1}, ${sqlLiteral(stored)})`)
+           .join(',\n')}
+       )
+       SELECT i.identifier_encrypted
+       FROM expected
+       JOIN customers c ON c.phone = expected.phone
+       JOIN customer_identities i ON i.customer_id = c.id
+       ORDER BY expected.position`,
+    ],
+    { capture: true },
+  )
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+  const decryptedIdentifiers = encryptedIdentifiers.map(decryptMigrationIdentifier)
+  if (
+    decryptedIdentifiers.length !== normalizablePhoneFixtures.length ||
+    !decryptedIdentifiers.every(
+      (value, index) => value === normalizablePhoneFixtures[index].expected,
+    )
+  ) {
+    throw new Error(
+      'D9-A-1 normalized identity encryption did not contain the expected E.164 values',
+    )
+  }
+
+  const isolatedCustomerResult = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `WITH fixtures(phone) AS (
+         VALUES ${sqlValues(isolatedPhoneFixtures)}
+       ), observed AS (
+         SELECT
+           c.id,
+           COUNT(DISTINCT i.id) AS identity_count,
+           COUNT(DISTINCT cr.id) AS consent_count,
+           COUNT(DISTINCT r.id) AS review_count,
+           COUNT(DISTINCT r.id) FILTER (
+             WHERE r.reason_code = 'd9a_legacy_phone_normalization_failed'
+               AND r.status::text = 'open'
+               AND r.order_id IS NULL
+               AND r.customer_identity_id IS NULL
+               AND r.evidence IS NULL
+           ) AS valid_review_count
+         FROM fixtures
+         JOIN customers c ON c.phone = fixtures.phone
+         LEFT JOIN customer_identities i ON i.customer_id = c.id
+         LEFT JOIN consent_records cr ON cr.customer_id = c.id
+         LEFT JOIN manual_reviews r ON r.customer_id = c.id
+         GROUP BY c.id
+       )
+       SELECT
+         (COUNT(*) = ${isolatedPhoneFixtures.length})::text || ':' ||
+         BOOL_AND(identity_count = 0)::text || ':' ||
+         BOOL_AND(consent_count = 0)::text || ':' ||
+         BOOL_AND(review_count = 1)::text || ':' ||
+         BOOL_AND(valid_review_count = 1)::text
+       FROM observed`,
+    ],
+    { capture: true },
+  ).trim()
+  if (isolatedCustomerResult !== 'true:true:true:true:true') {
+    throw new Error(`D9-A-1 legacy phone isolation was unsafe: ${isolatedCustomerResult}`)
+  }
+
+  const duplicateIdentifierHash = createHmac('sha256', migrationSessionPepper)
+    .update(duplicateNormalizedPhoneFixture.expected)
+    .digest('hex')
+  const duplicateIdentityResult = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `WITH observed AS (
+         SELECT
+           c.phone,
+           COUNT(DISTINCT i.id) AS identity_count,
+           MAX(i.identifier_hash) AS identifier_hash,
+           COUNT(DISTINCT r.id) AS review_count,
+           COUNT(DISTINCT r.id) FILTER (
+             WHERE r.reason_code = 'd9a_legacy_phone_duplicate'
+               AND r.status::text = 'open'
+               AND r.order_id IS NULL
+               AND r.customer_identity_id IS NULL
+               AND r.evidence IS NULL
+               AND r.resolution_note IS NULL
+               AND r.resolved_by_id IS NULL
+               AND r.resolved_at IS NULL
+           ) AS valid_duplicate_review_count
+         FROM customers c
+         LEFT JOIN customer_identities i ON i.customer_id = c.id
+         LEFT JOIN manual_reviews r ON r.customer_id = c.id
+         WHERE c.phone IN (
+           ${sqlLiteral(duplicateNormalizedPhoneFixture.firstStored)},
+           ${sqlLiteral(duplicateNormalizedPhoneFixture.conflictingStored)}
+         )
+         GROUP BY c.phone
+       )
+       SELECT
+         (COUNT(*) = 2)::text || ':' ||
+         BOOL_AND(
+           CASE
+             WHEN phone = ${sqlLiteral(duplicateNormalizedPhoneFixture.firstStored)}
+               THEN identity_count = 1
+                 AND identifier_hash = ${sqlLiteral(duplicateIdentifierHash)}
+                 AND review_count = 0
+             WHEN phone = ${sqlLiteral(duplicateNormalizedPhoneFixture.conflictingStored)}
+               THEN identity_count = 0
+                 AND review_count = 1
+                 AND valid_duplicate_review_count = 1
+             ELSE false
+           END
+         )::text
+       FROM observed`,
+    ],
+    { capture: true },
+  ).trim()
+  if (duplicateIdentityResult !== 'true:true') {
+    throw new Error(
+      `D9-A-1 duplicate normalized identity isolation was unsafe: ${duplicateIdentityResult}`,
+    )
+  }
+
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 117
+     WHERE name = '20260814_103904_d9a_identity_registration';`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const isolatedReviewsAfterDown = postgres(
     [
       'psql',
       '--username',
@@ -3652,33 +3953,29 @@ try {
       '--no-align',
       '--command',
       `SELECT
-         c.account_type::text || ':' || c.registration_source::text || ':' ||
-         (length(c.invite_code) = 12)::text || ':' ||
-         (COUNT(i.id) = 1)::text || ':' ||
-         (MIN(i.provider::text) = 'phone')::text || ':' ||
-         (MIN(i.provider_instance_id) = '${expectedPhoneIdentityInstance}')::text || ':' ||
-         (MIN(length(i.identifier_hash)) = 64)::text || ':' ||
-         (MIN(i.identifier_hash) <> c.phone)::text || ':' ||
-         (MIN(i.identifier_encrypted) NOT LIKE '%' || c.phone || '%')::text || ':' ||
-         (COUNT(cr.id) = 0)::text
-       FROM customers c
-       LEFT JOIN customer_identities i ON i.customer_id = c.id
-       LEFT JOIN consent_records cr ON cr.customer_id = c.id
-       WHERE c.phone = '+8613900000000'
-       GROUP BY c.id`,
+         COUNT(*) FILTER (
+           WHERE reason_code = 'd9a_legacy_phone_normalization_failed'
+         )::text || ':' ||
+         COUNT(*) FILTER (
+           WHERE reason_code = 'd9a_legacy_phone_duplicate'
+         )::text
+       FROM manual_reviews`,
     ],
     { capture: true },
   ).trim()
-  if (
-    historicalIdentity !== 'legacy_unknown:legacy_unknown:true:true:true:true:true:true:true:true'
-  ) {
-    throw new Error(`D9-A-1 historical customer backfill was unsafe: ${historicalIdentity}`)
+  if (isolatedReviewsAfterDown !== '0:0') {
+    throw new Error(
+      `D9-A-1 migration down left legacy phone isolation reviews behind: ${isolatedReviewsAfterDown}`,
+    )
   }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyD9AIdentityRegistrationSchema('legacy phone isolation down/up round trip')
 
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, the D6-02 commerce-fulfillment migration, the D6-03 West Digital balance-monitoring workflow migration, the D6-04 domain-asset operations migration, the D6-05 active-renewal migration, the D7-05 provider write budget historical backfill/down-up round trips, the D7-06 application master-key historical invalidation/down-up round trip, and the D9-A-1 identity/consent historical backfill/down-up round trip without fabricated consent.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, the D6-02 commerce-fulfillment migration, the D6-03 West Digital balance-monitoring workflow migration, the D6-04 domain-asset operations migration, the D6-05 active-renewal migration, the D7-05 provider write budget historical backfill/down-up round trips, the D7-06 application master-key historical invalidation/down-up round trip, and the D9-A-1 identity/consent historical normalization, isolation, and down/up round trip without fabricated consent.\n',
   )
 } finally {
+  migrationIdentityKey.fill(0)
   if (created) {
     postgres(['dropdb', '--force', '--username', 'wanmi', databaseName])
   }

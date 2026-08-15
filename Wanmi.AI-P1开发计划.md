@@ -1115,6 +1115,33 @@ MinIO 集成测试、全部 migration/生成物、lint、TypeScript strict、Nex
 配置缺失以及显式 fixture 模式。完整 Playwright 为 43/43。全部自动化仅用 fixture/mock，未调用真实
 微信、验证码或短信接口。
 
+D9-A-1a 迁移容错验证记录（2026-08-14）：发布失败并完整回滚后，先用生产库只读聚合按固定类别
+统计异常历史行，仅返回类别与计数；3 行均为“含括号或其他分隔符”，其余类别均为 0，查询没有选择、
+输出或记录手机号明文、掩码、哈希、片段或长度。由于该 migration 未在生产成功应用、迁移记录为 0
+且无后续 migration 依赖，直接修正 `20260814_103904_d9a_identity_registration`：空白、连字符、括号
+和全角 ASCII 做无歧义清洗，`0086` 与无 `+` 的 `86` 前缀正确归一化，最终仍只接受
+`+861[3-9]\d{9}`。无法归一化的 customer 仍回填 legacy 标记，但不创建 phone identity，而是在同一
+迁移事务写入只关联 customer 的固定原因 `manualReviews`；可归一化 identity 改用
+`ON CONFLICT ... DO NOTHING RETURNING id` 识别唯一索引冲突，冲突 customer 同样不获得 identity，
+但以独立原因 `d9a_legacy_phone_duplicate` 留下只关联 customer 的 open 人工复核。日志分别输出
+`normalizationFailureCount` 与 `identityConflictCount`，加密密钥缺失或无效仍在任何 DDL 前
+fail-closed。down 先删除两类隔离记录，再还原原 schema。
+
+迁移集成 fixture 覆盖本地号、`+86`、无 `+` 的 `86`、`0086`、空白、连字符、括号、全角字符、
+前导 0、非大陆前缀、长度异常、空值/占位符和其他分隔符；断言可归一化行的 HMAC 与解密后 E.164、
+隔离行零 identity/零 consent/恰好一条无手机号证据的人工复核记录，以及 down 清理和再次 up；另用
+两个不同存储写法归一化到同一 identity，断言先到者获得正确 HMAC identity，后到者零 identity 且
+恰好一条无手机号信息的 `d9a_legacy_phone_duplicate` open review。原有两处变异证据继续保留；本次
+三处冲突变异也分别被杀死：移除冲突 review 写入与合并两类 reason code 均实际失败
+`duplicate normalized identity isolation was unsafe: true:false`；从 down 移除冲突原因清理实际失败
+`migration down left legacy phone isolation reviews behind: 0:1`。恢复后完整 `make check` 退出码 0，
+通过 658/658 单元、119/119 PostgreSQL/MinIO 集成、全部 migration/生成物、lint、TypeScript strict、
+Next.js 生产构建、linux/amd64 同镜像、provider/bootstrap/release、依赖与秘密扫描；完整历史 Gitleaks
+用主仓库与 linked worktree 的真实 Git 元数据扫描完整可达历史且无泄漏。已应用旧版 migration 的
+本地开发库须重建，或在确认
+仅为开发数据后删除对应 migration 记录再重跑；CI 使用全新数据库。未修改生产数据，未部署或执行外部
+写操作，现有任务勾选保持不变。
+
 ---
 
 ### 16.7 D9-B 钱包与对账
