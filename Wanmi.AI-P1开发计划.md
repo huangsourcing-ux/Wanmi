@@ -664,6 +664,8 @@ D7-03 IDN 性能门禁最终定档补充（2026-08-12，取代上述 180 ms 与�
 
 D7-03 Lighthouse 冷启动稳定性补充（2026-08-12）：PR #63 以普通双亲 merge 合入 `main@2b3597b` 后，首轮组合 CI 的 `make check` 通过，IDN 新口径 5 轮中位数 `157.0 ms < 220 ms`；失败只在 Chrome 启动后的首个 Lighthouse 首页，Performance/TBT 为 `0.73/222.5 ms`，随后两页均通过，且此前三次 Linux 首页为 `0.79` 与 `109.5～112.0 ms`。没有重跑规避失败，经负责人批准后在 Chrome 启动后增加一次完整但丢弃结果的全局 Lighthouse 预热，随后仍按每页 3 次中位数正式测量；单测锁定预热不进入返回结果。本机恢复验证三组接口 p95 为 `268.3/3995.8/40.6 ms`，三页 Performance `0.81/0.82/0.82`、TBT `5.0/5.5/5.0 ms`，退出码 0；最终组合树 `make check` 通过 628/628 单元、105/105 集成及完整迁移/构建/安全门禁。所有性能门槛保持不变，#63 测试、生产实现及 D7-09 演练结论/勾选状态无改动。
 
+D7-03 `/pricing` CLS 与 Lighthouse 稳定性补充（2026-08-15）：`main@bc87d91` 的 Linux CI 报告 `/pricing` Performance `0.65 < 0.78`、CLS `0.268 > 0.02`。同提交、空数据库、同配置的三次完整门禁测得 CLS `0/0/0`，说明触发时序并非每次出现；随后冷启动原始 Lighthouse 报告稳定复现总 CLS `0.956581`，当前版本等价的 `layout-shifts` 审计将实际位移归因于 `body`（`0.691265`）和 `body > div.flex > footer.border-t`（`0.265316`）。PerformanceObserver 延迟 pricing API 时再次测得 footer 位移 `0.265465`：route `loading.tsx` 先流式输出过矮的共享 `PageLoading`，footer 进入首屏，完整结果随后把它推出视口。数据库中 active ad schedule 和匹配 placement 均为 0，位移前后都没有广告卡片，因此不是 `AdvertisingSlot` 的 `Suspense fallback={null}`；`/tools/[tool]` 虽使用同一广告槽，却没有 route-level `loading.tsx`，不会先输出这段短 fallback 与 footer。共享 `PageLoading` 现预留 `min-height: calc(100svh - 4rem)`，从源头使 footer 在异步路由完成前保持首屏之外；同参数冷启动复测 CLS 为 0，`layout-shifts` 明细为空。为降低共享 runner 的单轮 CPU 尖峰影响，正式 Lighthouse 样本由每页 3 次改为 5 次并继续取中位数；所有数值门槛保持不变。仅对没有产生有效导航样本的工具级 `NO_NAVSTART` 允许一次有界重试，第二次相同错误、其他 runtime error、非数值指标和任一门槛失败仍立即失败。修复后连续三次完整 `make performance` 均退出 0，`/pricing` 三次 CLS 均为 0、Performance 均为 0.81、TBT 分别为 5.5/3.5/4 ms；完整 `make check` 通过 91 文件 658/658 单元、29 文件 122/122 集成、全部迁移往返、lint、TypeScript strict、Next.js 生产构建、linux/amd64 镜像与安全门禁。
+
 D7-04 验证记录（2026-08-09）：开始前查阅仓库根目录只读《西部数码业务API接口文档（v2）新.md》，按其 `/api/v2/audit/`、`/api/v2/domain/`、`/api/v2/info/`、GB2312 表单、鉴权 token 和返回语义实现实名、注册、续费、Name Server、域名详情与余额真实 transport。HTTP 层由既有 WestDigital 读侧共同复用：固定 host/path、DNS 全地址公网分类、固定已验证 IP、TLS SNI、连接后 remote address/port 复核、无重定向、超时和响应上限均保留；写侧仍只从 `executeWestDigitalWriteOperation` 进入，继续使用唯一业务键、同事务 PostgreSQL `UPDATE ... WHERE ... RETURNING` 原子认领、有限的未提交重试、提交后状态不明只查询和事务审计。微信 Native/H5 下单、查单、关单、退款、退款查询只新增固定 API v3 路径 transport，运行时仍由 `WechatPayApiV3Adapter` 统一签名、验签和 AES-GCM 解密，通知保持先验签后解密，没有新增平行调用路径。
 
 总闸 `ALLOW_REAL_PROVIDER_WRITES` 保留并默认/CI 固定为 `false`，其下分别增加短信、KMS、私有 OSS、微信 provider 与下单/退款、西部 provider 与只读、实名/注册/续费/NS 写能力门禁；任一层关闭都返回禁用 provider、fixture 或明确拒绝，不构造 live transport，也不伪装成功。CI 在启动检查和 env 解析两层拒绝总闸为 `true`。西部写安全围栏位于 `executeWestDigitalWriteOperation` 内且早于原子认领/provider 调用：显式 ASCII 域名白名单覆盖实名/注册/续费/NS，注册+续费使用进程内唯一 operation key 计数，金额使用整数分的单笔与累计上限；微信下单/退款同样在 adapter delegate 前执行单笔与进程累计金额上限。所有上限默认 0，live 模式、provider 总闸、能力闸、白名单或上限缺失均 fail-closed。测试环境在 live factory 和 live transport 构造器两层硬拒绝，微信和西部各有“never constructs a live runtime transport”断言。
@@ -1161,6 +1163,15 @@ customer id，再仅对这些 customer 的既有 `phone` 做内存候选归一�
 122/122 PostgreSQL/MinIO 集成、全部 migration/生成物、lint、TypeScript strict、Next.js 生产构建、
 linux/amd64 同镜像、provider/bootstrap/release、依赖与秘密扫描。未修改生产数据，未部署或执行外部
 写操作，现有任务勾选保持不变。
+
+D9-A-1b 集成测试并行隔离修正（2026-08-15）：归一化失败用例的前后 customer 计数均以
+`where.phone.equals = verifiedPhone` 收窄并明确断言为 0；同号冲突用例以 `where.or` 同时覆盖归一化值
+和带分隔符原值，确认基线为 2 且前后不变。原 assertion message 保持不变。临时移除认证入口与注册
+落库前的两处 `assertLegacyPhoneIsNotQuarantined` 后，两条用例均失败；归一化失败原文为
+`AssertionError: a quarantined legacy phone must not create an additional customers row: expected 1 to be +0 // Object.is equality`，
+明确显示该号码新增 1 行，重复冲突用例则以 `AssertionError: promise resolved ... instead of rejecting`
+证明会错误进入认证。恢复生产文件后目标用例 2/2、D9-A 16/16、完整 `make check` 退出码 0，通过
+658/658 单元、122/122 PostgreSQL/MinIO 集成及全部既有门禁；未修改生产代码、数据或部署状态。
 
 ---
 

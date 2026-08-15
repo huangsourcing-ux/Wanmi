@@ -279,32 +279,43 @@ async function launchChrome() {
 }
 
 async function lighthouseRun(page, port, runLabel) {
-  const result = await withTimeout(
-    lighthouse(new URL(page.path, baseUrl).toString(), {
-      disableStorageReset: false,
-      formFactor: 'desktop',
-      logLevel: 'error',
-      maxWaitForLoad: 35_000,
-      onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
-      output: 'json',
-      port,
-      screenEmulation: {
-        deviceScaleFactor: 1,
-        disabled: false,
-        height: 900,
-        mobile: false,
-        width: 1440,
-      },
-      throttlingMethod: 'simulate',
-    }),
-    60_000,
-    `Lighthouse ${page.name} ${runLabel}`,
-  )
-  if (!result) throw new Error(`Lighthouse returned no result for ${page.name}`)
-  if (result.lhr.runtimeError) {
-    throw new Error(
-      `Lighthouse ${page.name} ${runLabel} failed: ${result.lhr.runtimeError.code}: ${result.lhr.runtimeError.message}`,
+  let result
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    result = await withTimeout(
+      lighthouse(new URL(page.path, baseUrl).toString(), {
+        disableStorageReset: false,
+        formFactor: 'desktop',
+        logLevel: 'error',
+        maxWaitForLoad: 35_000,
+        onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
+        output: 'json',
+        port,
+        screenEmulation: {
+          deviceScaleFactor: 1,
+          disabled: false,
+          height: 900,
+          mobile: false,
+          width: 1440,
+        },
+        throttlingMethod: 'simulate',
+      }),
+      60_000,
+      `Lighthouse ${page.name} ${runLabel}`,
     )
+    if (!result) throw new Error(`Lighthouse returned no result for ${page.name}`)
+    if (result.lhr.runtimeError) {
+      if (result.lhr.runtimeError.code === 'NO_NAVSTART' && attempt === 1) {
+        console.warn(`Lighthouse ${page.name} ${runLabel} retrying after NO_NAVSTART`)
+        continue
+      }
+      throw new Error(
+        `Lighthouse ${page.name} ${runLabel} failed: ${result.lhr.runtimeError.code}: ${result.lhr.runtimeError.message}`,
+      )
+    }
+    break
+  }
+  if (!result || result.lhr.runtimeError) {
+    throw new Error(`Lighthouse ${page.name} ${runLabel} exhausted retries`)
   }
   const measurements = {
     accessibilityScore: result.lhr.categories.accessibility.score,

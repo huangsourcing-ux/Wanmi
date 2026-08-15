@@ -1159,7 +1159,12 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const customerCountBefore = await payload.count({
       collection: 'customers',
       overrideAccess: true,
+      where: { phone: { equals: verifiedPhone } },
     })
+    expect(
+      customerCountBefore.totalDocs,
+      'a quarantined legacy phone must not create an additional customers row',
+    ).toBe(0)
     const requestHeaders = headers()
     const deviceId = `d9a-normalization-review-${randomUUID()}`
     let error: unknown
@@ -1186,11 +1191,12 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const customerCountAfter = await payload.count({
       collection: 'customers',
       overrideAccess: true,
+      where: { phone: { equals: verifiedPhone } },
     })
     expect(
       customerCountAfter.totalDocs,
       'a quarantined legacy phone must not create an additional customers row',
-    ).toBe(customerCountBefore.totalDocs)
+    ).toBe(0)
     expect(error).toMatchObject({
       code: 'CUSTOMER_ACCOUNT_NEEDS_REVIEW',
       message: '该手机号关联的历史账号需要人工复核',
@@ -1241,7 +1247,14 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const customerCountBefore = await payload.count({
       collection: 'customers',
       overrideAccess: true,
+      where: {
+        or: [{ phone: { equals: duplicatePhone } }, { phone: { equals: storedDuplicatePhone } }],
+      },
     })
+    expect(
+      customerCountBefore.totalDocs,
+      'a quarantined legacy phone must not create an additional customers row',
+    ).toBe(2)
     const requestHeaders = headers()
 
     await expect(
@@ -1254,8 +1267,16 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
       options: { action: '请联系客服处理历史账号后再登录' },
       status: 403,
     })
-    expect(await payload.count({ collection: 'customers', overrideAccess: true })).toEqual(
-      customerCountBefore,
-    )
+    const customerCountAfter = await payload.count({
+      collection: 'customers',
+      overrideAccess: true,
+      where: {
+        or: [{ phone: { equals: duplicatePhone } }, { phone: { equals: storedDuplicatePhone } }],
+      },
+    })
+    expect(
+      customerCountAfter.totalDocs,
+      'a quarantined legacy phone must not create an additional customers row',
+    ).toBe(customerCountBefore.totalDocs)
   })
 })

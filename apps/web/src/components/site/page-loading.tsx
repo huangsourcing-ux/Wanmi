@@ -5,7 +5,7 @@ export function PageLoading() {
     <section
       aria-busy="true"
       aria-label="页面正在加载"
-      className="mx-auto w-full max-w-7xl space-y-8 px-4 py-12 sm:px-6 lg:px-8"
+      className="mx-auto min-h-[calc(100svh-4rem)] w-full max-w-7xl space-y-8 px-4 py-12 sm:px-6 lg:px-8"
       role="status"
     >
       <span className="sr-only">页面正在加载，请稍候。</span>
