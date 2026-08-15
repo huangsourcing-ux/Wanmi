@@ -1,7 +1,8 @@
 import { MigrateUpArgs, MigrateDownArgs, sql } from '@payloadcms/db-postgres'
 import { createCipheriv, createHmac, randomBytes } from 'node:crypto'
 
-const LEGACY_PHONE_REVIEW_REASON = 'd9a_legacy_phone_normalization_failed'
+const LEGACY_PHONE_NORMALIZATION_REVIEW_REASON = 'd9a_legacy_phone_normalization_failed'
+const LEGACY_PHONE_DUPLICATE_REVIEW_REASON = 'd9a_legacy_phone_duplicate'
 
 function foldFullWidthAscii(value: string): string {
   return Array.from(value, (character) => {
@@ -265,7 +266,8 @@ export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
 
   const providerInstanceId = process.env.CUSTOMER_PHONE_IDENTITY_INSTANCE_ID || 'wanmi-sms-cn'
   const customers = await db.execute(sql`SELECT id, phone FROM customers ORDER BY id`)
-  let isolatedCount = 0
+  let identityConflictCount = 0
+  let normalizationFailureCount = 0
   for (const row of customers.rows as Array<{ id: number; phone: string }>) {
     const phone = legacyPhone(row.phone)
     const inviteCode = createHmac('sha256', pepper)
@@ -288,15 +290,15 @@ export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
         INSERT INTO manual_reviews (
           customer_id, reason_code, status, updated_at, created_at
         ) VALUES (
-          ${row.id}, ${LEGACY_PHONE_REVIEW_REASON}, 'open', NOW(), NOW()
+          ${row.id}, ${LEGACY_PHONE_NORMALIZATION_REVIEW_REASON}, 'open', NOW(), NOW()
         )
       `)
-      isolatedCount += 1
+      normalizationFailureCount += 1
       continue
     }
 
     const identifierHash = createHmac('sha256', pepper).update(phone).digest('hex')
-    await db.execute(sql`
+    const insertedIdentity = await db.execute(sql`
       INSERT INTO customer_identities (
         customer_id, provider, provider_instance_id, identifier_hash, identifier_encrypted,
         status, verified_at, bound_at, updated_at, created_at
@@ -305,19 +307,34 @@ export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
         ${encryptLegacyIdentifier(phone)}, 'active', NOW(), NOW(), NOW(), NOW()
       )
       ON CONFLICT (provider, provider_instance_id, identifier_hash) DO NOTHING
+      RETURNING id
     `)
+    if (insertedIdentity.rows?.[0]?.id === undefined) {
+      await db.execute(sql`
+        INSERT INTO manual_reviews (
+          customer_id, reason_code, status, updated_at, created_at
+        ) VALUES (
+          ${row.id}, ${LEGACY_PHONE_DUPLICATE_REVIEW_REASON}, 'open', NOW(), NOW()
+        )
+      `)
+      identityConflictCount += 1
+    }
   }
 
   payload.logger.info({
-    isolatedCount,
+    identityConflictCount,
     msg: 'D9-A legacy phone migration completed',
+    normalizationFailureCount,
   })
 }
 
 export async function down({ db, payload, req }: MigrateDownArgs): Promise<void> {
   await db.execute(sql`
     DELETE FROM "manual_reviews"
-    WHERE "reason_code" = ${LEGACY_PHONE_REVIEW_REASON}
+    WHERE "reason_code" IN (
+      ${LEGACY_PHONE_NORMALIZATION_REVIEW_REASON},
+      ${LEGACY_PHONE_DUPLICATE_REVIEW_REASON}
+    )
   `)
 
   await db.execute(sql`

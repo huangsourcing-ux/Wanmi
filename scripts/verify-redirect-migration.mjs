@@ -38,6 +38,11 @@ const normalizablePhoneFixtures = [
   { expected: '+8613900000007', stored: '(+86) (139) 0000 0007' },
   { expected: '+8613900000008', stored: '＋８６（１３９）００００－０００８' },
 ]
+const duplicateNormalizedPhoneFixture = {
+  expected: '+8613900000099',
+  firstStored: '13900000099',
+  conflictingStored: '(139) 0000-0099',
+}
 const isolatedPhoneFixtures = [
   '013900000009',
   '+852390000010',
@@ -3682,6 +3687,8 @@ try {
   }
   const migrationPhoneFixtures = [
     ...normalizablePhoneFixtures.map(({ stored }) => stored),
+    duplicateNormalizedPhoneFixture.firstStored,
+    duplicateNormalizedPhoneFixture.conflictingStored,
     ...isolatedPhoneFixtures,
   ]
   postgres([
@@ -3698,10 +3705,20 @@ try {
      FROM (VALUES ${sqlValues(migrationPhoneFixtures)}) AS fixtures(phone);`,
   ])
   const d9MigrationOutput = run('pnpm', ['--filter', '@wanmi/web', 'migrate'], { capture: true })
-  const isolatedCountMatch = d9MigrationOutput.match(/"isolatedCount":(?<count>[0-9]+)/u)
-  if (isolatedCountMatch?.groups?.count !== String(isolatedPhoneFixtures.length)) {
+  const normalizationFailureCountMatch = d9MigrationOutput.match(
+    /"normalizationFailureCount":(?<count>[0-9]+)/u,
+  )
+  if (normalizationFailureCountMatch?.groups?.count !== String(isolatedPhoneFixtures.length)) {
     throw new Error(
-      `D9-A-1 migration isolated row count mismatch: expected ${isolatedPhoneFixtures.length}, received ${isolatedCountMatch?.groups?.count ?? 'missing'}`,
+      `D9-A-1 migration normalization failure count mismatch: expected ${isolatedPhoneFixtures.length}, received ${normalizationFailureCountMatch?.groups?.count ?? 'missing'}`,
+    )
+  }
+  const identityConflictCountMatch = d9MigrationOutput.match(
+    /"identityConflictCount":(?<count>[0-9]+)/u,
+  )
+  if (identityConflictCountMatch?.groups?.count !== '1') {
+    throw new Error(
+      `D9-A-1 migration identity conflict count mismatch: expected 1, received ${identityConflictCountMatch?.groups?.count ?? 'missing'}`,
     )
   }
   verifyD9AIdentityRegistrationSchema('historical backfill and down/up round trip')
@@ -3849,6 +3866,69 @@ try {
     throw new Error(`D9-A-1 legacy phone isolation was unsafe: ${isolatedCustomerResult}`)
   }
 
+  const duplicateIdentifierHash = createHmac('sha256', migrationSessionPepper)
+    .update(duplicateNormalizedPhoneFixture.expected)
+    .digest('hex')
+  const duplicateIdentityResult = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `WITH observed AS (
+         SELECT
+           c.phone,
+           COUNT(DISTINCT i.id) AS identity_count,
+           MAX(i.identifier_hash) AS identifier_hash,
+           COUNT(DISTINCT r.id) AS review_count,
+           COUNT(DISTINCT r.id) FILTER (
+             WHERE r.reason_code = 'd9a_legacy_phone_duplicate'
+               AND r.status::text = 'open'
+               AND r.order_id IS NULL
+               AND r.customer_identity_id IS NULL
+               AND r.evidence IS NULL
+               AND r.resolution_note IS NULL
+               AND r.resolved_by_id IS NULL
+               AND r.resolved_at IS NULL
+           ) AS valid_duplicate_review_count
+         FROM customers c
+         LEFT JOIN customer_identities i ON i.customer_id = c.id
+         LEFT JOIN manual_reviews r ON r.customer_id = c.id
+         WHERE c.phone IN (
+           ${sqlLiteral(duplicateNormalizedPhoneFixture.firstStored)},
+           ${sqlLiteral(duplicateNormalizedPhoneFixture.conflictingStored)}
+         )
+         GROUP BY c.phone
+       )
+       SELECT
+         (COUNT(*) = 2)::text || ':' ||
+         BOOL_AND(
+           CASE
+             WHEN phone = ${sqlLiteral(duplicateNormalizedPhoneFixture.firstStored)}
+               THEN identity_count = 1
+                 AND identifier_hash = ${sqlLiteral(duplicateIdentifierHash)}
+                 AND review_count = 0
+             WHEN phone = ${sqlLiteral(duplicateNormalizedPhoneFixture.conflictingStored)}
+               THEN identity_count = 0
+                 AND review_count = 1
+                 AND valid_duplicate_review_count = 1
+             ELSE false
+           END
+         )::text
+       FROM observed`,
+    ],
+    { capture: true },
+  ).trim()
+  if (duplicateIdentityResult !== 'true:true') {
+    throw new Error(
+      `D9-A-1 duplicate normalized identity isolation was unsafe: ${duplicateIdentityResult}`,
+    )
+  }
+
   postgres([
     'psql',
     '--username',
@@ -3872,13 +3952,21 @@ try {
       '--tuples-only',
       '--no-align',
       '--command',
-      `SELECT COUNT(*) FROM manual_reviews
-       WHERE reason_code = 'd9a_legacy_phone_normalization_failed'`,
+      `SELECT
+         COUNT(*) FILTER (
+           WHERE reason_code = 'd9a_legacy_phone_normalization_failed'
+         )::text || ':' ||
+         COUNT(*) FILTER (
+           WHERE reason_code = 'd9a_legacy_phone_duplicate'
+         )::text
+       FROM manual_reviews`,
     ],
     { capture: true },
   ).trim()
-  if (isolatedReviewsAfterDown !== '0') {
-    throw new Error('D9-A-1 migration down left legacy phone isolation reviews behind')
+  if (isolatedReviewsAfterDown !== '0:0') {
+    throw new Error(
+      `D9-A-1 migration down left legacy phone isolation reviews behind: ${isolatedReviewsAfterDown}`,
+    )
   }
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
   verifyD9AIdentityRegistrationSchema('legacy phone isolation down/up round trip')
