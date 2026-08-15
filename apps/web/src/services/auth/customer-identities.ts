@@ -27,6 +27,11 @@ import { recordCustomerSecurityEvent } from './security-events'
 export type IdentityProvider = 'phone' | 'wechat'
 export type RegistrationSource = 'phone' | 'wechat_oauth' | 'wechat_qrcode'
 
+const LEGACY_PHONE_REVIEW_REASONS = [
+  'd9a_legacy_phone_normalization_failed',
+  'd9a_legacy_phone_duplicate',
+] as const
+
 type IdentityRecord = {
   boundAt: string
   customer: number | Customer
@@ -89,6 +94,86 @@ export function protectedIdentifier(identifier: string): {
 
 function customerId(identity: IdentityRecord): number {
   return typeof identity.customer === 'object' ? identity.customer.id : identity.customer
+}
+
+function relationshipId(value: number | Customer | null | undefined): number | undefined {
+  if (typeof value === 'number') return value
+  return value?.id
+}
+
+function foldFullWidthAscii(value: string): string {
+  return Array.from(value, (character) => {
+    const codePoint = character.codePointAt(0)
+    if (codePoint === 0x3000) return ' '
+    if (codePoint !== undefined && codePoint >= 0xff01 && codePoint <= 0xff5e) {
+      return String.fromCodePoint(codePoint - 0xfee0)
+    }
+    return character
+  }).join('')
+}
+
+function reviewedLegacyPhone(value: string): string | undefined {
+  const compact = foldFullWidthAscii(value).replace(/[\s()/\p{Dash_Punctuation}]/gu, '')
+  let nationalNumber = compact
+  if (compact.startsWith('+86')) {
+    nationalNumber = compact.slice(3)
+  } else if (compact.startsWith('0086')) {
+    nationalNumber = compact.slice(4)
+  } else if (compact.startsWith('86')) {
+    nationalNumber = compact.slice(2)
+  }
+  // Some isolated historical rows contain the domestic trunk prefix even though
+  // Mainland mobile numbers do not use it. This candidate is only used to block
+  // registration for an open review; it never authenticates or binds an identity.
+  if (/^01[3-9]\d{9}$/u.test(nationalNumber)) nationalNumber = nationalNumber.slice(1)
+
+  const normalized = `+86${nationalNumber}`
+  return /^\+861[3-9]\d{9}$/u.test(normalized) ? normalized : undefined
+}
+
+async function assertLegacyPhoneIsNotQuarantined(
+  req: PayloadRequest,
+  phone: string,
+): Promise<void> {
+  const reviews = await req.payload.find({
+    collection: 'manualReviews',
+    depth: 0,
+    overrideAccess: true,
+    pagination: false,
+    req,
+    select: { customer: true },
+    where: {
+      and: [
+        { status: { equals: 'open' } },
+        { reasonCode: { in: [...LEGACY_PHONE_REVIEW_REASONS] } },
+      ],
+    },
+  })
+  const customerIds = [
+    ...new Set(
+      reviews.docs
+        .map((review) => relationshipId(review.customer))
+        .filter((id): id is number => id !== undefined),
+    ),
+  ]
+  if (customerIds.length === 0) return
+
+  const customers = await req.payload.find({
+    collection: 'customers',
+    depth: 0,
+    overrideAccess: true,
+    pagination: false,
+    req,
+    select: { phone: true },
+    where: { id: { in: customerIds } },
+  })
+  if (!customers.docs.some((customer) => reviewedLegacyPhone(customer.phone) === phone)) return
+
+  throw new AppError('CUSTOMER_ACCOUNT_NEEDS_REVIEW', '该手机号关联的历史账号需要人工复核', 403, {
+    action: '请联系客服处理历史账号后再登录',
+    retryable: false,
+    title: '历史账号需要人工复核',
+  })
 }
 
 async function findIdentity(
@@ -231,6 +316,7 @@ export async function authenticateVerifiedPhone(
   input: { deviceHash: string; ipHash: string; phone: string },
 ): Promise<IdentityAuthenticationResult> {
   const phone = normalizeChinesePhone(input.phone)
+  await assertLegacyPhoneIsNotQuarantined(req, phone)
   const providerInstanceId = identityProviderInstance('phone')
   const identifierHash = hmac(phone, getEnv().SESSION_PEPPER)
   const identity = await findIdentity(req, 'phone', providerInstanceId, identifierHash)
@@ -446,6 +532,7 @@ export async function registerCustomer(
       const phone = normalizeChinesePhone(
         decryptSecret(phoneIntent.identifierEncrypted, identityEncryptionKey()),
       )
+      await assertLegacyPhoneIsNotQuarantined(req, phone)
       const inviterId = await findInviter(req, input.invitationCode)
       const now = new Date().toISOString()
       const customer = await req.payload.create({
@@ -490,6 +577,7 @@ export async function registerCustomer(
       }
     })
   } catch (error) {
+    if (error instanceof AppError && error.code === 'CUSTOMER_ACCOUNT_NEEDS_REVIEW') throw error
     if (!claimedPrimary || !claimedPhone) throw error
     const phone = normalizeChinesePhone(
       decryptSecret(claimedPhone.identifierEncrypted, identityEncryptionKey()),

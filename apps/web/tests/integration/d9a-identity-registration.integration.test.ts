@@ -1103,4 +1103,159 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
       }),
     ).resolves.toMatchObject({ customer: { id: customer.id }, kind: 'authenticated' })
   })
+
+  it('keeps the legacy phone fallback login and backfills its identity', async () => {
+    const legacyPhone = phone()
+    const customer = await payload.create({
+      collection: 'customers',
+      data: { phone: legacyPhone, phoneMasked: maskPhone(legacyPhone), status: 'active' },
+      overrideAccess: true,
+    })
+    const requestHeaders = headers()
+
+    await expect(
+      authenticateVerifiedPhone(await request(requestHeaders), {
+        ...clientHashes(requestHeaders, `d9a-legacy-login-${randomUUID()}`),
+        phone: legacyPhone,
+      }),
+    ).resolves.toMatchObject({ customer: { id: customer.id }, kind: 'authenticated' })
+    expect(
+      await payload.count({
+        collection: 'customerIdentities',
+        overrideAccess: true,
+        where: {
+          and: [
+            { customer: { equals: customer.id } },
+            { identifierHash: { equals: hmac(legacyPhone, getEnv().SESSION_PEPPER) } },
+            { provider: { equals: 'phone' } },
+            { status: { equals: 'active' } },
+          ],
+        },
+      }),
+    ).toEqual({ totalDocs: 1 })
+  })
+
+  it('blocks a normalization-failed legacy account from becoming a new customer', async () => {
+    const verifiedPhone = phone()
+    const storedLegacyPhone = `0${verifiedPhone.slice(3)}`
+    const customer = await payload.create({
+      collection: 'customers',
+      data: {
+        phone: storedLegacyPhone,
+        phoneMasked: maskPhone(verifiedPhone),
+        status: 'active',
+      },
+      overrideAccess: true,
+    })
+    await payload.create({
+      collection: 'manualReviews',
+      data: {
+        customer: customer.id,
+        reasonCode: 'd9a_legacy_phone_normalization_failed',
+        status: 'open',
+      },
+      overrideAccess: true,
+    })
+    const customerCountBefore = await payload.count({
+      collection: 'customers',
+      overrideAccess: true,
+    })
+    const requestHeaders = headers()
+    const deviceId = `d9a-normalization-review-${randomUUID()}`
+    let error: unknown
+    try {
+      const authentication = await authenticateVerifiedPhone(await request(requestHeaders), {
+        ...clientHashes(requestHeaders, deviceId),
+        phone: verifiedPhone,
+      })
+      if (authentication.kind === 'registration_required') {
+        await registerCustomer(
+          await request(requestHeaders),
+          registrationInput({
+            deviceId,
+            registrationToken: authentication.registrationToken,
+          }),
+          requestHeaders,
+          null,
+        )
+      }
+    } catch (caught) {
+      error = caught
+    }
+
+    const customerCountAfter = await payload.count({
+      collection: 'customers',
+      overrideAccess: true,
+    })
+    expect(
+      customerCountAfter.totalDocs,
+      'a quarantined legacy phone must not create an additional customers row',
+    ).toBe(customerCountBefore.totalDocs)
+    expect(error).toMatchObject({
+      code: 'CUSTOMER_ACCOUNT_NEEDS_REVIEW',
+      message: '该手机号关联的历史账号需要人工复核',
+      options: { action: '请联系客服处理历史账号后再登录' },
+      status: 403,
+    })
+  })
+
+  it('blocks every account behind an open duplicate-phone review', async () => {
+    const duplicatePhone = phone()
+    const identityOwner = await payload.create({
+      collection: 'customers',
+      data: { phone: duplicatePhone, phoneMasked: maskPhone(duplicatePhone), status: 'active' },
+      overrideAccess: true,
+    })
+    await payload.create({
+      collection: 'customerIdentities',
+      data: {
+        ...protectedIdentifier(duplicatePhone),
+        boundAt: new Date().toISOString(),
+        customer: identityOwner.id,
+        provider: 'phone',
+        providerInstanceId: identityProviderInstance('phone'),
+        status: 'active',
+        verifiedAt: new Date().toISOString(),
+      },
+      overrideAccess: true,
+    })
+    const storedDuplicatePhone = `(${duplicatePhone.slice(0, 3)}) ${duplicatePhone.slice(3, 6)}-${duplicatePhone.slice(6)}`
+    const isolatedCustomer = await payload.create({
+      collection: 'customers',
+      data: {
+        phone: storedDuplicatePhone,
+        phoneMasked: maskPhone(duplicatePhone),
+        status: 'active',
+      },
+      overrideAccess: true,
+    })
+    await payload.create({
+      collection: 'manualReviews',
+      data: {
+        customer: isolatedCustomer.id,
+        reasonCode: 'd9a_legacy_phone_duplicate',
+        status: 'open',
+      },
+      overrideAccess: true,
+    })
+    const customerCountBefore = await payload.count({
+      collection: 'customers',
+      overrideAccess: true,
+    })
+    const requestHeaders = headers()
+
+    await expect(
+      authenticateVerifiedPhone(await request(requestHeaders), {
+        ...clientHashes(requestHeaders, `d9a-duplicate-review-${randomUUID()}`),
+        phone: duplicatePhone,
+      }),
+    ).rejects.toMatchObject({
+      code: 'CUSTOMER_ACCOUNT_NEEDS_REVIEW',
+      options: { action: '请联系客服处理历史账号后再登录' },
+      status: 403,
+    })
+    expect(await payload.count({ collection: 'customers', overrideAccess: true })).toEqual(
+      customerCountBefore,
+    )
+  })
 })
