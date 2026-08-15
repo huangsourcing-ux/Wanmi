@@ -59,6 +59,7 @@ describe('D1 shared form and result states', () => {
     const { container } = render(<PageLoading />)
     const status = screen.getByRole('status', { name: '页面正在加载' })
     expect(status.getAttribute('aria-busy')).toBe('true')
+    expect(status.classList.contains('min-h-[calc(100svh-4rem)]')).toBe(true)
     expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(6)
   })
 
