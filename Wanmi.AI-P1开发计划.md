@@ -1137,7 +1137,7 @@ fail-closed。down 先删除两类隔离记录，再还原原 schema。
 `migration down left legacy phone isolation reviews behind: 0:1`。恢复后完整 `make check` 退出码 0，
 通过 658/658 单元、119/119 PostgreSQL/MinIO 集成、全部 migration/生成物、lint、TypeScript strict、
 Next.js 生产构建、linux/amd64 同镜像、provider/bootstrap/release、依赖与秘密扫描；完整历史 Gitleaks
-用主仓库与 linked worktree 的真实 Git 元数据扫描 188 个可达提交且无泄漏。已应用旧版 migration 的
+用主仓库与 linked worktree 的真实 Git 元数据扫描完整可达历史且无泄漏。已应用旧版 migration 的
 本地开发库须重建，或在确认
 仅为开发数据后删除对应 migration 记录再重跑；CI 使用全新数据库。未修改生产数据，未部署或执行外部
 写操作，现有任务勾选保持不变。
