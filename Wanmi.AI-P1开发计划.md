@@ -1142,6 +1142,26 @@ Next.js 生产构建、linux/amd64 同镜像、provider/bootstrap/release、依�
 仅为开发数据后删除对应 migration 记录再重跑；CI 使用全新数据库。未修改生产数据，未部署或执行外部
 写操作，现有任务勾选保持不变。
 
+D9-A-1b 隔离历史账号登录拦截验证记录（2026-08-14）：未扩大 migration 或 schema。登录服务先从
+`manualReviews` 读取原因属于 `d9a_legacy_phone_normalization_failed` 或
+`d9a_legacy_phone_duplicate` 且状态为 open 的记录，只沿现有 `customer` relationship 取得受影响
+customer id，再仅对这些 customer 的既有 `phone` 做内存候选归一化，与本次已验证号码比较。候选逻辑
+覆盖 migration 已接受的全角、空白、括号、Unicode 连字符和 `+86`/`0086`/`86` 形式，并只在拦截侧
+识别导致隔离的前导 `0` 与 `/`；结果不用于认证或绑定，不落库、不记录日志，也不向 `manualReviews`
+写入手机号明文、掩码或哈希。这条 `review → customer.id → 隔离 customer 的既有 phone → 内存候选`
+路径无需新增关联字段。
+
+手机号认证在 identity 和历史字符串等值兜底之前执行该拦截；命中时返回 HTTP 403、稳定错误码
+`CUSTOMER_ACCOUNT_NEEDS_REVIEW` 及联系客服 action，不签发注册意图。注册确认在创建 customer 前再次
+执行相同拦截，已签发意图也不能绕过；归一化成功且无冲突的历史账号仍走原有
+`createLegacyPhoneIdentity` 并正常登录。集成测试覆盖正常历史账号补建 identity、归一化失败隔离账号和
+同号冲突隔离账号，后两类均断言 customer 总数不变。临时移除复核拦截后的变异实跑失败原文为
+`AssertionError: a quarantined legacy phone must not create an additional customers row: expected 213 to be 212`，
+明确观测到新增一行；恢复后 D9-A 集成 16/16、完整 `make check` 退出码 0，通过 658/658 单元、
+122/122 PostgreSQL/MinIO 集成、全部 migration/生成物、lint、TypeScript strict、Next.js 生产构建、
+linux/amd64 同镜像、provider/bootstrap/release、依赖与秘密扫描。未修改生产数据，未部署或执行外部
+写操作，现有任务勾选保持不变。
+
 ---
 
 ### 16.7 D9-B 钱包与对账
