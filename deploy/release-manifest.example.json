@@ -16,7 +16,8 @@
     "20260814_103904_d9a_identity_registration",
     "20260816_031001_d9a_step_up_grants",
     "20260816_061548_d9a_account_state_capabilities",
-    "20260816_061549_d9a_account_state_backfill"
+    "20260816_061549_d9a_account_state_backfill",
+    "20260816_121523_d9a_consent_personal_information"
   ],
   "rollback": {
     "database": "retain",

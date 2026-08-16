@@ -35,6 +35,7 @@ import * as migration_20260814_103904_d9a_identity_registration from './20260814
 import * as migration_20260816_031001_d9a_step_up_grants from './20260816_031001_d9a_step_up_grants'
 import * as migration_20260816_061548_d9a_account_state_capabilities from './20260816_061548_d9a_account_state_capabilities'
 import * as migration_20260816_061549_d9a_account_state_backfill from './20260816_061549_d9a_account_state_backfill'
+import * as migration_20260816_121523_d9a_consent_personal_information from './20260816_121523_d9a_consent_personal_information'
 
 export const migrations = [
   {
@@ -221,5 +222,10 @@ export const migrations = [
     up: migration_20260816_061549_d9a_account_state_backfill.up,
     down: migration_20260816_061549_d9a_account_state_backfill.down,
     name: '20260816_061549_d9a_account_state_backfill',
+  },
+  {
+    up: migration_20260816_121523_d9a_consent_personal_information.up,
+    down: migration_20260816_121523_d9a_consent_personal_information.down,
+    name: '20260816_121523_d9a_consent_personal_information',
   },
 ]

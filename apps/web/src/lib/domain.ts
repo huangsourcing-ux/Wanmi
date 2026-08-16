@@ -2,6 +2,30 @@ export const ADMIN_ROLES = ['content_editor', 'ad_operator', 'analyst', 'system_
 
 export type AdminRole = (typeof ADMIN_ROLES)[number]
 
+export const CONSENT_TYPES = [
+  'service_terms',
+  'privacy_policy',
+  'sensitive_personal_information',
+  'wechat_profile',
+  'commercial_sms',
+  'automatic_renewal',
+  'invitation_attribution',
+  'device_identifier_notice',
+] as const
+
+export type ConsentType = (typeof CONSENT_TYPES)[number]
+
+export const CUSTOMER_MANAGED_OPTIONAL_CONSENT_TYPES = [
+  'sensitive_personal_information',
+  'wechat_profile',
+  'commercial_sms',
+  'invitation_attribution',
+  'device_identifier_notice',
+] as const satisfies readonly ConsentType[]
+
+export type CustomerManagedOptionalConsentType =
+  (typeof CUSTOMER_MANAGED_OPTIONAL_CONSENT_TYPES)[number]
+
 export const CUSTOMER_ACCOUNT_STATUSES = [
   'pending_registration',
   'active',

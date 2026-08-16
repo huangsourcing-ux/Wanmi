@@ -61,9 +61,12 @@ async function approvedCustomer(suffix: string) {
   const customer = await payload.create({
     collection: 'customers',
     data: {
+      accountType: 'registered',
       capabilityRestrictions: [],
+      defaultCustomerProfileType: 'individual',
       phone: `${prefix}-${suffix}`,
       phoneMasked: `***${suffix}`,
+      registrationSource: 'phone',
       status: 'active',
     },
     overrideAccess: true,

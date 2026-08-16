@@ -7,6 +7,7 @@ import { createLocalReq, getPayload, type PayloadRequest } from 'payload'
 import QRCode from 'qrcode'
 
 import { AppError } from '@/lib/errors'
+import { appendConsentAcceptance } from '@/services/auth/registration-consents'
 import { mockSuccess } from '@/providers/mock'
 import type { PaymentProvider, WestDigitalRealnameProvider } from '@/providers/types'
 import {
@@ -336,9 +337,12 @@ async function prepare(): Promise<void> {
     const customerDocument = await payload.create({
       collection: 'customers',
       data: {
+        accountType: 'registered',
         capabilityRestrictions: [],
+        defaultCustomerProfileType: 'individual',
         phone: `${tracePrefix}-fixture`,
         phoneMasked: '***0017',
+        registrationSource: 'phone',
         status: 'active',
       },
       overrideAccess: true,
@@ -349,6 +353,13 @@ async function prepare(): Promise<void> {
       status: 'active',
     }
     const req = await customerRequest(payload, customer, `${tracePrefix}-customer`)
+    await appendConsentAcceptance(req, {
+      acceptedAt: new Date().toISOString(),
+      consentType: 'sensitive_personal_information',
+      customerId: customer.id,
+      headers: req.headers,
+      source: 'account_privacy_center',
+    })
     const realnameProvider = approvedRealnameFixture()
     const template = await createRealnameTemplate(req, {
       addressChinese: '一环路北一段99号环球广场',

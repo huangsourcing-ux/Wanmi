@@ -56,6 +56,13 @@
       "phase": "data",
       "reason": "将历史 disabled 与 deletion_requested 状态映射到等价的新状态；旧代码仍保持失败关闭，新代码在应用提升前获得完整六态数据。",
       "rollback": "retain"
+    },
+    "20260816_121523_d9a_consent_personal_information": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "只追加同意来源枚举值、历史资料补全时间与同意状态版本列；旧代码可忽略新增值和列，新代码在迁移完成后才启用 A7 同意能力。",
+      "rollback": "retain"
     }
   }
 }

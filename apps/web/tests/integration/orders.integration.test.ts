@@ -17,6 +17,7 @@ import {
 } from '@/services/realname/templates'
 
 import { realnameTemplateFixture } from '../fixtures/realname'
+import { grantSensitivePersonalInformationConsent } from '../fixtures/consents'
 import { PRICING_RULE_FIXTURES } from '../fixtures/pricing'
 
 const fixturePrefix = `d5-orders-${randomUUID()}`
@@ -45,14 +46,22 @@ async function customer(last4: string) {
   const document = await payload.create({
     collection: 'customers',
     data: {
+      accountType: 'registered',
       capabilityRestrictions: [],
+      defaultCustomerProfileType: 'individual',
       phone: `${fixturePrefix}-${last4}`,
       phoneMasked: `***${last4}`,
+      registrationSource: 'phone',
       status: 'active',
     },
     overrideAccess: true,
   })
   created.push({ collection: 'customers', id: document.id })
+  await grantSensitivePersonalInformationConsent(
+    payload,
+    Number(document.id),
+    `${fixturePrefix}-sensitive-consent-${last4}`,
+  )
   return { ...document, collection: 'customers' as const, id: Number(document.id) }
 }
 

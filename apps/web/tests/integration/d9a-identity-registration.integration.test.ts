@@ -64,14 +64,18 @@ async function phoneIntent(input: { deviceId: string; phone: string; requestHead
 }
 
 function registrationInput(input: {
+  commercialSmsOptIn?: boolean
   deviceId: string
   invitationCode?: string
   phoneRegistrationToken?: string
   registrationToken: string
 }) {
   return {
+    acceptedDeviceIdentifierNotice: true as const,
+    acceptedInvitationAttribution: input.invitationCode ? (true as const) : undefined,
     acceptedPrivacyPolicy: true as const,
     acceptedServiceTerms: true as const,
+    commercialSmsOptIn: input.commercialSmsOptIn ?? false,
     confirmsAdultOrAuthorizedRepresentative: true as const,
     defaultCustomerProfileType: 'individual' as const,
     deviceId: input.deviceId,
@@ -120,7 +124,7 @@ afterAll(async () => {
 })
 
 describe('D9-A-1 explicit registration and identity invariants', () => {
-  it('does not create an account at OTP verification and records two real registration consents', async () => {
+  it('does not create an account at OTP verification and records explicit registration consents', async () => {
     const registrationPhone = phone()
     const invitationCode = randomBytes(6).toString('hex').toUpperCase()
     const inviterPhone = phone()
@@ -205,8 +209,10 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
       sort: 'consentType',
       where: { customer: { equals: customer.id } },
     })
-    expect(consents.docs).toHaveLength(2)
+    expect(consents.docs).toHaveLength(4)
     expect(consents.docs.map((record) => record.consentType).sort()).toEqual([
+      'device_identifier_notice',
+      'invitation_attribution',
       'privacy_policy',
       'service_terms',
     ])
@@ -288,6 +294,38 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
         },
       }),
     ).toEqual({ totalDocs: 1 })
+  })
+
+  it('records commercial SMS consent only after explicit registration opt-in', async () => {
+    const registrationPhone = phone()
+    const deviceId = `d9a-commercial-device-${randomUUID()}`
+    const requestHeaders = headers()
+    const intent = await phoneIntent({ deviceId, phone: registrationPhone, requestHeaders })
+    const registered = await registerCustomer(
+      await request(requestHeaders),
+      registrationInput({
+        commercialSmsOptIn: true,
+        deviceId,
+        registrationToken: intent.registrationToken,
+      }),
+      requestHeaders,
+      null,
+    )
+    const consent = await payload.find({
+      collection: 'consentRecords',
+      overrideAccess: true,
+      where: {
+        and: [
+          { customer: { equals: registered.customer.id } },
+          { consentType: { equals: 'commercial_sms' } },
+        ],
+      },
+    })
+    expect(consent.docs).toHaveLength(1)
+    expect(consent.docs[0]).toMatchObject({
+      source: 'phone_registration',
+      ...registrationConsentDocument('commercial_sms'),
+    })
   })
 
   it('resolves concurrent registration for one Wechat identity to one account', async () => {

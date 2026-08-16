@@ -39,8 +39,10 @@ async function completePhoneRegistration(
   return registerCustomer(
     await createLocalReq({ req: { headers } }, payload),
     {
+      acceptedDeviceIdentifierNotice: true,
       acceptedPrivacyPolicy: true,
       acceptedServiceTerms: true,
+      commercialSmsOptIn: false,
       confirmsAdultOrAuthorizedRepresentative: true,
       defaultCustomerProfileType: 'individual',
       deviceId,

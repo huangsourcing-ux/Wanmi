@@ -29,6 +29,26 @@ export const auditEventDefinitions = {
     actorTypes: ['admin', 'customer', 'system'],
     targetType: 'customer-session',
   },
+  'customer.consent.accepted': {
+    actorTypes: ['customer'],
+    targetType: 'customer',
+  },
+  'customer.consent.revoked': {
+    actorTypes: ['customer'],
+    targetType: 'customer',
+  },
+  'customer.legacy_profile.completed': {
+    actorTypes: ['customer'],
+    targetType: 'customer',
+  },
+  'customer.personal_information.exported': {
+    actorTypes: ['admin', 'customer'],
+    targetType: 'customer',
+  },
+  'customer.personal_information.viewed': {
+    actorTypes: ['admin', 'customer'],
+    targetType: 'customer',
+  },
   'customer.registered': { actorTypes: ['customer'], targetType: 'customer' },
   'advertising.change': { actorTypes: ['admin'], targetType: 'advertising' },
   'advertising.delete': { actorTypes: ['admin'], targetType: 'advertising' },

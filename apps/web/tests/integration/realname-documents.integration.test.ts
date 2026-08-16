@@ -18,6 +18,7 @@ import { createRealnameTemplate } from '@/services/realname/templates'
 
 import { realnameTemplateFixture } from '../fixtures/realname'
 import { createTestRealnameDocumentMasterKeyring } from '../fixtures/realname-master-key'
+import { grantSensitivePersonalInformationConsent } from '../fixtures/consents'
 
 const fixturePrefix = `d4-documents-${randomUUID()}`
 const marker = `PRIVATE-DOCUMENT-CONTENT-${randomUUID()}`
@@ -45,13 +46,18 @@ async function customer(last4: string) {
     collection: 'customers',
     data: {
       capabilityRestrictions: [],
-      phone: `1380000${last4}`,
+      phone: `${fixturePrefix}-${last4}`,
       phoneMasked: `138****${last4}`,
       status: 'active',
     },
     overrideAccess: true,
   })
   created.push({ collection: 'customers', id: document.id })
+  await grantSensitivePersonalInformationConsent(
+    payload,
+    Number(document.id),
+    `${fixturePrefix}-sensitive-consent-${last4}`,
+  )
   return { ...document, collection: 'customers' as const }
 }
 

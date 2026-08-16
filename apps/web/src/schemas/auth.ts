@@ -192,8 +192,11 @@ export const logoutSchema = z.object({
 
 export const customerRegistrationSchema = z
   .object({
+    acceptedDeviceIdentifierNotice: z.literal(true),
+    acceptedInvitationAttribution: z.literal(true).optional(),
     acceptedPrivacyPolicy: z.literal(true),
     acceptedServiceTerms: z.literal(true),
+    commercialSmsOptIn: z.boolean().default(false),
     confirmsAdultOrAuthorizedRepresentative: z.literal(true),
     defaultCustomerProfileType: z.enum(['individual', 'organization']),
     deviceId: z.string().min(16).max(128),
@@ -206,6 +209,22 @@ export const customerRegistrationSchema = z
     registrationToken: z.string().min(32).max(128),
   })
   .strict()
+  .superRefine((input, context) => {
+    if (input.invitationCode && input.acceptedInvitationAttribution !== true) {
+      context.addIssue({
+        code: 'custom',
+        message: '使用邀请码前必须确认邀请归因说明',
+        path: ['acceptedInvitationAttribution'],
+      })
+    }
+    if (!input.invitationCode && input.acceptedInvitationAttribution !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        message: '未使用邀请码时不得提交邀请归因同意',
+        path: ['acceptedInvitationAttribution'],
+      })
+    }
+  })
 
 export const defaultCustomerProfileTypeSchema = z
   .object({ defaultCustomerProfileType: z.enum(['individual', 'organization']) })
