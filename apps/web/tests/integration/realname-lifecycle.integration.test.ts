@@ -12,6 +12,7 @@ import { createRealnameTemplate } from '@/services/realname/templates'
 
 import { realnameTemplateFixture } from '../fixtures/realname'
 import { createTestRealnameDocumentMasterKeyring } from '../fixtures/realname-master-key'
+import { issueStepUpGrantFixture } from '../fixtures/step-up'
 
 const fixturePrefix = `d4-lifecycle-${randomUUID()}`
 const created: Array<{ collection: 'customers'; id: number | string }> = []
@@ -62,7 +63,12 @@ describe('D4 real-name retention lifecycle', () => {
     const phone = `139${randomInt(10_000_000, 99_999_999)}`
     const customer = await payload.create({
       collection: 'customers',
-      data: { phone, phoneMasked: `${phone.slice(0, 3)}****${phone.slice(-4)}`, status: 'active' },
+      data: {
+        capabilityRestrictions: [],
+        phone,
+        phoneMasked: `${phone.slice(0, 3)}****${phone.slice(-4)}`,
+        status: 'active',
+      },
       overrideAccess: true,
     })
     created.push({ collection: 'customers', id: customer.id })
@@ -97,7 +103,11 @@ describe('D4 real-name retention lifecycle', () => {
       overrideAccess: true,
     })
 
-    const deletion = await requestCustomerDeletion(req, user)
+    const deletion = await requestCustomerDeletion(
+      req,
+      user,
+      await issueStepUpGrantFixture(payload, req, customer.id, 'account_deletion'),
+    )
     const disabled = await payload.findByID({
       collection: 'realnameTemplates',
       id: template.id,

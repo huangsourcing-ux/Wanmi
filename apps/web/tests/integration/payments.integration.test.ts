@@ -57,7 +57,12 @@ const evidence = {
 async function createPendingOrder(suffix: string, amountMinor = 12_300) {
   const customer = await payload.create({
     collection: 'customers',
-    data: { phone: `${prefix}-${suffix}`, phoneMasked: `***${suffix}`, status: 'active' },
+    data: {
+      capabilityRestrictions: [],
+      phone: `${prefix}-${suffix}`,
+      phoneMasked: `***${suffix}`,
+      status: 'active',
+    },
     overrideAccess: true,
   })
   const template = await payload.create({

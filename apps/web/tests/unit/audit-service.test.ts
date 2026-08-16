@@ -33,6 +33,8 @@ describe('shared audit event service', () => {
         'content.revision.published',
         'content.status.changed',
         'customer.default_profile_type.changed',
+        'customer.account_sessions.revoked',
+        'customer.account_state.changed',
         'customer.identity.bound',
         'customer.identity.unbound',
         'customer.registered',

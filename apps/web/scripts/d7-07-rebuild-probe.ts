@@ -52,7 +52,12 @@ async function seedRegistrationProbe(
   const domainAscii = `d707-${id.replaceAll('-', '')}.com`
   const customer = await payload.create({
     collection: 'customers',
-    data: { phone: prefix, phoneMasked: '***d707', status: 'active' },
+    data: {
+      capabilityRestrictions: [],
+      phone: prefix,
+      phoneMasked: '***d707',
+      status: 'active',
+    },
     overrideAccess: true,
   })
   const customerReq = await request(payload, `${prefix}-customer`)

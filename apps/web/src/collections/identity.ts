@@ -1,6 +1,11 @@
 import type { CollectionConfig } from 'payload'
 
-import { ADMIN_ROLES, STEP_UP_PURPOSES } from '@/lib/domain'
+import {
+  ADMIN_ROLES,
+  CUSTOMER_ACCOUNT_STATUSES,
+  CUSTOMER_CAPABILITY_RESTRICTIONS,
+  STEP_UP_PURPOSES,
+} from '@/lib/domain'
 import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 import {
   adminSelfOrSystem,
@@ -180,9 +185,27 @@ export const Customers: CollectionConfig = {
     {
       name: 'status',
       type: 'select',
-      defaultValue: 'active',
-      options: ['active', 'disabled', 'deletion_requested'],
+      defaultValue: 'pending_registration',
+      index: true,
+      options: [...CUSTOMER_ACCOUNT_STATUSES],
       required: true,
+    },
+    {
+      name: 'capabilityRestrictions',
+      type: 'json',
+      defaultValue: [],
+      required: true,
+      validate: (value) => {
+        if (!Array.isArray(value)) return '账户能力限制必须为数组'
+        if (new Set(value).size !== value.length) return '账户能力限制不得重复'
+        return value.every(
+          (item) =>
+            typeof item === 'string' &&
+            (CUSTOMER_CAPABILITY_RESTRICTIONS as readonly string[]).includes(item),
+        )
+          ? true
+          : '账户能力限制包含未知值'
+      },
     },
     { name: 'deletionRequestedAt', type: 'date', index: true },
   ],

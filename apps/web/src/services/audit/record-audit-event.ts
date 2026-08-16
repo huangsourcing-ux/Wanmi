@@ -21,6 +21,14 @@ export const auditEventDefinitions = {
     actorTypes: ['customer', 'system'],
     targetType: 'customer-identity',
   },
+  'customer.account_state.changed': {
+    actorTypes: ['admin', 'customer', 'system'],
+    targetType: 'customer',
+  },
+  'customer.account_sessions.revoked': {
+    actorTypes: ['admin', 'customer', 'system'],
+    targetType: 'customer-session',
+  },
   'customer.registered': { actorTypes: ['customer'], targetType: 'customer' },
   'advertising.change': { actorTypes: ['admin'], targetType: 'advertising' },
   'advertising.delete': { actorTypes: ['admin'], targetType: 'advertising' },

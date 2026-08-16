@@ -203,6 +203,7 @@ describe('D1 Payload role boundaries', () => {
       payload.create({
         collection: 'customers',
         data: {
+          capabilityRestrictions: [],
           phone: `${fixturePrefix}-feedback-phone`,
           phoneMasked: '***1203',
           status: 'active',
@@ -284,6 +285,7 @@ describe('D1 Payload role boundaries', () => {
       payload.create({
         collection: 'customers',
         data: {
+          capabilityRestrictions: [],
           phone: `${fixturePrefix}-owner-phone`,
           phoneMasked: '***1301',
           status: 'active',
@@ -296,6 +298,7 @@ describe('D1 Payload role boundaries', () => {
       payload.create({
         collection: 'customers',
         data: {
+          capabilityRestrictions: [],
           phone: `${fixturePrefix}-other-phone`,
           phoneMasked: '***1302',
           status: 'active',
@@ -559,6 +562,7 @@ describe('D1 Payload role boundaries', () => {
       payload.create({
         collection: 'customers',
         data: {
+          capabilityRestrictions: [],
           phone: `${fixturePrefix}-sensitive-phone`,
           phoneMasked: '***1501',
           status: 'active',

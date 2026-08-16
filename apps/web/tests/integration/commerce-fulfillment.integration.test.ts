@@ -11,7 +11,10 @@ import {
   FixtureWestDigitalWriteTransport,
   timeoutAfterSubmission,
 } from '@/providers/westdigital-write-fixtures'
-import { WestDigitalWriteAdapter, WestDigitalWriteTransportError } from '@/providers/westdigital-write'
+import {
+  WestDigitalWriteAdapter,
+  WestDigitalWriteTransportError,
+} from '@/providers/westdigital-write'
 import {
   enqueueCommerceFulfillment,
   runCommerceFulfillment,
@@ -50,7 +53,10 @@ function assetResponse(domain: string, clientid = 'asset-query') {
 }
 
 function registrationResponse(domain: string) {
-  return { body: { clientid: 'registration-write', data: { [domain]: 200 }, result: 200 }, status: 200 }
+  return {
+    body: { clientid: 'registration-write', data: { [domain]: 200 }, result: 200 },
+    status: 200,
+  }
 }
 
 async function request(suffix: string): Promise<PayloadRequest> {
@@ -63,7 +69,12 @@ async function request(suffix: string): Promise<PayloadRequest> {
 async function createPaidOrder(suffix: string, options: { expiredQuote?: boolean } = {}) {
   const customer = await payload.create({
     collection: 'customers',
-    data: { phone: `${prefix}-${suffix}`, phoneMasked: `***${suffix}`, status: 'active' },
+    data: {
+      capabilityRestrictions: [],
+      phone: `${prefix}-${suffix}`,
+      phoneMasked: `***${suffix}`,
+      status: 'active',
+    },
     overrideAccess: true,
   })
   const template = await payload.create({
@@ -142,9 +153,7 @@ async function createPaidOrder(suffix: string, options: { expiredQuote?: boolean
         amountMinor: 2_999,
         customerId: customer.id,
         domainAscii,
-        expiresAt: options.expiredQuote
-          ? new Date(Date.now() - 60_000).toISOString()
-          : undefined,
+        expiresAt: options.expiredQuote ? new Date(Date.now() - 60_000).toISOString() : undefined,
         quoteId: quote.id,
       }),
       realnameTemplate: template.id,
@@ -305,7 +314,11 @@ describe('D6-02 commerce fulfillment', () => {
     )
     const result = await runCommerceFulfillment(
       await request('success-run'),
-      { operationKey: `commerce-fulfillment:${fixture.order.id}`, orderId: Number(fixture.order.id), traceId: `${prefix}-success` },
+      {
+        operationKey: `commerce-fulfillment:${fixture.order.id}`,
+        orderId: Number(fixture.order.id),
+        traceId: `${prefix}-success`,
+      },
       dependencies(new WestDigitalWriteAdapter({ transport })),
     )
     expect(result).toMatchObject({ idempotentReplay: false, status: 'succeeded' })
@@ -357,19 +370,33 @@ describe('D6-02 commerce fulfillment', () => {
     const provider = new WestDigitalWriteAdapter({ transport })
     const first = await runCommerceFulfillment(
       await request('restart-first'),
-      { operationKey: `commerce-fulfillment:${fixture.order.id}`, orderId: Number(fixture.order.id), traceId: `${prefix}-restart-first` },
+      {
+        operationKey: `commerce-fulfillment:${fixture.order.id}`,
+        orderId: Number(fixture.order.id),
+        traceId: `${prefix}-restart-first`,
+      },
       dependencies(provider),
     )
     expect(first.status).toBe('manual_review')
     const replay = await runCommerceFulfillment(
       await request('restart-second'),
-      { operationKey: `commerce-fulfillment:${fixture.order.id}`, orderId: Number(fixture.order.id), traceId: `${prefix}-restart-second` },
+      {
+        operationKey: `commerce-fulfillment:${fixture.order.id}`,
+        orderId: Number(fixture.order.id),
+        traceId: `${prefix}-restart-second`,
+      },
       dependencies(provider),
     )
     expect(replay.status).toBe('succeeded')
     expect(transport.writeCount).toBe(1)
     expect(
-      (await payload.find({ collection: 'domainAssets', overrideAccess: true, where: { domainAscii: { equals: fixture.domainAscii } } })).totalDocs,
+      (
+        await payload.find({
+          collection: 'domainAssets',
+          overrideAccess: true,
+          where: { domainAscii: { equals: fixture.domainAscii } },
+        })
+      ).totalDocs,
     ).toBe(1)
   })
 
@@ -381,12 +408,23 @@ describe('D6-02 commerce fulfillment', () => {
     }))
     const result = await runCommerceFulfillment(
       await request('failure-run'),
-      { operationKey: `commerce-fulfillment:${fixture.order.id}`, orderId: Number(fixture.order.id), traceId: `${prefix}-failure` },
+      {
+        operationKey: `commerce-fulfillment:${fixture.order.id}`,
+        orderId: Number(fixture.order.id),
+        traceId: `${prefix}-failure`,
+      },
       dependencies(new WestDigitalWriteAdapter({ transport })),
     )
     expect(result.status).toBe('refund_pending')
-    expect((await payload.findByID({ collection: 'orders', id: fixture.order.id, overrideAccess: true })).status).toBe('refund_pending')
-    const refunds = await payload.find({ collection: 'refunds', overrideAccess: true, where: { order: { equals: fixture.order.id } } })
+    expect(
+      (await payload.findByID({ collection: 'orders', id: fixture.order.id, overrideAccess: true }))
+        .status,
+    ).toBe('refund_pending')
+    const refunds = await payload.find({
+      collection: 'refunds',
+      overrideAccess: true,
+      where: { order: { equals: fixture.order.id } },
+    })
     expect(refunds.docs).toHaveLength(1)
     expect(refunds.docs[0]).toMatchObject({ amountMinor: 2_999, status: 'pending' })
   })
@@ -400,18 +438,37 @@ describe('D6-02 commerce fulfillment', () => {
     const provider = new WestDigitalWriteAdapter({ transport })
     const first = await runCommerceFulfillment(
       await request('unknown-first'),
-      { operationKey: `commerce-fulfillment:${fixture.order.id}`, orderId: Number(fixture.order.id), traceId: `${prefix}-unknown-first` },
+      {
+        operationKey: `commerce-fulfillment:${fixture.order.id}`,
+        orderId: Number(fixture.order.id),
+        traceId: `${prefix}-unknown-first`,
+      },
       dependencies(provider),
     )
     const replay = await runCommerceFulfillment(
       await request('unknown-replay'),
-      { operationKey: `commerce-fulfillment:${fixture.order.id}`, orderId: Number(fixture.order.id), traceId: `${prefix}-unknown-replay` },
+      {
+        operationKey: `commerce-fulfillment:${fixture.order.id}`,
+        orderId: Number(fixture.order.id),
+        traceId: `${prefix}-unknown-replay`,
+      },
       dependencies(provider),
     )
     expect(first.status).toBe('manual_review')
     expect(replay).toMatchObject({ idempotentReplay: true, status: 'manual_review' })
     expect(transport.writeCount).toBe(1)
-    expect((await payload.findByID({ collection: 'orders', id: fixture.order.id, overrideAccess: true })).status).toBe('manual_review')
-    expect((await payload.find({ collection: 'domainAssets', overrideAccess: true, where: { domainAscii: { equals: fixture.domainAscii } } })).totalDocs).toBe(0)
+    expect(
+      (await payload.findByID({ collection: 'orders', id: fixture.order.id, overrideAccess: true }))
+        .status,
+    ).toBe('manual_review')
+    expect(
+      (
+        await payload.find({
+          collection: 'domainAssets',
+          overrideAccess: true,
+          where: { domainAscii: { equals: fixture.domainAscii } },
+        })
+      ).totalDocs,
+    ).toBe(0)
   })
 })

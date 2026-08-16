@@ -50,7 +50,10 @@ export const domainAssetDetailResultSchema = createResultSchema(
 )
 
 export const nameserverChangeRequestSchema = z.strictObject({
+  confirmed: z.literal(true),
+  deviceId: z.string().min(16).max(128),
   nameservers: z.array(z.string().trim().min(1).max(253)).min(2).max(15),
+  stepUpToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
 })
 
 export const nameserverChangeResultSchema = createResultSchema(nameserverChangeViewSchema)

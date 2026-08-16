@@ -355,7 +355,16 @@ export interface Customer {
   inviteCode?: string | null;
   invitedByCustomer?: (number | null) | Customer;
   identityRiskCooldownStartedAt?: string | null;
-  status: 'active' | 'disabled' | 'deletion_requested';
+  status: 'pending_registration' | 'active' | 'restricted' | 'suspended' | 'closing' | 'closed';
+  capabilityRestrictions:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   deletionRequestedAt?: string | null;
   updatedAt: string;
   createdAt: string;
@@ -2437,6 +2446,7 @@ export interface CustomersSelect<T extends boolean = true> {
   invitedByCustomer?: T;
   identityRiskCooldownStartedAt?: T;
   status?: T;
+  capabilityRestrictions?: T;
   deletionRequestedAt?: T;
   updatedAt?: T;
   createdAt?: T;

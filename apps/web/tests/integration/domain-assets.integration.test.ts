@@ -4,7 +4,7 @@ import config from '@payload-config'
 import { createLocalReq, getPayload, type Payload, type PayloadRequest } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { mockFailure } from '@/providers/mock'
+import { mockFailure, mockSuccess } from '@/providers/mock'
 import type { SmsProvider } from '@/providers/types'
 import {
   FixtureWestDigitalWriteTransport,
@@ -25,6 +25,7 @@ import {
 
 import { fulfillmentQuoteSnapshotFixture } from '../fixtures/commerce'
 import { realnameTemplateFixture } from '../fixtures/realname'
+import { issueStepUpGrantFixture } from '../fixtures/step-up'
 import {
   ensureAnchorSystemAdmin,
   findOrCreateUniqueFixture,
@@ -56,7 +57,12 @@ async function createCustomer(suffix: string) {
     create: () =>
       payload.create({
         collection: 'customers',
-        data: { phone, phoneMasked: `***${phone.slice(-4)}`, status: 'active' },
+        data: {
+          capabilityRestrictions: [],
+          phone,
+          phoneMasked: `***${phone.slice(-4)}`,
+          status: 'active',
+        },
         overrideAccess: true,
       }),
     find: async () => {
@@ -360,6 +366,18 @@ afterAll(async () => {
       payload.delete({ collection: 'realnameTemplates', id: templateId, overrideAccess: true }),
     )
   }
+  for (const grant of (
+    await payload.find({
+      collection: 'stepUpGrants',
+      limit: 100,
+      overrideAccess: true,
+      where: { customer: { in: customerIds } },
+    })
+  ).docs) {
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: 'stepUpGrants', id: grant.id, overrideAccess: true }),
+    )
+  }
   for (const customerId of customerIds) {
     await ignorePayloadNotFound(() =>
       payload.delete({ collection: 'customers', id: customerId, overrideAccess: true }),
@@ -385,6 +403,12 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
     )
     const otherOrder = await createOrder(other, otherTemplate.id, 'ownership-other')
     const req = await customerReq(owner, 'ownership-gate')
+    const nameserverGrant = await issueStepUpGrantFixture(
+      payload,
+      req,
+      owner.id,
+      'nameserver_change',
+    )
 
     const list = await listCustomerDomainAssets(req, {
       collection: 'customers',
@@ -405,7 +429,11 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
       requestCustomerNameserverChange(
         req,
         otherAsset.id,
-        { nameservers: ['ns1.attacker.example', 'ns2.attacker.example'] },
+        {
+          ...nameserverGrant,
+          confirmed: true,
+          nameservers: ['ns1.attacker.example', 'ns2.attacker.example'],
+        },
         {
           customer: { collection: 'customers', id: owner.id, status: 'active' },
           traceId: `${fixturePrefix}-ownership-ns`,
@@ -482,6 +510,12 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
     const template = await createTemplate(customer.id, 'nameserver-success')
     const asset = await createAsset(customer.id, template.id, `${fixturePrefix}-nameserver-success`)
     const req = await customerReq(customer, 'nameserver-success')
+    const nameserverGrant = await issueStepUpGrantFixture(
+      payload,
+      req,
+      customer.id,
+      'nameserver_change',
+    )
     const requested = ['ns1.after.example', 'ns2.after.example']
     let changed = false
     const transport = new FixtureWestDigitalWriteTransport((input) => {
@@ -497,7 +531,7 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
     const queued = await requestCustomerNameserverChange(
       req,
       asset.id,
-      { nameservers: requested },
+      { ...nameserverGrant, confirmed: true, nameservers: requested },
       {
         customer: { collection: 'customers', id: customer.id, status: 'active' },
         traceId: `${fixturePrefix}-nameserver-success`,
@@ -556,6 +590,12 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
     const customer = await createCustomer('nameserver-failures')
     const template = await createTemplate(customer.id, 'nameserver-failures')
     const req = await customerReq(customer, 'nameserver-failures')
+    const nameserverGrant = await issueStepUpGrantFixture(
+      payload,
+      req,
+      customer.id,
+      'nameserver_change',
+    )
 
     const explicitAsset = await createAsset(
       customer.id,
@@ -570,7 +610,11 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
     const explicitQueued = await requestCustomerNameserverChange(
       req,
       explicitAsset.id,
-      { nameservers: ['ns1.failed.example', 'ns2.failed.example'] },
+      {
+        ...nameserverGrant,
+        confirmed: true,
+        nameservers: ['ns1.failed.example', 'ns2.failed.example'],
+      },
       {
         customer: { collection: 'customers', id: customer.id, status: 'active' },
         traceId: `${fixturePrefix}-nameserver-explicit`,
@@ -611,7 +655,11 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
     const timeoutQueued = await requestCustomerNameserverChange(
       req,
       timeoutAsset.id,
-      { nameservers: ['ns1.timeout.example', 'ns2.timeout.example'] },
+      {
+        ...nameserverGrant,
+        confirmed: true,
+        nameservers: ['ns1.timeout.example', 'ns2.timeout.example'],
+      },
       {
         customer: { collection: 'customers', id: customer.id, status: 'active' },
         traceId: `${fixturePrefix}-nameserver-timeout`,
@@ -750,5 +798,77 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
       registrar: before.registrar,
       status: before.status,
     })
+  })
+
+  it('sends expiry reminders to restricted accounts but skips suspended accounts', async () => {
+    const restricted = await createCustomer('reminder-restricted')
+    const suspended = await createCustomer('reminder-suspended')
+    await payload.update({
+      collection: 'customers',
+      data: { capabilityRestrictions: ['purchase_disabled'], status: 'restricted' },
+      id: restricted.id,
+      overrideAccess: true,
+    })
+    await payload.update({
+      collection: 'customers',
+      data: { capabilityRestrictions: [], status: 'suspended' },
+      id: suspended.id,
+      overrideAccess: true,
+    })
+    const restrictedTemplate = await createTemplate(restricted.id, 'reminder-restricted')
+    const suspendedTemplate = await createTemplate(suspended.id, 'reminder-suspended')
+    const now = new Date('2031-08-08T04:00:00.000Z')
+    const expiresAt = new Date(now.getTime() + 6 * 86_400_000).toISOString()
+    const restrictedAsset = await createAsset(
+      restricted.id,
+      restrictedTemplate.id,
+      'reminder-restricted',
+      expiresAt,
+    )
+    const suspendedAsset = await createAsset(
+      suspended.id,
+      suspendedTemplate.id,
+      'reminder-suspended',
+      expiresAt,
+    )
+    let sendCount = 0
+    const provider: SmsProvider = {
+      health: async () => mockSuccess({ healthy: true }, `${fixturePrefix}-status-health`),
+      queryReceipt: async () => mockFailure('NOT_USED'),
+      sendDomainExpiry: async () => {
+        sendCount += 1
+        return mockSuccess(
+          {
+            accepted: true,
+            deliveryStatus: 'delivered',
+            providerMessageId: `${fixturePrefix}-status-message`,
+          },
+          `${fixturePrefix}-status-send`,
+        )
+      },
+      sendOtp: async () => mockFailure('NOT_USED'),
+      sendStepUpOtp: async () => mockFailure('NOT_USED'),
+    }
+    await runDomainExpiryReminders(await request('reminder-statuses'), {
+      now: () => now,
+      provider,
+      thresholds: [7],
+      traceId: `${fixturePrefix}-reminder-statuses`,
+    })
+    expect(sendCount).toBe(1)
+    await expect(
+      payload.count({
+        collection: 'domainExpiryReminders',
+        overrideAccess: true,
+        where: { asset: { equals: restrictedAsset.id } },
+      }),
+    ).resolves.toMatchObject({ totalDocs: 2 })
+    await expect(
+      payload.count({
+        collection: 'domainExpiryReminders',
+        overrideAccess: true,
+        where: { asset: { equals: suspendedAsset.id } },
+      }),
+    ).resolves.toMatchObject({ totalDocs: 0 })
   })
 })

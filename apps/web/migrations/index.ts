@@ -33,6 +33,8 @@ import * as migration_20260810_040217_d7_app_master_key from './20260810_040217_
 import * as migration_20260813_113927_d7_worker_heartbeat from './20260813_113927_d7_worker_heartbeat'
 import * as migration_20260814_103904_d9a_identity_registration from './20260814_103904_d9a_identity_registration'
 import * as migration_20260816_031001_d9a_step_up_grants from './20260816_031001_d9a_step_up_grants'
+import * as migration_20260816_061548_d9a_account_state_capabilities from './20260816_061548_d9a_account_state_capabilities'
+import * as migration_20260816_061549_d9a_account_state_backfill from './20260816_061549_d9a_account_state_backfill'
 
 export const migrations = [
   {
@@ -209,5 +211,15 @@ export const migrations = [
     up: migration_20260816_031001_d9a_step_up_grants.up,
     down: migration_20260816_031001_d9a_step_up_grants.down,
     name: '20260816_031001_d9a_step_up_grants',
+  },
+  {
+    up: migration_20260816_061548_d9a_account_state_capabilities.up,
+    down: migration_20260816_061548_d9a_account_state_capabilities.down,
+    name: '20260816_061548_d9a_account_state_capabilities',
+  },
+  {
+    up: migration_20260816_061549_d9a_account_state_backfill.up,
+    down: migration_20260816_061549_d9a_account_state_backfill.down,
+    name: '20260816_061549_d9a_account_state_backfill',
   },
 ]

@@ -17,6 +17,7 @@ import { transitionOrder } from '@/services/commerce/order-state'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
 import type { ManualCommerceEvidence } from '@/schemas/admin-commerce'
 import { enqueueCommerceFulfillment } from '@/services/commerce/fulfillment'
+import { assertCustomerAccountCapability } from '@/services/auth/account-state'
 
 type CustomerIdentity = {
   collection: 'customers'
@@ -63,11 +64,7 @@ type ConfirmationSource =
     }
 
 function assertCustomer(req: PayloadRequest, customer: CustomerIdentity): void {
-  if (
-    !isCustomerUser(req.user) ||
-    customer.status !== 'active' ||
-    String(req.user.id) !== String(customer.id)
-  ) {
+  if (!isCustomerUser(req.user) || String(req.user.id) !== String(customer.id)) {
     throw new AppError('CUSTOMER_AUTH_REQUIRED', '需要用户身份验证', 401)
   }
 }
@@ -159,6 +156,7 @@ export async function createWechatPayment(
   },
 ): Promise<Extract<PaymentSessionResult, { state: 'ready' }>> {
   assertCustomer(req, options.customer)
+  await assertCustomerAccountCapability(req, options.customer.id, 'purchase')
   const now = options.now ?? (() => new Date())
   const order = await findCustomerOrder(req, orderNumber, options.customer)
   if (order.status !== 'pending_payment') {

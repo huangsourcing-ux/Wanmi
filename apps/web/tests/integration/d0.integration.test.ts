@@ -26,6 +26,7 @@ import { submitRealnameTemplate, syncRealnameTemplateStatus } from '@/services/r
 
 import { fulfillmentQuoteSnapshotFixture } from '../fixtures/commerce'
 import { approvedRealnameProviderFixture, realnameTemplateFixture } from '../fixtures/realname'
+import { issueStepUpGrantFixture } from '../fixtures/step-up'
 
 let payload: Payload
 const createdJobIds: Array<number | string> = []
@@ -75,7 +76,12 @@ async function createPaidOrderFixture() {
   const suffix = randomUUID()
   const customer = await payload.create({
     collection: 'customers',
-    data: { phone: `fixture-${suffix}`, phoneMasked: 'fixture-only', status: 'active' },
+    data: {
+      capabilityRestrictions: [],
+      phone: `fixture-${suffix}`,
+      phoneMasked: 'fixture-only',
+      status: 'active',
+    },
     overrideAccess: true,
   })
   const template = await payload.create({
@@ -377,8 +383,18 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
       ).user,
     ).toBeNull()
 
-    const deletion = await requestCustomerDeletion(authenticated.req, authenticated.user)
-    expect(deletion).toMatchObject({ status: 'deletion_requested' })
+    const deletionGrant = await issueStepUpGrantFixture(
+      payload,
+      authenticated.req,
+      registered.customer.id,
+      'account_deletion',
+    )
+    const deletion = await requestCustomerDeletion(
+      authenticated.req,
+      authenticated.user,
+      deletionGrant,
+    )
+    expect(deletion).toMatchObject({ status: 'closing' })
     expect(
       (
         await payload.findByID({
@@ -387,7 +403,7 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
           overrideAccess: true,
         })
       ).status,
-    ).toBe('deletion_requested')
+    ).toBe('closing')
     const sessions = await payload.find({
       collection: 'customerSessions',
       limit: 10,
@@ -474,12 +490,22 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
   it('closes generic realname writes and keeps owner pinning on trusted service writes', async () => {
     const owner = await payload.create({
       collection: 'customers',
-      data: { phone: `fixture-${randomUUID()}`, phoneMasked: 'fixture-only', status: 'active' },
+      data: {
+        capabilityRestrictions: [],
+        phone: `fixture-${randomUUID()}`,
+        phoneMasked: 'fixture-only',
+        status: 'active',
+      },
       overrideAccess: true,
     })
     const other = await payload.create({
       collection: 'customers',
-      data: { phone: `fixture-${randomUUID()}`, phoneMasked: 'fixture-only', status: 'active' },
+      data: {
+        capabilityRestrictions: [],
+        phone: `fixture-${randomUUID()}`,
+        phoneMasked: 'fixture-only',
+        status: 'active',
+      },
       overrideAccess: true,
     })
 

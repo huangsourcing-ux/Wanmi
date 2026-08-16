@@ -336,6 +336,7 @@ async function prepare(): Promise<void> {
     const customerDocument = await payload.create({
       collection: 'customers',
       data: {
+        capabilityRestrictions: [],
         phone: `${tracePrefix}-fixture`,
         phoneMasked: '***0017',
         status: 'active',

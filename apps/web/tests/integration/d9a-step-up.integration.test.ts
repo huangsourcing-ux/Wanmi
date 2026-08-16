@@ -125,6 +125,7 @@ async function createCustomer(): Promise<Customer> {
   return payload.create({
     collection: 'customers',
     data: {
+      capabilityRestrictions: [],
       phone: customerPhone,
       phoneMasked: maskPhone(customerPhone),
       status: 'active',

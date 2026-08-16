@@ -125,14 +125,35 @@ test('customer OTP, all-session logout, deletion, and admin isolation work end t
   })
   expect(adminCookieDeletion.status()).toBe(401)
 
+  const stepUpRequested = await request.post('/api/v1/auth/step-up/request', {
+    data: { captchaVerifyParam, deviceId, purpose: 'account_deletion' },
+    headers: { cookie: secondCookie },
+  })
+  expect(stepUpRequested.status()).toBe(202)
+  const stepUpChallenge = await stepUpRequested.json()
+  const stepUpVerified = await request.post('/api/v1/auth/step-up/verify', {
+    data: {
+      challengeId: stepUpChallenge.challengeId,
+      code: '246810',
+      deviceId,
+      purpose: 'account_deletion',
+    },
+    headers: { cookie: secondCookie },
+  })
+  expect(stepUpVerified.status()).toBe(200)
+  const stepUpGrant = await stepUpVerified.json()
   const deletion = await request.post('/api/v1/auth/deletion-request', {
-    data: { confirmation: 'DELETE_MY_ACCOUNT' },
+    data: {
+      confirmation: 'DELETE_MY_ACCOUNT',
+      deviceId,
+      stepUpToken: stepUpGrant.stepUpToken,
+    },
     headers: { cookie: secondCookie },
   })
   expect(deletion.status()).toBe(200)
   expect(await deletion.json()).toMatchObject({
     deletionRequestedAt: expect.any(String),
-    status: 'deletion_requested',
+    status: 'closing',
   })
   expect(deletion.headers()['set-cookie']).toContain('wanmi_customer_session=;')
 

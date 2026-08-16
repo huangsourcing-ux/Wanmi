@@ -9,7 +9,10 @@ import { mockSuccess } from '@/providers/mock'
 import type { WestDigitalAvailability, WestDigitalWriteProvider } from '@/providers/types'
 import { WestDigitalReadAdapter } from '@/providers/westdigital'
 import { FixtureWestDigitalTransport } from '@/providers/westdigital-fixtures'
-import { WestDigitalWriteAdapter, WestDigitalWriteTransportError } from '@/providers/westdigital-write'
+import {
+  WestDigitalWriteAdapter,
+  WestDigitalWriteTransportError,
+} from '@/providers/westdigital-write'
 import {
   FixtureWestDigitalWriteTransport,
   timeoutAfterSubmission,
@@ -28,10 +31,7 @@ import { PayloadPriceSnapshotStore } from '@/services/pricing/price-snapshots'
 
 import { PRICING_RULE_FIXTURES } from '../fixtures/pricing'
 import { realnameTemplateFixture } from '../fixtures/realname'
-import {
-  findOrCreateUniqueFixture,
-  ignorePayloadNotFound,
-} from '../test-cleanup'
+import { findOrCreateUniqueFixture, ignorePayloadNotFound } from '../test-cleanup'
 
 const fixturePrefix = `d6-active-renewals-${randomUUID()}`
 const fixtureScope = fixturePrefix.slice(0, 36)
@@ -55,7 +55,12 @@ async function customer(suffix: string) {
     create: () =>
       payload.create({
         collection: 'customers',
-        data: { phone, phoneMasked: `***${suffix.slice(-4)}`, status: 'active' },
+        data: {
+          capabilityRestrictions: [],
+          phone,
+          phoneMasked: `***${suffix.slice(-4)}`,
+          status: 'active',
+        },
         overrideAccess: true,
       }),
     find: async () =>
@@ -98,10 +103,7 @@ async function assetFor(owner: Awaited<ReturnType<typeof customer>>, suffix: str
           limit: 1,
           overrideAccess: true,
           where: {
-            and: [
-              { customer: { equals: owner.id } },
-              { displayName: { equals: displayName } },
-            ],
+            and: [{ customer: { equals: owner.id } }, { displayName: { equals: displayName } }],
           },
         })
       ).docs[0],
@@ -189,7 +191,10 @@ function renewalSnapshot(input: {
   }
 }
 
-async function paidRenewal(suffix: string, options: { status?: 'fulfilling' | 'paid'; years?: number } = {}) {
+async function paidRenewal(
+  suffix: string,
+  options: { status?: 'fulfilling' | 'paid'; years?: number } = {},
+) {
   const owner = await customer(suffix)
   const { asset, domainAscii, template } = await assetFor(owner, suffix)
   const years = options.years ?? 2
@@ -412,7 +417,13 @@ afterAll(async () => {
       payload.delete({ collection: 'orders', id: order.id, overrideAccess: true }),
     )
   }
-  for (const collection of ['quotes', 'priceSnapshots', 'domainAssets', 'realnameTemplates', 'customers'] as const) {
+  for (const collection of [
+    'quotes',
+    'priceSnapshots',
+    'domainAssets',
+    'realnameTemplates',
+    'customers',
+  ] as const) {
     const where =
       collection === 'customers'
         ? { phone: { contains: fixtureScope } }
@@ -421,7 +432,12 @@ afterAll(async () => {
           : collection === 'domainAssets'
             ? { domainAscii: { contains: fixtureToken } }
             : { displayName: { contains: fixturePrefix.slice(0, 34) } }
-    const rows = await payload.find({ collection, limit: 200, overrideAccess: true, where: where as never })
+    const rows = await payload.find({
+      collection,
+      limit: 200,
+      overrideAccess: true,
+      where: where as never,
+    })
     for (const row of rows.docs) {
       await ignorePayloadNotFound(() =>
         payload.delete({ collection, id: row.id, overrideAccess: true }),
@@ -530,22 +546,21 @@ describe('D6-05 active renewals', () => {
             arrived += 1
             if (arrived === runs) release()
             await gate
-            return mockSuccess(
-              { availableMinor: 1_000_000, frozenMinor: 0 },
-              `${traceId}-balance`,
-            )
+            return mockSuccess({ availableMinor: 1_000_000, frozenMinor: 0 }, `${traceId}-balance`)
           }),
         ),
       ),
     )
     expect(results.every((result) => result.status === 'succeeded')).toBe(true)
     expect(transport.writeCount).toBe(1)
-    expect(transport.requests.find((request) => request.operation === 'renew')?.body).toMatchObject({
-      client_price: '39.98',
-      domain: fixture.domainAscii,
-      expiredate: '2027-08-08',
-      year: '2',
-    })
+    expect(transport.requests.find((request) => request.operation === 'renew')?.body).toMatchObject(
+      {
+        client_price: '39.98',
+        domain: fixture.domainAscii,
+        expiredate: '2027-08-08',
+        year: '2',
+      },
+    )
     const renewals = await payload.find({
       collection: 'renewals',
       overrideAccess: true,
@@ -601,8 +616,13 @@ describe('D6-05 active renewals', () => {
       targetType: 'renewal',
     })
     expect(
-      (await payload.findByID({ collection: 'domainAssets', id: fixture.asset.id, overrideAccess: true }))
-        .expiresAt,
+      (
+        await payload.findByID({
+          collection: 'domainAssets',
+          id: fixture.asset.id,
+          overrideAccess: true,
+        })
+      ).expiresAt,
     ).toBe(renewedExpiresAt)
     const replay = await runCommerceFulfillment(
       await request('concurrent-replay'),
@@ -642,8 +662,13 @@ describe('D6-05 active renewals', () => {
     )
     expect(first.status).toBe('manual_review')
     expect(
-      (await payload.findByID({ collection: 'domainAssets', id: fixture.asset.id, overrideAccess: true }))
-        .expiresAt,
+      (
+        await payload.findByID({
+          collection: 'domainAssets',
+          id: fixture.asset.id,
+          overrideAccess: true,
+        })
+      ).expiresAt,
     ).toBe(originalExpiresAt)
     const replay = await runCommerceFulfillment(
       await request('restart-replay'),
@@ -657,8 +682,13 @@ describe('D6-05 active renewals', () => {
     expect(replay.status).toBe('succeeded')
     expect(transport.writeCount).toBe(1)
     expect(
-      (await payload.findByID({ collection: 'domainAssets', id: fixture.asset.id, overrideAccess: true }))
-        .expiresAt,
+      (
+        await payload.findByID({
+          collection: 'domainAssets',
+          id: fixture.asset.id,
+          overrideAccess: true,
+        })
+      ).expiresAt,
     ).toBe(renewedExpiresAt)
   })
 
@@ -679,7 +709,8 @@ describe('D6-05 active renewals', () => {
     )
     expect(result.status).toBe('refund_pending')
     expect(
-      (await payload.findByID({ collection: 'orders', id: fixture.order.id, overrideAccess: true })).status,
+      (await payload.findByID({ collection: 'orders', id: fixture.order.id, overrideAccess: true }))
+        .status,
     ).toBe('refund_pending')
     expect(
       (
@@ -691,8 +722,13 @@ describe('D6-05 active renewals', () => {
       ).docs,
     ).toHaveLength(1)
     expect(
-      (await payload.findByID({ collection: 'domainAssets', id: fixture.asset.id, overrideAccess: true }))
-        .expiresAt,
+      (
+        await payload.findByID({
+          collection: 'domainAssets',
+          id: fixture.asset.id,
+          overrideAccess: true,
+        })
+      ).expiresAt,
     ).toBe(originalExpiresAt)
   })
 
@@ -722,8 +758,13 @@ describe('D6-05 active renewals', () => {
     })
     expect(transport.writeCount).toBe(1)
     expect(
-      (await payload.findByID({ collection: 'domainAssets', id: fixture.asset.id, overrideAccess: true }))
-        .expiresAt,
+      (
+        await payload.findByID({
+          collection: 'domainAssets',
+          id: fixture.asset.id,
+          overrideAccess: true,
+        })
+      ).expiresAt,
     ).toBe(originalExpiresAt)
   })
 })

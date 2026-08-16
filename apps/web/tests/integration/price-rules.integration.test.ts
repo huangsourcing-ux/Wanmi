@@ -128,9 +128,7 @@ describe('D5-05 managed TLD price rules', () => {
       tld: `${fixturePrefix}-percentage.com`,
     })
     expect(percentageRule.fixedAmountMinor).toBeNull()
-    expect(await loadEnabledPricingRules(payload, percentageReq)).toHaveProperty(
-      percentageRule.tld,
-    )
+    expect(await loadEnabledPricingRules(payload, percentageReq)).toHaveProperty(percentageRule.tld)
     await payload.delete({
       collection: 'priceRules',
       id: percentageRule.id,
@@ -222,6 +220,7 @@ describe('D5-05 managed TLD price rules', () => {
     const customer = await payload.create({
       collection: 'customers',
       data: {
+        capabilityRestrictions: [],
         phone: `${fixturePrefix}-customer`,
         phoneMasked: '***5005',
         status: 'active',

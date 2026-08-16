@@ -127,6 +127,7 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const inviter = await payload.create({
       collection: 'customers',
       data: {
+        capabilityRestrictions: [],
         inviteCode: invitationCode,
         phone: inviterPhone,
         phoneMasked: maskPhone(inviterPhone),
@@ -175,10 +176,12 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const customer = await customerById(registered.customer.id)
     expect(customer).toMatchObject({
       accountType: 'registered',
+      capabilityRestrictions: [],
       defaultCustomerProfileType: 'individual',
       invitedByCustomer: inviter.id,
       phone: registrationPhone,
       registrationSource: 'phone',
+      status: 'active',
     })
     const identities = await payload.find({
       collection: 'customerIdentities',
@@ -488,7 +491,12 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const existingPhone = phone()
     const customer = await payload.create({
       collection: 'customers',
-      data: { phone: existingPhone, phoneMasked: maskPhone(existingPhone), status: 'active' },
+      data: {
+        capabilityRestrictions: [],
+        phone: existingPhone,
+        phoneMasked: maskPhone(existingPhone),
+        status: 'active',
+      },
       overrideAccess: true,
     })
     const protectedOpenid = protectedIdentifier(openid)
@@ -606,7 +614,12 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const existingPhone = phone()
     const customer = await payload.create({
       collection: 'customers',
-      data: { phone: existingPhone, phoneMasked: maskPhone(existingPhone), status: 'active' },
+      data: {
+        capabilityRestrictions: [],
+        phone: existingPhone,
+        phoneMasked: maskPhone(existingPhone),
+        status: 'active',
+      },
       overrideAccess: true,
     })
     const protectedOpenid = protectedIdentifier(openid)
@@ -756,7 +769,12 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const customerPhone = phone()
     const customer = await payload.create({
       collection: 'customers',
-      data: { phone: customerPhone, phoneMasked: maskPhone(customerPhone), status: 'active' },
+      data: {
+        capabilityRestrictions: [],
+        phone: customerPhone,
+        phoneMasked: maskPhone(customerPhone),
+        status: 'active',
+      },
       overrideAccess: true,
     })
     const now = new Date().toISOString()
@@ -826,12 +844,22 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const [owner, contender] = await Promise.all([
       payload.create({
         collection: 'customers',
-        data: { phone: firstPhone, phoneMasked: maskPhone(firstPhone), status: 'active' },
+        data: {
+          capabilityRestrictions: [],
+          phone: firstPhone,
+          phoneMasked: maskPhone(firstPhone),
+          status: 'active',
+        },
         overrideAccess: true,
       }),
       payload.create({
         collection: 'customers',
-        data: { phone: secondPhone, phoneMasked: maskPhone(secondPhone), status: 'active' },
+        data: {
+          capabilityRestrictions: [],
+          phone: secondPhone,
+          phoneMasked: maskPhone(secondPhone),
+          status: 'active',
+        },
         overrideAccess: true,
       }),
     ])
@@ -884,7 +912,12 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const nextPhone = phone()
     const customer = await payload.create({
       collection: 'customers',
-      data: { phone: oldPhone, phoneMasked: maskPhone(oldPhone), status: 'active' },
+      data: {
+        capabilityRestrictions: [],
+        phone: oldPhone,
+        phoneMasked: maskPhone(oldPhone),
+        status: 'active',
+      },
       overrideAccess: true,
     })
     const now = new Date().toISOString()
@@ -959,7 +992,12 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const nextOpenid = randomBytes(24).toString('base64url')
     const customer = await payload.create({
       collection: 'customers',
-      data: { phone: customerPhone, phoneMasked: maskPhone(customerPhone), status: 'active' },
+      data: {
+        capabilityRestrictions: [],
+        phone: customerPhone,
+        phoneMasked: maskPhone(customerPhone),
+        status: 'active',
+      },
       overrideAccess: true,
     })
     const now = new Date().toISOString()
@@ -1068,12 +1106,22 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const [owner, attacker] = await Promise.all([
       payload.create({
         collection: 'customers',
-        data: { phone: ownerPhone, phoneMasked: maskPhone(ownerPhone), status: 'active' },
+        data: {
+          capabilityRestrictions: [],
+          phone: ownerPhone,
+          phoneMasked: maskPhone(ownerPhone),
+          status: 'active',
+        },
         overrideAccess: true,
       }),
       payload.create({
         collection: 'customers',
-        data: { phone: attackerPhone, phoneMasked: maskPhone(attackerPhone), status: 'active' },
+        data: {
+          capabilityRestrictions: [],
+          phone: attackerPhone,
+          phoneMasked: maskPhone(attackerPhone),
+          status: 'active',
+        },
         overrideAccess: true,
       }),
     ])
@@ -1143,6 +1191,7 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const customer = await payload.create({
       collection: 'customers',
       data: {
+        capabilityRestrictions: [],
         defaultCustomerProfileType: 'individual',
         phone: customerPhone,
         phoneMasked: maskPhone(customerPhone),
@@ -1177,7 +1226,12 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const existingPhone = phone()
     const customer = await payload.create({
       collection: 'customers',
-      data: { phone: existingPhone, phoneMasked: maskPhone(existingPhone), status: 'active' },
+      data: {
+        capabilityRestrictions: [],
+        phone: existingPhone,
+        phoneMasked: maskPhone(existingPhone),
+        status: 'active',
+      },
       overrideAccess: true,
     })
     const now = new Date().toISOString()
@@ -1207,7 +1261,12 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const legacyPhone = phone()
     const customer = await payload.create({
       collection: 'customers',
-      data: { phone: legacyPhone, phoneMasked: maskPhone(legacyPhone), status: 'active' },
+      data: {
+        capabilityRestrictions: [],
+        phone: legacyPhone,
+        phoneMasked: maskPhone(legacyPhone),
+        status: 'active',
+      },
       overrideAccess: true,
     })
     const requestHeaders = headers()
@@ -1240,6 +1299,7 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const customer = await payload.create({
       collection: 'customers',
       data: {
+        capabilityRestrictions: [],
         phone: storedLegacyPhone,
         phoneMasked: maskPhone(verifiedPhone),
         status: 'active',
@@ -1308,7 +1368,12 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const duplicatePhone = phone()
     const identityOwner = await payload.create({
       collection: 'customers',
-      data: { phone: duplicatePhone, phoneMasked: maskPhone(duplicatePhone), status: 'active' },
+      data: {
+        capabilityRestrictions: [],
+        phone: duplicatePhone,
+        phoneMasked: maskPhone(duplicatePhone),
+        status: 'active',
+      },
       overrideAccess: true,
     })
     await payload.create({
@@ -1328,6 +1393,7 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const isolatedCustomer = await payload.create({
       collection: 'customers',
       data: {
+        capabilityRestrictions: [],
         phone: storedDuplicatePhone,
         phoneMasked: maskPhone(duplicatePhone),
         status: 'active',
@@ -1483,7 +1549,12 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const openid = randomBytes(24).toString('base64url')
     const customer = await payload.create({
       collection: 'customers',
-      data: { phone: customerPhone, phoneMasked: maskPhone(customerPhone), status: 'active' },
+      data: {
+        capabilityRestrictions: [],
+        phone: customerPhone,
+        phoneMasked: maskPhone(customerPhone),
+        status: 'active',
+      },
       overrideAccess: true,
     })
     await payload.create({
@@ -1693,7 +1764,12 @@ describe('D9-A-1 existing phone account Wechat binding invariant', () => {
     const openid = randomBytes(24).toString('base64url')
     const customer = await payload.create({
       collection: 'customers',
-      data: { phone: customerPhone, phoneMasked: maskPhone(customerPhone), status: 'active' },
+      data: {
+        capabilityRestrictions: [],
+        phone: customerPhone,
+        phoneMasked: maskPhone(customerPhone),
+        status: 'active',
+      },
       overrideAccess: true,
     })
     const now = new Date().toISOString()
