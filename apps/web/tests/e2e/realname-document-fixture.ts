@@ -18,6 +18,7 @@ export async function createRealnameDocumentFixture() {
       payload.create({
         collection: 'customers',
         data: {
+          capabilityRestrictions: [],
           phone: normalizedFixturePhone,
           phoneMasked: '+86139****4303',
           status: 'active',

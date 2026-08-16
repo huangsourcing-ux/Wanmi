@@ -25,6 +25,7 @@ import {
 
 import { fulfillmentQuoteSnapshotFixture } from '../fixtures/commerce'
 import { realnameTemplateFixture } from '../fixtures/realname'
+import { issueStepUpGrantFixture } from '../fixtures/step-up'
 import {
   ensureAnchorSystemAdmin,
   findOrCreateUniqueFixture,
@@ -56,7 +57,12 @@ async function createCustomer(suffix: string) {
     create: () =>
       payload.create({
         collection: 'customers',
-        data: { phone, phoneMasked: `***${phone.slice(-4)}`, status: 'active' },
+        data: {
+          capabilityRestrictions: [],
+          phone,
+          phoneMasked: `***${phone.slice(-4)}`,
+          status: 'active',
+        },
         overrideAccess: true,
       }),
     find: async () => {
@@ -360,6 +366,18 @@ afterAll(async () => {
       payload.delete({ collection: 'realnameTemplates', id: templateId, overrideAccess: true }),
     )
   }
+  for (const grant of (
+    await payload.find({
+      collection: 'stepUpGrants',
+      limit: 100,
+      overrideAccess: true,
+      where: { customer: { in: customerIds } },
+    })
+  ).docs) {
+    await ignorePayloadNotFound(() =>
+      payload.delete({ collection: 'stepUpGrants', id: grant.id, overrideAccess: true }),
+    )
+  }
   for (const customerId of customerIds) {
     await ignorePayloadNotFound(() =>
       payload.delete({ collection: 'customers', id: customerId, overrideAccess: true }),
@@ -385,6 +403,12 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
     )
     const otherOrder = await createOrder(other, otherTemplate.id, 'ownership-other')
     const req = await customerReq(owner, 'ownership-gate')
+    const nameserverGrant = await issueStepUpGrantFixture(
+      payload,
+      req,
+      owner.id,
+      'nameserver_change',
+    )
 
     const list = await listCustomerDomainAssets(req, {
       collection: 'customers',
@@ -405,7 +429,11 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
       requestCustomerNameserverChange(
         req,
         otherAsset.id,
-        { nameservers: ['ns1.attacker.example', 'ns2.attacker.example'] },
+        {
+          ...nameserverGrant,
+          confirmed: true,
+          nameservers: ['ns1.attacker.example', 'ns2.attacker.example'],
+        },
         {
           customer: { collection: 'customers', id: owner.id, status: 'active' },
           traceId: `${fixturePrefix}-ownership-ns`,
@@ -482,6 +510,12 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
     const template = await createTemplate(customer.id, 'nameserver-success')
     const asset = await createAsset(customer.id, template.id, `${fixturePrefix}-nameserver-success`)
     const req = await customerReq(customer, 'nameserver-success')
+    const nameserverGrant = await issueStepUpGrantFixture(
+      payload,
+      req,
+      customer.id,
+      'nameserver_change',
+    )
     const requested = ['ns1.after.example', 'ns2.after.example']
     let changed = false
     const transport = new FixtureWestDigitalWriteTransport((input) => {
@@ -497,7 +531,7 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
     const queued = await requestCustomerNameserverChange(
       req,
       asset.id,
-      { nameservers: requested },
+      { ...nameserverGrant, confirmed: true, nameservers: requested },
       {
         customer: { collection: 'customers', id: customer.id, status: 'active' },
         traceId: `${fixturePrefix}-nameserver-success`,
@@ -556,6 +590,12 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
     const customer = await createCustomer('nameserver-failures')
     const template = await createTemplate(customer.id, 'nameserver-failures')
     const req = await customerReq(customer, 'nameserver-failures')
+    const nameserverGrant = await issueStepUpGrantFixture(
+      payload,
+      req,
+      customer.id,
+      'nameserver_change',
+    )
 
     const explicitAsset = await createAsset(
       customer.id,
@@ -570,7 +610,11 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
     const explicitQueued = await requestCustomerNameserverChange(
       req,
       explicitAsset.id,
-      { nameservers: ['ns1.failed.example', 'ns2.failed.example'] },
+      {
+        ...nameserverGrant,
+        confirmed: true,
+        nameservers: ['ns1.failed.example', 'ns2.failed.example'],
+      },
       {
         customer: { collection: 'customers', id: customer.id, status: 'active' },
         traceId: `${fixturePrefix}-nameserver-explicit`,
@@ -611,7 +655,11 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
     const timeoutQueued = await requestCustomerNameserverChange(
       req,
       timeoutAsset.id,
-      { nameservers: ['ns1.timeout.example', 'ns2.timeout.example'] },
+      {
+        ...nameserverGrant,
+        confirmed: true,
+        nameservers: ['ns1.timeout.example', 'ns2.timeout.example'],
+      },
       {
         customer: { collection: 'customers', id: customer.id, status: 'active' },
         traceId: `${fixturePrefix}-nameserver-timeout`,

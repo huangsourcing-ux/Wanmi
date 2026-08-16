@@ -44,7 +44,12 @@ async function requestFor(user: unknown, suffix: string): Promise<PayloadRequest
 async function customer(last4: string) {
   const document = await payload.create({
     collection: 'customers',
-    data: { phone: `${fixturePrefix}-${last4}`, phoneMasked: `***${last4}`, status: 'active' },
+    data: {
+      capabilityRestrictions: [],
+      phone: `${fixturePrefix}-${last4}`,
+      phoneMasked: `***${last4}`,
+      status: 'active',
+    },
     overrideAccess: true,
   })
   created.push({ collection: 'customers', id: document.id })

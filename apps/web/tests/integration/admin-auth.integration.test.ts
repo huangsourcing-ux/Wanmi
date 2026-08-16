@@ -727,6 +727,7 @@ describe('D1-05 administrator authentication', () => {
     const customer = await payload.create({
       collection: 'customers',
       data: {
+        capabilityRestrictions: [],
         phone: `fixture-${randomUUID()}`,
         phoneMasked: 'fixture-only',
         status: 'active',

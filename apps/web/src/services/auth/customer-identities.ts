@@ -12,6 +12,11 @@ import { createWechatOfficialProvider } from '@/providers/wechatofficial'
 import type { CustomerRegistrationInput } from '@/schemas/auth'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
 
+import {
+  assertCustomerAccountCapability,
+  assertCustomerAccountCapabilityFromSnapshot,
+  transitionCustomerAccount,
+} from './account-state'
 import { authTransactionDatabase, inAuthTransaction } from './atomic'
 import {
   clientHashes,
@@ -206,7 +211,7 @@ async function loadActiveCustomer(req: PayloadRequest, id: number): Promise<Cust
     overrideAccess: true,
     req,
   })
-  if (customer.status !== 'active') throw new AppError('AUTH_DISABLED', '账号当前不可登录', 403)
+  assertCustomerAccountCapabilityFromSnapshot(customer, 'login')
   return customer
 }
 
@@ -545,7 +550,8 @@ export async function registerCustomer(
           phone,
           phoneMasked: maskPhone(phone),
           registrationSource: primary.source,
-          status: 'active',
+          capabilityRestrictions: [],
+          status: 'pending_registration',
         },
         overrideAccess: true,
         req,
@@ -553,6 +559,21 @@ export async function registerCustomer(
       await createIdentityFromIntent(req, customer, phoneIntent, now)
       if (primary.provider === 'wechat') await createIdentityFromIntent(req, customer, primary, now)
       await createRegistrationConsents(req, customer.id, primary.source, headers, now)
+      const activated = await transitionCustomerAccount(req, {
+        actor: { type: 'system' },
+        changedAt: now,
+        customerId: customer.id,
+        evidence: {
+          observedAt: now,
+          reference: `registration-intent:${primary.id}`,
+          source: 'registration',
+        },
+        expectedRestrictions: [],
+        expectedStatus: 'pending_registration',
+        reason: 'explicit_registration_completed',
+        restrictions: [],
+        status: 'active',
+      })
       await recordCustomerSecurityEvent(req, customer.id, 'registration_completed', {
         defaultCustomerProfileType: input.defaultCustomerProfileType,
         eligibilityDeclaration: 'adult_or_authorized_representative',
@@ -568,7 +589,14 @@ export async function registerCustomer(
         },
         targetId: customer.id,
       })
-      const session = await issueCustomerSession(req, { customer, ...hashes })
+      const session = await issueCustomerSession(req, {
+        customer: {
+          ...customer,
+          capabilityRestrictions: activated.capabilityRestrictions,
+          status: activated.status,
+        },
+        ...hashes,
+      })
       return {
         customer: { id: customer.id, phoneMasked: customer.phoneMasked },
         expiresAt: session.expiresAt,
@@ -670,6 +698,7 @@ export async function bindVerifiedIdentity(
   traceId: string,
 ): Promise<{ identityId: number; status: 'bound' }> {
   const result = await inAuthTransaction(req, async () => {
+    await assertCustomerAccountCapability(req, customer.id, 'identity_change')
     const intent = await claimRegistrationIntent(req, rawToken)
     let existing = await findIdentity(
       req,
@@ -771,6 +800,7 @@ export async function unbindCustomerIdentity(
   traceId: string,
 ): Promise<{ identityId: number; status: 'unbound' }> {
   const result = await inAuthTransaction(req, async () => {
+    await assertCustomerAccountCapability(req, customer.id, 'identity_change')
     const database = await authTransactionDatabase(req)
     const locked = await database.execute(sql`
       SELECT id

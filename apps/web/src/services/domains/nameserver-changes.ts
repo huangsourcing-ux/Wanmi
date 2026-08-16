@@ -15,6 +15,8 @@ import {
   type NameserverChangeView,
 } from '@/schemas/domains'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
+import { assertCustomerAccountCapability } from '@/services/auth/account-state'
+import { authorizeStepUpGrant } from '@/services/auth/step-up'
 import {
   executeWestDigitalWriteOperation,
   queryWestDigitalAsset,
@@ -227,19 +229,29 @@ export async function requestCustomerNameserverChange(
   input: NameserverChangeRequest,
   options: { customer: CustomerIdentity; traceId: string },
 ) {
-  const asset = await findOwnedDomainAsset(req, assetId, options.customer)
-  const nameservers = normalizeNameservers(input.nameservers)
-  const change = await prepareChange(req, {
-    asset,
-    customer: options.customer,
-    nameservers,
-    traceId: options.traceId,
-  })
-  await enqueueChange(req, change, options.traceId)
-  return nameserverChangeResultSchema.parse({
-    data: view(await loadChange(req, change.id)),
-    meta: { dataSource: 'local', traceId: options.traceId },
-    state: 'ready',
+  return transaction(req, async () => {
+    await assertCustomerAccountCapability(req, options.customer.id, 'domain_write')
+    await authorizeStepUpGrant(req, {
+      customerId: options.customer.id,
+      deviceId: input.deviceId,
+      headers: req.headers,
+      purpose: 'nameserver_change',
+      stepUpToken: input.stepUpToken,
+    })
+    const asset = await findOwnedDomainAsset(req, assetId, options.customer)
+    const nameservers = normalizeNameservers(input.nameservers)
+    const change = await prepareChange(req, {
+      asset,
+      customer: options.customer,
+      nameservers,
+      traceId: options.traceId,
+    })
+    await enqueueChange(req, change, options.traceId)
+    return nameserverChangeResultSchema.parse({
+      data: view(await loadChange(req, change.id)),
+      meta: { dataSource: 'local', traceId: options.traceId },
+      state: 'ready',
+    })
   })
 }
 

@@ -1,6 +1,11 @@
 import { z } from 'zod'
 
-import { ADMIN_ROLES, STEP_UP_PURPOSES } from '@/lib/domain'
+import {
+  ADMIN_ROLES,
+  CUSTOMER_ACCOUNT_STATUSES,
+  CUSTOMER_CAPABILITY_RESTRICTIONS,
+  STEP_UP_PURPOSES,
+} from '@/lib/domain'
 
 export const adminPasswordSchema = z
   .string()
@@ -239,13 +244,71 @@ export const wechatQrConsumeSchema = z
   .object({ deviceId: z.string().min(16).max(128), scene: z.string().min(32).max(128) })
   .strict()
 
-export const customerDeletionRequestSchema = z.object({
-  confirmation: z.literal('DELETE_MY_ACCOUNT'),
-})
+export const customerDeletionRequestSchema = z
+  .object({
+    confirmation: z.literal('DELETE_MY_ACCOUNT'),
+    deviceId: z.string().min(16).max(128),
+    stepUpToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
+  })
+  .strict()
 
 export const customerDeletionResponseSchema = z.object({
   deletionRequestedAt: z.iso.datetime(),
-  status: z.literal('deletion_requested'),
+  status: z.literal('closing'),
+})
+
+export const customerAccountStatusSchema = z.enum(CUSTOMER_ACCOUNT_STATUSES)
+export const customerCapabilityRestrictionSchema = z.enum(CUSTOMER_CAPABILITY_RESTRICTIONS)
+const customerCapabilityRestrictionsSchema = z
+  .array(customerCapabilityRestrictionSchema)
+  .max(CUSTOMER_CAPABILITY_RESTRICTIONS.length)
+  .refine((value) => new Set(value).size === value.length, '账户能力限制不得重复')
+
+export const customerAccountEvidenceSchema = z
+  .object({
+    observedAt: z.iso.datetime(),
+    reference: z.string().trim().min(3).max(256),
+    source: z.enum([
+      'customer_request',
+      'manual_review',
+      'registration',
+      'security_event',
+      'written_confirmation',
+    ]),
+  })
+  .strict()
+
+export const adminCustomerAccountActionSchema = z.discriminatedUnion('action', [
+  z
+    .object({
+      action: z.literal('change_state'),
+      evidence: customerAccountEvidenceSchema,
+      expectedRestrictions: customerCapabilityRestrictionsSchema,
+      expectedStatus: customerAccountStatusSchema,
+      reason: z.string().trim().min(3).max(1_000),
+      restrictions: customerCapabilityRestrictionsSchema,
+      status: customerAccountStatusSchema,
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal('revoke_sessions'),
+      evidence: customerAccountEvidenceSchema,
+      reason: z.string().trim().min(3).max(1_000),
+    })
+    .strict(),
+])
+
+export const customerAccountStateResponseSchema = z.object({
+  capabilityRestrictions: customerCapabilityRestrictionsSchema,
+  changedAt: z.iso.datetime(),
+  customerId: z.union([z.number(), z.string()]),
+  deletionRequestedAt: z.iso.datetime().optional(),
+  status: customerAccountStatusSchema,
+})
+
+export const customerSessionSecurityResponseSchema = z.object({
+  revokedCount: z.number().int().nonnegative(),
 })
 
 export type SmsRequestInput = z.infer<typeof smsRequestSchema>

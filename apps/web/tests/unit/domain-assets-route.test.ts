@@ -63,7 +63,12 @@ describe('D6-04 domain asset routes', () => {
     const handler = createNameserverChangeHandler({ requestChange, resolveContext: context })
     const valid = await handler(
       new Request('http://wanmi.local/api/v1/domains/7/nameservers', {
-        body: JSON.stringify({ nameservers: ['ns1.new.example', 'ns2.new.example'] }),
+        body: JSON.stringify({
+          confirmed: true,
+          deviceId: 'domain-route-device-0001',
+          nameservers: ['ns1.new.example', 'ns2.new.example'],
+          stepUpToken: 'a'.repeat(43),
+        }),
         headers: { 'content-type': 'application/json' },
         method: 'POST',
       }),
@@ -85,7 +90,12 @@ describe('D6-04 domain asset routes', () => {
     expect(requestChange).toHaveBeenCalledWith(
       req,
       7,
-      { nameservers: ['ns1.new.example', 'ns2.new.example'] },
+      {
+        confirmed: true,
+        deviceId: 'domain-route-device-0001',
+        nameservers: ['ns1.new.example', 'ns2.new.example'],
+        stepUpToken: 'a'.repeat(43),
+      },
       expect.objectContaining({ customer }),
     )
   })

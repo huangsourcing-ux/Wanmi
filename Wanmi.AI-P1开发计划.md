@@ -1115,11 +1115,47 @@ I（年龄要求）、K（自动续费金额上限）已并入 9.2 第 10、11�
 
 #### A3 账户状态机与能力限制
 
-- [ ] 账户状态：`pending_registration`、`active`、`restricted`、`suspended`、`closing`、`closed`；
-- [ ] `restricted` 不是布尔值，而是**按能力限制**的集合：`login_disabled`、`purchase_disabled`、
+- [x] 账户状态：`pending_registration`、`active`、`restricted`、`suspended`、`closing`、`closed`；
+  - **实现与并发证据**：`apps/web/src/lib/domain.ts:5-34` 固定六态与显式迁移图，
+    `apps/web/src/services/auth/account-state.ts:186-197` 拒绝图外/no-op 迁移，`:277-372` 以同事务
+    `UPDATE ... WHERE id/status/capability_restrictions ... RETURNING` 完成 CAS、审计与会话撤销；migration
+    `20260816_061548_d9a_account_state_capabilities` / `20260816_061549_d9a_account_state_backfill`
+    分离 expand 与历史数据回填。`apps/web/tests/integration/d9a-account-state.integration.test.ts:158`
+    用例“exposes exactly the approved six states, six restrictions, and explicit transition graph”锁定六态和
+    12 条合法边；`:372` 参数化用例“atomically allows exactly one of 8 concurrent $from -> $to
+    transitions”对每条边分别发起 8 路并发并断言恰好 1 成功、7 个冲突，`:430` 同样验证
+    `restricted` 能力集合并发替换恰好 1 成功。
+- [x] `restricted` 不是布尔值，而是**按能力限制**的集合：`login_disabled`、`purchase_disabled`、
       `balance_spend_disabled`、`domain_write_disabled`、`identity_change_disabled`、`refund_review`；
-- [ ] 状态与能力限制变更追加式记录，含原因、操作者、依据、时间，可从审计还原；
-- [ ] 安全事件后可一键撤销全部会话。
+  - **实现与失败关闭证据**：`apps/web/src/collections/identity.ts:186-209` 保存并校验能力集合；
+    `apps/web/src/services/auth/account-state.ts:56-98` 为六项限制和四个非运行态定义稳定错误码，
+    `:206-248` 对未知/不一致状态及不满足能力条件一律失败关闭。测试 `:191` 参数化用例“fails
+    closed with $code for the $restriction restriction”逐项验证六个错误码，`:201` 逐态验证非运行态，
+    `:217` 验证普通 `restricted` 可登录而 `login_disabled` 不可登录，`:245` 验证订单/支付、身份
+    绑定/解绑、Name Server 写入口在任何部分执行前被拦截；`:304` 验证删除与 Name Server 写在
+    冷静期内即使持有效 grant 仍以 A4 错误拒绝，且关联写入计数使用 customer `where` 限定。
+- [x] 状态与能力限制变更追加式记录，含原因、操作者、依据、时间，可从审计还原；
+  - **审计证据**：`apps/web/src/services/auth/account-state.ts:327-344` 将 actor、changedAt、evidence、
+    reason、from/to 状态及能力集合同时写入既有 `recordCustomerSecurityEvent` 与
+    `recordAuditEvent`，没有平行审计通道。测试 `apps/web/tests/integration/d9a-account-state.integration.test.ts:454`
+    用例“records reason, operator, evidence, time, prior state, and resulting restrictions append-only”
+    以 customer/event 及 action/targetId 条件分别查询两条追加事件并验证可还原字段；`:509` 验证
+    非法迁移不会留下目标 customer 的审计事件。
+- [x] 安全事件后可一键撤销全部会话。
+  - **实现与隔离证据**：`apps/web/src/services/auth/customer-sessions.ts:57-79` 用同事务原生
+    `UPDATE customer_sessions WHERE customer_id ... AND revoked_at IS NULL RETURNING id` 原子撤销；
+    `apps/web/src/services/auth/account-state.ts:250-275` 复用既有安全事件与审计入口，系统管理员 API
+    位于 `apps/web/src/app/api/v1/admin/customers/[customerId]/account-security/route.ts:39-66`。
+    测试 `apps/web/tests/integration/d9a-account-state.integration.test.ts:628` 用例“revokes every target
+    session in one security action without touching another customer”验证目标两条全撤销、其他 customer
+    不受影响且只产生一条限定目标的审计事件。
+
+  - **SQL 合取条件与删除变异**：本切片应用 SQL 只有状态 CAS 的 `id / expected status / expected
+    capability restrictions` 三个 `WHERE` 谓词（`account-state.ts:314-316`）和会话撤销的
+    `customer_id / revoked_at IS NULL` 两个谓词（`customer-sessions.ts:68-69`）。测试 `:537`、`:559`、
+    `:576`、`:596`、`:612` 分别以可观察行为保护每个谓词；
+    `apps/web/scripts/mutate-a3-sql-predicates.mjs:9-44` 逐项单独删除并实跑，5/5 均被对应行为断言
+    杀死。`:671` 的源码文本断言仅作补充，不作为唯一保护；新增所有计数断言均带 `where`。
 
 #### A4 短信验证码与 step-up 授权
 
@@ -1154,9 +1190,11 @@ I（年龄要求）、K（自动续费金额上限）已并入 9.2 第 10、11�
   - **部分证据但不足，保持未勾选**：`apps/web/src/lib/domain.ts:30-44` 已为表中需要 step-up 的
     动作建立 purpose 枚举；`apps/web/src/services/auth/step-up.ts:224-245` 和集成用例
     `apps/web/tests/integration/d9a-step-up.integration.test.ts:377`“blocks every high-risk purpose during
-    the identity-risk cooldown even with a valid grant”证明冷静期会在 grant 有效时仍硬阻断。但 A3、
-    D9-B 与 D9-D 的实际高风险动作尚未接入授权器，表中的二次确认、变更预览、通知及绑定渠道确认
-    也没有完整实现/集成测试，故风险表整体不能勾选；下表文字与保护等级保持不变。
+    the identity-risk cooldown even with a valid grant”证明冷静期会在 grant 有效时仍硬阻断。A3 已把
+    Name Server 变更接入 `nameserver_change` grant、显式二次确认与同一冷静期断言，并把账号删除接入
+    一次性 `account_deletion` grant；`d9a-account-state.integration.test.ts:304` 验证两者在冷静期持有效
+    grant 仍拒绝。但 D9-B 与 D9-D 的其余实际高风险动作，以及表中的变更预览、通知及绑定渠道确认
+    尚无完整实现/集成测试，故风险表整体不能勾选；下表文字与保护等级保持不变。
 
 | 操作 | 保护 |
 | --- | --- |

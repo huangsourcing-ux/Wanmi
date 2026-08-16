@@ -43,7 +43,12 @@ async function systemRequest(suffix: string) {
 async function customer(last4: string) {
   const document = await payload.create({
     collection: 'customers',
-    data: { phone: `1380000${last4}`, phoneMasked: `138****${last4}`, status: 'active' },
+    data: {
+      capabilityRestrictions: [],
+      phone: `1380000${last4}`,
+      phoneMasked: `138****${last4}`,
+      status: 'active',
+    },
     overrideAccess: true,
   })
   created.push({ collection: 'customers', id: document.id })

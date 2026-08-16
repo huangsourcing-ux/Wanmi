@@ -221,7 +221,7 @@ export async function verifyStepUpOtp(
   })
 }
 
-async function assertIdentityRiskCooldownInactive(
+export async function assertIdentityRiskCooldownInactive(
   req: PayloadRequest,
   customerId: number | string,
 ): Promise<void> {

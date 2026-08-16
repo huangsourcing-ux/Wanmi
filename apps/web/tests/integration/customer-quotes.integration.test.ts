@@ -24,7 +24,12 @@ let payload: Payload
 async function customer(last4: string) {
   const doc = await payload.create({
     collection: 'customers',
-    data: { phone: `${fixturePrefix}-${last4}`, phoneMasked: `***${last4}`, status: 'active' },
+    data: {
+      capabilityRestrictions: [],
+      phone: `${fixturePrefix}-${last4}`,
+      phoneMasked: `***${last4}`,
+      status: 'active',
+    },
     overrideAccess: true,
   })
   createdCustomers.push(doc.id)

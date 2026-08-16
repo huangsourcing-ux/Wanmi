@@ -42,6 +42,20 @@
       "phase": "expand",
       "reason": "新增短信 step-up challenge 归属字段与 step-up grant 表；旧代码可忽略新增表与可空列，新代码仅在迁移完成后使用它们。",
       "rollback": "retain"
+    },
+    "20260816_061548_d9a_account_state_capabilities": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "只追加客户状态枚举值、能力限制列和状态索引，并保留旧枚举值；旧代码仍可读写原状态，新代码在迁移完成后才启用状态机。",
+      "rollback": "retain"
+    },
+    "20260816_061549_d9a_account_state_backfill": {
+      "newCodeCompatibleBeforeUp": false,
+      "oldCodeCompatible": true,
+      "phase": "data",
+      "reason": "将历史 disabled 与 deletion_requested 状态映射到等价的新状态；旧代码仍保持失败关闭，新代码在应用提升前获得完整六态数据。",
+      "rollback": "retain"
     }
   }
 }

@@ -5,9 +5,7 @@ import { createLocalReq, getPayload, type Payload, type PayloadRequest } from 'p
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { mockSuccess } from '@/providers/mock'
-import type {
-  ProviderResult,
-} from '@/lib/domain'
+import type { ProviderResult } from '@/lib/domain'
 import type {
   WestDigitalAvailability,
   WestDigitalBalanceProvider,
@@ -15,9 +13,7 @@ import type {
 } from '@/providers/types'
 import { FixtureWestDigitalTransport } from '@/providers/westdigital-fixtures'
 import { WestDigitalReadAdapter } from '@/providers/westdigital'
-import {
-  FixtureWestDigitalWriteTransport,
-} from '@/providers/westdigital-write-fixtures'
+import { FixtureWestDigitalWriteTransport } from '@/providers/westdigital-write-fixtures'
 import { WestDigitalWriteAdapter } from '@/providers/westdigital-write'
 import {
   getTldSalesStopState,
@@ -64,7 +60,12 @@ async function adminRequest(suffix: string): Promise<PayloadRequest> {
 async function approvedCustomer(suffix: string) {
   const customer = await payload.create({
     collection: 'customers',
-    data: { phone: `${prefix}-${suffix}`, phoneMasked: `***${suffix}`, status: 'active' },
+    data: {
+      capabilityRestrictions: [],
+      phone: `${prefix}-${suffix}`,
+      phoneMasked: `***${suffix}`,
+      status: 'active',
+    },
     overrideAccess: true,
   })
   const template = await payload.create({
@@ -270,7 +271,12 @@ afterAll(async () => {
       payload.delete({ collection: 'orders', id: order.id, overrideAccess: true }),
     )
   }
-  for (const collection of ['quotes', 'priceSnapshots', 'realnameTemplates', 'customers'] as const) {
+  for (const collection of [
+    'quotes',
+    'priceSnapshots',
+    'realnameTemplates',
+    'customers',
+  ] as const) {
     const rows = await payload.find({
       collection,
       limit: 200,
@@ -401,7 +407,9 @@ describe('D6-03 balance monitoring and emergency sales stop', () => {
       },
     })
     expect(alerts.docs).toHaveLength(1)
-    expect(JSON.stringify(alerts.docs[0]!.metadata)).not.toMatch(/account|clientid|secret|availableMinor|thresholdMinor/iu)
+    expect(JSON.stringify(alerts.docs[0]!.metadata)).not.toMatch(
+      /account|clientid|secret|availableMinor|thresholdMinor/iu,
+    )
   })
 
   it('keeps manual and automatic stop sources independent', async () => {
@@ -498,13 +506,18 @@ describe('D6-03 balance monitoring and emergency sales stop', () => {
     const write = new WestDigitalWriteAdapter({ transport })
     const held = await runCommerceFulfillment(
       await request('hold-resume'),
-      { operationKey: `${prefix}-hold-resume`, orderId: Number(fixture.order.id), traceId: `${prefix}-hold-resume` },
+      {
+        operationKey: `${prefix}-hold-resume`,
+        orderId: Number(fixture.order.id),
+        traceId: `${prefix}-hold-resume`,
+      },
       fulfillmentDependencies(write),
     )
     expect(held).toEqual({ idempotentReplay: true, status: 'paid' })
     expect(transport.writeCount).toBe(0)
     expect(
-      (await payload.findByID({ collection: 'orders', id: fixture.order.id, overrideAccess: true })).status,
+      (await payload.findByID({ collection: 'orders', id: fixture.order.id, overrideAccess: true }))
+        .status,
     ).toBe('paid')
     expect(
       (
@@ -644,7 +657,8 @@ describe('D6-03 balance monitoring and emergency sales stop', () => {
     expect(held).toEqual({ idempotentReplay: true, status: 'paid' })
     expect(transport.writeCount).toBe(0)
     expect(
-      (await payload.findByID({ collection: 'orders', id: fixture.order.id, overrideAccess: true })).status,
+      (await payload.findByID({ collection: 'orders', id: fixture.order.id, overrideAccess: true }))
+        .status,
     ).toBe('paid')
     expect(
       (
@@ -663,11 +677,16 @@ describe('D6-03 balance monitoring and emergency sales stop', () => {
     const write = new WestDigitalWriteAdapter({ transport })
     await runCommerceFulfillment(
       await request('hold-refund'),
-      { operationKey: `${prefix}-hold-refund`, orderId: Number(fixture.order.id), traceId: `${prefix}-hold-refund` },
+      {
+        operationKey: `${prefix}-hold-refund`,
+        orderId: Number(fixture.order.id),
+        traceId: `${prefix}-hold-refund`,
+      },
       fulfillmentDependencies(write),
     )
     expect(
-      (await payload.findByID({ collection: 'orders', id: fixture.order.id, overrideAccess: true })).status,
+      (await payload.findByID({ collection: 'orders', id: fixture.order.id, overrideAccess: true }))
+        .status,
     ).toBe('paid')
     expect(
       (
@@ -694,7 +713,8 @@ describe('D6-03 balance monitoring and emergency sales stop', () => {
     )
     expect(decision).toMatchObject({ decision: 'refund', refundId: expect.anything() })
     expect(
-      (await payload.findByID({ collection: 'orders', id: fixture.order.id, overrideAccess: true })).status,
+      (await payload.findByID({ collection: 'orders', id: fixture.order.id, overrideAccess: true }))
+        .status,
     ).toBe('refund_pending')
     expect(transport.writeCount).toBe(0)
     const refunds = await payload.find({

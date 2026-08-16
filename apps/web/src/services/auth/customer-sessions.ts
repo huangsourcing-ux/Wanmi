@@ -1,9 +1,11 @@
+import { sql } from '@payloadcms/db-postgres'
 import type { PayloadRequest } from 'payload'
 
 import { hmac, randomOpaqueToken } from '@/lib/crypto'
 import { getEnv } from '@/lib/env'
 import type { Customer } from '@/payload-types'
 
+import { authTransactionDatabase, inAuthTransaction } from './atomic'
 import { recordCustomerSecurityEvent } from './security-events'
 
 export async function issueCustomerSession(
@@ -57,20 +59,22 @@ export async function revokeAllCustomerSessions(
   customerId: number,
   reason: string,
 ): Promise<number> {
-  const now = new Date().toISOString()
-  const revoked = await req.payload.update({
-    collection: 'customerSessions',
-    data: { revokedAt: now },
-    overrideAccess: true,
-    req,
-    where: {
-      and: [{ customer: { equals: customerId } }, { revokedAt: { exists: false } }],
-    },
+  return inAuthTransaction(req, async () => {
+    const now = new Date().toISOString()
+    const database = await authTransactionDatabase(req)
+    const revoked = await database.execute(sql`
+      UPDATE customer_sessions
+      SET revoked_at = ${now}, updated_at = NOW()
+      WHERE customer_id = ${customerId}
+        AND revoked_at IS NULL
+      RETURNING id
+    `)
+    const revokedCount = revoked.rows?.length ?? 0
+    await recordCustomerSecurityEvent(req, customerId, 'sessions_revoked', {
+      reason,
+      revokedCount,
+      scope: 'all',
+    })
+    return revokedCount
   })
-  await recordCustomerSecurityEvent(req, customerId, 'sessions_revoked', {
-    reason,
-    revokedCount: revoked.docs.length,
-    scope: 'all',
-  })
-  return revoked.docs.length
 }

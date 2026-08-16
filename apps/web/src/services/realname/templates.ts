@@ -15,6 +15,7 @@ import type { RealnameStatus } from '@/lib/domain'
 import { getTraceId } from '@/lib/request-id'
 import type { WestDigitalRealnameProfile, WestDigitalRealnameProvider } from '@/providers/types'
 import { recordAuditEvent, type AuditActor } from '@/services/audit/record-audit-event'
+import { assertCustomerAccountCapabilityFromSnapshot } from '@/services/auth/account-state'
 
 import { realnameCleanupDeadline } from './retention'
 
@@ -129,9 +130,10 @@ function relationshipId(value: unknown): string | undefined {
 }
 
 function requireCustomer(req: PayloadRequest): { id: number | string } {
-  if (!isCustomerUser(req.user) || (req.user as { status?: string }).status !== 'active') {
+  if (!isCustomerUser(req.user)) {
     throw new AppError('REALNAME_AUTH_REQUIRED', '请重新验证身份后再试', 401)
   }
+  assertCustomerAccountCapabilityFromSnapshot(req.user, 'login')
   return req.user
 }
 

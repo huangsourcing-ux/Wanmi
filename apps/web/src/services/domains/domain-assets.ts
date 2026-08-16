@@ -12,6 +12,7 @@ import {
   type DomainAssetView,
 } from '@/schemas/domains'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
+import { assertCustomerAccountCapabilityFromSnapshot } from '@/services/auth/account-state'
 import { queryWestDigitalAsset } from '@/services/providers/westdigital-operations'
 
 type AssetRecord = {
@@ -38,13 +39,10 @@ function relationId(value: number | string | { id: number | string }): number | 
 }
 
 function assertCustomer(req: PayloadRequest, customer: CustomerIdentity): void {
-  if (
-    !isCustomerUser(req.user) ||
-    customer.status !== 'active' ||
-    String(req.user.id) !== String(customer.id)
-  ) {
+  if (!isCustomerUser(req.user) || String(req.user.id) !== String(customer.id)) {
     throw new AppError('CUSTOMER_AUTH_REQUIRED', '需要用户身份验证', 401)
   }
+  assertCustomerAccountCapabilityFromSnapshot(req.user, 'login')
 }
 
 function publicAsset(asset: AssetRecord): DomainAssetView {

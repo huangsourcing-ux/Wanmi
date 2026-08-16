@@ -12,10 +12,10 @@ import {
 export async function POST(request: Request) {
   const traceId = getTraceId(request.headers)
   try {
-    customerDeletionRequestSchema.parse(await request.json())
     const payload = await getPayload({ config })
     const { req, user } = await authenticatedCustomerRequest(payload, request)
-    const result = await requestCustomerDeletion(req, user)
+    const input = customerDeletionRequestSchema.parse(await request.json())
+    const result = await requestCustomerDeletion(req, user, input)
     return successResponse(customerDeletionResponseSchema.parse(result), traceId, {
       headers: { 'set-cookie': clearCustomerCookie() },
     })

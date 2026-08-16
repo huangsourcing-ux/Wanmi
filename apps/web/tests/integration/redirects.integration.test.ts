@@ -149,6 +149,7 @@ describe('D1 controlled redirects', () => {
     const customer = await payload.create({
       collection: 'customers',
       data: {
+        capabilityRestrictions: [],
         phone: `${fixturePrefix}-customer`,
         phoneMasked: 'fixture-only',
         status: 'active',

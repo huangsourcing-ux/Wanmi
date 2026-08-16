@@ -318,7 +318,7 @@ export async function runDomainExpiryReminders(
       overrideAccess: true,
       req,
     })) as CustomerRecord
-    if (customer.status !== 'active') continue
+    if (customer.status !== 'active' && customer.status !== 'restricted') continue
     await prepareReminder(req, {
       asset,
       channel: 'in_app',

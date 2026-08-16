@@ -2,6 +2,37 @@ export const ADMIN_ROLES = ['content_editor', 'ad_operator', 'analyst', 'system_
 
 export type AdminRole = (typeof ADMIN_ROLES)[number]
 
+export const CUSTOMER_ACCOUNT_STATUSES = [
+  'pending_registration',
+  'active',
+  'restricted',
+  'suspended',
+  'closing',
+  'closed',
+] as const
+
+export type CustomerAccountStatus = (typeof CUSTOMER_ACCOUNT_STATUSES)[number]
+
+export const CUSTOMER_CAPABILITY_RESTRICTIONS = [
+  'login_disabled',
+  'purchase_disabled',
+  'balance_spend_disabled',
+  'domain_write_disabled',
+  'identity_change_disabled',
+  'refund_review',
+] as const
+
+export type CustomerCapabilityRestriction = (typeof CUSTOMER_CAPABILITY_RESTRICTIONS)[number]
+
+export const CUSTOMER_ACCOUNT_TRANSITIONS = {
+  pending_registration: ['active'],
+  active: ['restricted', 'suspended', 'closing'],
+  restricted: ['active', 'suspended', 'closing'],
+  suspended: ['active', 'restricted', 'closing'],
+  closing: ['active', 'closed'],
+  closed: [],
+} as const satisfies Record<CustomerAccountStatus, readonly CustomerAccountStatus[]>
+
 export const ORDER_STATUSES = [
   'pending_payment',
   'paid',

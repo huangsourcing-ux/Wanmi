@@ -9,6 +9,7 @@ import { getTraceId } from '@/lib/request-id'
 import { createRealnameObjectProvider } from '@/providers/oss-realname'
 import type { RealnameObjectProvider } from '@/providers/types'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
+import { assertCustomerAccountCapabilityFromSnapshot } from '@/services/auth/account-state'
 
 import {
   decryptDocumentEnvelope,
@@ -48,9 +49,10 @@ function relationshipId(value: unknown): string | undefined {
 }
 
 function requireCustomer(req: PayloadRequest): CustomerIdentity {
-  if (!isCustomerUser(req.user) || (req.user as CustomerIdentity).status !== 'active') {
+  if (!isCustomerUser(req.user)) {
     throw new AppError('REALNAME_AUTH_REQUIRED', '请重新验证身份后再试', 401)
   }
+  assertCustomerAccountCapabilityFromSnapshot(req.user, 'login')
   return req.user as CustomerIdentity
 }
 

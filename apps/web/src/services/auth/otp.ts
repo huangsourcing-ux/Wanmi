@@ -17,10 +17,17 @@ import type { SmsRequestInput, SmsVerifyInput } from '@/schemas/auth'
 import type { Customer } from '@/payload-types'
 import { disableCustomerRealnameTemplates } from '@/services/realname/lifecycle'
 
+import {
+  accountRestrictions,
+  assertCustomerAccountCapabilityFromSnapshot,
+  transitionCustomerAccount,
+} from './account-state'
 import { clientHashes, normalizeChinesePhone } from './client-facts'
 import { authenticateVerifiedPhone, type IdentityAuthenticationResult } from './customer-identities'
+import { revokeAllCustomerSessions } from './customer-sessions'
 import { recordCustomerSecurityEvent } from './security-events'
 import { enforceSmsRateLimits } from './sms-rate-limit'
+import { authorizeStepUpGrant } from './step-up'
 
 const genericRequestResult = {
   accepted: true as const,
@@ -237,15 +244,16 @@ export async function revokeSessions(
   const session = await findActiveSession(req, rawToken)
   if (!session) return
   const customerId = typeof session.customer === 'object' ? session.customer.id : session.customer
+  if (scope === 'all') {
+    await revokeAllCustomerSessions(req, customerId, 'customer_logout_all')
+    return
+  }
   const revoked = await req.payload.update({
     collection: 'customerSessions',
     data: { revokedAt: new Date().toISOString() },
     overrideAccess: true,
     req,
-    where:
-      scope === 'all'
-        ? { and: [{ customer: { equals: customerId } }, { revokedAt: { exists: false } }] }
-        : { id: { equals: session.id } },
+    where: { id: { equals: session.id } },
   })
   await recordCustomerSecurityEvent(req, customerId, 'sessions_revoked', {
     revokedCount: revoked.docs.length,
@@ -267,9 +275,7 @@ export async function authenticatedCustomerRequest(
     overrideAccess: true,
     req,
   })) as CustomerIdentity
-  if (customer.status !== 'active') {
-    throw new AppError('CUSTOMER_AUTH_REQUIRED', '需要用户身份验证', 401)
-  }
+  assertCustomerAccountCapabilityFromSnapshot(customer, 'login')
   const user = { ...customer, collection: 'customers' as const }
   req.user = user
   return { req, user }
@@ -282,39 +288,50 @@ async function createCustomerReq(payload: Payload, headers: Headers): Promise<Pa
 export async function requestCustomerDeletion(
   req: PayloadRequest,
   customer: CustomerIdentity,
-): Promise<{ deletionRequestedAt: string; status: 'deletion_requested' }> {
+  input: { deviceId: string; stepUpToken: string },
+): Promise<{ deletionRequestedAt: string; status: 'closing' }> {
   const now = new Date().toISOString()
   const startedTransaction = await initTransaction(req)
   try {
+    if (customer.status !== 'active' && customer.status !== 'restricted') {
+      throw new AppError('ACCOUNT_STATE_TRANSITION_INVALID', '当前账号状态不可申请注销', 409)
+    }
+    const grant = await authorizeStepUpGrant(req, {
+      customerId: customer.id,
+      deviceId: input.deviceId,
+      headers: req.headers,
+      purpose: 'account_deletion',
+      stepUpToken: input.stepUpToken,
+    })
     const disabledTemplateCount = await disableCustomerRealnameTemplates(req, {
       actor: { id: customer.id, type: 'customer' },
       customerId: customer.id,
       startedAt: now,
     })
-    const updated = await req.payload.update({
-      collection: 'customers',
-      data: { deletionRequestedAt: now, status: 'deletion_requested' },
-      id: customer.id,
-      overrideAccess: true,
-      req,
-    })
-    await req.payload.update({
-      collection: 'customerSessions',
-      data: { revokedAt: now },
-      overrideAccess: true,
-      req,
-      where: {
-        and: [{ customer: { equals: customer.id } }, { revokedAt: { exists: false } }],
+    const updated = await transitionCustomerAccount(req, {
+      actor: { id: customer.id, type: 'customer' },
+      changedAt: now,
+      customerId: customer.id,
+      evidence: {
+        observedAt: now,
+        reference: `step-up-grant:${grant.grantId}`,
+        source: 'customer_request',
       },
+      expectedRestrictions: accountRestrictions(customer),
+      expectedStatus: customer.status,
+      reason: 'customer_requested_account_closure',
+      restrictions: [],
+      status: 'closing',
     })
     await recordCustomerSecurityEvent(req, customer.id, 'deletion_requested', {
       deletionRequestedAt: now,
       disabledTemplateCount,
+      stepUpGrantId: grant.grantId,
     })
     if (startedTransaction) await commitTransaction(req)
     return {
       deletionRequestedAt: updated.deletionRequestedAt ?? now,
-      status: 'deletion_requested',
+      status: 'closing',
     }
   } catch (error) {
     if (startedTransaction) await killTransaction(req)

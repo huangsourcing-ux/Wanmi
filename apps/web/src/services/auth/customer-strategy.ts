@@ -2,6 +2,7 @@ import type { AuthStrategy } from 'payload'
 
 import { hmac } from '@/lib/crypto'
 import { getEnv } from '@/lib/env'
+import { assertCustomerAccountCapabilityFromSnapshot } from '@/services/auth/account-state'
 
 function cookieValue(header: string | null, name: string): string | null {
   if (!header) return null
@@ -40,7 +41,11 @@ export const customerSessionStrategy: AuthStrategy = {
       id: customerId,
       overrideAccess: true,
     })
-    if (customer.status !== 'active') return { user: null }
+    try {
+      assertCustomerAccountCapabilityFromSnapshot(customer, 'login')
+    } catch {
+      return { user: null }
+    }
     return { user: { ...customer, collection: 'customers' as const } }
   },
 }

@@ -26,6 +26,7 @@ import {
 } from '@/services/pricing/price-calculation'
 import { loadEnabledPricingRules } from '@/services/pricing/price-rules'
 import { assertRealnameTemplateUsableForRegistration } from '@/services/realname/templates'
+import { assertCustomerAccountCapability } from '@/services/auth/account-state'
 
 import { assertTldSalesOpen } from './balance-control'
 
@@ -47,11 +48,7 @@ type OrderCreationOptions = {
 }
 
 function assertCustomer(req: PayloadRequest, customer: CustomerIdentity): void {
-  if (
-    !isCustomerUser(req.user) ||
-    (req.user as { status?: string }).status !== 'active' ||
-    String(req.user.id) !== String(customer.id)
-  ) {
+  if (!isCustomerUser(req.user) || String(req.user.id) !== String(customer.id)) {
     throw new AppError('CUSTOMER_AUTH_REQUIRED', '需要用户身份验证', 401)
   }
 }
@@ -210,6 +207,7 @@ export async function createCustomerOrder(
   const input = orderCreateRequestSchema.parse(candidate)
   const startedTransaction = await initTransaction(req)
   try {
+    await assertCustomerAccountCapability(req, options.customer.id, 'purchase')
     const quote = await getUsableCustomerQuote({
       customer: options.customer,
       now: options.now,
