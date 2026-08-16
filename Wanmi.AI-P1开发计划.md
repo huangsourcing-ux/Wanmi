@@ -1238,10 +1238,37 @@ I（年龄要求）、K（自动续费金额上限）已并入 9.2 第 10、11�
 
 #### A5 账户找回
 
-- [ ] 手机号与微信全部不可用时，提交实名资料、历史订单、支付凭证等证据，**人工审核**；
-- [ ] 找回成功后强制：撤销全部旧会话、向全部旧绑定渠道告知、进入**冷静期**，期间禁止获取
+- [x] 手机号与微信全部不可用时，提交实名资料、历史订单、支付凭证等证据，**人工审核**；
+  - **实现与测试证据**：`apps/web/src/services/auth/account-recovery.ts:53-117` 独立要求 phone、Wechat
+    均声明不可用，并用实名模板、历史订单、已验签且 confirmed 的微信支付通知做同一 customer/order
+    归属核验；查询异常、缺行及非法 ID 均失败关闭。`:119-181` 在同一事务复用 `manualReviews` 写入
+    open 人工复核、追加申请记录、安全事件与审计；公共入口见
+    `apps/web/src/app/api/v1/auth/account-recovery/route.ts:8-41`。集成用例
+    `apps/web/tests/integration/d9a-account-recovery.integration.test.ts:329`“submits verified real-name,
+    historical-order, and confirmed-payment evidence to manualReviews”、`:391`/`:402` 两个渠道独立拒绝、
+    `:413` 十个证据 SQL 谓词逐项必要及 `:514` 存储故障关闭均通过。
+- [x] 找回成功后强制：撤销全部旧会话、向全部旧绑定渠道告知、进入**冷静期**，期间禁止获取
       域名管理密码、关闭域名锁、修改 NS 与实名信息；
-- [ ] 找回申请、证据、审核人、结论、冷静期起止全部追加式记录并审计。
+  - **实现与测试证据**：`apps/web/src/services/auth/account-recovery.ts:307-470` 以同事务
+    `UPDATE manual_reviews ... WHERE id/reason_code/status='open' RETURNING` 一次性消费审核结论；批准时
+    suspended 账户复用 A3 `transitionCustomerAccount`，以 `UPDATE customers ... WHERE ... RETURNING`
+    CAS 写冷静期，再复用 `revokeAllCustomerSessions` 与 A2 `notifyFormerCustomerIdentities` 逐 provider
+    追加 outcome。集成用例 `apps/web/tests/integration/d9a-account-recovery.integration.test.ts:713`
+    “atomically consumes one approval, restores through A3, revokes every session, records cooldown, and
+    notifies every old channel”验证 8 路并发恰好 1 成功和三项强制副作用；`:1182-1229` 的四个独立用例
+    分别只命中 `domain_management_password`、`domain_lock_change`、`nameserver_change`、
+    `realname_change`，均拒绝且不消费 grant。
+- [x] 找回申请、证据、审核人、结论、冷静期起止全部追加式记录并审计。
+  - **实现与测试证据**：`apps/web/src/collections/identity.ts:340-409` 的
+    `accountRecoveryRecords` 分别追加 request/conclusion，保存证据关系、审核人、结论与冷静期起止；
+    create/update/delete access 关闭，`beforeChange`/`beforeDelete` 对包括系统 override 的改写和删除仍
+    fail-closed。`apps/web/src/services/auth/account-recovery.ts:146-178,408-446` 复用
+    `recordCustomerSecurityEvent`/`recordAuditEvent` 追加两阶段证据；集成用例
+    `apps/web/tests/integration/d9a-account-recovery.integration.test.ts:1050` 验证系统调用也不可改写/删除，
+    `:1086`、`:1117` 验证读取与写权限，`:1164` 验证两类审计 actor。全部安全/正确性判定点的
+    140/140 个独立删除/短路变异均由指定行为断言杀死，对照见
+    `docs/operations/d9a-a5-security-mutation-matrix.md:11-117`；计数断言均限定目标 customer、review、
+    request、provider、status 或 action 等 `where`。
 
 #### A6 注销与账户关闭
 

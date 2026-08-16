@@ -32,7 +32,7 @@ const LEGACY_PHONE_REVIEW_REASONS = [
   'd9a_legacy_phone_duplicate',
 ] as const
 
-type IdentityRecord = {
+export type IdentityRecord = {
   boundAt: string
   customer: number | Customer
   id: number
@@ -654,7 +654,7 @@ async function createIdentityCollisionReview(
   })
 }
 
-async function activeIdentities(
+export async function activeCustomerIdentities(
   req: PayloadRequest,
   customerId: number,
 ): Promise<IdentityRecord[]> {
@@ -671,7 +671,7 @@ async function activeIdentities(
   return result.docs as unknown as IdentityRecord[]
 }
 
-async function notifyIdentityChange(
+export async function notifyFormerCustomerIdentities(
   req: PayloadRequest,
   customerId: number,
   identities: IdentityRecord[],
@@ -745,7 +745,7 @@ export async function bindVerifiedIdentity(
       await createIdentityCollisionReview(req, customer, existing)
       return { collision: true as const }
     }
-    const old = await activeIdentities(req, customer.id)
+    const old = await activeCustomerIdentities(req, customer.id)
     const sameProvider = old.find(
       (identity) =>
         identity.provider === intent.provider && identity.identifierHash !== intent.identifierHash,
@@ -804,7 +804,7 @@ export async function bindVerifiedIdentity(
     )
   }
   if (result.highRiskReplacement) {
-    await notifyIdentityChange(req, customer.id, result.old, traceId)
+    await notifyFormerCustomerIdentities(req, customer.id, result.old, traceId)
   }
   return { identityId: result.identity.id, status: 'bound' }
 }
@@ -834,7 +834,7 @@ export async function unbindCustomerIdentity(
     if (activeIds.length <= 1) {
       throw new AppError('LAST_LOGIN_IDENTITY_REQUIRED', '不能解绑最后一个可登录身份', 409)
     }
-    const old = await activeIdentities(req, customer.id)
+    const old = await activeCustomerIdentities(req, customer.id)
     const now = new Date().toISOString()
     const updated = await database.execute(sql`
       UPDATE customer_identities
@@ -856,7 +856,7 @@ export async function unbindCustomerIdentity(
     })
     return { old }
   })
-  await notifyIdentityChange(req, customer.id, result.old, traceId)
+  await notifyFormerCustomerIdentities(req, customer.id, result.old, traceId)
   return { identityId, status: 'unbound' }
 }
 

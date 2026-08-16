@@ -32,6 +32,8 @@ describe('shared audit event service', () => {
         'content.publish.scheduled',
         'content.revision.published',
         'content.status.changed',
+        'customer.account_recovery.decided',
+        'customer.account_recovery.requested',
         'customer.account_sessions.revoked',
         'customer.account_state.changed',
         'customer.consent.accepted',

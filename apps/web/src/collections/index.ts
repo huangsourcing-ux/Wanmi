@@ -35,6 +35,7 @@ import {
   Renewals,
 } from './fulfillment'
 import {
+  AccountRecoveryRecords,
   AdminInvitations,
   AdminMfaCredentials,
   Admins,
@@ -66,6 +67,7 @@ export const collections: CollectionConfig[] = [
   AdminMfaCredentials,
   AdminInvitations,
   Customers,
+  AccountRecoveryRecords,
   CustomerIdentities,
   ConsentRecords,
   CustomerRegistrationIntents,

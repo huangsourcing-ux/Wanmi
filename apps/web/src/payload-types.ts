@@ -72,6 +72,7 @@ export interface Config {
     adminMfaCredentials: AdminMfaCredential;
     adminInvitations: AdminInvitation;
     customers: Customer;
+    accountRecoveryRecords: AccountRecoveryRecord;
     customerIdentities: CustomerIdentity;
     consentRecords: ConsentRecord;
     customerRegistrationIntents: CustomerRegistrationIntent;
@@ -150,6 +151,7 @@ export interface Config {
     adminMfaCredentials: AdminMfaCredentialsSelect<false> | AdminMfaCredentialsSelect<true>;
     adminInvitations: AdminInvitationsSelect<false> | AdminInvitationsSelect<true>;
     customers: CustomersSelect<false> | CustomersSelect<true>;
+    accountRecoveryRecords: AccountRecoveryRecordsSelect<false> | AccountRecoveryRecordsSelect<true>;
     customerIdentities: CustomerIdentitiesSelect<false> | CustomerIdentitiesSelect<true>;
     consentRecords: ConsentRecordsSelect<false> | ConsentRecordsSelect<true>;
     customerRegistrationIntents: CustomerRegistrationIntentsSelect<false> | CustomerRegistrationIntentsSelect<true>;
@@ -374,6 +376,61 @@ export interface Customer {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "accountRecoveryRecords".
+ */
+export interface AccountRecoveryRecord {
+  id: number;
+  recordKey: string;
+  requestKey: string;
+  eventType: 'request_submitted' | 'review_concluded';
+  customer: number | Customer;
+  manualReview: number | ManualReview;
+  realnameTemplate?: (number | null) | RealnameTemplate;
+  order?: (number | null) | Order;
+  paymentNotification?: (number | null) | PaymentNotification;
+  unavailableProviders?: ('phone' | 'wechat')[] | null;
+  reviewer?: (number | null) | Admin;
+  conclusion?: ('approved' | 'rejected') | null;
+  decisionNote?: string | null;
+  occurredAt: string;
+  cooldownStartedAt?: string | null;
+  cooldownEndsAt?: string | null;
+  revokedSessionCount?: number | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "manualReviews".
+ */
+export interface ManualReview {
+  id: number;
+  customer?: (number | null) | Customer;
+  customerIdentity?: (number | null) | CustomerIdentity;
+  order?: (number | null) | Order;
+  realnameTemplate?: (number | null) | RealnameTemplate;
+  paymentNotification?: (number | null) | PaymentNotification;
+  domainAsset?: (number | null) | DomainAsset;
+  nameserverChange?: (number | null) | NameserverChange;
+  reasonCode: string;
+  status: 'open' | 'resolved';
+  evidence?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  resolutionNote?: string | null;
+  resolvedBy?: (number | null) | Admin;
+  resolvedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "customerIdentities".
  */
 export interface CustomerIdentity {
@@ -392,6 +449,245 @@ export interface CustomerIdentity {
   boundAt: string;
   unboundAt?: string | null;
   lastUsedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "orders".
+ */
+export interface Order {
+  id: number;
+  orderNumber: string;
+  customer: number | Customer;
+  operation?: ('registration' | 'renewal') | null;
+  domainAsset?: (number | null) | DomainAsset;
+  quote: number | Quote;
+  realnameTemplate: number | RealnameTemplate;
+  domainAscii: string;
+  status:
+    | 'pending_payment'
+    | 'paid'
+    | 'fulfilling'
+    | 'succeeded'
+    | 'refund_pending'
+    | 'refunding'
+    | 'refunded'
+    | 'manual_review'
+    | 'cancelled';
+  amountMinor: number;
+  currency: 'CNY';
+  merchantOrderNumber?: string | null;
+  paymentChannel?: ('native' | 'h5') | null;
+  paymentExpiresAt?: string | null;
+  paymentStatusPolledAt?: string | null;
+  quoteSnapshot:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  paidAt?: string | null;
+  fulfillmentJobQueuedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "domainAssets".
+ */
+export interface DomainAsset {
+  id: number;
+  customer: number | Customer;
+  realnameTemplate: number | RealnameTemplate;
+  domainAscii: string;
+  registrar: string;
+  registeredAt: string;
+  expiresAt: string;
+  status: 'active' | 'expired' | 'pending' | 'unknown';
+  nameservers: string[];
+  lastSyncedAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "realnameTemplates".
+ */
+export interface RealnameTemplate {
+  id: number;
+  customer: number | Customer;
+  displayName: string;
+  type: 'individual' | 'organization';
+  fullNameChinese: string;
+  organizationNameChinese?: string | null;
+  organizationNameEnglish?: string | null;
+  contactLastNameChinese: string;
+  contactFirstNameChinese: string;
+  contactLastNameEnglish: string;
+  contactFirstNameEnglish: string;
+  countryCode: string;
+  provinceChinese: string;
+  cityChinese: string;
+  districtChinese: string;
+  addressChinese: string;
+  provinceEnglish: string;
+  cityEnglish: string;
+  addressEnglish: string;
+  postalCode: string;
+  phoneCountryCode: string;
+  phoneType: 'mobile' | 'landline';
+  phone: string;
+  phoneAreaCode?: string | null;
+  phoneExtension?: string | null;
+  email: string;
+  identityDocumentType: string;
+  identityDocumentNumber: string;
+  applicableScopes: ('cg' | 'gswl' | 'hk')[];
+  status: 'draft' | 'pending_review' | 'approved' | 'rejected' | 'manual_review' | 'disabled';
+  providerReviewState: 'unsubmitted' | 'pending' | 'approved' | 'rejected' | 'unknown';
+  providerTemplateId?: string | null;
+  providerRequestId?: string | null;
+  providerConfirmedAt?: string | null;
+  providerLastCheckedAt?: string | null;
+  safeFailureReason?:
+    | ('identity_mismatch' | 'material_invalid' | 'provider_unavailable' | 'status_unknown' | 'other')
+    | null;
+  disabledAt?: string | null;
+  cleanupDueAt?: string | null;
+  cleanupCompletedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "quotes".
+ */
+export interface Quote {
+  id: number;
+  schemaVersion: number;
+  calculationVersion: number;
+  quoteRef: string;
+  customer: number | Customer;
+  operation?: ('registration' | 'renewal') | null;
+  domainAsset?: (number | null) | DomainAsset;
+  assetExpiresAt?: string | null;
+  domainAscii: string;
+  tld: string;
+  years: number;
+  priceClass: 'standard';
+  sourcePriceSnapshotRef: string;
+  sourceCalculationHash: string;
+  quoteIntegrityHash: string;
+  provider: 'westdigital_fixture';
+  providerProductId: string;
+  providerRequestId: string;
+  providerObservedAt: string;
+  providerCacheStatus: 'hit' | 'miss';
+  providerCacheExpiresAt?: string | null;
+  availabilityRequestId: string;
+  availabilityObservedAt: string;
+  ruleSource: 'wanmi_fixture' | 'price_rule_collection';
+  ruleKey: string;
+  ruleVersion: number;
+  ruleMode: 'fixed' | 'percentage';
+  ruleFixedAmountMinor?: number | null;
+  rulePercentageBasisPoints?: number | null;
+  roundingMode: 'half_up_to_fen';
+  calculationFormula: 'registration_price_plus_annual_renewal_price';
+  upstreamRegistrationPriceMinor: number;
+  upstreamRenewalPriceMinor: number;
+  upstreamCostMinor: number;
+  registrationPriceMinor: number;
+  renewalPriceMinor: number;
+  userPriceMinor: number;
+  currency: 'CNY';
+  quotedAt: string;
+  expiresAt: string;
+  createdTraceId: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "paymentNotifications".
+ */
+export interface PaymentNotification {
+  id: number;
+  notificationId: string;
+  order?: (number | null) | Order;
+  source: 'notification' | 'query';
+  wechatTransactionId?: string | null;
+  merchantOrderNumber?: string | null;
+  signatureVerified: boolean;
+  confirmationStatus: 'confirmed' | 'mismatch' | 'not_paid' | 'rejected' | 'unknown';
+  amountMinor?: number | null;
+  currency?: 'CNY' | null;
+  receivedAt: string;
+  paidAt?: string | null;
+  payloadDigest: string;
+  providerRequestId?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "nameserverChanges".
+ */
+export interface NameserverChange {
+  id: number;
+  changeKey?: string | null;
+  customer: number | Customer;
+  asset: number | DomainAsset;
+  previousNameservers?: string[] | null;
+  requestedNameservers: string[];
+  confirmedNameservers?: string[] | null;
+  requestedByType?: 'customer' | null;
+  requestedById?: string | null;
+  requestedAt?: string | null;
+  jobQueuedAt?: string | null;
+  reviewJobQueuedAt?: string | null;
+  lastCheckedAt?: string | null;
+  completedAt?: string | null;
+  providerOperation?: (number | null) | ProviderOperation;
+  failureCode?: string | null;
+  createdTraceId?: string | null;
+  status: 'pending' | 'succeeded' | 'failed' | 'manual_review';
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "providerOperations".
+ */
+export interface ProviderOperation {
+  id: number;
+  operationKey: string;
+  order?: (number | null) | Order;
+  realnameTemplate?: (number | null) | RealnameTemplate;
+  targetType: 'order' | 'realname_template' | 'domain';
+  targetId: string;
+  provider: 'westdigital' | 'wechatpay';
+  operation: 'realname' | 'register' | 'renew' | 'refund' | 'nameserver' | 'query';
+  status: 'prepared' | 'submitted' | 'succeeded' | 'failed' | 'unknown';
+  providerRequestId?: string | null;
+  attemptCount: number;
+  maxAttempts: number;
+  lastErrorCode?: string | null;
+  submittedAt?: string | null;
+  lastCheckedAt?: string | null;
+  safeResult?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1011,55 +1307,6 @@ export interface AdSchedule {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "realnameTemplates".
- */
-export interface RealnameTemplate {
-  id: number;
-  customer: number | Customer;
-  displayName: string;
-  type: 'individual' | 'organization';
-  fullNameChinese: string;
-  organizationNameChinese?: string | null;
-  organizationNameEnglish?: string | null;
-  contactLastNameChinese: string;
-  contactFirstNameChinese: string;
-  contactLastNameEnglish: string;
-  contactFirstNameEnglish: string;
-  countryCode: string;
-  provinceChinese: string;
-  cityChinese: string;
-  districtChinese: string;
-  addressChinese: string;
-  provinceEnglish: string;
-  cityEnglish: string;
-  addressEnglish: string;
-  postalCode: string;
-  phoneCountryCode: string;
-  phoneType: 'mobile' | 'landline';
-  phone: string;
-  phoneAreaCode?: string | null;
-  phoneExtension?: string | null;
-  email: string;
-  identityDocumentType: string;
-  identityDocumentNumber: string;
-  applicableScopes: ('cg' | 'gswl' | 'hk')[];
-  status: 'draft' | 'pending_review' | 'approved' | 'rejected' | 'manual_review' | 'disabled';
-  providerReviewState: 'unsubmitted' | 'pending' | 'approved' | 'rejected' | 'unknown';
-  providerTemplateId?: string | null;
-  providerRequestId?: string | null;
-  providerConfirmedAt?: string | null;
-  providerLastCheckedAt?: string | null;
-  safeFailureReason?:
-    | ('identity_mismatch' | 'material_invalid' | 'provider_unavailable' | 'status_unknown' | 'other')
-    | null;
-  disabledAt?: string | null;
-  cleanupDueAt?: string | null;
-  cleanupCompletedAt?: string | null;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "realnameDocuments".
  */
 export interface RealnameDocument {
@@ -1107,116 +1354,6 @@ export interface PriceRule {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "quotes".
- */
-export interface Quote {
-  id: number;
-  schemaVersion: number;
-  calculationVersion: number;
-  quoteRef: string;
-  customer: number | Customer;
-  operation?: ('registration' | 'renewal') | null;
-  domainAsset?: (number | null) | DomainAsset;
-  assetExpiresAt?: string | null;
-  domainAscii: string;
-  tld: string;
-  years: number;
-  priceClass: 'standard';
-  sourcePriceSnapshotRef: string;
-  sourceCalculationHash: string;
-  quoteIntegrityHash: string;
-  provider: 'westdigital_fixture';
-  providerProductId: string;
-  providerRequestId: string;
-  providerObservedAt: string;
-  providerCacheStatus: 'hit' | 'miss';
-  providerCacheExpiresAt?: string | null;
-  availabilityRequestId: string;
-  availabilityObservedAt: string;
-  ruleSource: 'wanmi_fixture' | 'price_rule_collection';
-  ruleKey: string;
-  ruleVersion: number;
-  ruleMode: 'fixed' | 'percentage';
-  ruleFixedAmountMinor?: number | null;
-  rulePercentageBasisPoints?: number | null;
-  roundingMode: 'half_up_to_fen';
-  calculationFormula: 'registration_price_plus_annual_renewal_price';
-  upstreamRegistrationPriceMinor: number;
-  upstreamRenewalPriceMinor: number;
-  upstreamCostMinor: number;
-  registrationPriceMinor: number;
-  renewalPriceMinor: number;
-  userPriceMinor: number;
-  currency: 'CNY';
-  quotedAt: string;
-  expiresAt: string;
-  createdTraceId: string;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "domainAssets".
- */
-export interface DomainAsset {
-  id: number;
-  customer: number | Customer;
-  realnameTemplate: number | RealnameTemplate;
-  domainAscii: string;
-  registrar: string;
-  registeredAt: string;
-  expiresAt: string;
-  status: 'active' | 'expired' | 'pending' | 'unknown';
-  nameservers: string[];
-  lastSyncedAt: string;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "orders".
- */
-export interface Order {
-  id: number;
-  orderNumber: string;
-  customer: number | Customer;
-  operation?: ('registration' | 'renewal') | null;
-  domainAsset?: (number | null) | DomainAsset;
-  quote: number | Quote;
-  realnameTemplate: number | RealnameTemplate;
-  domainAscii: string;
-  status:
-    | 'pending_payment'
-    | 'paid'
-    | 'fulfilling'
-    | 'succeeded'
-    | 'refund_pending'
-    | 'refunding'
-    | 'refunded'
-    | 'manual_review'
-    | 'cancelled';
-  amountMinor: number;
-  currency: 'CNY';
-  merchantOrderNumber?: string | null;
-  paymentChannel?: ('native' | 'h5') | null;
-  paymentExpiresAt?: string | null;
-  paymentStatusPolledAt?: string | null;
-  quoteSnapshot:
-    | {
-        [k: string]: unknown;
-      }
-    | unknown[]
-    | string
-    | number
-    | boolean
-    | null;
-  paidAt?: string | null;
-  fulfillmentJobQueuedAt?: string | null;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "orderEvents".
  */
 export interface OrderEvent {
@@ -1259,28 +1396,6 @@ export interface OrderEvent {
     | null;
   actorType: 'system' | 'customer' | 'admin' | 'provider';
   actorId?: string | null;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "paymentNotifications".
- */
-export interface PaymentNotification {
-  id: number;
-  notificationId: string;
-  order?: (number | null) | Order;
-  source: 'notification' | 'query';
-  wechatTransactionId?: string | null;
-  merchantOrderNumber?: string | null;
-  signatureVerified: boolean;
-  confirmationStatus: 'confirmed' | 'mismatch' | 'not_paid' | 'rejected' | 'unknown';
-  amountMinor?: number | null;
-  currency?: 'CNY' | null;
-  receivedAt: string;
-  paidAt?: string | null;
-  payloadDigest: string;
-  providerRequestId?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -1378,38 +1493,6 @@ export interface Refund {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "providerOperations".
- */
-export interface ProviderOperation {
-  id: number;
-  operationKey: string;
-  order?: (number | null) | Order;
-  realnameTemplate?: (number | null) | RealnameTemplate;
-  targetType: 'order' | 'realname_template' | 'domain';
-  targetId: string;
-  provider: 'westdigital' | 'wechatpay';
-  operation: 'realname' | 'register' | 'renew' | 'refund' | 'nameserver' | 'query';
-  status: 'prepared' | 'submitted' | 'succeeded' | 'failed' | 'unknown';
-  providerRequestId?: string | null;
-  attemptCount: number;
-  maxAttempts: number;
-  lastErrorCode?: string | null;
-  submittedAt?: string | null;
-  lastCheckedAt?: string | null;
-  safeResult?:
-    | {
-        [k: string]: unknown;
-      }
-    | unknown[]
-    | string
-    | number
-    | boolean
-    | null;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "providerWriteBudgets".
  */
 export interface ProviderWriteBudget {
@@ -1476,61 +1559,6 @@ export interface Renewal {
   confirmedExpiresAt?: string | null;
   providerOperationKey?: string | null;
   status: 'pending' | 'succeeded' | 'failed' | 'manual_review';
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "nameserverChanges".
- */
-export interface NameserverChange {
-  id: number;
-  changeKey?: string | null;
-  customer: number | Customer;
-  asset: number | DomainAsset;
-  previousNameservers?: string[] | null;
-  requestedNameservers: string[];
-  confirmedNameservers?: string[] | null;
-  requestedByType?: 'customer' | null;
-  requestedById?: string | null;
-  requestedAt?: string | null;
-  jobQueuedAt?: string | null;
-  reviewJobQueuedAt?: string | null;
-  lastCheckedAt?: string | null;
-  completedAt?: string | null;
-  providerOperation?: (number | null) | ProviderOperation;
-  failureCode?: string | null;
-  createdTraceId?: string | null;
-  status: 'pending' | 'succeeded' | 'failed' | 'manual_review';
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "manualReviews".
- */
-export interface ManualReview {
-  id: number;
-  customer?: (number | null) | Customer;
-  customerIdentity?: (number | null) | CustomerIdentity;
-  order?: (number | null) | Order;
-  realnameTemplate?: (number | null) | RealnameTemplate;
-  domainAsset?: (number | null) | DomainAsset;
-  nameserverChange?: (number | null) | NameserverChange;
-  reasonCode: string;
-  status: 'open' | 'resolved';
-  evidence?:
-    | {
-        [k: string]: unknown;
-      }
-    | unknown[]
-    | string
-    | number
-    | boolean
-    | null;
-  resolutionNote?: string | null;
-  resolvedBy?: (number | null) | Admin;
-  resolvedAt?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -2134,6 +2162,10 @@ export interface PayloadLockedDocument {
         value: number | Customer;
       } | null)
     | ({
+        relationTo: 'accountRecoveryRecords';
+        value: number | AccountRecoveryRecord;
+      } | null)
+    | ({
         relationTo: 'customerIdentities';
         value: number | CustomerIdentity;
       } | null)
@@ -2457,6 +2489,30 @@ export interface CustomersSelect<T extends boolean = true> {
   deletionRequestedAt?: T;
   legacyProfileCompletedAt?: T;
   consentStateVersion?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "accountRecoveryRecords_select".
+ */
+export interface AccountRecoveryRecordsSelect<T extends boolean = true> {
+  recordKey?: T;
+  requestKey?: T;
+  eventType?: T;
+  customer?: T;
+  manualReview?: T;
+  realnameTemplate?: T;
+  order?: T;
+  paymentNotification?: T;
+  unavailableProviders?: T;
+  reviewer?: T;
+  conclusion?: T;
+  decisionNote?: T;
+  occurredAt?: T;
+  cooldownStartedAt?: T;
+  cooldownEndsAt?: T;
+  revokedSessionCount?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -3344,6 +3400,7 @@ export interface ManualReviewsSelect<T extends boolean = true> {
   customerIdentity?: T;
   order?: T;
   realnameTemplate?: T;
+  paymentNotification?: T;
   domainAsset?: T;
   nameserverChange?: T;
   reasonCode?: T;

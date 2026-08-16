@@ -337,6 +337,77 @@ export const ConsentRecords: CollectionConfig = {
   ],
 }
 
+export const AccountRecoveryRecords: CollectionConfig = {
+  slug: 'accountRecoveryRecords',
+  access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
+  admin: { group: ADMIN_GROUPS.identity, hidden: systemAdminHidden },
+  hooks: {
+    beforeChange: [
+      ({ operation }) => {
+        if (operation === 'update') {
+          throw new AppError('ACCOUNT_RECOVERY_RECORD_APPEND_ONLY', '账户找回记录只允许追加', 409)
+        }
+      },
+    ],
+    beforeDelete: [
+      () => {
+        throw new AppError('ACCOUNT_RECOVERY_RECORD_APPEND_ONLY', '账户找回记录只允许追加', 409)
+      },
+    ],
+  },
+  indexes: [{ fields: ['customer', 'occurredAt'] }, { fields: ['manualReview', 'eventType'] }],
+  fields: [
+    { name: 'recordKey', type: 'text', index: true, required: true, unique: true },
+    { name: 'requestKey', type: 'text', index: true, required: true },
+    {
+      name: 'eventType',
+      type: 'select',
+      options: ['request_submitted', 'review_concluded'],
+      required: true,
+    },
+    {
+      name: 'customer',
+      type: 'relationship',
+      relationTo: 'customers',
+      index: true,
+      required: true,
+    },
+    {
+      name: 'manualReview',
+      type: 'relationship',
+      relationTo: 'manualReviews',
+      index: true,
+      required: true,
+    },
+    {
+      name: 'realnameTemplate',
+      type: 'relationship',
+      relationTo: 'realnameTemplates',
+      index: true,
+    },
+    { name: 'order', type: 'relationship', relationTo: 'orders', index: true },
+    {
+      name: 'paymentNotification',
+      type: 'relationship',
+      relationTo: 'paymentNotifications',
+      index: true,
+    },
+    {
+      name: 'unavailableProviders',
+      type: 'select',
+      hasMany: true,
+      options: ['phone', 'wechat'],
+    },
+    { name: 'reviewer', type: 'relationship', relationTo: 'admins', index: true },
+    { name: 'conclusion', type: 'select', options: ['approved', 'rejected'] },
+    { name: 'decisionNote', type: 'textarea', access: { read: sensitiveFieldRead } },
+    { name: 'occurredAt', type: 'date', index: true, required: true },
+    { name: 'cooldownStartedAt', type: 'date', index: true },
+    { name: 'cooldownEndsAt', type: 'date', index: true },
+    { name: 'revokedSessionCount', type: 'number', min: 0 },
+  ],
+}
+
 export const CustomerRegistrationIntents: CollectionConfig = {
   slug: 'customerRegistrationIntents',
   access: { create: deny, delete: deny, read: deny, update: deny },

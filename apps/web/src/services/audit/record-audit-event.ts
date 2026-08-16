@@ -29,6 +29,14 @@ export const auditEventDefinitions = {
     actorTypes: ['admin', 'customer', 'system'],
     targetType: 'customer-session',
   },
+  'customer.account_recovery.requested': {
+    actorTypes: ['anonymous'],
+    targetType: 'customer',
+  },
+  'customer.account_recovery.decided': {
+    actorTypes: ['admin'],
+    targetType: 'customer',
+  },
   'customer.consent.accepted': {
     actorTypes: ['customer'],
     targetType: 'customer',
