@@ -1686,3 +1686,117 @@ async function consumeConfirmedQrLogin(input: {
   if (result.kind !== 'authenticated') throw new Error('expected authenticated QR login')
   return result
 }
+
+describe('D9-A-1 existing phone account Wechat binding invariant', () => {
+  it('does not merge an unknown Wechat QR identity into an existing phone account and allows authenticated binding', async () => {
+    const customerPhone = phone()
+    const openid = randomBytes(24).toString('base64url')
+    const customer = await payload.create({
+      collection: 'customers',
+      data: { phone: customerPhone, phoneMasked: maskPhone(customerPhone), status: 'active' },
+      overrideAccess: true,
+    })
+    const now = new Date().toISOString()
+    await payload.create({
+      collection: 'customerIdentities',
+      data: {
+        ...protectedIdentifier(customerPhone),
+        boundAt: now,
+        customer: customer.id,
+        provider: 'phone',
+        providerInstanceId: identityProviderInstance('phone'),
+        status: 'active',
+        verifiedAt: now,
+      },
+      overrideAccess: true,
+    })
+    const phoneLoginHeaders = headers()
+    const phoneLogin = await authenticateVerifiedPhone(await request(phoneLoginHeaders), {
+      ...clientHashes(phoneLoginHeaders, `d9a-existing-phone-login-${randomUUID()}`),
+      phone: customerPhone,
+    })
+    expect(phoneLogin).toMatchObject({ customer: { id: customer.id }, kind: 'authenticated' })
+
+    const wechatIdentityCount = () =>
+      payload.count({
+        collection: 'customerIdentities',
+        overrideAccess: true,
+        where: {
+          and: [{ customer: { equals: customer.id } }, { provider: { equals: 'wechat' } }],
+        },
+      })
+    const sessionCount = () =>
+      payload.count({
+        collection: 'customerSessions',
+        overrideAccess: true,
+        where: { customer: { equals: customer.id } },
+      })
+    const wechatIdentitiesBefore = await wechatIdentityCount()
+    const sessionsBefore = await sessionCount()
+    expect(wechatIdentitiesBefore).toEqual({ totalDocs: 0 })
+    expect(sessionsBefore).toEqual({ totalDocs: 1 })
+
+    const completeQr = async (purpose: 'bind' | 'login') => {
+      let confirmationUrl = ''
+      const provider = wechatProvider({ confirmationUrl: (value) => (confirmationUrl = value) })
+      const flowToken = randomBytes(32).toString('base64url')
+      const deviceId = `d9a-existing-phone-${purpose}-${randomUUID()}`
+      const requestHeaders = headers()
+      const bindingCustomer = purpose === 'bind' ? customer : undefined
+      const created = await createWechatQrScene(
+        await request(requestHeaders, bindingCustomer),
+        {
+          bindingCustomer,
+          captchaVerifyParam: CAPTCHA_FIXTURE_TOKEN,
+          deviceId,
+          flowToken,
+          headers: requestHeaders,
+          purpose,
+          traceId: `d9a-existing-phone-${purpose}-${randomUUID()}`,
+        },
+        { provider },
+      )
+      await handleWechatQrEvent(
+        await request(requestHeaders),
+        { event: 'SCAN', eventKey: created.scene, fromUserName: openid },
+        `d9a-existing-phone-${purpose}-scan-${randomUUID()}`,
+        { provider },
+      )
+      const confirmationToken = new URLSearchParams(new URL(confirmationUrl).hash.slice(1)).get(
+        'token',
+      )
+      if (!confirmationToken) throw new Error('expected QR confirmation token')
+      await confirmWechatQr(await request(requestHeaders), confirmationToken)
+      return consumeWechatQr(await request(requestHeaders, bindingCustomer), {
+        deviceId,
+        flowToken,
+        headers: requestHeaders,
+        scene: created.scene,
+        traceId: `d9a-existing-phone-${purpose}-consume-${randomUUID()}`,
+      })
+    }
+
+    await expect(completeQr('login')).resolves.toMatchObject({
+      kind: 'registration_required',
+      provider: 'wechat',
+    })
+    await expect(wechatIdentityCount()).resolves.toEqual(wechatIdentitiesBefore)
+    await expect(sessionCount()).resolves.toEqual(sessionsBefore)
+
+    await expect(completeQr('bind')).resolves.toMatchObject({ kind: 'bound', status: 'bound' })
+    expect(
+      await payload.count({
+        collection: 'customerIdentities',
+        overrideAccess: true,
+        where: {
+          and: [
+            { customer: { equals: customer.id } },
+            { provider: { equals: 'wechat' } },
+            { identifierHash: { equals: hmac(openid, getEnv().SESSION_PEPPER) } },
+            { status: { equals: 'active' } },
+          ],
+        },
+      }),
+    ).toEqual({ totalDocs: 1 })
+  })
+})
