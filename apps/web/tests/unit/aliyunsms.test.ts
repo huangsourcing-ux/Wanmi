@@ -55,12 +55,13 @@ describe('Alibaba Cloud SMS adapter', () => {
     expect(() => getEnv()).toThrow(/customer\/admin cookies must be distinct/u)
   })
 
-  it('loads credential, sign, and both template references without sending SMS', () => {
+  it('loads credential, sign, and all template references without sending SMS', () => {
     vi.stubEnv('ALIBABA_CLOUD_ACCESS_KEY_ID', 'fixture-access-key')
     vi.stubEnv('ALIBABA_CLOUD_ACCESS_KEY_SECRET', 'fixture-access-secret')
     vi.stubEnv('ALIBABA_CLOUD_REGION_ID', 'cn-shanghai')
     vi.stubEnv('ALIBABA_CLOUD_SMS_SIGN_NAME', 'fixture-sign')
     vi.stubEnv('ALIBABA_CLOUD_SMS_OTP_TEMPLATE_CODE', 'SMS_OTP_FIXTURE')
+    vi.stubEnv('ALIBABA_CLOUD_SMS_STEP_UP_TEMPLATE_CODE', 'SMS_STEP_UP_FIXTURE')
     vi.stubEnv('ALIBABA_CLOUD_SMS_DOMAIN_EXPIRY_TEMPLATE_CODE', 'SMS_EXPIRY_FIXTURE')
     vi.stubEnv('ALIBABA_CLOUD_SMS_SECURITY_TEMPLATE_CODE', 'SMS_SECURITY_FIXTURE')
 
@@ -70,6 +71,7 @@ describe('Alibaba Cloud SMS adapter', () => {
       otpTemplateConfigured: true,
       securityTemplateConfigured: true,
       signConfigured: true,
+      stepUpTemplateConfigured: true,
     })
   })
 
@@ -79,10 +81,26 @@ describe('Alibaba Cloud SMS adapter', () => {
     vi.stubEnv('ALIBABA_CLOUD_REGION_ID', 'cn-shanghai')
     vi.stubEnv('ALIBABA_CLOUD_SMS_SIGN_NAME', 'fixture-sign')
     vi.stubEnv('ALIBABA_CLOUD_SMS_OTP_TEMPLATE_CODE', 'SMS_OTP_FIXTURE')
+    vi.stubEnv('ALIBABA_CLOUD_SMS_STEP_UP_TEMPLATE_CODE', 'SMS_STEP_UP_FIXTURE')
     vi.stubEnv('ALIBABA_CLOUD_SMS_DOMAIN_EXPIRY_TEMPLATE_CODE', '')
 
     expect(() => validateAliyunSmsLiveConfiguration()).toThrow(
       /ALIBABA_CLOUD_SMS_DOMAIN_EXPIRY_TEMPLATE_CODE/u,
+    )
+  })
+
+  it('fails closed when login and step-up use the same live SMS template', () => {
+    vi.stubEnv('ALIBABA_CLOUD_ACCESS_KEY_ID', 'fixture-access-key')
+    vi.stubEnv('ALIBABA_CLOUD_ACCESS_KEY_SECRET', 'fixture-access-secret')
+    vi.stubEnv('ALIBABA_CLOUD_REGION_ID', 'cn-shanghai')
+    vi.stubEnv('ALIBABA_CLOUD_SMS_SIGN_NAME', 'fixture-sign')
+    vi.stubEnv('ALIBABA_CLOUD_SMS_OTP_TEMPLATE_CODE', 'SMS_SHARED_FIXTURE')
+    vi.stubEnv('ALIBABA_CLOUD_SMS_STEP_UP_TEMPLATE_CODE', 'SMS_SHARED_FIXTURE')
+    vi.stubEnv('ALIBABA_CLOUD_SMS_DOMAIN_EXPIRY_TEMPLATE_CODE', 'SMS_EXPIRY_FIXTURE')
+    vi.stubEnv('ALIBABA_CLOUD_SMS_SECURITY_TEMPLATE_CODE', 'SMS_SECURITY_FIXTURE')
+
+    expect(() => validateAliyunSmsLiveConfiguration()).toThrow(
+      /login OTP and step-up templates must be distinct/u,
     )
   })
 
@@ -108,6 +126,19 @@ describe('Alibaba Cloud SMS adapter', () => {
       ok: true,
     })
     expect(JSON.stringify(sent)).not.toContain('123456')
+
+    const stepUpSent = await provider.sendStepUpOtp({
+      code: '654321',
+      phone: '+8613900000000',
+      traceId: 'unit-mock-step-up-sms',
+    })
+    expect(stepUpSent).toMatchObject({
+      data: { accepted: true, deliveryStatus: 'delivered' },
+      ok: true,
+    })
+    if (!stepUpSent.ok) throw new Error('expected the mock step-up SMS to succeed')
+    expect(stepUpSent.data.providerMessageId).toContain('step-up')
+    expect(JSON.stringify(stepUpSent)).not.toContain('654321')
 
     const receipt = await provider.queryReceipt({
       phone: '+8613900000000',

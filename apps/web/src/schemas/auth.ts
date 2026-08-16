@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { ADMIN_ROLES } from '@/lib/domain'
+import { ADMIN_ROLES, STEP_UP_PURPOSES } from '@/lib/domain'
 
 export const adminPasswordSchema = z
   .string()
@@ -155,6 +155,32 @@ export const smsVerifySchema = z.object({
   deviceId: z.string().min(16).max(128),
 })
 
+export const stepUpPurposeSchema = z.enum(STEP_UP_PURPOSES)
+
+export const stepUpRequestSchema = z
+  .object({
+    captchaVerifyParam: z.string().min(1).max(8_192),
+    deviceId: z.string().min(16).max(128),
+    purpose: stepUpPurposeSchema,
+  })
+  .strict()
+
+export const stepUpVerifySchema = z
+  .object({
+    challengeId: z.uuid(),
+    code: z.string().regex(/^\d{6}$/),
+    deviceId: z.string().min(16).max(128),
+    purpose: stepUpPurposeSchema,
+  })
+  .strict()
+
+export const stepUpGrantResponseSchema = z.object({
+  expiresAt: z.iso.datetime(),
+  oneTime: z.boolean(),
+  purpose: stepUpPurposeSchema,
+  stepUpToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
+})
+
 export const logoutSchema = z.object({
   scope: z.enum(['current', 'all']).default('current'),
 })
@@ -224,5 +250,7 @@ export const customerDeletionResponseSchema = z.object({
 
 export type SmsRequestInput = z.infer<typeof smsRequestSchema>
 export type SmsVerifyInput = z.infer<typeof smsVerifySchema>
+export type StepUpRequestInput = z.infer<typeof stepUpRequestSchema>
+export type StepUpVerifyInput = z.infer<typeof stepUpVerifySchema>
 export type CustomerRegistrationInput = z.infer<typeof customerRegistrationSchema>
 export type WechatQrCreateInput = z.infer<typeof wechatQrCreateSchema>

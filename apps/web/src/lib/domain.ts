@@ -27,6 +27,22 @@ export const REALNAME_STATUSES = [
 
 export type RealnameStatus = (typeof REALNAME_STATUSES)[number]
 
+export const STEP_UP_PURPOSES = [
+  'dns_record_change',
+  'nameserver_change',
+  'mx_record_change',
+  'dns_bulk_delete',
+  'domain_lock_change',
+  'realname_change',
+  'domain_management_password',
+  'balance_spend',
+  'account_deletion',
+] as const
+
+export type StepUpPurpose = (typeof STEP_UP_PURPOSES)[number]
+
+export const ONE_TIME_STEP_UP_PURPOSES = ['realname_change', 'account_deletion'] as const
+
 export type ProviderError = {
   code: string
   message: string

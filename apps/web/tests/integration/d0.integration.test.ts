@@ -432,6 +432,7 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
         phone: '+8613900000000',
         phoneHash: hmac('+8613900000000', getEnv().SESSION_PEPPER),
         providerMessageId: `mock-message-${randomUUID()}`,
+        purpose: 'login',
         sentAt: now.toISOString(),
       },
       overrideAccess: true,

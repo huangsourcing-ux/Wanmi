@@ -706,6 +706,7 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
         return mockFailure('SMS_TEMPLATE_UNAPPROVED', { statusKnown: true })
       },
       sendOtp: async () => mockFailure('SMS_UNAVAILABLE'),
+      sendStepUpOtp: async () => mockFailure('SMS_UNAVAILABLE'),
     }
     const runs = await Promise.all(
       Array.from({ length: 5 }, async (_, index) =>

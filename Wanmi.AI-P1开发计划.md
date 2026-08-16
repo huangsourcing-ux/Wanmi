@@ -1,10 +1,10 @@
 # Wanmi.AI P1 开发计划
 
-> 文档版本：v2.9（生产发布与存储边界冻结项变更）
+> 文档版本：v3.0（D9-A 短信 step-up 冻结项变更）
 >
-> 更新日期：2026-08-14
+> 更新日期：2026-08-15
 >
-> 冻结基线：`P1-BASELINE-2026-08-14.2`；批准标签 `p1-docs-approved-2026-08-14-2`
+> 冻结基线：`P1-BASELINE-2026-08-15.1`；批准标签 `p1-docs-approved-2026-08-15-1`
 >
 > 状态：已批准作为 P1 开发执行计划；生产上线仍需通过独立门槛
 >
@@ -71,7 +71,7 @@ Codex 必须：
 
 ### 0.5 冻结与变更控制
 
-`P1-BASELINE-2026-08-14.2` 冻结 P1 产品范围、固定架构、订单状态与合法迁移、退款规则、实名归属、12～16 周工期口径、生产上线门槛及发布/存储边界。相对上一基线 `P1-BASELINE-2026-08-14.1`（批准标签 `p1-docs-approved-2026-08-14-1`），本次不改变产品范围或 D9 决定，只补充：真实环境只能发布已合并到 `main` 的提交；当前静态资源随镜像服务，linux/amd64 镜像经 SSH 直传 ECS、载入节点 loopback registry 并按 release manifest digest 校验；对象存储不得中转镜像或源码，实名证件存储不得写入任何非证件对象，缺少部署设施时不得自行选择或创建替代品。上一基线关于 D9 的 13 项范围决定，以及更早基线关于版本化应用主密钥、订单状态、退款、实名归属、工期和生产门槛的决定继续有效。开发过程中可以更新本计划的任务勾选、验证证据、阻塞、ADR 和 Runbook；不得借进度更新改变冻结基线。
+`P1-BASELINE-2026-08-15.1` 冻结 P1 产品范围、固定架构、订单状态与合法迁移、退款规则、实名归属、12～16 周工期口径、生产上线门槛及发布/存储边界。相对上一基线 `P1-BASELINE-2026-08-14.2`（批准标签 `p1-docs-approved-2026-08-14-2`），本次只把 D9-A step-up 取得方式从独立操作密码改为短信验证码校验，不引入操作密码设置/重置流程；风险分级、高风险冷静期及无人值守自动续费只依赖 `renewalMandate` 且不得与 step-up 混用的边界不变。上一基线关于已合并 `main` 的 SSH 镜像直传发布、对象存储与实名证件存储边界，以及更早基线关于 D9 的 13 项范围决定、版本化应用主密钥、订单状态、退款、实名归属、工期和生产门槛的决定继续有效。开发过程中可以更新本计划的任务勾选、验证证据、阻塞、ADR 和 Runbook；不得借进度更新改变冻结基线。
 
 需要改变冻结内容时，必须取得项目负责人明确指令，更新受影响文档版本与变更记录，完成跨文档一致性检查，并建立新的批准标签。D0 验证失败只触发延长、修正假设或重新提交架构决策，不自动解除冻结。
 
@@ -844,6 +844,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-14 | D7-17 微信一分联调与部分三方对账      | 生产 ECS/RDS 完成 Native 下单、负责人扫码、主动查单确认、D5-04 commerce 原路退款、真实通知重放；微信/内部使用真实数据，西部成本明确为 fixture                                                | 实际入账/成功退款均 1 笔、未退款 0；支付查询 286.4 ms、退款创建/查询 917.2/266.2 ms，均 HTTP 200/验签通过；重放不产生第二次迁移；金额两层变异被杀死；新 digest 三进程与 readyz/通知路径通过                                                               | 第 13 项部分完成且不勾选，缺西部真实成本侧；H5 未覆盖；一次失败切换产生约 100 秒不可用窗口并如实保留；收尾全部闸 false、限额 0/0、临时材料清除；生产硬门槛仍由负责人勾选 |
 | 2026-08-14 | v2.8 D9 用户系统冻结项规划整合       | 按负责人确认的 v6 与 13 项决定新增第 16 节 D9；同步 PRD、技术栈、资源、商业规划、App 边界、AGENTS 与开发日志；版本和新基线统一                                                               | D9 章节结构、11.2/12.1 依赖、跨文档版本/基线/依赖、本地链接、Markdown 和任务未勾选状态通过文档门禁；仅文档 diff                                                                                 | D9-A 阻塞首次上线与 D8；D9-B～D9-E 不阻塞；全部 D9 任务未勾选，未写代码/Collection/migration；外部前置仍待验证                                                   |
 | 2026-08-14 | v2.9 生产发布与存储边界冻结项变更   | 只允许发布已合并 `main`；固定 linux/amd64 镜像经 SSH 直传、节点 loopback registry 与 digest 校验路径；静态资源随镜像服务；禁止对象存储中转、源码包上传及实名证件存储混用                         | 跨文档基线/版本/上一批准标签、Runbook 引用与 `verify-operations` 校验；任务勾选逐项保持不变；仅文档 diff                                                                                       | 不改变产品范围、D9 决定、迁移或回滚兼容规则；缺少已批准设施时必须停止，不得自行创建或取用替代资源                                                               |
+| 2026-08-15 | v3.0 D9-A 短信 step-up 冻结项变更 | step-up 由短信验证码校验产生，不引入独立操作密码及设置/重置流程；风险分级表、高风险冷静期和 `renewalMandate` 独立授权边界不变 | 跨文档新基线/版本/上一批准标签一致性检查；A4 实现、迁移、用途隔离、原子一次性消费、冷静期与频控测试随同一切片交付 | 不改变 A3、A5～A7、D9-B～E 范围；不降低任何高风险动作保护等级，不授权真实短信、生产数据修改或部署 |
 
 ## 13. 范围追踪矩阵
 
@@ -962,7 +963,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 
 | 阶段 | 范围 | 阻塞首次上线 |
 | --- | --- | :--: |
-| **D9-A 账户与身份** | 注册、登录、绑定解绑、Session、操作密码与 step-up、账户状态机、找回、注销、同意记录 | **是（并阻塞 D8）** |
+| **D9-A 账户与身份** | 注册、登录、绑定解绑、Session、短信验证码 step-up、账户状态机、找回、注销、同意记录 | **是（并阻塞 D8）** |
 | D9-B 钱包与对账 | 充值订单、余额三态账本、退款规则、资金限制、后台审批与冷静延迟 | 否 |
 | D9-C 域名用户中心 | 域名列表分组、锁定、自动续费授权、到期提醒偏好 | 否 |
 | D9-D 域名控制台增强 | DNS 解析、NS、批量与离线任务、域名管理密码、证书 | 否 |
@@ -1120,14 +1121,42 @@ I（年龄要求）、K（自动续费金额上限）已并入 9.2 第 10、11�
 - [ ] 状态与能力限制变更追加式记录，含原因、操作者、依据、时间，可从审计还原；
 - [ ] 安全事件后可一键撤销全部会话。
 
-#### A4 操作密码与 step-up 授权
+#### A4 短信验证码与 step-up 授权
 
-- [ ] **操作密码独立于登录**，首次设置与重置流程完整（重置需身份验证 + 冷静期）；
-- [ ] 交互式高风险动作采用**短时有效的 `stepUpGrant`**（由操作密码验证产生，带有效期与用途
-      范围），而非每次重新输入；
-- [ ] **无人值守任务不得依赖操作密码** —— 自动续费等依据用户事先创建的 `renewalMandate`
+- [x] step-up 授权由**短信验证码校验**产生，不引入独立操作密码，因此不存在操作密码的设置与
+      重置流程；
+  - **实现与测试证据**：`apps/web/src/services/auth/step-up.ts:40-128` 复用既有
+    `smsChallenges` 与 `smsRateLimits` 请求验证码，`:86` 明确调用独立的 `sendStepUpOtp`；
+    `apps/web/src/providers/aliyunsms.ts:102-110`、`:277-318` 分别为 mock/live step-up 模板路径，
+    没有新增短信通道或操作密码字段。`apps/web/tests/integration/d9a-step-up.integration.test.ts:154`
+    用例“uses the dedicated step-up SMS template and stores only an HMAC grant for ten minutes”断言
+    step-up 只调用专用模板、登录 OTP 不能消费 step-up challenge；
+    `apps/web/tests/unit/aliyunsms.test.ts:58` 用例“loads credential, sign, and all template references
+    without sending SMS”、`:92` 用例“fails closed when login and step-up use the same live SMS
+    template”及 `:117` 用例“keeps mock delivery receipts deterministic and free of raw OTP data”
+    覆盖独立模板配置、防止误用同一模板与 mock 脱敏。本切片只跑 mock/fixture，没有生产验证记录。
+- [x] 交互式高风险动作采用**短时有效、按用途限定的 `stepUpGrant`**（由短信验证码校验产生，
+      带有效期与用途范围），而非每次重新验证短信；
+  - **实现与测试证据**：`apps/web/src/collections/identity.ts:515-560` 定义只允许系统访问的
+    `stepUpGrants`；`apps/web/src/services/auth/step-up.ts:131-221` 原子消费验证码并只保存 token HMAC、
+    device/ip hash 与可配置 10 分钟 TTL，`:248-289` 强制 customer、purpose、device、有效期并按用途
+    选择复用或一次性原子消费。集成测试 `apps/web/tests/integration/d9a-step-up.integration.test.ts:138`
+    用例“enumerates every risk-table purpose and limits one-time grants to the two exceptions”、`:154` 的
+    HMAC/TTL 用例、`:227` 用例“does not let a grant for one purpose authorize a different purpose”、
+    `:251` 用例“reuses a default-purpose grant within its TTL”、`:279` 两个 fresh-grant 用例及 `:307`
+    并发用例覆盖完整行为；四项变异均被杀死，原文记录于同日开发日志。本切片没有生产验证记录。
+- [ ] **无人值守任务不得依赖 step-up** —— 自动续费等依据用户事先创建的 `renewalMandate`
       （见 C3）。这是两套不同授权，不可混用；
+  - **证据不足，保持未勾选**：A4 的 purpose 枚举不含自动续费，已避免把本切片 grant 表述为
+    `renewalMandate`；但 C3 mandate 尚未实现，也没有无人值守任务“拒绝 step-up、只接受有效 mandate”
+    的集成测试，不能仅凭枚举缺项推定整条完成。
 - [ ] 风险分级（强制要求，不得因「可回滚」而降级）：
+  - **部分证据但不足，保持未勾选**：`apps/web/src/lib/domain.ts:30-44` 已为表中需要 step-up 的
+    动作建立 purpose 枚举；`apps/web/src/services/auth/step-up.ts:224-245` 和集成用例
+    `apps/web/tests/integration/d9a-step-up.integration.test.ts:377`“blocks every high-risk purpose during
+    the identity-risk cooldown even with a valid grant”证明冷静期会在 grant 有效时仍硬阻断。但 A3、
+    D9-B 与 D9-D 的实际高风险动作尚未接入授权器，表中的二次确认、变更预览、通知及绑定渠道确认
+    也没有完整实现/集成测试，故风险表整体不能勾选；下表文字与保护等级保持不变。
 
 | 操作 | 保护 |
 | --- | --- |
@@ -1449,7 +1478,7 @@ D9-D 的基础解析联调如证明必须先开通付费智能 DNS，应将对�
 - [ ] 账户找回成功后高风险域名操作进入冷静期且被拒绝；
 - [ ] **历史账号不得生成伪造的条款同意时间**；未补条款的历史用户仍可处理到期域名；
 - [ ] 持有域名、处理中订单或资金差异时不能完成注销；
-- [ ] step-up 未完成时风险分级表中的动作全部 fail-closed；操作密码连续失败锁定生效；
+- [ ] step-up 未完成时风险分级表中的动作全部 fail-closed；step-up 短信验证码发送频控与连续失败次数限制生效；
 - [x] **生产环境配置缺失或为 fixture 时启动失败**（扩展既有 `assertRuntimeEnvironment` 的 production
   profile 与 `PRODUCTION_PROVIDER_KEYS`，不新造机制）。
 

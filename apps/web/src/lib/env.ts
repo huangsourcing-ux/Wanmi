@@ -56,6 +56,7 @@ const schema = z
       .default('wanmi_auth_flow'),
     CUSTOMER_AUTH_FLOW_SECONDS: z.coerce.number().int().min(60).max(1_800).default(600),
     CUSTOMER_IDENTITY_ENCRYPTION_KEY: z.string().min(1).optional(),
+    IDENTITY_RISK_COOLDOWN_SECONDS: z.coerce.number().int().min(60).max(604_800).default(86_400),
     CUSTOMER_PHONE_IDENTITY_INSTANCE_ID: z.string().min(1).max(128).default('wanmi-sms-cn'),
     CUSTOMER_REGISTRATION_SECONDS: z.coerce.number().int().min(60).max(1_800).default(600),
     CUSTOMER_SESSION_COOKIE: z
@@ -118,6 +119,7 @@ const schema = z
     S3_REGION: z.string().default('us-east-1'),
     S3_SECRET_ACCESS_KEY: z.string().optional(),
     SESSION_PEPPER: z.string().min(24),
+    STEP_UP_GRANT_TTL_SECONDS: z.coerce.number().int().min(60).max(1_800).default(600),
     TLS_CACHE_MAX_ENTRIES: z.coerce.number().int().positive().default(2_048),
     TLS_EMPTY_CACHE_TTL_MS: z.coerce.number().int().positive().default(30_000),
     TLS_HANDSHAKE_MAX_BYTES: z.coerce.number().int().positive().default(262_144),

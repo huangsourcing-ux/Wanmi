@@ -35,6 +35,13 @@
       "phase": "expand",
       "reason": "新增身份、注册确认、同意与微信登录状态表，并为历史客户回填兼容字段和手机号身份；旧代码可忽略新增表与列，新代码在迁移完成后才使用它们。",
       "rollback": "retain"
+    },
+    "20260816_031001_d9a_step_up_grants": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增短信 step-up challenge 归属字段与 step-up grant 表；旧代码可忽略新增表与可空列，新代码仅在迁移完成后使用它们。",
+      "rollback": "retain"
     }
   }
 }

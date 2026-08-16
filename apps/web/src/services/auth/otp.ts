@@ -34,7 +34,7 @@ type CustomerSessionRecord = {
   id: number | string
 }
 
-function providerFailureCategory(code: string) {
+export function smsProviderFailureCategory(code: string) {
   const category = code.replace(/^SMS_/, '').toLowerCase()
   return ['balance_insufficient', 'invalid_number', 'rate_limited', 'template_unapproved'].includes(
     category,
@@ -89,6 +89,7 @@ export async function requestOtp(
       ipHash,
       phone,
       phoneHash,
+      purpose: 'login',
       deliveryStatus: 'not_requested',
     },
     overrideAccess: true,
@@ -96,7 +97,7 @@ export async function requestOtp(
   const sentAt = new Date().toISOString()
   const result = await createSmsProvider().sendOtp({ code, phone, traceId })
   if (!result.ok) {
-    const failureCategory = providerFailureCategory(result.error.code)
+    const failureCategory = smsProviderFailureCategory(result.error.code)
     await payload.update({
       collection: 'smsChallenges',
       data: {
@@ -147,7 +148,12 @@ export async function verifyOtp(
   })
   const challenge = challenges.docs[0]
   const invalid = () => new AppError('AUTH_INVALID_CHALLENGE', '验证码无效或已过期', 401)
-  if (!challenge || challenge.consumedAt || new Date(challenge.expiresAt).getTime() <= Date.now())
+  if (
+    !challenge ||
+    challenge.purpose !== 'login' ||
+    challenge.consumedAt ||
+    new Date(challenge.expiresAt).getTime() <= Date.now()
+  )
     throw invalid()
   if (challenge.attempts >= env.OTP_MAX_ATTEMPTS) throw invalid()
 

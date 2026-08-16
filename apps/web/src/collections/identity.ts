@@ -1,6 +1,6 @@
 import type { CollectionConfig } from 'payload'
 
-import { ADMIN_ROLES } from '@/lib/domain'
+import { ADMIN_ROLES, STEP_UP_PURPOSES } from '@/lib/domain'
 import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 import {
   adminSelfOrSystem,
@@ -402,6 +402,26 @@ export const SmsChallenges: CollectionConfig = {
   admin: { group: ADMIN_GROUPS.identity, hidden: true },
   fields: [
     { name: 'challengeId', type: 'text', index: true, required: true, unique: true },
+    {
+      name: 'purpose',
+      type: 'select',
+      defaultValue: 'login',
+      index: true,
+      options: ['login', 'step_up'],
+      required: true,
+    },
+    {
+      name: 'stepUpPurpose',
+      type: 'select',
+      index: true,
+      options: [...STEP_UP_PURPOSES],
+    },
+    {
+      name: 'customer',
+      type: 'relationship',
+      relationTo: 'customers',
+      index: true,
+    },
     { name: 'phone', type: 'text', access: { read: sensitiveFieldRead }, required: true },
     { name: 'phoneHash', type: 'text', index: true, required: true },
     { name: 'codeHash', type: 'text', access: { read: sensitiveFieldRead }, required: true },
@@ -489,5 +509,52 @@ export const CustomerSessions: CollectionConfig = {
     { name: 'expiresAt', type: 'date', index: true, required: true },
     { name: 'revokedAt', type: 'date', index: true },
     { name: 'lastSeenAt', type: 'date', required: true },
+  ],
+}
+
+export const StepUpGrants: CollectionConfig = {
+  slug: 'stepUpGrants',
+  access: { create: deny, delete: deny, read: deny, update: deny },
+  admin: { group: ADMIN_GROUPS.identity, hidden: true },
+  indexes: [{ fields: ['customer', 'purpose', 'expiresAt'] }],
+  fields: [
+    {
+      name: 'customer',
+      type: 'relationship',
+      relationTo: 'customers',
+      index: true,
+      required: true,
+    },
+    {
+      name: 'purpose',
+      type: 'select',
+      index: true,
+      options: [...STEP_UP_PURPOSES],
+      required: true,
+    },
+    {
+      name: 'tokenHash',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
+      required: true,
+      unique: true,
+    },
+    { name: 'expiresAt', type: 'date', index: true, required: true },
+    { name: 'consumedAt', type: 'date', index: true },
+    {
+      name: 'deviceHash',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
+      required: true,
+    },
+    {
+      name: 'ipHash',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
+      required: true,
+    },
   ],
 }
