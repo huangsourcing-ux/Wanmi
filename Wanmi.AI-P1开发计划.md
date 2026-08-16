@@ -996,14 +996,68 @@ I（年龄要求）、K（自动续费金额上限）已并入 9.2 第 10、11�
 
 - [ ] 三条入口，最终都复用既有 opaque Session 与会话轮换，不新建并行会话体系：
       手机号验证码（沿用 D4）、服务号内网页授权、**服务号带参数二维码 PC 扫码**；
-- [ ] **扫码登录必须有用户确认步骤**，状态机 `created → scanned → confirmed → consumed`，
+  - **对账（证据不足，保持未勾选）**：手机号验证从
+    `apps/web/src/services/auth/otp.ts:193`、网页授权从
+    `apps/web/src/services/auth/wechat.ts:177`、二维码消费从
+    `apps/web/src/services/auth/wechat.ts:468` 进入统一身份认证，命中身份后均由
+    `apps/web/src/services/auth/customer-identities.ts:213` 的 `loginIdentity` 在 `:229`
+    调用 `issueCustomerSession`；`apps/web/src/services/auth/customer-sessions.ts:9` 的共享实现
+    在 `:22` 撤销同账号同设备的旧 Session、在 `:35` 新建只存 token hash 的 Session。
+    现有测试为 `apps/web/tests/integration/d0.integration.test.ts:175` 用例
+    “consumes SMS OTP once, rotates the opaque session and supports all-session revocation”、
+    `apps/web/tests/integration/d9a-identity-registration.integration.test.ts:346` 用例
+    “binds OAuth state to the browser and consumes both state and authorization code once”及 `:604`
+    用例“requires QR confirmation before session exchange and rejects terminal scenes”。但手机号
+    用例没有第二次同设备登录并断言旧 Session 被撤销，OAuth 用例止于
+    `registration_required`，二维码用例也只断言一次消费新增 Session；尚缺三条入口各自的
+    同设备二次登录/旧 Session 失效断言。`开发日志.md` 2026-08-15“D9-A 真实微信注册闭环、
+    身份复用与短信频控”证明同一微信再次扫码返回 `authenticated` 且有效 Session 从 1 增至
+    2，只证明身份与既有 Session Collection 被复用，不能证明同设备会话轮换。
+- [x] **扫码登录必须有用户确认步骤**，状态机 `created → scanned → confirmed → consumed`，
       另有 `rejected` 与 `expired`。**仅收到 `SCAN`/`subscribe` 事件不得建立浏览器会话** ——
       扫码只证明「某个微信扫了这个码」，不证明用户同意让该浏览器登录（攻击者可把自己的登录
       二维码展示给他人扫）。确认步骤经服务号消息向用户展示「正在登录 Wanmi.AI」与浏览器摘要，
       用户点击确认后浏览器方可换取会话；
+  - **对账（证据充分）**：`apps/web/src/services/auth/wechat.ts:237` 只把有效扫码推进为
+    `scanned`，`:282` 发送确认消息，`:322` 才接受确认，`:414` 的原子 claim 在 `:419`
+    只消费 `confirmed`
+    scene。`apps/web/tests/integration/d9a-identity-registration.integration.test.ts:486` 用例
+    “keeps SCAN at scanned, fails closed on confirmation-message errors, and consumes once”与
+    `:604` 用例“requires QR confirmation before session exchange and rejects terminal scenes”覆盖
+    未确认不建会话、确认后消费、单次消费、`rejected` 与 `expired`。`开发日志.md`
+    2026-08-15“D9-A 真实微信扫码登录联调与生产公开基址修正”记录生产真实 `SCAN` 验签通过、
+    未点击确认时消费以 `WECHAT_QR_ALREADY_CONSUMED` 拒绝且会话数不变，确认后仅进入显式注册、
+    重复与 TTL 过期消费均拒绝；同日“D9-A 真实微信注册闭环、身份复用与短信频控”记录注册完成后
+    同一微信再次扫码确认并成功 `authenticated`。
 - [ ] scene 一次性、带过期、与浏览器会话绑定；消息回调必须验签，**未验签事件一律丢弃**；
+  - **对账（证据不足，保持未勾选）**：`apps/web/src/services/auth/wechat.ts:207` 生成随机
+    scene，`:214` 计算过期时间，`:221` 与 `:228` 分别持久化浏览器及 scene 的 HMAC，`:344`
+    以二者联合定位，`:414` 以 `confirmed`、浏览器绑定和过期条件原子单次消费；
+    `apps/web/src/app/api/v1/auth/wechat/callback/route.ts:33` 先验签，`:39` 丢弃失败事件，
+    `apps/web/src/providers/wechatofficial.ts:266` 实现明文/安全模式签名验证。测试包括
+    `apps/web/tests/integration/d9a-identity-registration.integration.test.ts:486` 用例
+    “keeps SCAN at scanned, fails closed on confirmation-message errors, and consumes once”、`:604`
+    用例“requires QR confirmation before session exchange and rejects terminal scenes”，以及
+    `apps/web/tests/unit/wechat-official-callback.test.ts:47` 用例“rejects an unsigned callback before
+    parsing the event”、`:61` 用例“accepts a correctly signed plaintext event and rejects a changed
+    signature”、`:85` 用例“validates and decrypts AES callbacks while binding the plaintext to this
+    AppID”。单次、过期和验签已有正反测试，但尚缺二维码 scene 使用错误浏览器
+    `flowToken` 时必须拒绝的负向集成测试。`开发日志.md` 2026-08-15“D9-A 真实微信扫码登录联调与
+    生产公开基址修正”已验证真实回调、重复消费和 TTL 过期拒绝，但未验证跨浏览器 scene 盗用。
 - [ ] **阿里云验证码 2.0 只在短信发送前、二维码创建或频繁刷新前校验**；轮询接口只校验浏览器
       会话、scene 绑定与限频，**不重复做人机校验**；异常刷新或触发风险阈值后再要求重新校验；
+  - **对账（证据不足，保持未勾选）**：短信半面由
+    `apps/web/src/services/auth/otp.ts:64` 在创建 challenge 与发送前校验；二维码创建半面由
+    `apps/web/src/services/auth/wechat.ts:200` 在调用微信创建二维码前校验。轮询半面由
+    `apps/web/src/app/api/v1/auth/wechat/qrcode/poll/route.ts:11` 只解析 scene，并在 `:12`
+    取得既有浏览器 flow cookie；`apps/web/src/services/auth/wechat.ts:367` 的轮询仅做浏览器/scene
+    绑定、过期与 `:385` 的频率限制，没有验证码参数或 provider 调用。
+    `apps/web/tests/integration/d9a-identity-registration.integration.test.ts:420` 用例“requires
+    captcha before SMS or QR creation and keeps polling captcha-free”分别断言拒绝验证码不会创建短信
+    challenge、不会调用二维码 provider，并在二维码创建后不传验证码完成轮询。`开发日志.md`
+    2026-08-15 两条真实微信联调记录证明生产二维码创建、短信发送使用真实验证码且浏览器轮询未
+    重复要求验证码。**频繁刷新前**这一半仍缺失：当前没有独立 refresh endpoint、异常刷新/风险阈值
+    实现，也没有重复创建/刷新触发重新人机校验的测试，因此整项不能勾选。
 - [x] 注册显式化：记录**默认客户类型**、条款同意、注册来源、可选邀请码；登录与注册分离，
       禁止静默建号。
 
@@ -1018,9 +1072,38 @@ I（年龄要求）、K（自动续费金额上限）已并入 9.2 第 10、11�
       与审计；
 - [ ] 手机号变更、微信换绑完成后**撤销全部旧会话**，向全部旧绑定渠道告知，并进入高风险操作
       冷静期；
+  - **对账（证据不足，保持未勾选）**：三项分别核对如下。① 撤销全部旧会话：
+    `apps/web/src/services/auth/customer-identities.ts:727` 识别同 provider 换绑并在 `:740` 调用
+    `revokeAllCustomerSessions`；`apps/web/tests/integration/d9a-identity-registration.integration.test.ts:882`
+    用例“records the cooldown, revokes sessions, updates the legacy phone column, and notifies old
+    channels on replacement”在 `:945` 断言 active Session 为 0。② 告知全部旧渠道：
+    `apps/web/src/services/auth/customer-identities.ts:630` 遍历换绑前全部 active identities，`:641`
+    走短信、`:648` 走微信并记录结果，`:761` 在事务后调用；同一用例 `:953` 只断言产生 2 条通知
+    事件，未分别断言 phone/wechat provider 与发送 outcome。③ 冷静期：同文件 `:727` 判定换绑，
+    `:729` 写入 `identityRiskCooldownStartedAt`；同一用例 `:932` 断言时间戳存在。现有集成测试只执行
+    手机号变更，没有执行微信换绑；且旧渠道测试缺少逐 provider/outcome 断言。因此尚缺微信换绑下
+    三项行为的完整覆盖，以及全部旧渠道各自发送尝试结果的断言。没有对应生产验证记录。
 - [ ] 已有手机号账号首次微信登录只允许登录态下主动绑定，**不得凭手机号自动合并账号**；
       跨账号合并排除在 P1 之外；
-- [ ] 身份碰撞（同一 openid 已绑他人账号）必须 fail-closed 并产生人工复核事件。
+  - **对账（证据不足，保持未勾选）**：网页授权绑定在
+    `apps/web/src/services/auth/wechat.ts:68` 和 `:155` 要求登录客户，二维码绑定在 `:197` 和
+    `:444` 要求登录客户且匹配绑定目标；未知微信登录在
+    `apps/web/src/services/auth/customer-identities.ts:346` 只查微信 identity，未命中则在 `:359`
+    返回注册意图，没有按手机号查找或绑定微信。相关测试只有
+    `apps/web/tests/integration/d9a-identity-registration.integration.test.ts:346` 用例“binds OAuth
+    state to the browser and consumes both state and authorization code once”证明未知微信返回
+    `registration_required`，以及 `:123` 用例“does not create an account at OTP verification and
+    records two real registration consents”证明注册显式化；尚缺“已有手机号 customer + 未绑定
+    微信”组合下，匿名 OAuth/二维码 bind 被拒、login 不自动挂接微信 identity、登录态主动 bind
+    才成功的端到端集成测试。`开发日志.md` 2026-08-15 的生产闭环使用的是新手机号注册，不能证明
+    已有手机号账号场景。
+- [x] 身份碰撞（同一 openid 已绑他人账号）必须 fail-closed 并产生人工复核事件。
+  - **对账（证据充分）**：`apps/web/src/services/auth/customer-identities.ts:591` 创建
+    `customer_identity_collision` open manual review，`:699` 检出 identity 已属于其他 customer
+    后只写复核并退出，`:754` 返回稳定错误 `IDENTITY_COLLISION_REVIEW_REQUIRED`。
+    `apps/web/tests/integration/d9a-identity-registration.integration.test.ts:823` 用例“fails closed on
+    an identity collision and creates a manual-review record”在 `:859` 断言碰撞拒绝、`:867` 断言
+    复核记录关联 contender customer 与冲突 identity。该高风险场景未在生产触发，故无生产验证记录。
 
 #### A3 账户状态机与能力限制
 
