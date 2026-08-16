@@ -1268,7 +1268,11 @@ I（年龄要求）、K（自动续费金额上限）已并入 9.2 第 10、11�
     `apps/web/tests/integration/d9a-consent-personal-information.integration.test.ts:189` 用例“defines
     exactly eight independently versioned and hashed consent documents”、`:214` 用例“keeps consent
     records append-only even for overrideAccess system calls”、`:240` migration down 历史保护用例和
-    `:546` 敏感信息单独同意用例通过。
+    `:546` 敏感信息单独同意用例通过。补测
+    `apps/web/tests/unit/a7-consent-document-lock.test.ts:11-56` 用例“binds every consent document version
+    to its exact content hash”以八类固定表逐字锁定版本与内容哈希；只改文案、只改版本、只改
+    `LEGAL_DOCUMENTS` privacy 内容的三个实跑变异均失败，原始报错见
+    `docs/operations/d9a-a7-security-mutation-matrix.md:175-237`“文档版本与内容哈希绑定补测”。
 - [x] **历史账号不得伪造条款同意**：`accountType = legacy_unknown`、
       `registrationSource = legacy_unknown`，**不生成虚假同意记录**；下次登录时完成资料补全与
       真实条款确认，记录实际确认时间、版本、文本哈希、入口与证据；
@@ -1316,7 +1320,7 @@ A7 全判定点验证记录（2026-08-16）：`apps/web/scripts/mutate-a7-securi
 JS guard、权限判断、早退分支与调用插入点逐一删除/短路并实跑指定行为用例，115/115 均以行为断言
 杀死；`apps/web/scripts/mutate-a7-sql-predicates.mjs` 对 consent claim、同事务 no-op 新鲜度读取和 legacy
 completion 三条 SQL 的 12 个 `WHERE` 谓词逐一删除，12/12 均被对应行为用例杀死。合计 127/127；
-逐项 ID、文件、用例与结果见 `docs/operations/d9a-a7-security-mutation-matrix.md:34-172`。两个并发敏感
+逐项 ID、文件、用例与结果见 `docs/operations/d9a-a7-security-mutation-matrix.md:35-173`。两个并发敏感
 写入都在同一 Payload transaction 内使用 `UPDATE ... WHERE ... RETURNING`，各自 8 路恰好 1 成功；
 没有 `payload.update({ where })`，源码文本断言不作为唯一证据。A7 不新增账户状态迁移；删除入口继续
 复用 A3 `transitionCustomerAccount` 和 A4 `authorizeStepUpGrant` 内的
@@ -1506,6 +1510,11 @@ D9-A-1b 集成测试并行隔离修正（2026-08-15）：归一化失败用例�
 场景）、DDNS 与常用邮箱解析、域名转入/转出。
 
 ### 16.10 D9-E 增长与会员
+
+**阻塞前置（仅记录，不勾选条目）**：`commercialSmsOptedIn`
+（`apps/web/src/services/privacy/customer-consents.ts:282`）当前没有生产调用方，因为尚不存在商业短信
+发送路径。D9-E 新增任何营销或推广短信发送点时，**必须在发送前调用该门禁并附带行为测试**；未接入
+前不得发送商业短信。
 
 #### E1 米币
 

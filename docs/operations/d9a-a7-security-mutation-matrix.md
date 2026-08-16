@@ -4,7 +4,8 @@
 
 范围：仅 D9-A A7 同意与个人信息
 
-最终结果：JS/接口/权限判定 115/115，SQL 谓词 12/12，合计 127/127 均由指定行为断言杀死。
+最终结果：JS/接口/权限判定 115/115，SQL 谓词 12/12，合计 127/127 均由指定行为断言杀死；
+版本与内容哈希绑定补测 3/3 均被独立单元测试杀死，原始失败见本文末节。
 
 ## 执行口径
 
@@ -170,3 +171,67 @@ D9-C 独立 `renewalMandate`。A5/A6 未修改。
 | `route`              | `legacy-profile-completion-customer-auth-gate`                       | `src/app/api/v1/account/legacy-profile-completion/route.ts`                 | fails closed at the customer-session gate for every self-service A7 route                                 | KILLED_BY_BEHAVIOR |
 | `route`              | `personal-information-customer-auth-gate`                            | `src/app/api/v1/account/personal-information/route.ts`                      | fails closed at the customer-session gate for every self-service A7 route                                 | KILLED_BY_BEHAVIOR |
 | `route`              | `export-export-customer-auth-gate`                                   | `src/app/api/v1/account/personal-information/export/route.ts`               | fails closed at the customer-session gate for every self-service A7 route                                 | KILLED_BY_BEHAVIOR |
+
+## 文档版本与内容哈希绑定补测
+
+锁定表位于 `apps/web/tests/unit/a7-consent-document-lock.test.ts`，对全部八个 `ConsentType` 的
+`documentVersion` 与 `documentHash` 配对执行完整 `toEqual`。恢复源码后的基线命令为：
+
+```text
+pnpm exec vitest run --config vitest.config.mts tests/unit/a7-consent-document-lock.test.ts
+```
+
+结果为 `1 passed (1)`。以下三个变异分别单独应用、实跑同一行为测试并恢复；退出码均为 1。
+
+### a. 只改文案，不改版本号
+
+变异：把 `consentDocuments.commercial_sms.purpose` 中“商业短信”改为“营销短信”，保持
+`consent-commercial-sms-2026-08-16` 不变。Vitest 原始失败主体：
+
+```text
+AssertionError: commercial_sms: expected { …(2) } to deeply equal { …(2) }
+
+- Expected
++ Received
+
+  {
+-   "documentHash": "9660c2f1e55948f359fbc7c34b3b097ab56487ce02a4d606d182537f8862e4e6",
++   "documentHash": "10cbf2e046cfa97f62d48bc26062bb35310dc50472109104e7f0f10b0a8bfeb8",
+    "documentVersion": "consent-commercial-sms-2026-08-16",
+  }
+```
+
+### b. 只改版本号，不改文案
+
+变异：把版本改为 `consent-commercial-sms-2026-08-17`，保持内容不变。Vitest 原始失败主体：
+
+```text
+AssertionError: commercial_sms: expected { …(2) } to deeply equal { …(2) }
+
+- Expected
++ Received
+
+  {
+    "documentHash": "9660c2f1e55948f359fbc7c34b3b097ab56487ce02a4d606d182537f8862e4e6",
+-   "documentVersion": "consent-commercial-sms-2026-08-16",
++   "documentVersion": "consent-commercial-sms-2026-08-17",
+  }
+```
+
+### c. 只改 LEGAL_DOCUMENTS 内容
+
+变异：只删除 privacy `description` 中的“计划”二字，保持
+`legal-config-privacy-2026-08-12` 不变。Vitest 原始失败主体：
+
+```text
+AssertionError: privacy_policy: expected { …(2) } to deeply equal { …(2) }
+
+- Expected
++ Received
+
+  {
+-   "documentHash": "ff11acf8a873e93ef92d34c95a4af90e28e1f1833b0983132a4d9286a0c77250",
++   "documentHash": "395c14baf1a1bf951d1843788191c9dec36735916fc3df65e0f476d66ac69b47",
+    "documentVersion": "legal-config-privacy-2026-08-12",
+  }
+```
