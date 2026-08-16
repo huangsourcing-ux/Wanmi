@@ -1,4 +1,6 @@
 import { randomInt, randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 import config from '@payload-config'
 import { createLocalReq, getPayload, type Payload, type PayloadRequest } from 'payload'
@@ -21,6 +23,84 @@ import {
 } from '@/services/auth/step-up'
 
 let payload: Payload
+
+const stepUpServiceSource = readFileSync(
+  fileURLToPath(new URL('../../src/services/auth/step-up.ts', import.meta.url)),
+  'utf8',
+)
+
+const sqlWhereContracts = [
+  {
+    end: 'const codeHash = attempted.rows',
+    name: 'verify attempt update',
+    predicates: [
+      'WHERE id = $1',
+      'AND customer_id = $2',
+      "AND purpose = 'step_up'",
+      'AND step_up_purpose = $3',
+      'AND device_hash = $4',
+      'AND consumed_at IS NULL',
+      'AND expires_at > NOW()',
+      'AND attempts < $5',
+    ],
+    start: 'const attempted = await req.payload.db.pool.query',
+  },
+  {
+    end: 'if (consumed.rows?.[0]?.id === undefined)',
+    name: 'verify challenge consume update',
+    predicates: [
+      'WHERE id = ${challenge.id}',
+      'AND customer_id = ${customer.id}',
+      "AND purpose = 'step_up'",
+      'AND step_up_purpose = ${input.purpose}',
+      'AND consumed_at IS NULL',
+      'AND expires_at > NOW()',
+    ],
+    start: 'const consumed = await database.execute',
+  },
+  {
+    end: ': await database.execute(sql`',
+    name: 'authorize one-time update',
+    predicates: [
+      'WHERE token_hash = ${tokenHash}',
+      'AND customer_id = ${input.customerId}',
+      'AND purpose = ${input.purpose}',
+      'AND device_hash = ${deviceHash}',
+      'AND consumed_at IS NULL',
+      'AND expires_at > NOW()',
+    ],
+    start: '? await database.execute(sql`',
+  },
+  {
+    end: 'const grantId = authorized.rows',
+    name: 'authorize reusable select',
+    predicates: [
+      'WHERE token_hash = ${tokenHash}',
+      'AND customer_id = ${input.customerId}',
+      'AND purpose = ${input.purpose}',
+      'AND device_hash = ${deviceHash}',
+      'AND consumed_at IS NULL',
+      'AND expires_at > NOW()',
+    ],
+    start: ': await database.execute(sql`',
+  },
+] as const
+
+function compactSql(value: string): string {
+  return value.replaceAll(/\s+/gu, ' ').trim()
+}
+
+function sqlContractBlock(start: string, end: string): string {
+  const startIndex = stepUpServiceSource.indexOf(start)
+  expect(startIndex, `missing SQL contract start marker: ${start}`).toBeGreaterThanOrEqual(0)
+  const endIndex = stepUpServiceSource.indexOf(end, startIndex + start.length)
+  expect(endIndex, `missing SQL contract end marker: ${end}`).toBeGreaterThan(startIndex)
+  return compactSql(stepUpServiceSource.slice(startIndex, endIndex))
+}
+
+const sqlWherePredicateCases = sqlWhereContracts.flatMap((contract) =>
+  contract.predicates.map((predicate) => ({ ...contract, predicate })),
+)
 
 function phone(): string {
   return `+86198${randomInt(10_000_000, 100_000_000)}`
@@ -85,6 +165,42 @@ async function issueGrant(
   return { customer, deviceId, requestHeaders, ...verified }
 }
 
+async function authorizeIssuedGrant(
+  grant: Awaited<ReturnType<typeof issueGrant>>,
+  input: {
+    customerId?: number | string
+    deviceId?: string
+    purpose?: StepUpPurpose
+    stepUpToken?: string
+  } = {},
+) {
+  return authorizeStepUpGrant(await request(grant.requestHeaders, grant.customer), {
+    customerId: input.customerId ?? grant.customer.id,
+    deviceId: input.deviceId ?? grant.deviceId,
+    headers: grant.requestHeaders,
+    purpose: input.purpose ?? grant.purpose,
+    stepUpToken: input.stepUpToken ?? grant.stepUpToken,
+  })
+}
+
+async function scopedGrant(grant: Awaited<ReturnType<typeof issueGrant>>) {
+  const rows = await payload.find({
+    collection: 'stepUpGrants',
+    depth: 0,
+    limit: 2,
+    overrideAccess: true,
+    where: {
+      and: [
+        { customer: { equals: grant.customer.id } },
+        { purpose: { equals: grant.purpose } },
+        { tokenHash: { equals: hmac(grant.stepUpToken, getEnv().SESSION_PEPPER) } },
+      ],
+    },
+  })
+  expect(rows.docs).toHaveLength(1)
+  return rows.docs[0]!
+}
+
 async function waitForBlockedGrantUpdates(
   client: { query: (statement: string) => Promise<{ rows: Array<{ count?: number }> }> },
   expected: number,
@@ -135,6 +251,13 @@ afterAll(async () => {
 })
 
 describe('D9-A A4 SMS step-up grants', () => {
+  it.each(sqlWherePredicateCases)(
+    'keeps the $name WHERE predicate "$predicate"',
+    ({ end, predicate, start }) => {
+      expect(sqlContractBlock(start, end)).toContain(compactSql(predicate))
+    },
+  )
+
   it('enumerates every risk-table purpose and limits one-time grants to the two exceptions', () => {
     expect(STEP_UP_PURPOSES).toEqual([
       'dns_record_change',
@@ -246,6 +369,82 @@ describe('D9-A A4 SMS step-up grants', () => {
         stepUpToken: grant.stepUpToken,
       }),
     ).rejects.toMatchObject({ code: 'STEP_UP_GRANT_INVALID' })
+  })
+
+  it('does not let a one-time grant authorize a different one-time purpose', async () => {
+    const grant = await issueGrant('account_deletion')
+    await expect(authorizeIssuedGrant(grant, { purpose: 'realname_change' })).rejects.toMatchObject(
+      {
+        code: 'STEP_UP_GRANT_INVALID',
+      },
+    )
+    expect((await scopedGrant(grant)).consumedAt).toBeNull()
+  })
+
+  it.each([
+    { kind: 'reusable', purpose: 'dns_record_change' },
+    { kind: 'one-time', purpose: 'account_deletion' },
+  ] as const)('rejects an unknown token for a $kind grant', async ({ purpose }) => {
+    const grant = await issueGrant(purpose)
+    await expect(
+      authorizeIssuedGrant(grant, { stepUpToken: `${grant.stepUpToken}-unknown` }),
+    ).rejects.toMatchObject({ code: 'STEP_UP_GRANT_INVALID' })
+    expect((await scopedGrant(grant)).consumedAt).toBeNull()
+  })
+
+  it.each([
+    { kind: 'reusable', purpose: 'dns_record_change' },
+    { kind: 'one-time', purpose: 'account_deletion' },
+  ] as const)('does not authorize a $kind grant for another customer', async ({ purpose }) => {
+    const grant = await issueGrant(purpose)
+    const otherCustomer = await createCustomer()
+    await expect(
+      authorizeIssuedGrant(grant, { customerId: otherCustomer.id }),
+    ).rejects.toMatchObject({ code: 'STEP_UP_GRANT_INVALID' })
+    expect((await scopedGrant(grant)).consumedAt).toBeNull()
+  })
+
+  it.each([
+    { kind: 'reusable', purpose: 'dns_record_change' },
+    { kind: 'one-time', purpose: 'account_deletion' },
+  ] as const)('rejects an expired $kind grant without consuming it', async ({ purpose }) => {
+    const grant = await issueGrant(purpose)
+    const stored = await scopedGrant(grant)
+    await payload.update({
+      collection: 'stepUpGrants',
+      data: { expiresAt: new Date(Date.now() - 1_000).toISOString() },
+      id: stored.id,
+      overrideAccess: true,
+    })
+    await expect(authorizeIssuedGrant(grant)).rejects.toMatchObject({
+      code: 'STEP_UP_GRANT_INVALID',
+    })
+    expect((await scopedGrant(grant)).consumedAt).toBeNull()
+  })
+
+  it.each([
+    { kind: 'reusable', purpose: 'dns_record_change' },
+    { kind: 'one-time', purpose: 'account_deletion' },
+  ] as const)('binds a $kind grant to the device that obtained it', async ({ purpose }) => {
+    const grant = await issueGrant(purpose)
+    await expect(
+      authorizeIssuedGrant(grant, { deviceId: `different-device-${randomUUID()}` }),
+    ).rejects.toMatchObject({ code: 'STEP_UP_GRANT_INVALID' })
+    expect((await scopedGrant(grant)).consumedAt).toBeNull()
+  })
+
+  it('rejects a reusable grant whose row is already marked consumed', async () => {
+    const grant = await issueGrant('dns_record_change')
+    const stored = await scopedGrant(grant)
+    await payload.update({
+      collection: 'stepUpGrants',
+      data: { consumedAt: new Date().toISOString() },
+      id: stored.id,
+      overrideAccess: true,
+    })
+    await expect(authorizeIssuedGrant(grant)).rejects.toMatchObject({
+      code: 'STEP_UP_GRANT_INVALID',
+    })
   })
 
   it('reuses a default-purpose grant within its TTL', async () => {
@@ -372,6 +571,149 @@ describe('D9-A A4 SMS step-up grants', () => {
     })
     expect(rows.docs).toHaveLength(1)
     expect(rows.docs[0]?.consumedAt).toBeTruthy()
+  })
+
+  it('stops verifying a step-up challenge after the shared attempt limit', async () => {
+    const customer = await createCustomer()
+    const deviceId = `step-up-attempt-limit-${randomUUID()}`
+    const requestHeaders = headers()
+    const challenge = await requestStepUpOtp(
+      await request(requestHeaders, customer),
+      customer,
+      {
+        captchaVerifyParam: CAPTCHA_FIXTURE_TOKEN,
+        deviceId,
+        purpose: 'balance_spend',
+      },
+      requestHeaders,
+      `step-up-attempt-limit-${randomUUID()}`,
+    )
+    for (let attempt = 0; attempt < getEnv().OTP_MAX_ATTEMPTS; attempt += 1) {
+      await expect(
+        verifyStepUpOtp(
+          await request(requestHeaders, customer),
+          customer,
+          {
+            challengeId: challenge.challengeId,
+            code: '000000',
+            deviceId,
+            purpose: 'balance_spend',
+          },
+          requestHeaders,
+        ),
+      ).rejects.toMatchObject({ code: 'STEP_UP_CHALLENGE_INVALID' })
+    }
+    await expect(
+      verifyStepUpOtp(
+        await request(requestHeaders, customer),
+        customer,
+        {
+          challengeId: challenge.challengeId,
+          code: getEnv().MOCK_SMS_OTP_CODE,
+          deviceId,
+          purpose: 'balance_spend',
+        },
+        requestHeaders,
+      ),
+    ).rejects.toMatchObject({ code: 'STEP_UP_CHALLENGE_INVALID' })
+    const rows = await payload.find({
+      collection: 'smsChallenges',
+      depth: 0,
+      limit: 2,
+      overrideAccess: true,
+      where: {
+        and: [
+          { challengeId: { equals: challenge.challengeId } },
+          { customer: { equals: customer.id } },
+          { purpose: { equals: 'step_up' } },
+          { stepUpPurpose: { equals: 'balance_spend' } },
+        ],
+      },
+    })
+    expect(rows.docs).toHaveLength(1)
+    expect(rows.docs[0]?.attempts).toBe(getEnv().OTP_MAX_ATTEMPTS)
+  })
+
+  it('atomically consumes a verified step-up SMS challenge only once', async () => {
+    const customer = await createCustomer()
+    const deviceId = `step-up-challenge-race-${randomUUID()}`
+    const requestHeaders = headers()
+    const challenge = await requestStepUpOtp(
+      await request(requestHeaders, customer),
+      customer,
+      {
+        captchaVerifyParam: CAPTCHA_FIXTURE_TOKEN,
+        deviceId,
+        purpose: 'dns_record_change',
+      },
+      requestHeaders,
+      `step-up-challenge-race-${randomUUID()}`,
+    )
+    const consumers = 3
+    const pool = payload.db.pool as unknown as {
+      query: (...args: unknown[]) => Promise<unknown>
+    }
+    const originalQuery = pool.query.bind(payload.db.pool)
+    let attemptsReady = 0
+    let releaseAttempts!: () => void
+    const allAttemptsReady = new Promise<void>((resolve) => {
+      releaseAttempts = resolve
+    })
+    pool.query = async (...args: unknown[]) => {
+      const result = await originalQuery(...args)
+      if (
+        typeof args[0] === 'string' &&
+        args[0].includes('UPDATE sms_challenges') &&
+        args[0].includes('SET attempts = attempts + 1')
+      ) {
+        attemptsReady += 1
+        if (attemptsReady === consumers) releaseAttempts()
+        await allAttemptsReady
+      }
+      return result
+    }
+    let attempts: PromiseSettledResult<Awaited<ReturnType<typeof verifyStepUpOtp>>>[]
+    try {
+      attempts = await Promise.allSettled(
+        Array.from({ length: consumers }, async () =>
+          verifyStepUpOtp(
+            await request(requestHeaders, customer),
+            customer,
+            {
+              challengeId: challenge.challengeId,
+              code: getEnv().MOCK_SMS_OTP_CODE,
+              deviceId,
+              purpose: 'dns_record_change',
+            },
+            requestHeaders,
+          ),
+        ),
+      )
+    } finally {
+      pool.query = originalQuery
+    }
+    expect(attemptsReady).toBe(consumers)
+    const successes = attempts.filter((attempt) => attempt.status === 'fulfilled')
+    const failures = attempts.filter((attempt) => attempt.status === 'rejected')
+    const grants = await payload.find({
+      collection: 'stepUpGrants',
+      depth: 0,
+      limit: 4,
+      overrideAccess: true,
+      where: {
+        and: [{ customer: { equals: customer.id } }, { purpose: { equals: 'dns_record_change' } }],
+      },
+    })
+    expect(successes).toHaveLength(1)
+    expect(failures).toHaveLength(2)
+    expect(
+      failures.every(
+        (failure) =>
+          failure.status === 'rejected' &&
+          (failure.reason as { code?: unknown }).code === 'STEP_UP_CHALLENGE_INVALID',
+      ),
+    ).toBe(true)
+    expect(grants.docs).toHaveLength(1)
   })
 
   it('blocks every high-risk purpose during the identity-risk cooldown even with a valid grant', async () => {
