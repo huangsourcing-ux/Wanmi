@@ -366,6 +366,8 @@ export interface Customer {
     | boolean
     | null;
   deletionRequestedAt?: string | null;
+  legacyProfileCompletedAt?: string | null;
+  consentStateVersion?: number | null;
   updatedAt: string;
   createdAt: string;
   collection: 'customers';
@@ -413,7 +415,12 @@ export interface ConsentRecord {
   documentHash: string;
   acceptedAt: string;
   revokedAt?: string | null;
-  source: 'phone_registration' | 'wechat_oauth_registration' | 'wechat_qrcode_registration';
+  source:
+    | 'phone_registration'
+    | 'wechat_oauth_registration'
+    | 'wechat_qrcode_registration'
+    | 'legacy_profile_completion'
+    | 'account_privacy_center';
   ipMasked: string;
   userAgentSummary: string;
   updatedAt: string;
@@ -2448,6 +2455,8 @@ export interface CustomersSelect<T extends boolean = true> {
   status?: T;
   capabilityRestrictions?: T;
   deletionRequestedAt?: T;
+  legacyProfileCompletedAt?: T;
+  consentStateVersion?: T;
   updatedAt?: T;
   createdAt?: T;
 }

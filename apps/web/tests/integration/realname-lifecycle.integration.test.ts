@@ -12,6 +12,7 @@ import { createRealnameTemplate } from '@/services/realname/templates'
 
 import { realnameTemplateFixture } from '../fixtures/realname'
 import { createTestRealnameDocumentMasterKeyring } from '../fixtures/realname-master-key'
+import { grantSensitivePersonalInformationConsent } from '../fixtures/consents'
 import { issueStepUpGrantFixture } from '../fixtures/step-up'
 
 const fixturePrefix = `d4-lifecycle-${randomUUID()}`
@@ -72,6 +73,11 @@ describe('D4 real-name retention lifecycle', () => {
       overrideAccess: true,
     })
     created.push({ collection: 'customers', id: customer.id })
+    await grantSensitivePersonalInformationConsent(
+      payload,
+      Number(customer.id),
+      `${fixturePrefix}-sensitive-consent`,
+    )
     const user = { ...customer, collection: 'customers' as const }
     const req = await requestFor(user, 'owner')
     const template = await createRealnameTemplate(

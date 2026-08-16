@@ -16,6 +16,7 @@ import { getTraceId } from '@/lib/request-id'
 import type { WestDigitalRealnameProfile, WestDigitalRealnameProvider } from '@/providers/types'
 import { recordAuditEvent, type AuditActor } from '@/services/audit/record-audit-event'
 import { assertCustomerAccountCapabilityFromSnapshot } from '@/services/auth/account-state'
+import { assertCustomerConsentActive } from '@/services/privacy/customer-consents'
 
 import { realnameCleanupDeadline } from './retention'
 
@@ -382,6 +383,7 @@ export async function createRealnameTemplate(
 ): Promise<TemplateRecord> {
   const customer = requireCustomer(req)
   const data = createRealnameTemplateSchema.parse(input)
+  await assertCustomerConsentActive(req, customer.id, 'sensitive_personal_information')
   return (await req.payload.create({
     collection: 'realnameTemplates',
     data: {

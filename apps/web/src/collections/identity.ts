@@ -2,13 +2,16 @@ import type { CollectionConfig } from 'payload'
 
 import {
   ADMIN_ROLES,
+  CONSENT_TYPES,
   CUSTOMER_ACCOUNT_STATUSES,
   CUSTOMER_CAPABILITY_RESTRICTIONS,
   STEP_UP_PURPOSES,
 } from '@/lib/domain'
 import { ADMIN_GROUPS } from '@/lib/admin-navigation'
+import { AppError } from '@/lib/errors'
 import {
   adminSelfOrSystem,
+  customerSelfOrSystemFieldRead,
   deny,
   hasRole,
   ownOrSystem,
@@ -148,7 +151,7 @@ export const Customers: CollectionConfig = {
     {
       name: 'phone',
       type: 'text',
-      access: { read: sensitiveFieldRead },
+      access: { read: customerSelfOrSystemFieldRead },
       index: true,
       required: true,
       unique: true,
@@ -208,6 +211,14 @@ export const Customers: CollectionConfig = {
       },
     },
     { name: 'deletionRequestedAt', type: 'date', index: true },
+    { name: 'legacyProfileCompletedAt', type: 'date', index: true },
+    {
+      name: 'consentStateVersion',
+      type: 'number',
+      access: { read: sensitiveFieldRead },
+      defaultValue: 0,
+      min: 0,
+    },
   ],
 }
 
@@ -275,6 +286,20 @@ export const ConsentRecords: CollectionConfig = {
   slug: 'consentRecords',
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
   admin: { group: ADMIN_GROUPS.identity, hidden: systemAdminHidden },
+  hooks: {
+    beforeChange: [
+      ({ operation }) => {
+        if (operation === 'update') {
+          throw new AppError('CONSENT_RECORD_APPEND_ONLY', '同意记录只允许追加', 409)
+        }
+      },
+    ],
+    beforeDelete: [
+      () => {
+        throw new AppError('CONSENT_RECORD_APPEND_ONLY', '同意记录只允许追加', 409)
+      },
+    ],
+  },
   indexes: [{ fields: ['customer', 'consentType', 'acceptedAt'] }],
   fields: [
     {
@@ -288,16 +313,7 @@ export const ConsentRecords: CollectionConfig = {
       name: 'consentType',
       type: 'select',
       index: true,
-      options: [
-        'service_terms',
-        'privacy_policy',
-        'sensitive_personal_information',
-        'wechat_profile',
-        'commercial_sms',
-        'automatic_renewal',
-        'invitation_attribution',
-        'device_identifier_notice',
-      ],
+      options: [...CONSENT_TYPES],
       required: true,
     },
     { name: 'documentVersion', type: 'text', required: true },
@@ -307,7 +323,13 @@ export const ConsentRecords: CollectionConfig = {
     {
       name: 'source',
       type: 'select',
-      options: ['phone_registration', 'wechat_oauth_registration', 'wechat_qrcode_registration'],
+      options: [
+        'phone_registration',
+        'wechat_oauth_registration',
+        'wechat_qrcode_registration',
+        'legacy_profile_completion',
+        'account_privacy_center',
+      ],
       required: true,
     },
     { name: 'ipMasked', type: 'text', required: true },

@@ -1255,17 +1255,82 @@ I（年龄要求）、K（自动续费金额上限）已并入 9.2 第 10、11�
 
 #### A7 同意与个人信息
 
-- [ ] 新增 `consentRecords`，按类型分别记录：服务协议、隐私政策、敏感个人信息单独同意、微信
+- [x] 新增 `consentRecords`，按类型分别记录：服务协议、隐私政策、敏感个人信息单独同意、微信
       头像昵称保存同意、商业短信同意、自动续费授权、邀请归因与设备标识说明；每条含
       `consentType`、`documentVersion`、`documentHash`、`acceptedAt`、`revokedAt`、`source`、
       `ipMasked`、`userAgentSummary`；
-- [ ] **历史账号不得伪造条款同意**：`accountType = legacy_unknown`、
+  - **实现与测试证据**：`apps/web/src/lib/domain.ts:5-24` 固定八类同意及五类客户可管理的可选
+    同意；`apps/web/src/collections/identity.ts:285-337` 保留既有 `consentRecords` 并以 Hook 对包括
+    `overrideAccess` 的 update/delete 一律抛出 `CONSENT_RECORD_APPEND_ONLY`；撤回由
+    `apps/web/src/services/privacy/customer-consents.ts:194-269` 追加带 `revokedAt` 的新记录，不改写
+    原记录。`apps/web/src/services/auth/registration-consents.ts:22-110` 让八类文档全部复用
+    `registrationConsentDocument` 版本/内容 SHA-256 与入口证据写入。
+    `apps/web/tests/integration/d9a-consent-personal-information.integration.test.ts:189` 用例“defines
+    exactly eight independently versioned and hashed consent documents”、`:214` 用例“keeps consent
+    records append-only even for overrideAccess system calls”、`:240` migration down 历史保护用例和
+    `:546` 敏感信息单独同意用例通过。补测
+    `apps/web/tests/unit/a7-consent-document-lock.test.ts:11-56` 用例“binds every consent document version
+    to its exact content hash”以八类固定表逐字锁定版本与内容哈希；只改文案、只改版本、只改
+    `LEGAL_DOCUMENTS` privacy 内容的三个实跑变异均失败，原始报错见
+    `docs/operations/d9a-a7-security-mutation-matrix.md:175-237`“文档版本与内容哈希绑定补测”。
+- [x] **历史账号不得伪造条款同意**：`accountType = legacy_unknown`、
       `registrationSource = legacy_unknown`，**不生成虚假同意记录**；下次登录时完成资料补全与
       真实条款确认，记录实际确认时间、版本、文本哈希、入口与证据；
-- [ ] 未补条款的历史用户**不得直接阻断其处理到期域名**，可限制新购买但保留必要资产管理能力；
+  - **实现与测试证据**：`apps/web/src/services/auth/customer-identities.ts:229-235` 在登录结果只返回
+    `profileCompletionRequired`，不补写同意；`apps/web/src/services/privacy/customer-consents.ts:113-192`
+    要求 legacy 双重来源、未完成时间戳、版本和 active/restricted 状态，并在同事务单条
+    `UPDATE ... WHERE ... RETURNING` claim 后追加当次真实服务协议/隐私政策快照和审计，保留
+    `legacy_unknown` provenance。集成测试 `apps/web/tests/integration/d9a-consent-personal-information.integration.test.ts:561`
+    用例“flags a legacy account at login without inventing consent records”和 `:582` 用例“allows
+    exactly one of 8 legacy completions and records real evidence without rewriting provenance”分别证明
+    零虚假记录及 8 路并发恰好 1 成功。
+- [x] 未补条款的历史用户**不得直接阻断其处理到期域名**，可限制新购买但保留必要资产管理能力；
+  - **实现与测试证据**：`apps/web/src/services/commerce/order-creation.ts:218-220` 仅在
+    `operation === 'registration'` 时调用 legacy 资料门禁；不改变 A3 状态或能力集合，因此续费和
+    既有域名资产读写继续服从原 A3 能力判断。集成测试
+    `apps/web/tests/integration/d9a-consent-personal-information.integration.test.ts:779` 用例“blocks only
+    new registration orders while a legacy profile is incomplete”同时断言新注册被拒而续费越过该门禁，
+    `:816` 用例“allows registration after legacy completion has current terms and privacy evidence”验证
+    补全后解除购买限制；数量断言均由测试 `:102` helper 强制带 `where`。
 - [ ] 个人信息查阅、更正、导出、撤回可选同意、删除；数据保存期限与到期删除或匿名化；后台访问
       个人信息写审计；
-- [ ] 商业通知采用主动选择（opt-in），非默认勾选，退订立即生效。
+  - **部分证据但不足，保持未勾选**：`apps/web/src/services/privacy/personal-information.ts:13-218` 与
+    customer view/export、system_admin purpose 路由提供本人隔离的显式字段视图，全部 Local API 读取
+    传 `user`、`req`、`overrideAccess: false` 和 owner `where`，返回既有资料更正/账号删除入口并记录
+    view/export 审计；`apps/web/src/services/privacy/customer-consents.ts:194-269` 提供可选同意的追加式
+    撤回。集成测试 `apps/web/tests/integration/d9a-consent-personal-information.integration.test.ts:847`
+    用例“isolates personal-information reads, excludes internal identity secrets, and audits customer/admin
+    access”及单元测试 `apps/web/tests/unit/a7-personal-information-service.test.ts:45`、`:77` 覆盖越权、
+    秘密字段排除、所有 owner 查询与审计。现有账号删除仍由
+    `apps/web/src/services/auth/otp.ts:288-326` 复用 A4 `account_deletion` step-up/冷静期并调用 A3
+    `transitionCustomerAccount`；但账户与交易数据精确保留期仍在
+    `apps/web/src/services/privacy/personal-information.ts:206-211` 明示为
+    `pending_external_legal_review`，完整注销执行属于 A6 且
+    尚未实现，不能把入口或既有实名文件 30 天清理冒充整条完成。
+- [x] 商业通知采用主动选择（opt-in），非默认勾选，退订立即生效。
+  - **实现与测试证据**：`apps/web/src/schemas/auth.ts:195-224` 的注册输入把 `commercialSmsOptIn` 默认设为
+    `false`；`apps/web/src/services/auth/customer-identities.ts:557-570` 只在显式 true 时追加商业短信
+    同意，`apps/web/src/services/privacy/customer-consents.ts:194-287` 以追加撤回记录令当前 opt-in
+    查询立即变为 false。`apps/web/tests/integration/d9a-identity-registration.integration.test.ts:299`
+    用例“records commercial SMS consent only after explicit registration opt-in”与
+    `apps/web/tests/integration/d9a-consent-personal-information.integration.test.ts:256` 用例“defaults
+    commercial SMS to off, appends acceptance and revocation, and unsubscribes immediately”通过。
+
+A7 全判定点验证记录（2026-08-16）：`apps/web/scripts/mutate-a7-security-decisions.mjs` 对本切片 115 个
+JS guard、权限判断、早退分支与调用插入点逐一删除/短路并实跑指定行为用例，115/115 均以行为断言
+杀死；`apps/web/scripts/mutate-a7-sql-predicates.mjs` 对 consent claim、同事务 no-op 新鲜度读取和 legacy
+completion 三条 SQL 的 12 个 `WHERE` 谓词逐一删除，12/12 均被对应行为用例杀死。合计 127/127；
+逐项 ID、文件、用例与结果见 `docs/operations/d9a-a7-security-mutation-matrix.md:35-173`。两个并发敏感
+写入都在同一 Payload transaction 内使用 `UPDATE ... WHERE ... RETURNING`，各自 8 路恰好 1 成功；
+没有 `payload.update({ where })`，源码文本断言不作为唯一证据。A7 不新增账户状态迁移；删除入口继续
+复用 A3 `transitionCustomerAccount` 和 A4 `authorizeStepUpGrant` 内的
+`assertIdentityRiskCooldownInactive`（`apps/web/src/services/auth/step-up.ts:224-271`），冷静期失败关闭。
+自动续费文档记录不替代 D9-C `renewalMandate`；A5/A6 未改。
+
+最终门禁证据：恢复全部变异后，A7 聚焦单元/集成 7 文件 79/79 通过；最终本地 `make check` 从头
+退出 0，通过 bootstrap/provider 写策略、生成物/schema drift、全部 migration 往返、Nginx/运维/重建/
+release 契约、lint、TypeScript strict、97 文件 705/705 单元、32 文件 277/277 PostgreSQL/MinIO 集成、
+Next.js 生产构建、linux/amd64 同镜像、Node audit、工作树与 194 commits 历史 Gitleaks、Trivy。
 
 #### A8 默认客户类型
 
@@ -1445,6 +1510,11 @@ D9-A-1b 集成测试并行隔离修正（2026-08-15）：归一化失败用例�
 场景）、DDNS 与常用邮箱解析、域名转入/转出。
 
 ### 16.10 D9-E 增长与会员
+
+**阻塞前置（仅记录，不勾选条目）**：`commercialSmsOptedIn`
+（`apps/web/src/services/privacy/customer-consents.ts:282`）当前没有生产调用方，因为尚不存在商业短信
+发送路径。D9-E 新增任何营销或推广短信发送点时，**必须在发送前调用该门禁并附带行为测试**；未接入
+前不得发送商业短信。
 
 #### E1 米币
 

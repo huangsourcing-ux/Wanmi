@@ -19,6 +19,7 @@ import {
 import { processWechatPaymentNotification } from '@/services/commerce/payments'
 import { runWechatRefund } from '@/services/commerce/refunds'
 import { updateBalanceControl } from '@/services/commerce/balance-control'
+import { appendConsentAcceptance } from '@/services/auth/registration-consents'
 import { runDomainExpiryReminders } from '@/services/domains/expiry-reminders'
 import { runNameserverChange } from '@/services/domains/nameserver-changes'
 import {
@@ -242,6 +243,13 @@ export class CommerceJourneyFixture {
     const providerTemplateId = String(1_660_000 + this.customerIds.size * 100 + suffix.length)
     const provider = approvedRealnameProviderFixture(providerTemplateId)
     const req = await this.request(`realname-${suffix}`, customer)
+    await appendConsentAcceptance(req, {
+      acceptedAt: new Date().toISOString(),
+      consentType: 'sensitive_personal_information',
+      customerId: customer.id,
+      headers: req.headers,
+      source: 'account_privacy_center',
+    })
     const draft = await createRealnameTemplate(
       req,
       realnameTemplateFixture({

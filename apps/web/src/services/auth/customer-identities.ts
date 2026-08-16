@@ -11,6 +11,7 @@ import { createSmsProvider } from '@/providers/aliyunsms'
 import { createWechatOfficialProvider } from '@/providers/wechatofficial'
 import type { CustomerRegistrationInput } from '@/schemas/auth'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
+import { customerNeedsLegacyProfileCompletion } from '@/services/privacy/customer-consents'
 
 import {
   assertCustomerAccountCapability,
@@ -18,15 +19,9 @@ import {
   transitionCustomerAccount,
 } from './account-state'
 import { authTransactionDatabase, inAuthTransaction } from './atomic'
-import {
-  clientHashes,
-  maskPhone,
-  maskedClientIp,
-  normalizeChinesePhone,
-  userAgentSummary,
-} from './client-facts'
+import { clientHashes, maskPhone, normalizeChinesePhone } from './client-facts'
 import { issueCustomerSession, revokeAllCustomerSessions } from './customer-sessions'
-import { registrationConsentDocument } from './registration-consents'
+import { appendConsentAcceptance } from './registration-consents'
 import { recordCustomerSecurityEvent } from './security-events'
 
 export type IdentityProvider = 'phone' | 'wechat'
@@ -64,7 +59,7 @@ type RegistrationIntentRecord = {
 
 export type IdentityAuthenticationResult =
   | {
-      customer: { id: number; phoneMasked: string }
+      customer: { id: number; phoneMasked: string; profileCompletionRequired: boolean }
       expiresAt: string
       kind: 'authenticated'
       token: string
@@ -231,9 +226,14 @@ async function loginIdentity(
     overrideAccess: true,
     req,
   })
+  const profileCompletionRequired = await customerNeedsLegacyProfileCompletion(req, customer)
   const session = await issueCustomerSession(req, { customer, ...hashes })
   return {
-    customer: { id: customer.id, phoneMasked: customer.phoneMasked },
+    customer: {
+      id: customer.id,
+      phoneMasked: customer.phoneMasked,
+      profileCompletionRequired,
+    },
     expiresAt: session.expiresAt,
     kind: 'authenticated',
     token: session.token,
@@ -455,20 +455,14 @@ async function createRegistrationConsents(
   headers: Headers,
   acceptedAt: string,
 ) {
-  for (const consentType of ['service_terms', 'privacy_policy'] as const) {
-    await req.payload.create({
-      collection: 'consentRecords',
-      data: {
-        acceptedAt,
-        consentType,
-        ...registrationConsentDocument(consentType),
-        ipMasked: maskedClientIp(headers),
-        source: registrationConsentSource(source),
-        userAgentSummary: userAgentSummary(headers),
-        customer: customerId,
-      },
-      overrideAccess: true,
-      req,
+  const consentTypes = ['service_terms', 'privacy_policy', 'device_identifier_notice'] as const
+  for (const consentType of consentTypes) {
+    await appendConsentAcceptance(req, {
+      acceptedAt,
+      consentType,
+      customerId,
+      headers,
+      source: registrationConsentSource(source),
     })
   }
 }
@@ -559,6 +553,24 @@ export async function registerCustomer(
       await createIdentityFromIntent(req, customer, phoneIntent, now)
       if (primary.provider === 'wechat') await createIdentityFromIntent(req, customer, primary, now)
       await createRegistrationConsents(req, customer.id, primary.source, headers, now)
+      if (input.invitationCode) {
+        await appendConsentAcceptance(req, {
+          acceptedAt: now,
+          consentType: 'invitation_attribution',
+          customerId: customer.id,
+          headers,
+          source: registrationConsentSource(primary.source),
+        })
+      }
+      if (input.commercialSmsOptIn) {
+        await appendConsentAcceptance(req, {
+          acceptedAt: now,
+          consentType: 'commercial_sms',
+          customerId: customer.id,
+          headers,
+          source: registrationConsentSource(primary.source),
+        })
+      }
       const activated = await transitionCustomerAccount(req, {
         actor: { type: 'system' },
         changedAt: now,
@@ -598,7 +610,11 @@ export async function registerCustomer(
         ...hashes,
       })
       return {
-        customer: { id: customer.id, phoneMasked: customer.phoneMasked },
+        customer: {
+          id: customer.id,
+          phoneMasked: customer.phoneMasked,
+          profileCompletionRequired: false,
+        },
         expiresAt: session.expiresAt,
         kind: 'authenticated' as const,
         token: session.token,

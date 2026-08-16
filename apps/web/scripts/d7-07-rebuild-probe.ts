@@ -6,6 +6,7 @@ import { createLocalReq, getPayload, type PayloadRequest } from 'payload'
 import { mockSuccess } from '@/providers/mock'
 import type { WestDigitalRealnameProvider } from '@/providers/types'
 import { enqueueCommerceFulfillment } from '@/services/commerce/fulfillment'
+import { appendConsentAcceptance } from '@/services/auth/registration-consents'
 import {
   createRealnameTemplate,
   submitRealnameTemplate,
@@ -53,15 +54,25 @@ async function seedRegistrationProbe(
   const customer = await payload.create({
     collection: 'customers',
     data: {
+      accountType: 'registered',
       capabilityRestrictions: [],
+      defaultCustomerProfileType: 'individual',
       phone: prefix,
       phoneMasked: '***d707',
+      registrationSource: 'phone',
       status: 'active',
     },
     overrideAccess: true,
   })
   const customerReq = await request(payload, `${prefix}-customer`)
   customerReq.user = { ...customer, collection: 'customers' } as never
+  await appendConsentAcceptance(customerReq, {
+    acceptedAt: new Date().toISOString(),
+    consentType: 'sensitive_personal_information',
+    customerId: Number(customer.id),
+    headers: customerReq.headers,
+    source: 'account_privacy_center',
+  })
   const template = await createRealnameTemplate(customerReq, {
     addressChinese: '一环路北一段99号环球广场',
     addressEnglish: '99 First Ring Road North Chengdu Sichuan',

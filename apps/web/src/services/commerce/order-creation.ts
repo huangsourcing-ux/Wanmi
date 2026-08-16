@@ -27,6 +27,7 @@ import {
 import { loadEnabledPricingRules } from '@/services/pricing/price-rules'
 import { assertRealnameTemplateUsableForRegistration } from '@/services/realname/templates'
 import { assertCustomerAccountCapability } from '@/services/auth/account-state'
+import { assertLegacyRegistrationPurchaseAllowed } from '@/services/privacy/customer-consents'
 
 import { assertTldSalesOpen } from './balance-control'
 
@@ -214,6 +215,9 @@ export async function createCustomerOrder(
       quoteRef: input.quoteRef,
       store: options.quoteStore ?? new PayloadCustomerQuoteStore(req, options.customer),
     })
+    if (quote.operation === 'registration') {
+      await assertLegacyRegistrationPurchaseAllowed(req, options.customer.id)
+    }
     let realnameTemplateId: number
     let orderAvailability: { observedAt: string; requestId: string }
     if (quote.operation === 'registration') {
