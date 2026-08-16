@@ -994,25 +994,25 @@ I（年龄要求）、K（自动续费金额上限）已并入 9.2 第 10、11�
 
 #### A1 显式注册与登录
 
-- [ ] 三条入口，最终都复用既有 opaque Session 与会话轮换，不新建并行会话体系：
+- [x] 三条入口，最终都复用既有 opaque Session 与会话轮换，不新建并行会话体系：
       手机号验证码（沿用 D4）、服务号内网页授权、**服务号带参数二维码 PC 扫码**；
-  - **对账（证据不足，保持未勾选）**：手机号验证从
+  - **补证（2026-08-15，证据充分）**：手机号验证从
     `apps/web/src/services/auth/otp.ts:193`、网页授权从
     `apps/web/src/services/auth/wechat.ts:177`、二维码消费从
     `apps/web/src/services/auth/wechat.ts:468` 进入统一身份认证，命中身份后均由
     `apps/web/src/services/auth/customer-identities.ts:213` 的 `loginIdentity` 在 `:229`
     调用 `issueCustomerSession`；`apps/web/src/services/auth/customer-sessions.ts:9` 的共享实现
     在 `:22` 撤销同账号同设备的旧 Session、在 `:35` 新建只存 token hash 的 Session。
-    现有测试为 `apps/web/tests/integration/d0.integration.test.ts:175` 用例
-    “consumes SMS OTP once, rotates the opaque session and supports all-session revocation”、
-    `apps/web/tests/integration/d9a-identity-registration.integration.test.ts:346` 用例
-    “binds OAuth state to the browser and consumes both state and authorization code once”及 `:604`
-    用例“requires QR confirmation before session exchange and rejects terminal scenes”。但手机号
-    用例没有第二次同设备登录并断言旧 Session 被撤销，OAuth 用例止于
-    `registration_required`，二维码用例也只断言一次消费新增 Session；尚缺三条入口各自的
-    同设备二次登录/旧 Session 失效断言。`开发日志.md` 2026-08-15“D9-A 真实微信注册闭环、
-    身份复用与短信频控”证明同一微信再次扫码返回 `authenticated` 且有效 Session 从 1 增至
-    2，只证明身份与既有 Session Collection 被复用，不能证明同设备会话轮换。
+    `apps/web/tests/integration/d9a-identity-registration.integration.test.ts:1382` 用例“rotates the
+    phone OTP session on the same device and revokes the first opaque token”、`:1437` 用例“rotates
+    the Wechat OAuth session on the same browser and revokes the first opaque token”（先完成显式
+    注册，再以同一 flow 登录两次）及 `:1481` 用例“rotates the Wechat QR session on the same
+    browser and revokes the first opaque token”分别覆盖三条入口；共享断言 `:1521` 验证第一次
+    opaque token 已不可认证、对应 Session `revokedAt` 已写入、第二个 token 有效且按
+    customer/device 限定后仅 1 个 active Session。临时移除 `issueCustomerSession` 的旧会话撤销后
+    三条用例均以“the first opaque token must be invalid ... expected true to be false”失败。
+    `开发日志.md` 2026-08-15“D9-A 真实微信注册闭环、身份复用与短信频控”另证明生产同一微信身份
+    再次扫码会复用既有身份与 Session Collection；同设备轮换由上述集成与变异测试闭合。
 - [x] **扫码登录必须有用户确认步骤**，状态机 `created → scanned → confirmed → consumed`，
       另有 `rejected` 与 `expired`。**仅收到 `SCAN`/`subscribe` 事件不得建立浏览器会话** ——
       扫码只证明「某个微信扫了这个码」，不证明用户同意让该浏览器登录（攻击者可把自己的登录
@@ -1070,19 +1070,20 @@ I（年龄要求）、K（自动续费金额上限）已并入 9.2 第 10、11�
 - [x] 微信身份用 `openid`（单应用，不涉及 unionid 统一）；预留 `unionid` 字段不使用；
 - [x] **解绑最后一个可登录身份必须 fail-closed 拒绝**；绑定/解绑写 `customerSecurityEvents`
       与审计；
-- [ ] 手机号变更、微信换绑完成后**撤销全部旧会话**，向全部旧绑定渠道告知，并进入高风险操作
+- [x] 手机号变更、微信换绑完成后**撤销全部旧会话**，向全部旧绑定渠道告知，并进入高风险操作
       冷静期；
-  - **对账（证据不足，保持未勾选）**：三项分别核对如下。① 撤销全部旧会话：
+  - **补证（2026-08-15，证据充分）**：三项分别核对如下。① 撤销全部旧会话：
     `apps/web/src/services/auth/customer-identities.ts:727` 识别同 provider 换绑并在 `:740` 调用
     `revokeAllCustomerSessions`；`apps/web/tests/integration/d9a-identity-registration.integration.test.ts:882`
     用例“records the cooldown, revokes sessions, updates the legacy phone column, and notifies old
-    channels on replacement”在 `:945` 断言 active Session 为 0。② 告知全部旧渠道：
-    `apps/web/src/services/auth/customer-identities.ts:630` 遍历换绑前全部 active identities，`:641`
-    走短信、`:648` 走微信并记录结果，`:761` 在事务后调用；同一用例 `:953` 只断言产生 2 条通知
-    事件，未分别断言 phone/wechat provider 与发送 outcome。③ 冷静期：同文件 `:727` 判定换绑，
-    `:729` 写入 `identityRiskCooldownStartedAt`；同一用例 `:932` 断言时间戳存在。现有集成测试只执行
-    手机号变更，没有执行微信换绑；且旧渠道测试缺少逐 provider/outcome 断言。因此尚缺微信换绑下
-    三项行为的完整覆盖，以及全部旧渠道各自发送尝试结果的断言。没有对应生产验证记录。
+    channels on replacement”在 `:945` 验证手机号变更后 active Session 为 0，`:956` 用例“revokes
+    sessions, starts the cooldown, and notifies every old channel on Wechat replacement”在 `:1040`
+    与 `:1048` 验证微信换绑后 active Session 为 0 且旧 Session 写入 `revokedAt`。② 告知全部旧
+    渠道：`apps/web/src/services/auth/customer-identities.ts:630` 遍历换绑前全部 active identities，
+    `:641` 走短信、`:648` 走微信并记录结果，`:761` 在事务后调用；两条用例分别在 `:953` 与
+    `:1062` 调用共享断言 `:1604`，逐项验证 phone/wechat 两类事件均存在且 `outcome = sent`。
+    ③ 冷静期：同文件 `:727` 判定换绑、`:729` 写入 `identityRiskCooldownStartedAt`；手机号用例
+    `:932`、微信用例 `:1014` 均断言时间戳存在。上述路径未在生产执行换绑，故无生产验证记录。
 - [ ] 已有手机号账号首次微信登录只允许登录态下主动绑定，**不得凭手机号自动合并账号**；
       跨账号合并排除在 P1 之外；
   - **对账（证据不足，保持未勾选）**：网页授权绑定在
