@@ -308,6 +308,7 @@ describe('D1 administrator navigation groups', () => {
     articles: ADMIN_GROUPS.content,
     categories: ADMIN_GROUPS.content,
     auditLogs: ADMIN_GROUPS.operations,
+    accountRecoveryRecords: ADMIN_GROUPS.identity,
     consentRecords: ADMIN_GROUPS.identity,
     customerIdentities: ADMIN_GROUPS.identity,
     customerRegistrationIntents: ADMIN_GROUPS.identity,

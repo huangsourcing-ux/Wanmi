@@ -41,6 +41,12 @@ export const ManualReviews: CollectionConfig = {
       index: true,
     },
     {
+      name: 'paymentNotification',
+      type: 'relationship',
+      relationTo: 'paymentNotifications',
+      index: true,
+    },
+    {
       name: 'domainAsset',
       type: 'relationship',
       relationTo: 'domainAssets',

@@ -330,9 +330,46 @@ export const customerSessionSecurityResponseSchema = z.object({
   revokedCount: z.number().int().nonnegative(),
 })
 
+export const accountRecoveryRequestSchema = z
+  .object({
+    fullNameChinese: z.string().trim().min(2).max(50),
+    historicalOrderNumber: z.string().trim().min(8).max(64),
+    identityDocumentNumber: z.string().trim().min(3).max(64),
+    paymentTransactionId: z.string().trim().min(8).max(128),
+    phone: z.string().trim().min(11).max(16),
+    phoneUnavailable: z.literal(true),
+    wechatUnavailable: z.literal(true),
+  })
+  .strict()
+
+export const accountRecoveryRequestResponseSchema = z.object({
+  recoveryRequestId: z.uuid(),
+  status: z.literal('manual_review'),
+  submittedAt: z.iso.datetime(),
+})
+
+export const accountRecoveryDecisionSchema = z
+  .object({
+    conclusion: z.enum(['approved', 'rejected']),
+    note: z.string().trim().min(3).max(2_000),
+  })
+  .strict()
+
+export const accountRecoveryDecisionResponseSchema = z.object({
+  conclusion: z.enum(['approved', 'rejected']),
+  cooldownEndsAt: z.iso.datetime().optional(),
+  cooldownStartedAt: z.iso.datetime().optional(),
+  customerId: z.number().int().positive(),
+  decidedAt: z.iso.datetime(),
+  reviewId: z.number().int().positive(),
+  revokedSessionCount: z.number().int().nonnegative(),
+})
+
 export type SmsRequestInput = z.infer<typeof smsRequestSchema>
 export type SmsVerifyInput = z.infer<typeof smsVerifySchema>
 export type StepUpRequestInput = z.infer<typeof stepUpRequestSchema>
 export type StepUpVerifyInput = z.infer<typeof stepUpVerifySchema>
+export type AccountRecoveryDecisionInput = z.infer<typeof accountRecoveryDecisionSchema>
+export type AccountRecoveryRequestInput = z.infer<typeof accountRecoveryRequestSchema>
 export type CustomerRegistrationInput = z.infer<typeof customerRegistrationSchema>
 export type WechatQrCreateInput = z.infer<typeof wechatQrCreateSchema>

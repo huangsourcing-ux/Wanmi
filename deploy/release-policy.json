@@ -63,6 +63,13 @@
       "phase": "expand",
       "reason": "只追加同意来源枚举值、历史资料补全时间与同意状态版本列；旧代码可忽略新增值和列，新代码在迁移完成后才启用 A7 同意能力。",
       "rollback": "retain"
+    },
+    "20260816_150802_d9a_account_recovery": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增账户找回追加式记录表，并为人工复核追加支付通知关联；旧代码可忽略新表与可空列，新代码仅在迁移完成后启用 A5 找回流程。",
+      "rollback": "retain"
     }
   }
 }
