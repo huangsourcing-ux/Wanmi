@@ -1029,35 +1029,40 @@ I（年龄要求）、K（自动续费金额上限）已并入 9.2 第 10、11�
     未点击确认时消费以 `WECHAT_QR_ALREADY_CONSUMED` 拒绝且会话数不变，确认后仅进入显式注册、
     重复与 TTL 过期消费均拒绝；同日“D9-A 真实微信注册闭环、身份复用与短信频控”记录注册完成后
     同一微信再次扫码确认并成功 `authenticated`。
-- [ ] scene 一次性、带过期、与浏览器会话绑定；消息回调必须验签，**未验签事件一律丢弃**；
-  - **对账（证据不足，保持未勾选）**：`apps/web/src/services/auth/wechat.ts:207` 生成随机
-    scene，`:214` 计算过期时间，`:221` 与 `:228` 分别持久化浏览器及 scene 的 HMAC，`:344`
-    以二者联合定位，`:414` 以 `confirmed`、浏览器绑定和过期条件原子单次消费；
-    `apps/web/src/app/api/v1/auth/wechat/callback/route.ts:33` 先验签，`:39` 丢弃失败事件，
-    `apps/web/src/providers/wechatofficial.ts:266` 实现明文/安全模式签名验证。测试包括
-    `apps/web/tests/integration/d9a-identity-registration.integration.test.ts:486` 用例
-    “keeps SCAN at scanned, fails closed on confirmation-message errors, and consumes once”、`:604`
-    用例“requires QR confirmation before session exchange and rejects terminal scenes”，以及
+- [x] scene 一次性、带过期、与浏览器会话绑定；消息回调必须验签，**未验签事件一律丢弃**；
+  - **收尾补证（2026-08-15，证据充分）**：`apps/web/src/services/auth/wechat.ts:207` 生成随机
+    scene，`:214` 计算过期时间，`:221` 与 `:228` 分别持久化浏览器及 scene 的 HMAC；`:414-420`
+    的原子消费 SQL 同时要求 scene hash、`browser_session_hash`、`confirmed` 和未过期，重复或过期均
+    无法再次 claim。`apps/web/tests/integration/d9a-identity-registration.integration.test.ts:486`
+    用例“keeps SCAN at scanned, fails closed on confirmation-message errors, and consumes once”覆盖
+    并发重复消费只有一个成功者，`:604` 用例“requires QR confirmation before session exchange and
+    rejects terminal scenes”在 `:686-724` 覆盖 TTL 过期并拒绝消费。浏览器绑定还由
+    `apps/web/src/services/auth/wechat.ts:104` 的 OAuth `browser_session_hash` conjunct 与
+    `apps/web/tests/integration/d9a-identity-registration.integration.test.ts:346` 用例“binds OAuth
+    state to the browser and consumes both state and authorization code once”在 `:401-417` 的错误
+    flowToken 拒绝覆盖；审核实测移除该 conjunct 会使此用例失败。消息回调由
+    `apps/web/src/app/api/v1/auth/wechat/callback/route.ts:33` 先验签、`:39` 丢弃失败事件，
     `apps/web/tests/unit/wechat-official-callback.test.ts:47` 用例“rejects an unsigned callback before
     parsing the event”、`:61` 用例“accepts a correctly signed plaintext event and rejects a changed
-    signature”、`:85` 用例“validates and decrypts AES callbacks while binding the plaintext to this
-    AppID”。单次、过期和验签已有正反测试，但尚缺二维码 scene 使用错误浏览器
-    `flowToken` 时必须拒绝的负向集成测试。`开发日志.md` 2026-08-15“D9-A 真实微信扫码登录联调与
-    生产公开基址修正”已验证真实回调、重复消费和 TTL 过期拒绝，但未验证跨浏览器 scene 盗用。
-- [ ] **阿里云验证码 2.0 只在短信发送前、二维码创建或频繁刷新前校验**；轮询接口只校验浏览器
+    signature”及 `:85` 用例“validates and decrypts AES callbacks while binding the plaintext to this
+    AppID”覆盖正反路径。`开发日志.md` 2026-08-15“D9-A 真实微信扫码登录联调与生产公开基址修正”
+    已验证真实回调、重复消费和 TTL 过期拒绝。
+- [x] **阿里云验证码 2.0 只在短信发送前、二维码创建或频繁刷新前校验**；轮询接口只校验浏览器
       会话、scene 绑定与限频，**不重复做人机校验**；异常刷新或触发风险阈值后再要求重新校验；
-  - **对账（证据不足，保持未勾选）**：短信半面由
+  - **收尾补证（2026-08-15，证据充分）**：短信半面由
     `apps/web/src/services/auth/otp.ts:64` 在创建 challenge 与发送前校验；二维码创建半面由
-    `apps/web/src/services/auth/wechat.ts:200` 在调用微信创建二维码前校验。轮询半面由
+    `apps/web/src/services/auth/wechat.ts:200-205` 在生成 scene 和调用微信创建二维码前无条件校验；
+    刷新二维码就是重新调用 `createWechatQrScene` 创建新 scene，因此每次刷新同样经过该严格门禁。
+    轮询半面由
     `apps/web/src/app/api/v1/auth/wechat/qrcode/poll/route.ts:11` 只解析 scene，并在 `:12`
-    取得既有浏览器 flow cookie；`apps/web/src/services/auth/wechat.ts:367` 的轮询仅做浏览器/scene
-    绑定、过期与 `:385` 的频率限制，没有验证码参数或 provider 调用。
+    取得既有浏览器 flow cookie；`apps/web/src/services/auth/wechat.ts:367-398` 的轮询仅做浏览器/
+    scene 绑定、过期与频率限制，没有验证码参数或 provider 调用。
     `apps/web/tests/integration/d9a-identity-registration.integration.test.ts:420` 用例“requires
     captcha before SMS or QR creation and keeps polling captcha-free”分别断言拒绝验证码不会创建短信
-    challenge、不会调用二维码 provider，并在二维码创建后不传验证码完成轮询。`开发日志.md`
-    2026-08-15 两条真实微信联调记录证明生产二维码创建、短信发送使用真实验证码且浏览器轮询未
-    重复要求验证码。**频繁刷新前**这一半仍缺失：当前没有独立 refresh endpoint、异常刷新/风险阈值
-    实现，也没有重复创建/刷新触发重新人机校验的测试，因此整项不能勾选。
+    challenge、不会调用二维码 provider，并在二维码创建后不传验证码完成轮询；临时移除
+    `createWechatQrScene` 的验证码调用后，该用例实际失败 `AssertionError: promise resolved
+    "{ …(4) }" instead of rejecting`。`开发日志.md` 2026-08-15 两条真实微信联调记录证明生产
+    二维码创建、短信发送使用真实验证码且浏览器轮询未重复要求验证码。
 - [x] 注册显式化：记录**默认客户类型**、条款同意、注册来源、可选邀请码；登录与注册分离，
       禁止静默建号。
 
@@ -1084,20 +1089,21 @@ I（年龄要求）、K（自动续费金额上限）已并入 9.2 第 10、11�
     `:1062` 调用共享断言 `:1604`，逐项验证 phone/wechat 两类事件均存在且 `outcome = sent`。
     ③ 冷静期：同文件 `:727` 判定换绑、`:729` 写入 `identityRiskCooldownStartedAt`；手机号用例
     `:932`、微信用例 `:1014` 均断言时间戳存在。上述路径未在生产执行换绑，故无生产验证记录。
-- [ ] 已有手机号账号首次微信登录只允许登录态下主动绑定，**不得凭手机号自动合并账号**；
+- [x] 已有手机号账号首次微信登录只允许登录态下主动绑定，**不得凭手机号自动合并账号**；
       跨账号合并排除在 P1 之外；
-  - **对账（证据不足，保持未勾选）**：网页授权绑定在
+  - **收尾补证（2026-08-15，证据充分）**：网页授权绑定在
     `apps/web/src/services/auth/wechat.ts:68` 和 `:155` 要求登录客户，二维码绑定在 `:197` 和
     `:444` 要求登录客户且匹配绑定目标；未知微信登录在
     `apps/web/src/services/auth/customer-identities.ts:346` 只查微信 identity，未命中则在 `:359`
-    返回注册意图，没有按手机号查找或绑定微信。相关测试只有
-    `apps/web/tests/integration/d9a-identity-registration.integration.test.ts:346` 用例“binds OAuth
-    state to the browser and consumes both state and authorization code once”证明未知微信返回
-    `registration_required`，以及 `:123` 用例“does not create an account at OTP verification and
-    records two real registration consents”证明注册显式化；尚缺“已有手机号 customer + 未绑定
-    微信”组合下，匿名 OAuth/二维码 bind 被拒、login 不自动挂接微信 identity、登录态主动 bind
-    才成功的端到端集成测试。`开发日志.md` 2026-08-15 的生产闭环使用的是新手机号注册，不能证明
-    已有手机号账号场景。
+    返回注册意图，没有按手机号查找或绑定微信。
+    `apps/web/tests/integration/d9a-identity-registration.integration.test.ts:1691` 用例“does not merge
+    an unknown Wechat QR identity into an existing phone account and allows authenticated binding”
+    构造已有 phone identity 和 1 条 Session 的 customer；`:1779-1784` 断言新 openid 的未登录扫码
+    结果为 `registration_required`、该 customer 的微信 identity 仍为 0 且 Session 仍为 1；
+    `:1786-1800` 再以同一 customer 执行 `purpose='bind'` 并断言该 openid 成为唯一 active 微信
+    identity。临时把 `authenticateVerifiedWechat` 未知 openid 分支变异为查询 phone customer 并
+    直接绑定后，该用例实际由预期 `registration_required` 变为 `authenticated` 而失败；恢复后
+    重新通过。该组合场景未在生产执行，故无生产验证记录。
 - [x] 身份碰撞（同一 openid 已绑他人账号）必须 fail-closed 并产生人工复核事件。
   - **对账（证据充分）**：`apps/web/src/services/auth/customer-identities.ts:591` 创建
     `customer_identity_collision` open manual review，`:699` 检出 identity 已属于其他 customer
