@@ -1,4 +1,4 @@
-.PHONY: bootstrap dev worker rebuild validate-rebuild-local generate verify-bootstrap verify-generated verify-oss-real verify-migrations verify-nginx verify-operations verify-provider-write-policy verify-rebuild verify-release fmt lint test test-integration test-e2e performance security build smoke check down
+.PHONY: bootstrap dev worker rebuild validate-rebuild-local generate verify-bootstrap verify-docs verify-generated verify-oss-real verify-migrations verify-nginx verify-operations verify-provider-write-policy verify-rebuild verify-release verify-validation-tiers fmt lint test test-integration test-e2e performance security security-secrets build smoke check-docs check-fast check-integration check down
 
 bootstrap:
 	corepack enable
@@ -25,6 +25,9 @@ generate:
 verify-bootstrap:
 	node scripts/verify-bootstrap.mjs
 
+verify-docs:
+	node scripts/verify-docs.mjs
+
 verify-generated:
 	pnpm verify-generated
 
@@ -50,6 +53,9 @@ verify-rebuild:
 verify-release:
 	pnpm verify:release
 
+verify-validation-tiers:
+	node --test scripts/validation-tiers.test.mjs
+
 fmt:
 	pnpm format
 
@@ -62,6 +68,7 @@ test:
 
 test-integration:
 	docker compose up -d postgres whodat minio minio-init
+	docker compose up -d --wait --wait-timeout 60 postgres whodat minio
 	pnpm --filter @wanmi/web migrate
 	pnpm test:integration
 
@@ -79,6 +86,9 @@ performance:
 security: build
 	pnpm security
 
+security-secrets:
+	node scripts/security.mjs --secrets-only
+
 build:
 	pnpm build
 	docker build --platform linux/amd64 --file apps/web/Dockerfile --tag wanmi-web:d0 .
@@ -86,7 +96,13 @@ build:
 smoke:
 	node scripts/smoke.mjs
 
-check: verify-bootstrap verify-provider-write-policy verify-generated verify-migrations verify-nginx verify-operations verify-rebuild verify-release lint test test-integration security build
+check-docs: verify-docs security-secrets
+
+check-fast: verify-bootstrap verify-provider-write-policy verify-generated verify-validation-tiers lint test
+
+check-integration: verify-migrations test-integration
+
+check: verify-bootstrap verify-provider-write-policy verify-generated verify-migrations verify-nginx verify-operations verify-rebuild verify-release verify-validation-tiers lint test test-integration security build
 
 down:
 	docker compose down

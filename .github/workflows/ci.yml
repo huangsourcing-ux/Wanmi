@@ -19,21 +19,8 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16.14-bookworm
-        env:
-          POSTGRES_DB: wanmi
-          POSTGRES_PASSWORD: wanmi_local_only
-          POSTGRES_USER: wanmi
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U wanmi -d wanmi"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     env:
-      DATABASE_URL: postgresql://wanmi:wanmi_local_only@127.0.0.1:5432/wanmi
+      DATABASE_URL: postgresql://wanmi:wanmi_local_only@127.0.0.1:55432/wanmi
       NEXT_PUBLIC_SERVER_URL: http://127.0.0.1:3000
       PAYLOAD_SECRET: ci-payload-secret-ci-payload-secret
       SESSION_PEPPER: ci-session-pepper-ci-session-pepper
@@ -56,18 +43,55 @@ jobs:
       ALLOW_REAL_WESTDIGITAL_NAMESERVER_WRITES: 'false'
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Determine validation tier
+        id: validation
+        shell: bash
+        env:
+          VALIDATION_DIFF_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          VALIDATION_DIFF_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          scope=full
+          if detected_scope="$(node scripts/ci-validation-scope.mjs --base "$VALIDATION_DIFF_BASE_SHA" --head "$VALIDATION_DIFF_HEAD_SHA")"; then
+            if [ "$detected_scope" = docs ]; then
+              scope=docs
+            fi
+          else
+            echo "::warning::Diff classification failed; running the full validation gate."
+          fi
+          printf 'scope=%s\n' "$scope" >> "$GITHUB_OUTPUT"
+          printf 'Selected validation scope: %s\n' "$scope"
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
       - name: Generate ephemeral real-name document master key
+        if: steps.validation.outputs.scope == 'full'
         shell: bash
         run: |
           printf 'REALNAME_DOCUMENT_MASTER_KEY_VERSION=ci-v1\n' >> "$GITHUB_ENV"
           printf 'REALNAME_DOCUMENT_MASTER_KEYS=ci-v1:%s\n' "$(openssl rand -base64 32 | tr -d '\n')" >> "$GITHUB_ENV"
       - run: corepack enable && corepack prepare pnpm@11.7.0 --activate
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @wanmi/web payload migrate
-      - run: make check
-      - run: pnpm --filter @wanmi/web exec playwright install --with-deps chromium
-      - run: make performance
+      - name: Run documentation gate
+        if: steps.validation.outputs.scope == 'docs'
+        env:
+          VALIDATION_DIFF_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          VALIDATION_DIFF_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: make check-docs
+      - name: Start PostgreSQL for the full gate
+        if: steps.validation.outputs.scope == 'full'
+        run: docker compose up -d --wait --wait-timeout 60 postgres
+      - name: Apply migrations before the full gate
+        if: steps.validation.outputs.scope == 'full'
+        run: pnpm --filter @wanmi/web payload migrate
+      - name: Run full gate
+        if: steps.validation.outputs.scope == 'full'
+        run: make check
+      - name: Install Chromium for performance verification
+        if: steps.validation.outputs.scope == 'full'
+        run: pnpm --filter @wanmi/web exec playwright install --with-deps chromium
+      - name: Run performance verification
+        if: steps.validation.outputs.scope == 'full'
+        run: make performance
         timeout-minutes: 15

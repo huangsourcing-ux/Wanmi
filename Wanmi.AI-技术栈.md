@@ -1,16 +1,16 @@
 # Wanmi.AI 技术栈与工程规范
 
-> 文档版本：v5.9（D9-A 短信 step-up 冻结基线）
+> 文档版本：v5.10（验证分层冻结基线）
 >
-> 更新日期：2026-08-15
+> 更新日期：2026-08-16
 >
 > 状态：P1 开发已批准；生产上线附条件批准
 >
 > 适用范围：Wanmi.AI P1 Web 域名工具与代理注册平台
 >
-> 冻结基线：`P1-BASELINE-2026-08-15.1`；批准标签 `p1-docs-approved-2026-08-15-1`
+> 冻结基线：`P1-BASELINE-2026-08-16.1`；批准标签 `p1-docs-approved-2026-08-16-1`
 
-2026-08-15 冻结项变更仅把 D9-A `stepUpGrant` 的取得方式从独立操作密码改为短信验证码校验；风险分级、高风险冷静期、`renewalMandate` 独立授权及全部既有安全与上线门槛不变。
+2026-08-16 冻结项变更只新增按风险分层的验证与报告规范，保留 `make check` 完整门禁，并固定发布以精确 commit 的绿色 CI 和不可变镜像 digest 为依据；上一基线的 D9-A 短信 `stepUpGrant`、全部业务、安全和上线门槛不变。
 
 ## 1. 技术结论
 
@@ -374,8 +374,12 @@ D9-A 在同一 `customers.id`、opaque Session 和 Custom Strategy 上扩展，�
 | `pnpm test` | 单元测试 |
 | `pnpm test:integration` | PostgreSQL、Payload、Jobs 和 adapters 集成测试 |
 | `pnpm build` | 生产构建 |
+| `make check-docs` | diff check、变更 Markdown 的 Prettier/结构检查和秘密扫描；不启动数据库、不构建镜像、不运行代码测试 |
+| `make check-fast` | lint、TypeScript strict、单元测试及生成物/schema drift |
+| `make check-integration` | PostgreSQL/MinIO、migration 和集成测试 |
+| `make check` | 完整门禁；语义不变，高风险代码最终状态必须本地运行一次，CI 再独立运行一次 |
 
-生成类型和迁移漂移需在 CI 阻断。外部 provider 测试默认使用 fixtures/mocks；没有项目负责人明确授权不得执行真实注册、续费、退款或短信群发。
+CI workflow 始终触发并保留同一个 required `check` job：只有可靠确认 diff 全部为 `.md` 时运行 `make check-docs`，判定失败、空 diff 或混入代码、migration、配置、deploy manifest 时一律失败关闭到完整门禁。不得给 required workflow 配置 `paths-ignore`。生成类型和迁移漂移需在 CI 阻断。外部 provider 测试默认使用 fixtures/mocks；没有项目负责人明确授权不得执行真实注册、续费、退款或短信群发。
 
 ## 11. 部署与运行
 
@@ -476,6 +480,8 @@ D0 失败时先修正架构假设，不在业务模块中引入第二套后端�
 
 | 版本 | 日期 | 结论 |
 |---|---|---|
+| v5.10 | 2026-08-16 | 新增风险匹配的文档、快速、集成与完整验证档位；CI required job 始终触发并失败关闭；发布只依赖精确 commit 的绿色 CI 与不可变 digest；不改变业务、安全或上线门槛 |
+| v5.9 | 2026-08-15 | D9-A step-up 改为短信验证码校验，不引入独立操作密码；风险分级、高风险冷静期、`renewalMandate` 独立授权和生产上线门槛不变 |
 | v5.8 | 2026-08-14 | 冻结生产发布与存储边界：仅发布已合并 `main`；静态资源随镜像服务；linux/amd64 镜像经 SSH 直传、节点 loopback registry 与 release manifest digest 校验后执行 ADR-0006；禁止对象存储/实名证件存储中转非证件产物及源码包上传；产品范围与 D9 决定不变 |
 | v5.7 | 2026-08-14 | 新增 D9 用户系统冻结范围；阿里云验证码 2.0 与微信服务号网页授权、带参数二维码、客服/模板消息成为依赖；D9-A 阻塞首次上线与 D8，D9-B～D9-E 不阻塞；本切片不创建 Collection 或 migration |
 | v5.6 | 2026-08-10 | D7-05 实测 KMS `AccountStatus=NotEnabled` 后，项目负责人批准移除 KMS；保留 AES-256-GCM、每对象 32 字节数据密钥和明文密钥清零，改为版本化应用主密钥包裹；如实接受服务器完整攻破可取得主密钥的防御纵深下降，并把注入、轮换、离线备份和紧急恢复保留为生产硬门槛 |
