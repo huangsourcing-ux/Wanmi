@@ -950,17 +950,116 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
       },
     })
     expect(activeSessions.totalDocs).toBe(0)
-    const notifications = await payload.count({
-      collection: 'customerSecurityEvents',
+    await expectSentIdentityChangeNotifications(customer.id)
+  })
+
+  it('revokes sessions, starts the cooldown, and notifies every old channel on Wechat replacement', async () => {
+    const customerPhone = phone()
+    const oldOpenid = randomBytes(24).toString('base64url')
+    const nextOpenid = randomBytes(24).toString('base64url')
+    const customer = await payload.create({
+      collection: 'customers',
+      data: { phone: customerPhone, phoneMasked: maskPhone(customerPhone), status: 'active' },
+      overrideAccess: true,
+    })
+    const now = new Date().toISOString()
+    await payload.create({
+      collection: 'customerIdentities',
+      data: {
+        ...protectedIdentifier(customerPhone),
+        boundAt: now,
+        customer: customer.id,
+        provider: 'phone',
+        providerInstanceId: identityProviderInstance('phone'),
+        status: 'active',
+        verifiedAt: now,
+      },
+      overrideAccess: true,
+    })
+    const oldWechatIdentity = await payload.create({
+      collection: 'customerIdentities',
+      data: {
+        ...protectedIdentifier(oldOpenid),
+        boundAt: now,
+        customer: customer.id,
+        provider: 'wechat',
+        providerInstanceId: identityProviderInstance('wechat'),
+        status: 'active',
+        verifiedAt: now,
+      },
+      overrideAccess: true,
+    })
+    const loginHeaders = headers()
+    const loggedIn = await authenticateVerifiedPhone(await request(loginHeaders), {
+      ...clientHashes(loginHeaders, `d9a-wechat-replacement-login-${randomUUID()}`),
+      phone: customerPhone,
+    })
+    if (loggedIn.kind !== 'authenticated')
+      throw new Error('expected phone login before replacement')
+
+    const bindingHeaders = headers()
+    const intent = await createRegistrationIntent(await request(bindingHeaders), {
+      ...clientHashes(bindingHeaders, `d9a-wechat-replacement-${randomUUID()}`),
+      identifier: nextOpenid,
+      provider: 'wechat',
+      source: 'wechat_oauth',
+    })
+    await bindVerifiedIdentity(
+      await request(bindingHeaders, customer),
+      customer,
+      intent.registrationToken,
+      `d9a-wechat-replacement-${randomUUID()}`,
+    )
+
+    expect(await customerById(customer.id)).toMatchObject({
+      identityRiskCooldownStartedAt: expect.any(String),
+    })
+    expect(
+      await payload.findByID({
+        collection: 'customerIdentities',
+        id: oldWechatIdentity.id,
+        overrideAccess: true,
+      }),
+    ).toMatchObject({ status: 'unbound', unboundAt: expect.any(String) })
+    const replacement = await payload.find({
+      collection: 'customerIdentities',
+      depth: 0,
+      limit: 1,
       overrideAccess: true,
       where: {
         and: [
           { customer: { equals: customer.id } },
-          { event: { equals: 'identity_change_notification' } },
+          { provider: { equals: 'wechat' } },
+          { identifierHash: { equals: hmac(nextOpenid, getEnv().SESSION_PEPPER) } },
+          { status: { equals: 'active' } },
         ],
       },
     })
-    expect(notifications.totalDocs).toBe(2)
+    expect(replacement.docs).toHaveLength(1)
+    expect(
+      await payload.count({
+        collection: 'customerSessions',
+        overrideAccess: true,
+        where: {
+          and: [{ customer: { equals: customer.id } }, { revokedAt: { exists: false } }],
+        },
+      }),
+    ).toEqual({ totalDocs: 0 })
+    const oldSession = await payload.find({
+      collection: 'customerSessions',
+      depth: 0,
+      limit: 1,
+      overrideAccess: true,
+      where: {
+        and: [
+          { customer: { equals: customer.id } },
+          { tokenHash: { equals: hmac(loggedIn.token, getEnv().SESSION_PEPPER) } },
+        ],
+      },
+    })
+    expect(oldSession.docs).toHaveLength(1)
+    expect(oldSession.docs[0]?.revokedAt).toEqual(expect.any(String))
+    await expectSentIdentityChangeNotifications(customer.id)
   })
 
   it('keeps customer-scoped reads private and denies generic identity/consent mutations', async () => {
@@ -1279,4 +1378,311 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
       'a quarantined legacy phone must not create an additional customers row',
     ).toBe(customerCountBefore.totalDocs)
   })
+
+  it('rotates the phone OTP session on the same device and revokes the first opaque token', async () => {
+    const customerPhone = phone()
+    const registrationDeviceId = `d9a-phone-rotation-registration-${randomUUID()}`
+    const registrationHeaders = headers()
+    const registrationIntent = await phoneIntent({
+      deviceId: registrationDeviceId,
+      phone: customerPhone,
+      requestHeaders: registrationHeaders,
+    })
+    const registered = await registerCustomer(
+      await request(registrationHeaders),
+      registrationInput({
+        deviceId: registrationDeviceId,
+        registrationToken: registrationIntent.registrationToken,
+      }),
+      registrationHeaders,
+      null,
+    )
+    const loginDeviceId = `d9a-phone-rotation-login-${randomUUID()}`
+    const loginHeaders = headers()
+    const login = async () => {
+      const challenge = await requestOtp(
+        payload,
+        {
+          captchaVerifyParam: CAPTCHA_FIXTURE_TOKEN,
+          deviceId: loginDeviceId,
+          phone: customerPhone,
+        },
+        loginHeaders,
+        `d9a-phone-rotation-${randomUUID()}`,
+      )
+      const result = await verifyOtp(
+        await request(loginHeaders),
+        {
+          challengeId: challenge.challengeId,
+          code: getEnv().MOCK_SMS_OTP_CODE,
+          deviceId: loginDeviceId,
+        },
+        loginHeaders,
+      )
+      if (result.kind !== 'authenticated') throw new Error('expected authenticated phone login')
+      return result
+    }
+
+    const first = await login()
+    const second = await login()
+    await assertSameDeviceSessionRotation({
+      customerId: registered.customer.id,
+      deviceHash: clientHashes(loginHeaders, loginDeviceId).deviceHash,
+      entry: 'phone OTP',
+      firstToken: first.token,
+      secondToken: second.token,
+    })
+  })
+
+  it('rotates the Wechat OAuth session on the same browser and revokes the first opaque token', async () => {
+    const openid = randomBytes(24).toString('base64url')
+    const provider = wechatProvider()
+    provider.exchangeOAuthCode = vi.fn(async ({ traceId }) => ({
+      openid,
+      requestId: `oauth-${traceId}`,
+    }))
+    const flowToken = randomBytes(32).toString('base64url')
+    const requestHeaders = headers()
+    const primary = await completeOAuthLogin({ flowToken, provider, requestHeaders })
+    if (primary.kind !== 'registration_required') {
+      throw new Error('expected OAuth registration intent before the first login')
+    }
+    const registrationDeviceId = `d9a-oauth-rotation-registration-${randomUUID()}`
+    const registrationPhoneIntent = await phoneIntent({
+      deviceId: registrationDeviceId,
+      phone: phone(),
+      requestHeaders,
+    })
+    const registered = await registerCustomer(
+      await request(requestHeaders),
+      registrationInput({
+        deviceId: registrationDeviceId,
+        phoneRegistrationToken: registrationPhoneIntent.registrationToken,
+        registrationToken: primary.registrationToken,
+      }),
+      requestHeaders,
+      flowToken,
+    )
+
+    const first = await completeOAuthLogin({ flowToken, provider, requestHeaders })
+    if (first.kind !== 'authenticated') throw new Error('expected first authenticated OAuth login')
+    const second = await completeOAuthLogin({ flowToken, provider, requestHeaders })
+    if (second.kind !== 'authenticated')
+      throw new Error('expected second authenticated OAuth login')
+    await assertSameDeviceSessionRotation({
+      customerId: registered.customer.id,
+      deviceHash: hmac(flowToken, getEnv().SESSION_PEPPER),
+      entry: 'Wechat OAuth',
+      firstToken: first.token,
+      secondToken: second.token,
+    })
+  })
+
+  it('rotates the Wechat QR session on the same browser and revokes the first opaque token', async () => {
+    const customerPhone = phone()
+    const openid = randomBytes(24).toString('base64url')
+    const customer = await payload.create({
+      collection: 'customers',
+      data: { phone: customerPhone, phoneMasked: maskPhone(customerPhone), status: 'active' },
+      overrideAccess: true,
+    })
+    await payload.create({
+      collection: 'customerIdentities',
+      data: {
+        ...protectedIdentifier(openid),
+        boundAt: new Date().toISOString(),
+        customer: customer.id,
+        provider: 'wechat',
+        providerInstanceId: identityProviderInstance('wechat'),
+        status: 'active',
+        verifiedAt: new Date().toISOString(),
+      },
+      overrideAccess: true,
+    })
+    const flowToken = randomBytes(32).toString('base64url')
+    const deviceId = `d9a-qr-rotation-${randomUUID()}`
+    const requestHeaders = headers()
+    const first = await consumeConfirmedQrLogin({ deviceId, flowToken, openid, requestHeaders })
+    const second = await consumeConfirmedQrLogin({ deviceId, flowToken, openid, requestHeaders })
+    await assertSameDeviceSessionRotation({
+      customerId: customer.id,
+      deviceHash: hmac(flowToken, getEnv().SESSION_PEPPER),
+      entry: 'Wechat QR',
+      firstToken: first.token,
+      secondToken: second.token,
+    })
+  })
 })
+
+function sessionHeaders(token: string): Headers {
+  return new Headers({ cookie: `${getEnv().CUSTOMER_SESSION_COOKIE}=${encodeURIComponent(token)}` })
+}
+
+async function assertSameDeviceSessionRotation(input: {
+  customerId: number
+  deviceHash: string
+  entry: 'phone OTP' | 'Wechat OAuth' | 'Wechat QR'
+  firstToken: string
+  secondToken: string
+}): Promise<void> {
+  const { customerSessionStrategy } = await import('@/services/auth/customer-strategy')
+  expect(
+    input.secondToken,
+    `${input.entry}: the replacement token must be newly generated`,
+  ).not.toBe(input.firstToken)
+  const firstTokenStillAuthenticates = Boolean(
+    (
+      await customerSessionStrategy.authenticate({
+        headers: sessionHeaders(input.firstToken),
+        payload,
+      })
+    ).user,
+  )
+  expect(
+    firstTokenStillAuthenticates,
+    `${input.entry}: the first opaque token must be invalid after the second same-device login`,
+  ).toBe(false)
+  expect(
+    (
+      await customerSessionStrategy.authenticate({
+        headers: sessionHeaders(input.secondToken),
+        payload,
+      })
+    ).user?.id,
+    `${input.entry}: the replacement opaque token must remain valid`,
+  ).toBe(input.customerId)
+
+  const firstSession = await payload.find({
+    collection: 'customerSessions',
+    depth: 0,
+    limit: 1,
+    overrideAccess: true,
+    where: {
+      and: [
+        { customer: { equals: input.customerId } },
+        { deviceHash: { equals: input.deviceHash } },
+        { tokenHash: { equals: hmac(input.firstToken, getEnv().SESSION_PEPPER) } },
+      ],
+    },
+  })
+  expect(firstSession.docs).toHaveLength(1)
+  expect(
+    firstSession.docs[0]?.revokedAt,
+    `${input.entry}: the first session row must record revokedAt`,
+  ).toEqual(expect.any(String))
+
+  const secondSession = await payload.find({
+    collection: 'customerSessions',
+    depth: 0,
+    limit: 1,
+    overrideAccess: true,
+    where: {
+      and: [
+        { customer: { equals: input.customerId } },
+        { deviceHash: { equals: input.deviceHash } },
+        { tokenHash: { equals: hmac(input.secondToken, getEnv().SESSION_PEPPER) } },
+      ],
+    },
+  })
+  expect(secondSession.docs).toHaveLength(1)
+  expect(secondSession.docs[0]?.revokedAt).toBeFalsy()
+  expect(
+    await payload.count({
+      collection: 'customerSessions',
+      overrideAccess: true,
+      where: {
+        and: [
+          { customer: { equals: input.customerId } },
+          { deviceHash: { equals: input.deviceHash } },
+          { revokedAt: { exists: false } },
+        ],
+      },
+    }),
+  ).toEqual({ totalDocs: 1 })
+}
+
+async function expectSentIdentityChangeNotifications(customerId: number): Promise<void> {
+  const notifications = await payload.find({
+    collection: 'customerSecurityEvents',
+    depth: 0,
+    limit: 2,
+    overrideAccess: true,
+    where: {
+      and: [
+        { customer: { equals: customerId } },
+        { event: { equals: 'identity_change_notification' } },
+      ],
+    },
+  })
+  expect(notifications.docs).toHaveLength(2)
+  expect(notifications.docs.map((event) => event.safeMetadata)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ outcome: 'sent', provider: 'phone' }),
+      expect.objectContaining({ outcome: 'sent', provider: 'wechat' }),
+    ]),
+  )
+}
+
+async function completeOAuthLogin(input: {
+  flowToken: string
+  provider: WechatOfficialProvider
+  requestHeaders: Headers
+}) {
+  const started = await startWechatOAuth(await request(input.requestHeaders), {
+    flowToken: input.flowToken,
+    purpose: 'login',
+  })
+  const state = new URL(started.authorizationUrl).searchParams.get('state')
+  if (!state) throw new Error('expected OAuth state')
+  return completeWechatOAuth(
+    await request(input.requestHeaders),
+    {
+      code: randomBytes(32).toString('base64url'),
+      flowToken: input.flowToken,
+      headers: input.requestHeaders,
+      state,
+      traceId: `d9a-oauth-rotation-${randomUUID()}`,
+    },
+    { provider: input.provider },
+  )
+}
+
+async function consumeConfirmedQrLogin(input: {
+  deviceId: string
+  flowToken: string
+  openid: string
+  requestHeaders: Headers
+}) {
+  let confirmationUrl = ''
+  const provider = wechatProvider({ confirmationUrl: (value) => (confirmationUrl = value) })
+  const created = await createWechatQrScene(
+    await request(input.requestHeaders),
+    {
+      captchaVerifyParam: CAPTCHA_FIXTURE_TOKEN,
+      deviceId: input.deviceId,
+      flowToken: input.flowToken,
+      headers: input.requestHeaders,
+      purpose: 'login',
+      traceId: `d9a-qr-rotation-${randomUUID()}`,
+    },
+    { provider },
+  )
+  await handleWechatQrEvent(
+    await request(input.requestHeaders),
+    { event: 'SCAN', eventKey: created.scene, fromUserName: input.openid },
+    `d9a-qr-rotation-event-${randomUUID()}`,
+    { provider },
+  )
+  const confirmationToken = new URLSearchParams(new URL(confirmationUrl).hash.slice(1)).get('token')
+  if (!confirmationToken) throw new Error('expected QR confirmation token')
+  await confirmWechatQr(await request(input.requestHeaders), confirmationToken)
+  const result = await consumeWechatQr(await request(input.requestHeaders), {
+    deviceId: input.deviceId,
+    flowToken: input.flowToken,
+    headers: input.requestHeaders,
+    scene: created.scene,
+    traceId: `d9a-qr-rotation-consume-${randomUUID()}`,
+  })
+  if (result.kind !== 'authenticated') throw new Error('expected authenticated QR login')
+  return result
+}
