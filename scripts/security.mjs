@@ -12,8 +12,11 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 
+import { securityPlanForArgs } from './security-plan.mjs'
+
 const repository = process.cwd()
 let failed = false
+const securityPlan = securityPlanForArgs(process.argv.slice(2))
 const gitleaksImage =
   'ghcr.io/gitleaks/gitleaks:v8.30.0@sha256:691af3c7c5a48b16f187ce3446d5f194838f91238f27270ed36eef6359a574d9'
 const trivyImage =
@@ -62,87 +65,116 @@ if (
   )
 }
 
-runCheck({
-  command: 'pnpm',
-  args: [
-    'audit',
-    '--prod',
-    '--audit-level',
-    'high',
-    ...exceptionIds.flatMap((advisory) => ['--ignore', advisory]),
-  ],
-  name: 'dependency audit',
-})
-
-const gitFiles = spawnSync(
-  'git',
-  ['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
-  { cwd: repository },
-)
-if (gitFiles.status !== 0) {
-  throw new Error('Unable to enumerate repository-visible files for secret scanning')
-}
-
-const temporaryPrefix = join(tmpdir(), 'wanmi-gitleaks-')
-const scanRoot = mkdtempSync(temporaryPrefix)
-
-try {
-  for (const relativePath of gitFiles.stdout.toString('utf8').split('\0').filter(Boolean)) {
-    const source = resolve(repository, relativePath)
-    const destination = resolve(scanRoot, relativePath)
-    if (!source.startsWith(`${repository}${sep}`) || !destination.startsWith(`${scanRoot}${sep}`)) {
-      throw new Error(`Refusing to scan path outside repository: ${relativePath}`)
-    }
-    if (!existsSync(source)) continue
-
-    mkdirSync(dirname(destination), { recursive: true })
-    const metadata = lstatSync(source)
-    if (metadata.isFile()) copyFileSync(source, destination)
-    if (metadata.isSymbolicLink()) writeFileSync(destination, readlinkSync(source))
-  }
-
+if (securityPlan.dependencyAudit) {
   runCheck({
-    command: 'docker',
+    command: 'pnpm',
     args: [
-      'run',
-      '--rm',
-      '-v',
-      `${scanRoot}:/repo:ro`,
-      gitleaksImage,
-      'detect',
-      '--no-banner',
-      '--no-git',
-      '--redact',
-      '--verbose',
-      '--config=/repo/.gitleaks.toml',
-      '--source=/repo',
+      'audit',
+      '--prod',
+      '--audit-level',
+      'high',
+      ...exceptionIds.flatMap((advisory) => ['--ignore', advisory]),
     ],
-    name: 'working tree secret scan',
+    name: 'dependency audit',
   })
-} finally {
-  if (!scanRoot.startsWith(temporaryPrefix)) {
-    throw new Error('Refusing to remove unexpected secret-scan directory')
-  }
-  rmSync(scanRoot, { recursive: true })
 }
 
-runCheck({
-  command: 'docker',
-  args: [
-    'run',
-    '--rm',
-    '-v',
-    `${repository}:/repo:ro`,
-    gitleaksImage,
-    'detect',
-    '--no-banner',
-    '--redact',
-    '--verbose',
-    '--config=/repo/.gitleaks-history.toml',
-    '--source=/repo',
-  ],
-  name: 'complete git history secret scan',
-})
+if (securityPlan.secretScan) {
+  const gitFiles = spawnSync(
+    'git',
+    ['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+    { cwd: repository },
+  )
+  if (gitFiles.status !== 0) {
+    throw new Error('Unable to enumerate repository-visible files for secret scanning')
+  }
+
+  const temporaryPrefix = join(tmpdir(), 'wanmi-gitleaks-')
+  const scanRoot = mkdtempSync(temporaryPrefix)
+
+  try {
+    for (const relativePath of gitFiles.stdout.toString('utf8').split('\0').filter(Boolean)) {
+      const source = resolve(repository, relativePath)
+      const destination = resolve(scanRoot, relativePath)
+      if (
+        !source.startsWith(`${repository}${sep}`) ||
+        !destination.startsWith(`${scanRoot}${sep}`)
+      ) {
+        throw new Error(`Refusing to scan path outside repository: ${relativePath}`)
+      }
+      if (!existsSync(source)) continue
+
+      mkdirSync(dirname(destination), { recursive: true })
+      const metadata = lstatSync(source)
+      if (metadata.isFile()) copyFileSync(source, destination)
+      if (metadata.isSymbolicLink()) writeFileSync(destination, readlinkSync(source))
+    }
+
+    runCheck({
+      command: 'docker',
+      args: [
+        'run',
+        '--rm',
+        '-v',
+        `${scanRoot}:/repo:ro`,
+        gitleaksImage,
+        'detect',
+        '--no-banner',
+        '--no-git',
+        '--redact',
+        '--verbose',
+        '--config=/repo/.gitleaks.toml',
+        '--source=/repo',
+      ],
+      name: 'working tree secret scan',
+    })
+  } finally {
+    if (!scanRoot.startsWith(temporaryPrefix)) {
+      throw new Error('Refusing to remove unexpected secret-scan directory')
+    }
+    rmSync(scanRoot, { recursive: true })
+  }
+
+  const historyTemporaryPrefix = join(tmpdir(), 'wanmi-gitleaks-history-')
+  const historyScanRoot = mkdtempSync(historyTemporaryPrefix)
+  const historyRepository = join(historyScanRoot, 'repository')
+
+  try {
+    const clone = spawnSync(
+      'git',
+      ['clone', '--quiet', '--no-local', repository, historyRepository],
+      { stdio: 'inherit' },
+    )
+    if (clone.status !== 0) {
+      throw new Error('Unable to prepare an isolated repository for git history scanning')
+    }
+
+    runCheck({
+      command: 'docker',
+      args: [
+        'run',
+        '--rm',
+        '-v',
+        `${historyRepository}:/repo:ro`,
+        gitleaksImage,
+        'detect',
+        '--no-banner',
+        '--redact',
+        '--verbose',
+        '--config=/repo/.gitleaks-history.toml',
+        '--source=/repo',
+      ],
+      name: 'complete git history secret scan',
+    })
+  } finally {
+    if (!historyScanRoot.startsWith(historyTemporaryPrefix)) {
+      throw new Error('Refusing to remove unexpected history-scan directory')
+    }
+    rmSync(historyScanRoot, { recursive: true })
+  }
+}
+
+if (!securityPlan.imageScan) process.exit(failed ? 1 : 0)
 
 console.log('Running linux/amd64 image vulnerability scan...')
 const trivyScan = spawnSync(
