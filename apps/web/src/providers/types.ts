@@ -83,6 +83,13 @@ export interface SmsProvider extends HealthAwareProvider {
       providerMessageId: string
     }>
   >
+  sendStepUpOtp(input: { code: string; phone: string; traceId: string }): Promise<
+    ProviderResult<{
+      accepted: true
+      deliveryStatus: 'accepted' | 'delivered'
+      providerMessageId: string
+    }>
+  >
   sendIdentityChanged?(input: { phone: string; traceId: string }): Promise<
     ProviderResult<{
       accepted: true

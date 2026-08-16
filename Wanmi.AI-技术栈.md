@@ -1,14 +1,16 @@
 # Wanmi.AI 技术栈与工程规范
 
-> 文档版本：v5.8（生产发布与存储边界）
+> 文档版本：v5.9（D9-A 短信 step-up 冻结基线）
 >
-> 更新日期：2026-08-14
+> 更新日期：2026-08-15
 >
 > 状态：P1 开发已批准；生产上线附条件批准
 >
 > 适用范围：Wanmi.AI P1 Web 域名工具与代理注册平台
 >
-> 冻结基线：`P1-BASELINE-2026-08-14.2`；批准标签 `p1-docs-approved-2026-08-14-2`
+> 冻结基线：`P1-BASELINE-2026-08-15.1`；批准标签 `p1-docs-approved-2026-08-15-1`
+
+2026-08-15 冻结项变更仅把 D9-A `stepUpGrant` 的取得方式从独立操作密码改为短信验证码校验；风险分级、高风险冷静期、`renewalMandate` 独立授权及全部既有安全与上线门槛不变。
 
 ## 1. 技术结论
 
@@ -136,7 +138,7 @@ apps/web/
 |---|---|
 | 内容 | `articles`、`topics`、`tldPages`、`media`、`navigation`、`siteSettings` |
 | 广告 | `advertisers`、`adCreatives`、`adPlacements`、`adSchedules` |
-| 身份 | `admins`、`customers`、`smsChallenges`、`customerSessions` |
+| 身份 | `admins`、`customers`、`smsChallenges`、`customerSessions`、`stepUpGrants` |
 | 实名 | `realnameTemplates`、`realnameDocuments` |
 | 交易 | `priceRules`、`quotes`、`orders`、`orderEvents`、`paymentNotifications`、`refunds` |
 | 履约 | `providerOperations`、`domainAssets`、`renewals`、`nameserverChanges` |
@@ -188,7 +190,7 @@ D9-A 在同一 `customers.id`、opaque Session 和 Custom Strategy 上扩展，�
 - 登录入口为手机号验证码、微信服务号网页授权和服务号带参数二维码 PC 扫码；扫码必须完成用户确认，scene 一次性并绑定浏览器会话，服务号回调未验签一律丢弃；
 - 短信发送前、二维码创建或频繁刷新前调用阿里云验证码 2.0；轮询只校验会话、scene 绑定和限频，不重复人机校验；
 - 登录身份独立建模并带 `providerInstanceId`；解绑最后一个可登录身份、身份碰撞或无证据自动合并均 fail-closed；
-- 操作密码只产生短时、按用途限定的 `stepUpGrant`，不得用于无人值守自动续费；账户找回采用人工审核与冷静期；
+- 短信验证码校验只产生短时、按用途限定的 `stepUpGrant`，不引入独立操作密码；step-up 不得用于无人值守自动续费，自动续费只依据 `renewalMandate`；账户找回采用人工审核与冷静期；
 - 注销前检查域名、订单、自动续费、退款/对账、发票、安全争议和正余额；同意记录保存真实时间、版本和文本哈希，历史账号不得伪造同意。
 
 ## 5. API 契约

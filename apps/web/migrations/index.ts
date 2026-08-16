@@ -32,6 +32,7 @@ import * as migration_20260810_021337_d7_provider_write_budgets from './20260810
 import * as migration_20260810_040217_d7_app_master_key from './20260810_040217_d7_app_master_key'
 import * as migration_20260813_113927_d7_worker_heartbeat from './20260813_113927_d7_worker_heartbeat'
 import * as migration_20260814_103904_d9a_identity_registration from './20260814_103904_d9a_identity_registration'
+import * as migration_20260816_031001_d9a_step_up_grants from './20260816_031001_d9a_step_up_grants'
 
 export const migrations = [
   {
@@ -203,5 +204,10 @@ export const migrations = [
     up: migration_20260814_103904_d9a_identity_registration.up,
     down: migration_20260814_103904_d9a_identity_registration.down,
     name: '20260814_103904_d9a_identity_registration',
+  },
+  {
+    up: migration_20260816_031001_d9a_step_up_grants.up,
+    down: migration_20260816_031001_d9a_step_up_grants.down,
+    name: '20260816_031001_d9a_step_up_grants',
   },
 ]

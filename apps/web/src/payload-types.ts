@@ -81,6 +81,7 @@ export interface Config {
     smsChallenges: SmsChallenge;
     smsRateLimits: SmsRateLimit;
     customerSessions: CustomerSession;
+    stepUpGrants: StepUpGrant;
     articles: Article;
     topics: Topic;
     tldPages: TldPage;
@@ -158,6 +159,7 @@ export interface Config {
     smsChallenges: SmsChallengesSelect<false> | SmsChallengesSelect<true>;
     smsRateLimits: SmsRateLimitsSelect<false> | SmsRateLimitsSelect<true>;
     customerSessions: CustomerSessionsSelect<false> | CustomerSessionsSelect<true>;
+    stepUpGrants: StepUpGrantsSelect<false> | StepUpGrantsSelect<true>;
     articles: ArticlesSelect<false> | ArticlesSelect<true>;
     topics: TopicsSelect<false> | TopicsSelect<true>;
     tldPages: TldPagesSelect<false> | TldPagesSelect<true>;
@@ -490,6 +492,21 @@ export interface WechatLoginScene {
 export interface SmsChallenge {
   id: number;
   challengeId: string;
+  purpose: 'login' | 'step_up';
+  stepUpPurpose?:
+    | (
+        | 'dns_record_change'
+        | 'nameserver_change'
+        | 'mx_record_change'
+        | 'dns_bulk_delete'
+        | 'domain_lock_change'
+        | 'realname_change'
+        | 'domain_management_password'
+        | 'balance_spend'
+        | 'account_deletion'
+      )
+    | null;
+  customer?: (number | null) | Customer;
   phone: string;
   phoneHash: string;
   codeHash: string;
@@ -539,6 +556,31 @@ export interface CustomerSession {
   expiresAt: string;
   revokedAt?: string | null;
   lastSeenAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "stepUpGrants".
+ */
+export interface StepUpGrant {
+  id: number;
+  customer: number | Customer;
+  purpose:
+    | 'dns_record_change'
+    | 'nameserver_change'
+    | 'mx_record_change'
+    | 'dns_bulk_delete'
+    | 'domain_lock_change'
+    | 'realname_change'
+    | 'domain_management_password'
+    | 'balance_spend'
+    | 'account_deletion';
+  tokenHash: string;
+  expiresAt: string;
+  consumedAt?: string | null;
+  deviceHash: string;
+  ipHash: string;
   updatedAt: string;
   createdAt: string;
 }
@@ -2112,6 +2154,10 @@ export interface PayloadLockedDocument {
         value: number | CustomerSession;
       } | null)
     | ({
+        relationTo: 'stepUpGrants';
+        value: number | StepUpGrant;
+      } | null)
+    | ({
         relationTo: 'articles';
         value: number | Article;
       } | null)
@@ -2508,6 +2554,9 @@ export interface WechatLoginScenesSelect<T extends boolean = true> {
  */
 export interface SmsChallengesSelect<T extends boolean = true> {
   challengeId?: T;
+  purpose?: T;
+  stepUpPurpose?: T;
+  customer?: T;
   phone?: T;
   phoneHash?: T;
   codeHash?: T;
@@ -2553,6 +2602,21 @@ export interface CustomerSessionsSelect<T extends boolean = true> {
   expiresAt?: T;
   revokedAt?: T;
   lastSeenAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "stepUpGrants_select".
+ */
+export interface StepUpGrantsSelect<T extends boolean = true> {
+  customer?: T;
+  purpose?: T;
+  tokenHash?: T;
+  expiresAt?: T;
+  consumedAt?: T;
+  deviceHash?: T;
+  ipHash?: T;
   updatedAt?: T;
   createdAt?: T;
 }

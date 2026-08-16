@@ -13,7 +13,8 @@
     "20260810_021337_d7_provider_write_budgets",
     "20260810_040217_d7_app_master_key",
     "20260813_113927_d7_worker_heartbeat",
-    "20260814_103904_d9a_identity_registration"
+    "20260814_103904_d9a_identity_registration",
+    "20260816_031001_d9a_step_up_grants"
   ],
   "rollback": {
     "database": "retain",

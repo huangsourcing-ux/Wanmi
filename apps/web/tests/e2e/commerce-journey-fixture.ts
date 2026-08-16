@@ -171,6 +171,15 @@ function deliveredSmsProvider(): SmsProvider {
         },
         `${commerceFixturePrefix}-sms-otp`,
       ),
+    sendStepUpOtp: async () =>
+      mockSuccess(
+        {
+          accepted: true as const,
+          deliveryStatus: 'delivered' as const,
+          providerMessageId: `${commerceFixturePrefix}-step-up-message`,
+        },
+        `${commerceFixturePrefix}-sms-step-up`,
+      ),
   }
 }
 
