@@ -1117,45 +1117,60 @@ I（年龄要求）、K（自动续费金额上限）已并入 9.2 第 10、11�
 
 - [x] 账户状态：`pending_registration`、`active`、`restricted`、`suspended`、`closing`、`closed`；
   - **实现与并发证据**：`apps/web/src/lib/domain.ts:5-34` 固定六态与显式迁移图，
-    `apps/web/src/services/auth/account-state.ts:186-197` 拒绝图外/no-op 迁移，`:277-372` 以同事务
+    `apps/web/src/services/auth/account-state.ts:182-193` 拒绝图外/no-op 迁移，`:273-368` 以同事务
     `UPDATE ... WHERE id/status/capability_restrictions ... RETURNING` 完成 CAS、审计与会话撤销；migration
     `20260816_061548_d9a_account_state_capabilities` / `20260816_061549_d9a_account_state_backfill`
-    分离 expand 与历史数据回填。`apps/web/tests/integration/d9a-account-state.integration.test.ts:158`
+    分离 expand 与历史数据回填。`apps/web/tests/integration/d9a-account-state.integration.test.ts:201`
     用例“exposes exactly the approved six states, six restrictions, and explicit transition graph”锁定六态和
-    12 条合法边；`:372` 参数化用例“atomically allows exactly one of 8 concurrent $from -> $to
-    transitions”对每条边分别发起 8 路并发并断言恰好 1 成功、7 个冲突，`:430` 同样验证
+    12 条合法边；`:944` 参数化用例“atomically allows exactly one of 8 concurrent $from -> $to
+    transitions”对每条边分别发起 8 路并发并断言恰好 1 成功、7 个冲突，`:1001` 同样验证
     `restricted` 能力集合并发替换恰好 1 成功。
 - [x] `restricted` 不是布尔值，而是**按能力限制**的集合：`login_disabled`、`purchase_disabled`、
       `balance_spend_disabled`、`domain_write_disabled`、`identity_change_disabled`、`refund_review`；
   - **实现与失败关闭证据**：`apps/web/src/collections/identity.ts:186-209` 保存并校验能力集合；
     `apps/web/src/services/auth/account-state.ts:56-98` 为六项限制和四个非运行态定义稳定错误码，
-    `:206-248` 对未知/不一致状态及不满足能力条件一律失败关闭。测试 `:191` 参数化用例“fails
-    closed with $code for the $restriction restriction”逐项验证六个错误码，`:201` 逐态验证非运行态，
-    `:217` 验证普通 `restricted` 可登录而 `login_disabled` 不可登录，`:245` 验证订单/支付、身份
-    绑定/解绑、Name Server 写入口在任何部分执行前被拦截；`:304` 验证删除与 Name Server 写在
+    `:202-243` 对未知/不一致状态及不满足能力条件一律失败关闭。测试 `:619` 参数化用例“fails
+    closed with $code for the $restriction restriction”逐项验证六个错误码，`:631` 逐态验证非运行态，
+    `:644` 验证普通 `restricted` 可登录而 `login_disabled` 不可登录，`:731` 验证订单/支付、身份
+    绑定/解绑、Name Server 写入口在任何部分执行前被拦截；`:875` 验证删除与 Name Server 写在
     冷静期内即使持有效 grant 仍以 A4 错误拒绝，且关联写入计数使用 customer `where` 限定。
 - [x] 状态与能力限制变更追加式记录，含原因、操作者、依据、时间，可从审计还原；
-  - **审计证据**：`apps/web/src/services/auth/account-state.ts:327-344` 将 actor、changedAt、evidence、
+  - **审计证据**：`apps/web/src/services/auth/account-state.ts:323-340` 将 actor、changedAt、evidence、
     reason、from/to 状态及能力集合同时写入既有 `recordCustomerSecurityEvent` 与
-    `recordAuditEvent`，没有平行审计通道。测试 `apps/web/tests/integration/d9a-account-state.integration.test.ts:454`
+    `recordAuditEvent`，没有平行审计通道。测试 `apps/web/tests/integration/d9a-account-state.integration.test.ts:1126`
     用例“records reason, operator, evidence, time, prior state, and resulting restrictions append-only”
-    以 customer/event 及 action/targetId 条件分别查询两条追加事件并验证可还原字段；`:509` 验证
+    以 customer/event 及 action/targetId 条件分别查询两条追加事件并验证可还原字段；`:1181` 验证
     非法迁移不会留下目标 customer 的审计事件。
 - [x] 安全事件后可一键撤销全部会话。
   - **实现与隔离证据**：`apps/web/src/services/auth/customer-sessions.ts:57-79` 用同事务原生
     `UPDATE customer_sessions WHERE customer_id ... AND revoked_at IS NULL RETURNING id` 原子撤销；
-    `apps/web/src/services/auth/account-state.ts:250-275` 复用既有安全事件与审计入口，系统管理员 API
+    `apps/web/src/services/auth/account-state.ts:246-270` 复用既有安全事件与审计入口，系统管理员 API
     位于 `apps/web/src/app/api/v1/admin/customers/[customerId]/account-security/route.ts:39-66`。
-    测试 `apps/web/tests/integration/d9a-account-state.integration.test.ts:628` 用例“revokes every target
+    测试 `apps/web/tests/integration/d9a-account-state.integration.test.ts:1300` 用例“revokes every target
     session in one security action without touching another customer”验证目标两条全撤销、其他 customer
     不受影响且只产生一条限定目标的审计事件。
 
   - **SQL 合取条件与删除变异**：本切片应用 SQL 只有状态 CAS 的 `id / expected status / expected
-    capability restrictions` 三个 `WHERE` 谓词（`account-state.ts:314-316`）和会话撤销的
-    `customer_id / revoked_at IS NULL` 两个谓词（`customer-sessions.ts:68-69`）。测试 `:537`、`:559`、
-    `:576`、`:596`、`:612` 分别以可观察行为保护每个谓词；
+    capability restrictions` 三个 `WHERE` 谓词（`account-state.ts:310-312`）和会话撤销的
+    `customer_id / revoked_at IS NULL` 两个谓词（`customer-sessions.ts:68-69`）。测试 `:1209`、`:1231`、
+    `:1248`、`:1268`、`:1284` 分别以可观察行为保护每个谓词；
     `apps/web/scripts/mutate-a3-sql-predicates.mjs:9-44` 逐项单独删除并实跑，5/5 均被对应行为断言
-    杀死。`:671` 的源码文本断言仅作补充，不作为唯一保护；新增所有计数断言均带 `where`。
+    杀死。`:1360` 的源码文本断言仅作补充，不作为唯一保护；新增所有计数断言均带 `where`。
+
+  - **审核补测与全判定点变异证据**：
+    `apps/web/tests/integration/d9a-account-state.integration.test.ts:234` 用例“rejects an admin actor
+    without the system_admin role”、`:315` 用例“rejects a customer changing another customerId even
+    with a matching actor id”、`:334` 用例“rejects customer targets other than closing”、`:364` 用例
+    “rejects customer self-service from non active or restricted source states”和 `:423` 用例“rejects a
+    system actor whenever req.user is present”分别保护 `assertActorAllowed` 的五类授权判断；`:441`、
+    `:458`、`:475` 分别以不一致的目标状态/限制集合及期望状态快照保护
+    `assertStateRestrictionInvariant`。`apps/web/scripts/mutate-a3-security-decisions.mjs` 将本切片全部
+    93 个 JS 安全/正确性判定点逐项单独删除或短路并实跑，93/93 均由行为断言杀死；其中
+    commerce、domains、realname 的每一个能力拦截插入点均单独变异且无存活项。连同 5/5 SQL
+    谓词合计 98/98；逐项用例、结果和原始失败首行见
+    `docs/operations/d9a-a3-security-mutation-matrix.md`。A3 集成文件补测后 70/70 通过；补测只将
+    admin 分支中被 `hasRole(system_admin)` 完全支配的 collection 判断做行为等价化简，没有改变
+    授权结果或其他已通过实现逻辑。
 
 #### A4 短信验证码与 step-up 授权
 

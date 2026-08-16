@@ -164,11 +164,7 @@ function assertActorAllowed(
   if (actor.type === 'system') {
     if (!req.user) return
   } else if (actor.type === 'admin') {
-    if (
-      req.user?.collection === 'admins' &&
-      String(req.user.id) === String(actor.id) &&
-      hasRole(req.user, ['system_admin'])
-    ) {
+    if (hasRole(req.user, ['system_admin']) && String(req.user?.id) === String(actor.id)) {
       return
     }
   } else if (

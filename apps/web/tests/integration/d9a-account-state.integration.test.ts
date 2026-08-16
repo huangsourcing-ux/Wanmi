@@ -16,18 +16,33 @@ import {
 } from '@/lib/domain'
 import { getEnv } from '@/lib/env'
 import {
+  accountRestrictions,
   assertCustomerAccountCapability,
   assertCustomerAccountCapabilityFromSnapshot,
   revokeCustomerSessionsForSecurityEvent,
   transitionCustomerAccount,
   type CustomerCapability,
 } from '@/services/auth/account-state'
-import { bindVerifiedIdentity, unbindCustomerIdentity } from '@/services/auth/customer-identities'
+import {
+  authenticateVerifiedPhone,
+  bindVerifiedIdentity,
+  identityProviderInstance,
+  protectedIdentifier,
+  unbindCustomerIdentity,
+} from '@/services/auth/customer-identities'
+import { customerSessionStrategy } from '@/services/auth/customer-strategy'
 import { revokeAllCustomerSessions } from '@/services/auth/customer-sessions'
-import { authenticatedCustomerRequest, requestCustomerDeletion } from '@/services/auth/otp'
+import {
+  authenticatedCustomerRequest,
+  requestCustomerDeletion,
+  revokeSessions,
+} from '@/services/auth/otp'
 import { createCustomerOrder } from '@/services/commerce/order-creation'
 import { createWechatPayment } from '@/services/commerce/payments'
+import { listCustomerDomainAssets } from '@/services/domains/domain-assets'
 import { requestCustomerNameserverChange } from '@/services/domains/nameserver-changes'
+import { createRealnameDocumentAccess } from '@/services/realname/documents'
+import { createRealnameTemplate } from '@/services/realname/templates'
 
 import { issueStepUpGrantFixture } from '../fixtures/step-up'
 
@@ -95,6 +110,12 @@ async function request(suffix: string = randomUUID()): Promise<PayloadRequest> {
   return createLocalReq({ req: { headers: headers(suffix) } }, payload)
 }
 
+async function requestFor(user: unknown, suffix: string = randomUUID()): Promise<PayloadRequest> {
+  const req = await request(suffix)
+  req.user = user as never
+  return req
+}
+
 function restrictionsFor(status: CustomerAccountStatus): CustomerCapabilityRestriction[] {
   return status === 'restricted' ? ['purchase_disabled'] : []
 }
@@ -126,6 +147,28 @@ function evidence(reference: string = randomUUID()) {
 
 async function storedCustomer(id: number) {
   return payload.findByID({ collection: 'customers', id, overrideAccess: true })
+}
+
+async function stateAuditCount(customerId: number) {
+  return payload.count({
+    collection: 'auditLogs',
+    overrideAccess: true,
+    where: {
+      and: [
+        { action: { equals: 'customer.account_state.changed' } },
+        { targetId: { equals: String(customerId) } },
+      ],
+    },
+  })
+}
+
+async function capturedError(work: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await work()
+    return undefined
+  } catch (error) {
+    return error
+  }
 }
 
 async function createSession(customerId: number, revokedAt?: string) {
@@ -188,6 +231,390 @@ describe('D9-A A3 account state and capability restrictions', () => {
     ])
   })
 
+  it('rejects an admin actor without the system_admin role', async () => {
+    const account = await customer('active')
+    const req = await requestFor(
+      { collection: 'admins', id: 'a3-analyst', roles: ['analyst'], status: 'active' },
+      'actor-admin-role',
+    )
+    await expect(
+      transitionCustomerAccount(req, {
+        actor: { id: 'a3-analyst', type: 'admin' },
+        customerId: account.id,
+        evidence: evidence('actor-admin-role'),
+        expectedRestrictions: [],
+        expectedStatus: 'active',
+        reason: 'unauthorized_admin_attempt',
+        restrictions: ['purchase_disabled'],
+        status: 'restricted',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_CHANGE_FORBIDDEN', status: 403 })
+    await expect(storedCustomer(account.id)).resolves.toMatchObject({ status: 'active' })
+  })
+
+  it('rejects an admin actor whose asserted id does not match the authenticated admin', async () => {
+    const account = await customer('active')
+    const req = await requestFor(
+      { collection: 'admins', id: 'a3-admin-session', roles: ['system_admin'], status: 'active' },
+      'actor-admin-id',
+    )
+    await expect(
+      transitionCustomerAccount(req, {
+        actor: { id: 'a3-admin-claim', type: 'admin' },
+        customerId: account.id,
+        evidence: evidence('actor-admin-id'),
+        expectedRestrictions: [],
+        expectedStatus: 'active',
+        reason: 'forged_admin_actor',
+        restrictions: ['purchase_disabled'],
+        status: 'restricted',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_CHANGE_FORBIDDEN', status: 403 })
+    await expect(storedCustomer(account.id)).resolves.toMatchObject({ status: 'active' })
+  })
+
+  it('rejects a customer actor when the authenticated principal is not a customer', async () => {
+    const account = await customer('active')
+    const req = await requestFor(
+      { collection: 'admins', id: account.id, roles: ['system_admin'], status: 'active' },
+      'actor-customer-principal',
+    )
+    await expect(
+      transitionCustomerAccount(req, {
+        actor: { id: account.id, type: 'customer' },
+        customerId: account.id,
+        evidence: evidence('actor-customer-principal'),
+        expectedRestrictions: [],
+        expectedStatus: 'active',
+        reason: 'forged_customer_actor',
+        restrictions: [],
+        status: 'closing',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_CHANGE_FORBIDDEN', status: 403 })
+    await expect(storedCustomer(account.id)).resolves.toMatchObject({ status: 'active' })
+  })
+
+  it('rejects a customer actor id that does not match the authenticated customer', async () => {
+    const account = await customer('active')
+    const req = await requestFor({ ...account, collection: 'customers' }, 'actor-customer-id')
+    await expect(
+      transitionCustomerAccount(req, {
+        actor: { id: account.id + 1, type: 'customer' },
+        customerId: account.id,
+        evidence: evidence('actor-customer-id'),
+        expectedRestrictions: [],
+        expectedStatus: 'active',
+        reason: 'forged_customer_actor_id',
+        restrictions: [],
+        status: 'closing',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_CHANGE_FORBIDDEN', status: 403 })
+    await expect(storedCustomer(account.id)).resolves.toMatchObject({ status: 'active' })
+  })
+
+  it('rejects a customer changing another customerId even with a matching actor id', async () => {
+    const caller = await customer('active')
+    const target = await customer('active')
+    const req = await requestFor({ ...caller, collection: 'customers' }, 'actor-customer-owner')
+    await expect(
+      transitionCustomerAccount(req, {
+        actor: { id: caller.id, type: 'customer' },
+        customerId: target.id,
+        evidence: evidence('actor-customer-owner'),
+        expectedRestrictions: [],
+        expectedStatus: 'active',
+        reason: 'cross_customer_closure',
+        restrictions: [],
+        status: 'closing',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_CHANGE_FORBIDDEN', status: 403 })
+    await expect(storedCustomer(target.id)).resolves.toMatchObject({ status: 'active' })
+  })
+
+  it('rejects customer targets other than closing', async () => {
+    const account = await customer('active')
+    const req = await requestFor({ ...account, collection: 'customers' }, 'actor-customer-target')
+    await expect(
+      transitionCustomerAccount(req, {
+        actor: { id: account.id, type: 'customer' },
+        customerId: account.id,
+        evidence: evidence('actor-customer-target-restricted'),
+        expectedRestrictions: [],
+        expectedStatus: 'active',
+        reason: 'customer_self_restriction',
+        restrictions: ['purchase_disabled'],
+        status: 'restricted',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_CHANGE_FORBIDDEN', status: 403 })
+    await expect(
+      transitionCustomerAccount(req, {
+        actor: { id: account.id, type: 'customer' },
+        customerId: account.id,
+        evidence: evidence('actor-customer-target-closed'),
+        expectedRestrictions: [],
+        expectedStatus: 'active',
+        reason: 'customer_direct_close',
+        restrictions: [],
+        status: 'closed',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_TRANSITION_INVALID', status: 409 })
+    await expect(storedCustomer(account.id)).resolves.toMatchObject({ status: 'active' })
+  })
+
+  it('rejects customer self-service from non active or restricted source states', async () => {
+    const suspended = await customer('suspended')
+    const suspendedReq = await requestFor(
+      { ...suspended, collection: 'customers' },
+      'actor-customer-source-suspended',
+    )
+    await expect(
+      transitionCustomerAccount(suspendedReq, {
+        actor: { id: suspended.id, type: 'customer' },
+        customerId: suspended.id,
+        evidence: evidence('actor-customer-source-suspended'),
+        expectedRestrictions: [],
+        expectedStatus: 'suspended',
+        reason: 'suspended_self_closure',
+        restrictions: [],
+        status: 'closing',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_CHANGE_FORBIDDEN', status: 403 })
+
+    const closing = await customer('closing')
+    const closingReq = await requestFor(
+      { ...closing, collection: 'customers' },
+      'actor-customer-source-closing',
+    )
+    await expect(
+      transitionCustomerAccount(closingReq, {
+        actor: { id: closing.id, type: 'customer' },
+        customerId: closing.id,
+        evidence: evidence('actor-customer-source-closing'),
+        expectedRestrictions: [],
+        expectedStatus: 'closing',
+        reason: 'closing_self_close',
+        restrictions: [],
+        status: 'closed',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_CHANGE_FORBIDDEN', status: 403 })
+
+    const closed = await customer('closed')
+    const closedReq = await requestFor(
+      { ...closed, collection: 'customers' },
+      'actor-customer-source-closed',
+    )
+    await expect(
+      transitionCustomerAccount(closedReq, {
+        actor: { id: closed.id, type: 'customer' },
+        customerId: closed.id,
+        evidence: evidence('actor-customer-source-closed'),
+        expectedRestrictions: [],
+        expectedStatus: 'closed',
+        reason: 'closed_self_reopen',
+        restrictions: [],
+        status: 'active',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_TRANSITION_INVALID', status: 409 })
+    await expect(stateAuditCount(suspended.id)).resolves.toMatchObject({ totalDocs: 0 })
+    await expect(stateAuditCount(closing.id)).resolves.toMatchObject({ totalDocs: 0 })
+    await expect(stateAuditCount(closed.id)).resolves.toMatchObject({ totalDocs: 0 })
+  })
+
+  it('rejects a system actor whenever req.user is present', async () => {
+    const account = await customer('active')
+    const req = await requestFor({ ...account, collection: 'customers' }, 'actor-system-user')
+    await expect(
+      transitionCustomerAccount(req, {
+        actor: { type: 'system' },
+        customerId: account.id,
+        evidence: evidence('actor-system-user'),
+        expectedRestrictions: [],
+        expectedStatus: 'active',
+        reason: 'forged_system_actor',
+        restrictions: ['purchase_disabled'],
+        status: 'restricted',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_CHANGE_FORBIDDEN', status: 403 })
+    await expect(storedCustomer(account.id)).resolves.toMatchObject({ status: 'active' })
+  })
+
+  it('rejects an empty restriction set for a restricted target state', async () => {
+    const account = await customer('active')
+    await expect(
+      transitionCustomerAccount(await request('invariant-target-restricted'), {
+        actor: { type: 'system' },
+        customerId: account.id,
+        evidence: evidence('invariant-target-restricted'),
+        expectedRestrictions: [],
+        expectedStatus: 'active',
+        reason: 'invalid_restricted_target',
+        restrictions: [],
+        status: 'restricted',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_RESTRICTIONS_MISMATCH', status: 400 })
+    await expect(storedCustomer(account.id)).resolves.toMatchObject({ status: 'active' })
+  })
+
+  it('rejects restrictions on a non-restricted target state', async () => {
+    const account = await customer('restricted', ['purchase_disabled'])
+    await expect(
+      transitionCustomerAccount(await request('invariant-target-active'), {
+        actor: { type: 'system' },
+        customerId: account.id,
+        evidence: evidence('invariant-target-active'),
+        expectedRestrictions: ['purchase_disabled'],
+        expectedStatus: 'restricted',
+        reason: 'invalid_active_target',
+        restrictions: ['purchase_disabled'],
+        status: 'active',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_RESTRICTIONS_MISMATCH', status: 400 })
+    await expect(storedCustomer(account.id)).resolves.toMatchObject({ status: 'restricted' })
+  })
+
+  it('rejects an inconsistent expected state snapshot before CAS', async () => {
+    const account = await customer('restricted', [])
+    await expect(
+      transitionCustomerAccount(await request('invariant-expected'), {
+        actor: { type: 'system' },
+        customerId: account.id,
+        evidence: evidence('invariant-expected'),
+        expectedRestrictions: [],
+        expectedStatus: 'restricted',
+        reason: 'invalid_expected_snapshot',
+        restrictions: [],
+        status: 'active',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_RESTRICTIONS_MISMATCH', status: 400 })
+    await expect(storedCustomer(account.id)).resolves.toMatchObject({ status: 'restricted' })
+  })
+
+  it.each([
+    ['non-array', {}],
+    ['duplicate', ['purchase_disabled', 'purchase_disabled']],
+    ['unknown', ['not_a_capability']],
+  ] as const)('rejects %s restriction input at the transition boundary', async (_case, value) => {
+    const account = await customer('active')
+    await expect(
+      transitionCustomerAccount(await request(`restriction-input-${_case}`), {
+        actor: { type: 'system' },
+        customerId: account.id,
+        evidence: evidence(`restriction-input-${_case}`),
+        expectedRestrictions: [],
+        expectedStatus: 'active',
+        reason: 'invalid_restriction_input',
+        restrictions: value as never,
+        status: 'restricted',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_RESTRICTIONS_INVALID', status: 400 })
+  })
+
+  it('rejects a non-array persisted restriction snapshot with the stable storage error', () => {
+    expect(() =>
+      accountRestrictions({ capabilityRestrictions: {} as never, id: 1, status: 'active' }),
+    ).toThrow(expect.objectContaining({ code: 'ACCOUNT_RESTRICTIONS_INVALID', status: 500 }))
+  })
+
+  it.each([
+    ['non-array', {}],
+    ['duplicate', ['purchase_disabled', 'purchase_disabled']],
+    ['unknown', ['not_a_capability']],
+  ] as const)(
+    'rejects %s restrictions at the persisted customer field boundary',
+    async (_case, value) => {
+      const suffix = randomUUID()
+      await expect(
+        payload.create({
+          collection: 'customers',
+          data: {
+            capabilityRestrictions: value as never,
+            phone: `a3-invalid-${suffix}`,
+            phoneMasked: `a3-***${suffix.slice(-4)}`,
+            status: 'active',
+          },
+          overrideAccess: true,
+        }),
+      ).rejects.toThrow()
+      await expect(
+        payload.count({
+          collection: 'customers',
+          overrideAccess: true,
+          where: { phone: { equals: `a3-invalid-${suffix}` } },
+        }),
+      ).resolves.toMatchObject({ totalDocs: 0 })
+    },
+  )
+
+  it('rejects an unknown account status snapshot and a missing account lookup', async () => {
+    expect(() =>
+      assertCustomerAccountCapabilityFromSnapshot(
+        { capabilityRestrictions: [], id: 1, status: 'future_state' },
+        'login',
+      ),
+    ).toThrow(expect.objectContaining({ code: 'ACCOUNT_STATE_INVALID' }))
+    await expect(
+      assertCustomerAccountCapability(await request('missing-account'), 2_147_483_647, 'login'),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_NOT_FOUND', status: 404 })
+  })
+
+  it('rejects same-state no-op transitions with the stable no-op code', async () => {
+    const active = await customer('active')
+    await expect(
+      transitionCustomerAccount(await request('noop-active'), {
+        actor: { type: 'system' },
+        customerId: active.id,
+        evidence: evidence('noop-active'),
+        expectedRestrictions: [],
+        expectedStatus: 'active',
+        reason: 'noop_active',
+        restrictions: [],
+        status: 'active',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_CHANGE_NOOP', status: 409 })
+    const restricted = await customer('restricted', ['purchase_disabled'])
+    await expect(
+      transitionCustomerAccount(await request('noop-restricted'), {
+        actor: { type: 'system' },
+        customerId: restricted.id,
+        evidence: evidence('noop-restricted'),
+        expectedRestrictions: ['purchase_disabled'],
+        expectedStatus: 'restricted',
+        reason: 'noop_restricted',
+        restrictions: ['purchase_disabled'],
+        status: 'restricted',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_CHANGE_NOOP', status: 409 })
+  })
+
+  it('allows a restricted replacement that only appends a capability restriction', async () => {
+    const account = await customer('restricted', ['purchase_disabled'])
+    await expect(
+      transitionCustomerAccount(await request('replacement-append'), {
+        actor: { type: 'system' },
+        customerId: account.id,
+        evidence: evidence('replacement-append'),
+        expectedRestrictions: ['purchase_disabled'],
+        expectedStatus: 'restricted',
+        reason: 'append_refund_restriction',
+        restrictions: ['purchase_disabled', 'refund_review'],
+        status: 'restricted',
+      }),
+    ).resolves.toMatchObject({
+      capabilityRestrictions: ['purchase_disabled', 'refund_review'],
+      status: 'restricted',
+    })
+  })
+
+  it('canonicalizes restriction order before comparison and persistence', () => {
+    expect(
+      accountRestrictions({
+        capabilityRestrictions: ['purchase_disabled', 'login_disabled'],
+        id: 1,
+        status: 'restricted',
+      }),
+    ).toEqual(['login_disabled', 'purchase_disabled'])
+  })
+
   it.each(capabilityCases)(
     'fails closed with $code for the $restriction restriction',
     async ({ capability, code, restriction }) => {
@@ -231,13 +658,72 @@ describe('D9-A A3 account state and capability restrictions', () => {
     const blocked = await customer('restricted', ['login_disabled'])
     const blockedSession = await createSession(blocked.id)
     await expect(
+      capturedError(() =>
+        authenticatedCustomerRequest(
+          payload,
+          new Request('http://wanmi.local/api/v1/domains', {
+            headers: {
+              cookie: `${getEnv().CUSTOMER_SESSION_COOKIE}=${blockedSession.token}`,
+            },
+          }),
+        ),
+      ),
+    ).resolves.toMatchObject({ code: 'ACCOUNT_LOGIN_DISABLED', status: 403 })
+  })
+
+  it('enforces the login capability at verified-login, strategy, and request restoration points', async () => {
+    const phone = `139${String(randomInt(0, 100_000_000)).padStart(8, '0')}`
+    const normalizedPhone = `+86${phone}`
+    const account = await payload.create({
+      collection: 'customers',
+      data: {
+        capabilityRestrictions: ['login_disabled'],
+        phone: normalizedPhone,
+        phoneMasked: `${phone.slice(0, 3)}****${phone.slice(-4)}`,
+        status: 'restricted',
+      },
+      overrideAccess: true,
+    })
+    await payload.create({
+      collection: 'customerIdentities',
+      data: {
+        ...protectedIdentifier(normalizedPhone),
+        boundAt: new Date().toISOString(),
+        customer: account.id,
+        provider: 'phone',
+        providerInstanceId: identityProviderInstance('phone'),
+        status: 'active',
+        verifiedAt: new Date().toISOString(),
+      },
+      overrideAccess: true,
+    })
+    await expect(
+      authenticateVerifiedPhone(await request('surface-verified-login'), {
+        deviceHash: hmac('a3-verified-device', getEnv().SESSION_PEPPER),
+        ipHash: hmac('a3-verified-ip', getEnv().SESSION_PEPPER),
+        phone,
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_LOGIN_DISABLED', status: 403 })
+    await expect(
+      payload.count({
+        collection: 'customerSessions',
+        overrideAccess: true,
+        where: { customer: { equals: account.id } },
+      }),
+    ).resolves.toMatchObject({ totalDocs: 0 })
+
+    const { token } = await createSession(account.id)
+    const cookie = `${getEnv().CUSTOMER_SESSION_COOKIE}=${token}`
+    await expect(
+      customerSessionStrategy.authenticate({
+        headers: new Headers({ cookie }),
+        payload,
+      }),
+    ).resolves.toEqual({ user: null })
+    await expect(
       authenticatedCustomerRequest(
         payload,
-        new Request('http://wanmi.local/api/v1/domains', {
-          headers: {
-            cookie: `${getEnv().CUSTOMER_SESSION_COOKIE}=${blockedSession.token}`,
-          },
-        }),
+        new Request('http://wanmi.local/api/v1/auth/session', { headers: { cookie } }),
       ),
     ).rejects.toMatchObject({ code: 'ACCOUNT_LOGIN_DISABLED', status: 403 })
   })
@@ -299,6 +785,91 @@ describe('D9-A A3 account state and capability restrictions', () => {
         },
       ),
     ).rejects.toMatchObject({ code: 'ACCOUNT_DOMAIN_WRITE_DISABLED' })
+  })
+
+  it('blocks domain reads and both real-name customer surfaces when login is disabled', async () => {
+    const blocked = await customer('restricted', ['login_disabled'])
+    const req = await requestFor({ ...blocked, collection: 'customers' }, 'surface-read-gates')
+    await expect(
+      listCustomerDomainAssets(req, {
+        collection: 'customers',
+        id: blocked.id,
+        status: 'restricted',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_LOGIN_DISABLED', status: 403 })
+    await expect(createRealnameDocumentAccess(req, 2_147_483_647, 'view')).rejects.toMatchObject({
+      code: 'ACCOUNT_LOGIN_DISABLED',
+      status: 403,
+    })
+    await expect(createRealnameTemplate(req, {} as never)).rejects.toMatchObject({
+      code: 'ACCOUNT_LOGIN_DISABLED',
+      status: 403,
+    })
+  })
+
+  it('requires step-up before account deletion or Name Server work can begin', async () => {
+    const account = await customer('active')
+    const req = await requestFor({ ...account, collection: 'customers' }, 'surface-step-up')
+    const invalidGrant = {
+      deviceId: 'a3-invalid-step-up-device',
+      stepUpToken: randomOpaqueToken(),
+    }
+    await expect(requestCustomerDeletion(req, account, invalidGrant)).rejects.toMatchObject({
+      code: 'STEP_UP_GRANT_INVALID',
+      status: 403,
+    })
+    await expect(storedCustomer(account.id)).resolves.toMatchObject({ status: 'active' })
+    await expect(
+      requestCustomerNameserverChange(
+        req,
+        2_147_483_647,
+        {
+          ...invalidGrant,
+          confirmed: true,
+          nameservers: ['ns1.example.test', 'ns2.example.test'],
+        },
+        {
+          customer: { collection: 'customers', id: account.id, status: 'active' },
+          traceId: 'surface-step-up',
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'STEP_UP_GRANT_INVALID', status: 403 })
+    await expect(
+      payload.count({
+        collection: 'nameserverChanges',
+        overrideAccess: true,
+        where: { customer: { equals: account.id } },
+      }),
+    ).resolves.toMatchObject({ totalDocs: 0 })
+  })
+
+  it('rejects deletion source states before attempting step-up authorization', async () => {
+    const account = await customer('suspended')
+    const req = await requestFor({ ...account, collection: 'customers' }, 'deletion-source-state')
+    await expect(
+      requestCustomerDeletion(req, account, {
+        deviceId: 'a3-invalid-state-device',
+        stepUpToken: randomOpaqueToken(),
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_TRANSITION_INVALID', status: 409 })
+    await expect(storedCustomer(account.id)).resolves.toMatchObject({ status: 'suspended' })
+  })
+
+  it('persists a valid restricted self-closure through the account-state transition service', async () => {
+    const account = await customer('restricted', ['purchase_disabled'])
+    const req = await requestFor({ ...account, collection: 'customers' }, 'deletion-transition')
+    const grant = await issueStepUpGrantFixture(payload, req, account.id, 'account_deletion')
+    const { session } = await createSession(account.id)
+    await expect(requestCustomerDeletion(req, account, grant)).resolves.toMatchObject({
+      status: 'closing',
+    })
+    await expect(storedCustomer(account.id)).resolves.toMatchObject({
+      capabilityRestrictions: [],
+      status: 'closing',
+    })
+    await expect(
+      payload.findByID({ collection: 'customerSessions', id: session.id, overrideAccess: true }),
+    ).resolves.toEqual(expect.objectContaining({ revokedAt: expect.any(String) }))
   })
 
   it('rejects deletion and Name Server writes during cooldown despite valid purpose grants', async () => {
@@ -448,6 +1019,107 @@ describe('D9-A A3 account state and capability restrictions', () => {
     await expect(storedCustomer(account.id)).resolves.toMatchObject({
       capabilityRestrictions: ['domain_write_disabled'],
       status: 'restricted',
+    })
+  })
+
+  it('revokes sessions when a non-operational state blocks login', async () => {
+    const account = await customer('active')
+    const { session } = await createSession(account.id)
+    await transitionCustomerAccount(await request('auto-revoke-status'), {
+      actor: { type: 'system' },
+      customerId: account.id,
+      evidence: evidence('auto-revoke-status'),
+      expectedRestrictions: [],
+      expectedStatus: 'active',
+      reason: 'security_suspension',
+      restrictions: [],
+      status: 'suspended',
+    })
+    await expect(
+      payload.findByID({ collection: 'customerSessions', id: session.id, overrideAccess: true }),
+    ).resolves.toEqual(expect.objectContaining({ revokedAt: expect.any(String) }))
+    await expect(
+      payload.count({
+        collection: 'auditLogs',
+        overrideAccess: true,
+        where: {
+          and: [
+            { action: { equals: 'customer.account_sessions.revoked' } },
+            { targetId: { equals: String(account.id) } },
+          ],
+        },
+      }),
+    ).resolves.toMatchObject({ totalDocs: 1 })
+  })
+
+  it('revokes sessions when restricted gains login_disabled', async () => {
+    const account = await customer('active')
+    const { session } = await createSession(account.id)
+    await transitionCustomerAccount(await request('auto-revoke-restriction'), {
+      actor: { type: 'system' },
+      customerId: account.id,
+      evidence: evidence('auto-revoke-restriction'),
+      expectedRestrictions: [],
+      expectedStatus: 'active',
+      reason: 'disable_login',
+      restrictions: ['login_disabled'],
+      status: 'restricted',
+    })
+    await expect(
+      payload.findByID({ collection: 'customerSessions', id: session.id, overrideAccess: true }),
+    ).resolves.toEqual(expect.objectContaining({ revokedAt: expect.any(String) }))
+  })
+
+  it('does not revoke sessions for a restricted capability that leaves login enabled', async () => {
+    const account = await customer('active')
+    const { session } = await createSession(account.id)
+    await transitionCustomerAccount(await request('auto-revoke-not-needed'), {
+      actor: { type: 'system' },
+      customerId: account.id,
+      evidence: evidence('auto-revoke-not-needed'),
+      expectedRestrictions: [],
+      expectedStatus: 'active',
+      reason: 'disable_purchase_only',
+      restrictions: ['purchase_disabled'],
+      status: 'restricted',
+    })
+    await expect(
+      payload.findByID({ collection: 'customerSessions', id: session.id, overrideAccess: true }),
+    ).resolves.toMatchObject({ revokedAt: null })
+  })
+
+  it('sets deletionRequestedAt on closing and clears it only when closing returns to active', async () => {
+    const account = await customer('active')
+    const closing = await transitionCustomerAccount(await request('closing-date-set'), {
+      actor: { type: 'system' },
+      changedAt: '2026-08-16T08:00:00.000Z',
+      customerId: account.id,
+      evidence: evidence('closing-date-set'),
+      expectedRestrictions: [],
+      expectedStatus: 'active',
+      reason: 'start_closure',
+      restrictions: [],
+      status: 'closing',
+    })
+    expect(closing.deletionRequestedAt).toBe('2026-08-16T08:00:00.000Z')
+    await expect(storedCustomer(account.id)).resolves.toMatchObject({
+      deletionRequestedAt: '2026-08-16T08:00:00.000Z',
+      status: 'closing',
+    })
+    const restored = await transitionCustomerAccount(await request('closing-date-clear'), {
+      actor: { type: 'system' },
+      customerId: account.id,
+      evidence: evidence('closing-date-clear'),
+      expectedRestrictions: [],
+      expectedStatus: 'closing',
+      reason: 'cancel_closure',
+      restrictions: [],
+      status: 'active',
+    })
+    expect(restored.deletionRequestedAt).toBeUndefined()
+    await expect(storedCustomer(account.id)).resolves.toMatchObject({
+      deletionRequestedAt: null,
+      status: 'active',
     })
   })
 
@@ -666,6 +1338,67 @@ describe('D9-A A3 account state and capability restrictions', () => {
         },
       }),
     ).resolves.toMatchObject({ totalDocs: 1 })
+    await expect(
+      payload.count({
+        collection: 'customerSecurityEvents',
+        overrideAccess: true,
+        where: {
+          and: [{ customer: { equals: account.id } }, { event: { equals: 'sessions_revoked' } }],
+        },
+      }),
+    ).resolves.toMatchObject({ totalDocs: 1 })
+  })
+
+  it('rejects unauthorized use of the one-action security session revocation service', async () => {
+    const account = await customer('active')
+    const { session } = await createSession(account.id)
+    const req = await requestFor({ ...account, collection: 'customers' }, 'security-revoke-auth')
+    await expect(
+      revokeCustomerSessionsForSecurityEvent(req, {
+        actor: { id: account.id, type: 'customer' },
+        customerId: account.id,
+        evidence: evidence('security-revoke-auth'),
+        reason: 'unauthorized_self_revoke_security_action',
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_STATE_CHANGE_FORBIDDEN', status: 403 })
+    await expect(
+      payload.findByID({ collection: 'customerSessions', id: session.id, overrideAccess: true }),
+    ).resolves.toMatchObject({ revokedAt: null })
+    await expect(
+      payload.count({
+        collection: 'auditLogs',
+        overrideAccess: true,
+        where: {
+          and: [
+            { action: { equals: 'customer.account_sessions.revoked' } },
+            { targetId: { equals: String(account.id) } },
+          ],
+        },
+      }),
+    ).resolves.toMatchObject({ totalDocs: 0 })
+  })
+
+  it('keeps logout-all routed through the all-session revocation branch', async () => {
+    const account = await customer('active')
+    const first = await createSession(account.id)
+    const second = await createSession(account.id)
+    await revokeSessions(await request('logout-all-branch'), first.token, 'all')
+    await expect(
+      payload.count({
+        collection: 'customerSessions',
+        overrideAccess: true,
+        where: {
+          and: [{ customer: { equals: account.id } }, { revokedAt: { exists: false } }],
+        },
+      }),
+    ).resolves.toMatchObject({ totalDocs: 0 })
+    await expect(
+      payload.findByID({
+        collection: 'customerSessions',
+        id: second.session.id,
+        overrideAccess: true,
+      }),
+    ).resolves.toEqual(expect.objectContaining({ revokedAt: expect.any(String) }))
   })
 
   it('keeps every application SQL WHERE predicate as a supplemental source contract', () => {

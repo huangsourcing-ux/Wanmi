@@ -99,4 +99,47 @@ describe('D6-04 domain asset routes', () => {
       expect.objectContaining({ customer }),
     )
   })
+
+  it.each([
+    [
+      'explicit confirmation',
+      {
+        confirmed: false,
+        deviceId: 'domain-route-device-0002',
+        nameservers: ['ns1.new.example', 'ns2.new.example'],
+        stepUpToken: 'a'.repeat(43),
+      },
+    ],
+    [
+      'device id',
+      {
+        confirmed: true,
+        nameservers: ['ns1.new.example', 'ns2.new.example'],
+        stepUpToken: 'a'.repeat(43),
+      },
+    ],
+    [
+      'step-up token',
+      {
+        confirmed: true,
+        deviceId: 'domain-route-device-0002',
+        nameservers: ['ns1.new.example', 'ns2.new.example'],
+      },
+    ],
+  ])('rejects a Name Server request without valid %s', async (_case, body) => {
+    const requestChange = vi.fn()
+    const response = await createNameserverChangeHandler({
+      requestChange,
+      resolveContext: context,
+    })(
+      new Request('http://wanmi.local/api/v1/domains/7/nameservers', {
+        body: JSON.stringify(body),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+      { params: Promise.resolve({ assetId: '7' }) },
+    )
+    expect(response.status).toBe(400)
+    expect(requestChange).not.toHaveBeenCalled()
+  })
 })

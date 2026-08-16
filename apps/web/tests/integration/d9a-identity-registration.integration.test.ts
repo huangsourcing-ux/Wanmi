@@ -176,10 +176,12 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
     const customer = await customerById(registered.customer.id)
     expect(customer).toMatchObject({
       accountType: 'registered',
+      capabilityRestrictions: [],
       defaultCustomerProfileType: 'individual',
       invitedByCustomer: inviter.id,
       phone: registrationPhone,
       registrationSource: 'phone',
+      status: 'active',
     })
     const identities = await payload.find({
       collection: 'customerIdentities',

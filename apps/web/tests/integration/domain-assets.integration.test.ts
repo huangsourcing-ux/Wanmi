@@ -4,7 +4,7 @@ import config from '@payload-config'
 import { createLocalReq, getPayload, type Payload, type PayloadRequest } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { mockFailure } from '@/providers/mock'
+import { mockFailure, mockSuccess } from '@/providers/mock'
 import type { SmsProvider } from '@/providers/types'
 import {
   FixtureWestDigitalWriteTransport,
@@ -798,5 +798,77 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
       registrar: before.registrar,
       status: before.status,
     })
+  })
+
+  it('sends expiry reminders to restricted accounts but skips suspended accounts', async () => {
+    const restricted = await createCustomer('reminder-restricted')
+    const suspended = await createCustomer('reminder-suspended')
+    await payload.update({
+      collection: 'customers',
+      data: { capabilityRestrictions: ['purchase_disabled'], status: 'restricted' },
+      id: restricted.id,
+      overrideAccess: true,
+    })
+    await payload.update({
+      collection: 'customers',
+      data: { capabilityRestrictions: [], status: 'suspended' },
+      id: suspended.id,
+      overrideAccess: true,
+    })
+    const restrictedTemplate = await createTemplate(restricted.id, 'reminder-restricted')
+    const suspendedTemplate = await createTemplate(suspended.id, 'reminder-suspended')
+    const now = new Date('2031-08-08T04:00:00.000Z')
+    const expiresAt = new Date(now.getTime() + 6 * 86_400_000).toISOString()
+    const restrictedAsset = await createAsset(
+      restricted.id,
+      restrictedTemplate.id,
+      'reminder-restricted',
+      expiresAt,
+    )
+    const suspendedAsset = await createAsset(
+      suspended.id,
+      suspendedTemplate.id,
+      'reminder-suspended',
+      expiresAt,
+    )
+    let sendCount = 0
+    const provider: SmsProvider = {
+      health: async () => mockSuccess({ healthy: true }, `${fixturePrefix}-status-health`),
+      queryReceipt: async () => mockFailure('NOT_USED'),
+      sendDomainExpiry: async () => {
+        sendCount += 1
+        return mockSuccess(
+          {
+            accepted: true,
+            deliveryStatus: 'delivered',
+            providerMessageId: `${fixturePrefix}-status-message`,
+          },
+          `${fixturePrefix}-status-send`,
+        )
+      },
+      sendOtp: async () => mockFailure('NOT_USED'),
+      sendStepUpOtp: async () => mockFailure('NOT_USED'),
+    }
+    await runDomainExpiryReminders(await request('reminder-statuses'), {
+      now: () => now,
+      provider,
+      thresholds: [7],
+      traceId: `${fixturePrefix}-reminder-statuses`,
+    })
+    expect(sendCount).toBe(1)
+    await expect(
+      payload.count({
+        collection: 'domainExpiryReminders',
+        overrideAccess: true,
+        where: { asset: { equals: restrictedAsset.id } },
+      }),
+    ).resolves.toMatchObject({ totalDocs: 2 })
+    await expect(
+      payload.count({
+        collection: 'domainExpiryReminders',
+        overrideAccess: true,
+        where: { asset: { equals: suspendedAsset.id } },
+      }),
+    ).resolves.toMatchObject({ totalDocs: 0 })
   })
 })
