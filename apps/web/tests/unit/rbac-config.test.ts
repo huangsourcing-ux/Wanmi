@@ -62,6 +62,7 @@ const publicReads = [
 ]
 const customerReads = [
   ...publicReads,
+  'accountClosureRequests',
   'consentRecords',
   'customerIdentities',
   'customerSecurityEvents',
@@ -308,6 +309,7 @@ describe('D1 administrator navigation groups', () => {
     articles: ADMIN_GROUPS.content,
     categories: ADMIN_GROUPS.content,
     auditLogs: ADMIN_GROUPS.operations,
+    accountClosureRequests: ADMIN_GROUPS.identity,
     accountRecoveryRecords: ADMIN_GROUPS.identity,
     consentRecords: ADMIN_GROUPS.identity,
     customerIdentities: ADMIN_GROUPS.identity,

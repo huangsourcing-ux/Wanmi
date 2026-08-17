@@ -330,7 +330,7 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
     )
   })
 
-  it('separates customer/admin cookies and makes deletion revoke every customer session', async () => {
+  it('separates customer/admin cookies and keeps sessions until a pending closure is executed', async () => {
     const phone = ['+86', '177', String(randomInt(10_000_000, 99_999_999))].join('')
     const deviceId = `deletion-device-${randomUUID()}`
     const headers = new Headers({
@@ -396,7 +396,7 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
       authenticated.user,
       deletionGrant,
     )
-    expect(deletion).toMatchObject({ status: 'closing' })
+    expect(deletion).toMatchObject({ status: 'pending' })
     expect(
       (
         await payload.findByID({
@@ -405,7 +405,7 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
           overrideAccess: true,
         })
       ).status,
-    ).toBe('closing')
+    ).toBe('active')
     const sessions = await payload.find({
       collection: 'customerSessions',
       limit: 10,
@@ -413,7 +413,7 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
       where: { customer: { equals: registered.customer.id } },
     })
     expect(sessions.docs).toHaveLength(2)
-    expect(sessions.docs.every((session) => Boolean(session.revokedAt))).toBe(true)
+    expect(sessions.docs.every((session) => !session.revokedAt)).toBe(true)
     expect(
       (
         await customerSessionStrategy.authenticate({
@@ -421,14 +421,14 @@ describe('D0 PostgreSQL, auth and Jobs baseline', () => {
           payload,
         })
       ).user,
-    ).toBeNull()
+    ).toMatchObject({ id: registered.customer.id })
     const securityEvents = await payload.find({
       collection: 'customerSecurityEvents',
       overrideAccess: true,
       where: {
         and: [
           { customer: { equals: registered.customer.id } },
-          { event: { equals: 'deletion_requested' } },
+          { event: { equals: 'account_closure_requested' } },
         ],
       },
     })

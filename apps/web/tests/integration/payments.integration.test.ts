@@ -929,6 +929,7 @@ describe('D5-03 Wechat Pay confirmation', () => {
     await recordManualOrderAction(req, setup.order.orderNumber, {
       actionType: 'invoice_note',
       evidence,
+      invoiceStatus: 'processing',
       reason: '已交由现有财务流程开票',
     })
     await recordManualOrderAction(req, setup.order.orderNumber, {
@@ -1026,6 +1027,7 @@ describe('D5-03 Wechat Pay confirmation', () => {
       recordManualOrderAction(unauthorized, setup.order.orderNumber, {
         actionType: 'invoice_note',
         evidence,
+        invoiceStatus: 'processing',
         reason: '无权限操作',
       }),
     ).rejects.toMatchObject({ code: 'ADMIN_SYSTEM_ROLE_REQUIRED' })

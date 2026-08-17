@@ -37,6 +37,22 @@ export const auditEventDefinitions = {
     actorTypes: ['admin'],
     targetType: 'customer',
   },
+  'customer.account_closure.requested': {
+    actorTypes: ['customer'],
+    targetType: 'account-closure-request',
+  },
+  'customer.account_closure.blockers_refreshed': {
+    actorTypes: ['admin'],
+    targetType: 'account-closure-request',
+  },
+  'customer.account_closure.revoked': {
+    actorTypes: ['customer'],
+    targetType: 'account-closure-request',
+  },
+  'customer.account_closure.executed': {
+    actorTypes: ['admin'],
+    targetType: 'account-closure-request',
+  },
   'customer.consent.accepted': {
     actorTypes: ['customer'],
     targetType: 'customer',

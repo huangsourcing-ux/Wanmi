@@ -525,6 +525,12 @@ export const OrderManualActions: CollectionConfig = {
       options: ['special_refund', 'invoice_note'],
       required: true,
     },
+    {
+      name: 'invoiceStatus',
+      type: 'select',
+      index: true,
+      options: ['processing', 'completed', 'cancelled'],
+    },
     { ...safeInteger('amountMinor', false) },
     { name: 'currency', type: 'select', options: ['CNY'] },
     { name: 'reason', type: 'textarea', access: { read: sensitiveFieldRead }, required: true },

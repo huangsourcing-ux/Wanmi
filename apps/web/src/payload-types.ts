@@ -72,6 +72,7 @@ export interface Config {
     adminMfaCredentials: AdminMfaCredential;
     adminInvitations: AdminInvitation;
     customers: Customer;
+    accountClosureRequests: AccountClosureRequest;
     accountRecoveryRecords: AccountRecoveryRecord;
     customerIdentities: CustomerIdentity;
     consentRecords: ConsentRecord;
@@ -151,6 +152,7 @@ export interface Config {
     adminMfaCredentials: AdminMfaCredentialsSelect<false> | AdminMfaCredentialsSelect<true>;
     adminInvitations: AdminInvitationsSelect<false> | AdminInvitationsSelect<true>;
     customers: CustomersSelect<false> | CustomersSelect<true>;
+    accountClosureRequests: AccountClosureRequestsSelect<false> | AccountClosureRequestsSelect<true>;
     accountRecoveryRecords: AccountRecoveryRecordsSelect<false> | AccountRecoveryRecordsSelect<true>;
     customerIdentities: CustomerIdentitiesSelect<false> | CustomerIdentitiesSelect<true>;
     consentRecords: ConsentRecordsSelect<false> | ConsentRecordsSelect<true>;
@@ -368,11 +370,89 @@ export interface Customer {
     | boolean
     | null;
   deletionRequestedAt?: string | null;
+  activeAccountClosureRequestKey?: string | null;
+  accountClosureVersion?: number | null;
+  accountClosureExecutionClaimedAt?: string | null;
   legacyProfileCompletedAt?: string | null;
   consentStateVersion?: number | null;
   updatedAt: string;
   createdAt: string;
   collection: 'customers';
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "accountClosureRequests".
+ */
+export interface AccountClosureRequest {
+  id: number;
+  recordKey: string;
+  requestKey: string;
+  eventType: 'requested' | 'blockers_refreshed' | 'revoked' | 'executed';
+  customer: number | Customer;
+  requestedAt: string;
+  reason: string;
+  currentBlockers:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  cooldownStartedAt: string;
+  cooldownEndsAt: string;
+  revokedAt?: string | null;
+  executedAt?: string | null;
+  identityRebindAllowedAt?: string | null;
+  dataRetentionResult?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  anonymizationResult?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  actorType: 'customer' | 'admin';
+  actorId: string;
+  stepUpGrant?: (number | null) | StepUpGrant;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "stepUpGrants".
+ */
+export interface StepUpGrant {
+  id: number;
+  customer: number | Customer;
+  purpose:
+    | 'dns_record_change'
+    | 'nameserver_change'
+    | 'mx_record_change'
+    | 'dns_bulk_delete'
+    | 'domain_lock_change'
+    | 'realname_change'
+    | 'domain_management_password'
+    | 'balance_spend'
+    | 'account_deletion';
+  tokenHash: string;
+  expiresAt: string;
+  consumedAt?: string | null;
+  deviceHash: string;
+  ipHash: string;
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -448,6 +528,8 @@ export interface CustomerIdentity {
   verifiedAt: string;
   boundAt: string;
   unboundAt?: string | null;
+  releasedIdentifierHash?: string | null;
+  rebindAllowedAt?: string | null;
   lastUsedAt?: string | null;
   updatedAt: string;
   createdAt: string;
@@ -868,31 +950,6 @@ export interface CustomerSession {
   expiresAt: string;
   revokedAt?: string | null;
   lastSeenAt: string;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "stepUpGrants".
- */
-export interface StepUpGrant {
-  id: number;
-  customer: number | Customer;
-  purpose:
-    | 'dns_record_change'
-    | 'nameserver_change'
-    | 'mx_record_change'
-    | 'dns_bulk_delete'
-    | 'domain_lock_change'
-    | 'realname_change'
-    | 'domain_management_password'
-    | 'balance_spend'
-    | 'account_deletion';
-  tokenHash: string;
-  expiresAt: string;
-  consumedAt?: string | null;
-  deviceHash: string;
-  ipHash: string;
   updatedAt: string;
   createdAt: string;
 }
@@ -1432,6 +1489,7 @@ export interface OrderManualAction {
   actionKey: string;
   order: number | Order;
   actionType: 'special_refund' | 'invoice_note';
+  invoiceStatus?: ('processing' | 'completed' | 'cancelled') | null;
   amountMinor?: number | null;
   currency?: 'CNY' | null;
   reason: string;
@@ -2162,6 +2220,10 @@ export interface PayloadLockedDocument {
         value: number | Customer;
       } | null)
     | ({
+        relationTo: 'accountClosureRequests';
+        value: number | AccountClosureRequest;
+      } | null)
+    | ({
         relationTo: 'accountRecoveryRecords';
         value: number | AccountRecoveryRecord;
       } | null)
@@ -2487,8 +2549,36 @@ export interface CustomersSelect<T extends boolean = true> {
   status?: T;
   capabilityRestrictions?: T;
   deletionRequestedAt?: T;
+  activeAccountClosureRequestKey?: T;
+  accountClosureVersion?: T;
+  accountClosureExecutionClaimedAt?: T;
   legacyProfileCompletedAt?: T;
   consentStateVersion?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "accountClosureRequests_select".
+ */
+export interface AccountClosureRequestsSelect<T extends boolean = true> {
+  recordKey?: T;
+  requestKey?: T;
+  eventType?: T;
+  customer?: T;
+  requestedAt?: T;
+  reason?: T;
+  currentBlockers?: T;
+  cooldownStartedAt?: T;
+  cooldownEndsAt?: T;
+  revokedAt?: T;
+  executedAt?: T;
+  identityRebindAllowedAt?: T;
+  dataRetentionResult?: T;
+  anonymizationResult?: T;
+  actorType?: T;
+  actorId?: T;
+  stepUpGrant?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -2531,6 +2621,8 @@ export interface CustomerIdentitiesSelect<T extends boolean = true> {
   verifiedAt?: T;
   boundAt?: T;
   unboundAt?: T;
+  releasedIdentifierHash?: T;
+  rebindAllowedAt?: T;
   lastUsedAt?: T;
   updatedAt?: T;
   createdAt?: T;
@@ -3212,6 +3304,7 @@ export interface OrderManualActionsSelect<T extends boolean = true> {
   actionKey?: T;
   order?: T;
   actionType?: T;
+  invoiceStatus?: T;
   amountMinor?: T;
   currency?: T;
   reason?: T;

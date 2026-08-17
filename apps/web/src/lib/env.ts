@@ -50,6 +50,12 @@ const schema = z
     ALIYUN_CAPTCHA_QRCODE_SCENE_ID: z.string().min(1).max(128).optional(),
     ALIYUN_CAPTCHA_SMS_SCENE_ID: z.string().min(1).max(128).optional(),
     ALIYUN_SMS_MODE: z.enum(['mock', 'live']).default('mock'),
+    ACCOUNT_CLOSURE_COOLDOWN_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(86_400)
+      .max(2_592_000)
+      .default(604_800),
     CUSTOMER_AUTH_FLOW_COOKIE: z
       .string()
       .regex(/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u)
@@ -57,6 +63,12 @@ const schema = z
     CUSTOMER_AUTH_FLOW_SECONDS: z.coerce.number().int().min(60).max(1_800).default(600),
     CUSTOMER_IDENTITY_ENCRYPTION_KEY: z.string().min(1).optional(),
     IDENTITY_RISK_COOLDOWN_SECONDS: z.coerce.number().int().min(60).max(604_800).default(86_400),
+    IDENTITY_REBIND_COOLDOWN_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(86_400)
+      .max(7_776_000)
+      .default(2_592_000),
     CUSTOMER_PHONE_IDENTITY_INSTANCE_ID: z.string().min(1).max(128).default('wanmi-sms-cn'),
     CUSTOMER_REGISTRATION_SECONDS: z.coerce.number().int().min(60).max(1_800).default(600),
     CUSTOMER_SESSION_COOKIE: z

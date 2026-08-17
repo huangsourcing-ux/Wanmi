@@ -40,6 +40,8 @@ export type IdentityRecord = {
   identifierHash: string
   provider: IdentityProvider
   providerInstanceId: string
+  rebindAllowedAt?: string | null
+  releasedIdentifierHash?: string | null
   status: 'active' | 'unbound'
 }
 
@@ -199,6 +201,56 @@ async function findIdentity(
   return result.docs[0] as unknown as IdentityRecord | undefined
 }
 
+export async function assertReleasedIdentityRebindAllowed(
+  req: PayloadRequest,
+  input: { identifierHash: string; provider: IdentityProvider; providerInstanceId: string },
+): Promise<void> {
+  return inAuthTransaction(req, async () => {
+    let row: Record<string, unknown> | undefined
+    try {
+      const database = await authTransactionDatabase(req)
+      const found = await database.execute(sql`
+        SELECT identifier_hash, released_identifier_hash, rebind_allowed_at
+        FROM customer_identities
+        WHERE provider = ${input.provider}
+          AND provider_instance_id = ${input.providerInstanceId}
+          AND (
+            identifier_hash = ${input.identifierHash}
+            OR released_identifier_hash = ${input.identifierHash}
+          )
+        ORDER BY
+          CASE WHEN identifier_hash = ${input.identifierHash} THEN 0 ELSE 1 END,
+          id DESC
+        LIMIT 1
+        FOR SHARE
+      `)
+      row = found.rows?.[0]
+    } catch {
+      throw new AppError('IDENTITY_REBIND_STATE_UNAVAILABLE', '登录身份重绑定状态暂时无法核验', 503)
+    }
+    if (!row) return
+    if (row.identifier_hash === input.identifierHash) {
+      throw new AppError('IDENTITY_ALREADY_BOUND', '该登录身份仍绑定现有账号', 409)
+    }
+    if (row.released_identifier_hash !== input.identifierHash) {
+      throw new AppError('IDENTITY_REBIND_STATE_UNAVAILABLE', '登录身份重绑定状态暂时无法核验', 503)
+    }
+    const rebindAllowedAt = new Date(String(row.rebind_allowed_at)).getTime()
+    if (!Number.isFinite(rebindAllowedAt)) {
+      throw new AppError('IDENTITY_REBIND_STATE_UNAVAILABLE', '登录身份重绑定状态暂时无法核验', 503)
+    }
+    if (rebindAllowedAt <= Date.now()) return
+    throw new AppError(
+      'IDENTITY_REBIND_COOLDOWN_ACTIVE',
+      '该登录身份尚处于账号关闭重绑定冷静期',
+      409,
+      {
+        retryAfterSeconds: Math.max(1, Math.ceil((rebindAllowedAt - Date.now()) / 1_000)),
+      },
+    )
+  })
+}
+
 async function loadActiveCustomer(req: PayloadRequest, id: number): Promise<Customer> {
   const customer = await req.payload.findByID({
     collection: 'customers',
@@ -326,6 +378,11 @@ export async function authenticateVerifiedPhone(
   const identifierHash = hmac(phone, getEnv().SESSION_PEPPER)
   const identity = await findIdentity(req, 'phone', providerInstanceId, identifierHash)
   if (identity) return loginIdentity(req, identity, input)
+  await assertReleasedIdentityRebindAllowed(req, {
+    identifierHash,
+    provider: 'phone',
+    providerInstanceId,
+  })
 
   const legacy = await req.payload.find({
     collection: 'customers',
@@ -361,6 +418,11 @@ export async function authenticateVerifiedWechat(
   const identifierHash = hmac(input.openid, getEnv().SESSION_PEPPER)
   const identity = await findIdentity(req, 'wechat', providerInstanceId, identifierHash)
   if (identity) return loginIdentity(req, identity, input)
+  await assertReleasedIdentityRebindAllowed(req, {
+    identifierHash,
+    provider: 'wechat',
+    providerInstanceId,
+  })
   return createRegistrationIntent(req, {
     ...input,
     identifier: input.openid,
@@ -532,6 +594,22 @@ export async function registerCustomer(
         decryptSecret(phoneIntent.identifierEncrypted, identityEncryptionKey()),
       )
       await assertLegacyPhoneIsNotQuarantined(req, phone)
+      await assertReleasedIdentityRebindAllowed(req, {
+        identifierHash: phoneIntent.identifierHash,
+        provider: phoneIntent.provider,
+        providerInstanceId: phoneIntent.providerInstanceId,
+      })
+      if (
+        primary.provider !== phoneIntent.provider ||
+        primary.providerInstanceId !== phoneIntent.providerInstanceId ||
+        primary.identifierHash !== phoneIntent.identifierHash
+      ) {
+        await assertReleasedIdentityRebindAllowed(req, {
+          identifierHash: primary.identifierHash,
+          provider: primary.provider,
+          providerInstanceId: primary.providerInstanceId,
+        })
+      }
       const inviterId = await findInviter(req, input.invitationCode)
       const now = new Date().toISOString()
       const customer = await req.payload.create({
@@ -744,6 +822,13 @@ export async function bindVerifiedIdentity(
     if (existing && customerId(existing) !== customer.id) {
       await createIdentityCollisionReview(req, customer, existing)
       return { collision: true as const }
+    }
+    if (!existing) {
+      await assertReleasedIdentityRebindAllowed(req, {
+        identifierHash: intent.identifierHash,
+        provider: intent.provider,
+        providerInstanceId: intent.providerInstanceId,
+      })
     }
     const old = await activeCustomerIdentities(req, customer.id)
     const sameProvider = old.find(

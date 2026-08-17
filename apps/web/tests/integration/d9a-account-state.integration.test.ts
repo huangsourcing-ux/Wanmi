@@ -855,21 +855,21 @@ describe('D9-A A3 account state and capability restrictions', () => {
     await expect(storedCustomer(account.id)).resolves.toMatchObject({ status: 'suspended' })
   })
 
-  it('persists a valid restricted self-closure through the account-state transition service', async () => {
+  it('records a restricted self-closure request without prematurely transitioning or revoking sessions', async () => {
     const account = await customer('restricted', ['purchase_disabled'])
     const req = await requestFor({ ...account, collection: 'customers' }, 'deletion-transition')
     const grant = await issueStepUpGrantFixture(payload, req, account.id, 'account_deletion')
     const { session } = await createSession(account.id)
     await expect(requestCustomerDeletion(req, account, grant)).resolves.toMatchObject({
-      status: 'closing',
+      status: 'pending',
     })
     await expect(storedCustomer(account.id)).resolves.toMatchObject({
-      capabilityRestrictions: [],
-      status: 'closing',
+      capabilityRestrictions: ['purchase_disabled'],
+      status: 'restricted',
     })
     await expect(
       payload.findByID({ collection: 'customerSessions', id: session.id, overrideAccess: true }),
-    ).resolves.toEqual(expect.objectContaining({ revokedAt: expect.any(String) }))
+    ).resolves.toEqual(expect.objectContaining({ revokedAt: null }))
   })
 
   it('rejects deletion and Name Server writes during cooldown despite valid purpose grants', async () => {

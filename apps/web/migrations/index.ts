@@ -37,6 +37,7 @@ import * as migration_20260816_061548_d9a_account_state_capabilities from './202
 import * as migration_20260816_061549_d9a_account_state_backfill from './20260816_061549_d9a_account_state_backfill'
 import * as migration_20260816_121523_d9a_consent_personal_information from './20260816_121523_d9a_consent_personal_information'
 import * as migration_20260816_150802_d9a_account_recovery from './20260816_150802_d9a_account_recovery'
+import * as migration_20260817_000646_d9a_account_closure from './20260817_000646_d9a_account_closure'
 
 export const migrations = [
   {
@@ -233,5 +234,10 @@ export const migrations = [
     up: migration_20260816_150802_d9a_account_recovery.up,
     down: migration_20260816_150802_d9a_account_recovery.down,
     name: '20260816_150802_d9a_account_recovery',
+  },
+  {
+    up: migration_20260817_000646_d9a_account_closure.up,
+    down: migration_20260817_000646_d9a_account_closure.down,
+    name: '20260817_000646_d9a_account_closure',
   },
 ]

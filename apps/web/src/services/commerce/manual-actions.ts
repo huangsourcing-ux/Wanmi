@@ -71,6 +71,7 @@ export async function recordManualOrderAction(
     actionType: 'invoice_note' | 'special_refund'
     amountMinor?: number
     evidence: ManualCommerceEvidence
+    invoiceStatus?: 'cancelled' | 'completed' | 'processing'
     reason: string
   },
 ) {
@@ -156,6 +157,7 @@ export async function recordManualOrderAction(
           ? {}
           : { amountMinor: input.amountMinor, currency: 'CNY' as const }),
         evidence: input.evidence,
+        invoiceStatus: input.invoiceStatus,
         operator: actor.id as never,
         order: order.id as never,
         reason: input.reason,

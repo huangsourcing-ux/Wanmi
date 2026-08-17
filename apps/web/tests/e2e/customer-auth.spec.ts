@@ -146,16 +146,20 @@ test('customer OTP, all-session logout, deletion, and admin isolation work end t
     data: {
       confirmation: 'DELETE_MY_ACCOUNT',
       deviceId,
+      reason: '不再使用此测试账号',
       stepUpToken: stepUpGrant.stepUpToken,
     },
     headers: { cookie: secondCookie },
   })
-  expect(deletion.status()).toBe(200)
+  expect(deletion.status()).toBe(202)
   expect(await deletion.json()).toMatchObject({
+    blockers: [],
+    cooldownEndsAt: expect.any(String),
     deletionRequestedAt: expect.any(String),
-    status: 'closing',
+    requestId: expect.any(String),
+    status: 'pending',
   })
-  expect(deletion.headers()['set-cookie']).toContain('wanmi_customer_session=;')
+  expect(deletion.headers()['set-cookie']).toBeUndefined()
 
   const postDeletionRequest = await request.post('/api/v1/auth/sms/request', {
     data: { captchaVerifyParam, deviceId, phone },
