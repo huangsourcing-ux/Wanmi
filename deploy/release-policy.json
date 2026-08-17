@@ -84,6 +84,13 @@
       "phase": "expand",
       "reason": "新增钱包账户、追加式账本、钱包事务表及后台一致性任务枚举；旧代码可忽略新增结构，新代码仅在迁移完成后启用账本服务。",
       "rollback": "retain"
+    },
+    "20260817_065450_d9d1_dns_record_management": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增 DNS 变更追加式记录、域名变更互斥与速率列及 provider DNS 操作枚举；旧代码可忽略新增结构，新代码仅在迁移完成后启用解析记录管理。",
+      "rollback": "retain"
     }
   }
 }

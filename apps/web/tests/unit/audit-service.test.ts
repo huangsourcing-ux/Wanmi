@@ -62,6 +62,7 @@ describe('shared audit event service', () => {
         'commerce.sales_stop.resume_selected',
         'commerce.special_refund.recorded',
         'domain.asset.synced',
+        'domain.dns_record.change_recorded',
         'domain.expiry_reminder.recorded',
         'domain.nameserver.change_recorded',
         'form_submission.status_changed',

@@ -75,7 +75,8 @@ export class LiveWestDigitalTransport
       if (
         !('operation' in request) ||
         request.operation === 'availability' ||
-        request.operation === 'price'
+        request.operation === 'price' ||
+        request.operation === 'dns_record_query'
       ) {
         throw error
       }

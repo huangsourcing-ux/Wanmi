@@ -8,14 +8,22 @@ import { normalizeDomain } from '@/lib/domain-name'
 import { mapWestDigitalRealnameCreateFields } from './westdigital-realname'
 import type {
   WestDigitalDomainAsset,
+  WestDigitalDnsRecordInput,
+  WestDigitalDnsRecordPage,
+  WestDigitalManagedProvider,
   WestDigitalRealnameProfile,
   WestDigitalRealnameReviewState,
   WestDigitalWriteConfirmation,
-  WestDigitalWriteProvider,
 } from './types'
+import { managedDnsRecordTypeSchema, westDigitalDnsLineCodeSchema } from '@/schemas/dns-management'
 
 export type WestDigitalWriteTransportOperation =
   | 'asset_query'
+  | 'dns_record_add'
+  | 'dns_record_delete'
+  | 'dns_record_modify'
+  | 'dns_record_pause'
+  | 'dns_record_query'
   | 'nameserver'
   | 'realname_create'
   | 'realname_query'
@@ -93,6 +101,30 @@ const assetDataSchema = z
     registrars: z.string().optional(),
   })
   .passthrough()
+const dnsRecordIdDataSchema = z.object({
+  id: z.union([z.string(), z.number().int()]).transform(String).pipe(z.string().regex(/^\d+$/u)),
+})
+const dnsInteger = (minimum: number, maximum: number) =>
+  z
+    .union([z.number().int(), z.string().regex(/^\d+$/u).transform(Number)])
+    .pipe(z.number().int().min(minimum).max(maximum))
+const dnsRecordItemSchema = z.object({
+  id: z.union([z.string(), z.number().int()]).transform(String).pipe(z.string().regex(/^\d+$/u)),
+  item: z.string().max(253),
+  level: dnsInteger(1, 100),
+  line: westDigitalDnsLineCodeSchema,
+  pause: dnsInteger(0, 1),
+  ttl: dnsInteger(60, 86_400),
+  type: managedDnsRecordTypeSchema,
+  value: z.string().max(2_048),
+})
+const dnsRecordPageDataSchema = z.object({
+  items: z.array(dnsRecordItemSchema),
+  limit: dnsInteger(1, 500),
+  pagecount: dnsInteger(0, 10_000),
+  pageno: dnsInteger(1, 10_000),
+  total: dnsInteger(0, 500_000),
+})
 
 const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u)
 const positiveYearsSchema = z.number().int().min(1).max(10)
@@ -164,7 +196,7 @@ export function isExplicitlyRetryableWestDigitalWriteError(code: string): boolea
   return RETRYABLE_NOT_SUBMITTED_CODES.has(code)
 }
 
-export class WestDigitalWriteAdapter implements WestDigitalWriteProvider {
+export class WestDigitalWriteAdapter implements WestDigitalManagedProvider {
   private readonly now: () => Date
   private readonly requestIdFactory: () => string
   private readonly timeoutMs: number
@@ -278,6 +310,172 @@ export class WestDigitalWriteAdapter implements WestDigitalWriteProvider {
       path: '/v2/domain/',
       write: true,
     })
+  }
+
+  async addDnsRecord(input: {
+    domainAscii: string
+    record: WestDigitalDnsRecordInput
+    traceId: string
+  }) {
+    const record = this.dnsRecordInput(input.record)
+    return this.request({
+      body: {
+        act: 'adddnsrecord',
+        domain: asciiDomain(input.domainAscii),
+        host: record.host,
+        level: String(record.priority),
+        line: record.lineCode,
+        ttl: String(record.ttl),
+        type: record.type,
+        value: record.value,
+      },
+      input,
+      operation: 'dns_record_add',
+      parse: (envelope) => ({
+        providerClientId: envelope.clientid!,
+        providerRecordId: dnsRecordIdDataSchema.parse(envelope.data).id,
+        state: 'accepted' as const,
+      }),
+      path: '/v2/domain/',
+      write: true,
+    })
+  }
+
+  async modifyDnsRecord(input: {
+    domainAscii: string
+    providerRecordId: string
+    record: WestDigitalDnsRecordInput
+    traceId: string
+  }) {
+    const record = this.dnsRecordInput(input.record)
+    return this.request({
+      body: {
+        act: 'moddnsrecord',
+        domain: asciiDomain(input.domainAscii),
+        host: record.host,
+        id: z.string().regex(/^\d+$/u).parse(input.providerRecordId),
+        level: String(record.priority),
+        line: record.lineCode,
+        ttl: String(record.ttl),
+        type: record.type,
+        value: record.value,
+      },
+      input,
+      operation: 'dns_record_modify',
+      parse: (envelope) => ({ providerClientId: envelope.clientid!, state: 'accepted' as const }),
+      path: '/v2/domain/',
+      write: true,
+    })
+  }
+
+  async deleteDnsRecord(input: {
+    domainAscii: string
+    providerRecordId: string
+    record: WestDigitalDnsRecordInput
+    traceId: string
+  }) {
+    const record = this.dnsRecordInput(input.record)
+    return this.request({
+      body: {
+        act: 'deldnsrecord',
+        domain: asciiDomain(input.domainAscii),
+        host: record.host,
+        id: z.string().regex(/^\d+$/u).parse(input.providerRecordId),
+        line: record.lineCode,
+        type: record.type,
+        value: record.value,
+      },
+      input,
+      operation: 'dns_record_delete',
+      parse: (envelope) => ({ providerClientId: envelope.clientid!, state: 'accepted' as const }),
+      path: '/v2/domain/',
+      write: true,
+    })
+  }
+
+  async setDnsRecordPaused(input: {
+    domainAscii: string
+    paused: boolean
+    providerRecordId: string
+    traceId: string
+  }) {
+    return this.request({
+      body: {
+        act: 'pause',
+        domain: asciiDomain(input.domainAscii),
+        id: z.string().regex(/^\d+$/u).parse(input.providerRecordId),
+        val: input.paused ? '1' : '0',
+      },
+      input,
+      operation: 'dns_record_pause',
+      parse: (envelope) => ({ providerClientId: envelope.clientid!, state: 'accepted' as const }),
+      path: '/v2/domain/',
+      write: true,
+    })
+  }
+
+  async queryDnsRecords(input: {
+    domainAscii: string
+    host?: string
+    limit: number
+    page: number
+    providerRecordId?: string
+    traceId: string
+    type?: z.infer<typeof managedDnsRecordTypeSchema>
+    value?: string
+  }) {
+    const body: Record<string, string> = {
+      act: 'getdnsrecord',
+      domain: asciiDomain(input.domainAscii),
+      limit: String(z.number().int().min(1).max(500).parse(input.limit)),
+      pageno: String(z.number().int().positive().parse(input.page)),
+    }
+    if (input.host !== undefined) body.host = z.string().max(253).parse(input.host)
+    if (input.type !== undefined) body.type = managedDnsRecordTypeSchema.parse(input.type)
+    if (input.value !== undefined) body.value = z.string().max(2_048).parse(input.value)
+    const expectedRecordId = input.providerRecordId
+      ? z.string().regex(/^\d+$/u).parse(input.providerRecordId)
+      : undefined
+    return this.request<WestDigitalDnsRecordPage>({
+      body,
+      input,
+      operation: 'dns_record_query',
+      parse: (envelope) => {
+        const data = dnsRecordPageDataSchema.parse(envelope.data)
+        const items = data.items
+          .filter((record) => !expectedRecordId || record.id === expectedRecordId)
+          .map((record) => ({
+            host: record.item || '@',
+            id: record.id,
+            lineCode: record.line,
+            paused: record.pause === 1,
+            priority: record.level,
+            ttl: record.ttl,
+            type: record.type,
+            value: record.value,
+          }))
+        return {
+          items,
+          limit: expectedRecordId ? items.length || 1 : data.limit,
+          page: expectedRecordId ? 1 : data.pageno,
+          pageCount: expectedRecordId ? (items.length ? 1 : 0) : data.pagecount,
+          total: expectedRecordId ? items.length : data.total,
+        }
+      },
+      path: '/v2/domain/',
+      write: false,
+    })
+  }
+
+  private dnsRecordInput(record: WestDigitalDnsRecordInput): WestDigitalDnsRecordInput {
+    return {
+      host: z.string().max(253).parse(record.host),
+      lineCode: westDigitalDnsLineCodeSchema.parse(record.lineCode),
+      priority: z.number().int().min(1).max(100).parse(record.priority),
+      ttl: z.number().int().min(60).max(86_400).parse(record.ttl),
+      type: managedDnsRecordTypeSchema.parse(record.type),
+      value: z.string().min(1).max(2_048).parse(record.value),
+    }
   }
 
   async queryAsset(input: {

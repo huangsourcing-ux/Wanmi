@@ -231,6 +231,9 @@ export async function requestCustomerNameserverChange(
 ) {
   return transaction(req, async () => {
     await assertCustomerAccountCapability(req, options.customer.id, 'domain_write')
+    if (input.confirmed !== true) {
+      throw new AppError('NAMESERVER_CONFIRMATION_REQUIRED', 'Name Server 变更需要二次确认', 400)
+    }
     await authorizeStepUpGrant(req, {
       customerId: options.customer.id,
       deviceId: input.deviceId,

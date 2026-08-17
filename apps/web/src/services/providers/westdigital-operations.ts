@@ -11,6 +11,9 @@ import { authorizeWestDigitalWrite, ProviderWriteGuardError } from '@/lib/provid
 import type { Result } from '@/schemas/api'
 import type {
   WestDigitalDomainAsset,
+  WestDigitalDnsRecord,
+  WestDigitalDnsRecordInput,
+  WestDigitalManagedProvider,
   WestDigitalRealnameProfile,
   WestDigitalWriteProvider,
 } from '@/providers/types'
@@ -36,6 +39,7 @@ type OperationRecord = {
 
 type SharedInput = {
   actor: AuditActor
+  businessKey?: string
   orderId?: number | string
   targetId: number | string
   traceId: string
@@ -69,6 +73,30 @@ export type WestDigitalWriteOperationInput =
       nameservers: string[]
       operation: 'nameserver'
     })
+  | (SharedInput & {
+      domainAscii: string
+      operation: 'dns_record_add'
+      record: WestDigitalDnsRecordInput
+    })
+  | (SharedInput & {
+      domainAscii: string
+      operation: 'dns_record_modify'
+      providerRecordId: string
+      record: WestDigitalDnsRecordInput
+    })
+  | (SharedInput & {
+      domainAscii: string
+      operation: 'dns_record_delete'
+      providerRecordId: string
+      record: WestDigitalDnsRecordInput
+    })
+  | (SharedInput & {
+      domainAscii: string
+      operation: 'dns_record_pause'
+      paused: boolean
+      providerRecordId: string
+      record: WestDigitalDnsRecordInput
+    })
 
 export type WestDigitalOperationView = {
   attemptCount: number
@@ -76,8 +104,14 @@ export type WestDigitalOperationView = {
   operationId: string
   operationKey: string
   providerRequestId?: string
+  providerRecordId?: string
   status: 'failed' | 'succeeded' | 'unknown'
 }
+
+type WestDigitalDnsWriteOperation = Extract<
+  WestDigitalWriteOperationInput,
+  { operation: `dns_record_${string}` }
+>['operation']
 
 function stable(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
@@ -90,7 +124,29 @@ function stable(value: unknown): string {
   return JSON.stringify(value)
 }
 
+export function generateWestDigitalDnsBusinessOperationKey(input: {
+  businessKey: string
+  operation: WestDigitalDnsWriteOperation
+  targetId: number | string
+}): string {
+  const digest = createHash('sha256')
+    .update(
+      stable({
+        businessKey: input.businessKey,
+      }),
+    )
+    .digest('hex')
+  return `westdigital:${input.operation}:${String(input.targetId)}:${digest}`
+}
+
 export function generateWestDigitalOperationKey(input: WestDigitalWriteOperationInput): string {
+  if (dnsOperation(input) && input.businessKey) {
+    return generateWestDigitalDnsBusinessOperationKey({
+      businessKey: input.businessKey,
+      operation: input.operation,
+      targetId: input.targetId,
+    })
+  }
   const intent = Object.fromEntries(
     Object.entries(input).filter(([key]) => !['actor', 'traceId'].includes(key)),
   )
@@ -277,11 +333,28 @@ async function claimAttempt(
   })
 }
 
-async function submit(provider: WestDigitalWriteProvider, input: WestDigitalWriteOperationInput) {
+function requireDnsProvider(
+  provider: WestDigitalWriteProvider | WestDigitalManagedProvider,
+): WestDigitalManagedProvider {
+  if (!('queryDnsRecords' in provider)) {
+    throw new AppError('WESTDIGITAL_DNS_PROVIDER_UNAVAILABLE', 'DNS Provider 能力不可用', 503)
+  }
+  return provider
+}
+
+async function submit(
+  provider: WestDigitalWriteProvider | WestDigitalManagedProvider,
+  input: WestDigitalWriteOperationInput,
+) {
   if (input.operation === 'realname') return provider.createRealname(input)
   if (input.operation === 'register') return provider.register(input)
   if (input.operation === 'renew') return provider.renew(input)
-  return provider.changeNameservers(input)
+  if (input.operation === 'nameserver') return provider.changeNameservers(input)
+  const dnsProvider = requireDnsProvider(provider)
+  if (input.operation === 'dns_record_add') return dnsProvider.addDnsRecord(input)
+  if (input.operation === 'dns_record_modify') return dnsProvider.modifyDnsRecord(input)
+  if (input.operation === 'dns_record_delete') return dnsProvider.deleteDnsRecord(input)
+  return dnsProvider.setDnsRecordPaused(input)
 }
 
 function safeProviderResult(result: Awaited<ReturnType<typeof submit>>): Record<string, unknown> {
@@ -290,6 +363,9 @@ function safeProviderResult(result: Awaited<ReturnType<typeof submit>>): Record<
     providerClientId: result.data.providerClientId,
     ...('providerTemplateId' in result.data
       ? { providerTemplateId: result.data.providerTemplateId }
+      : {}),
+    ...('providerRecordId' in result.data
+      ? { providerRecordId: result.data.providerRecordId }
       : {}),
     providerState: result.data.state,
   }
@@ -302,8 +378,21 @@ function providerTemplateId(operation: OperationRecord): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
+function providerRecordId(operation: OperationRecord): string | undefined {
+  const result = operation.safeResult
+  if (!result || typeof result !== 'object') return undefined
+  const value = (result as { providerRecordId?: unknown }).providerRecordId
+  return typeof value === 'string' ? value : undefined
+}
+
+function dnsOperation(
+  input: WestDigitalWriteOperationInput,
+): input is Extract<WestDigitalWriteOperationInput, { operation: `dns_record_${string}` }> {
+  return input.operation.startsWith('dns_record_')
+}
+
 async function queryStatus(
-  provider: WestDigitalWriteProvider,
+  provider: WestDigitalWriteProvider | WestDigitalManagedProvider,
   input: WestDigitalWriteOperationInput,
   operation: OperationRecord,
 ) {
@@ -312,7 +401,32 @@ async function queryStatus(
     if (!id) return undefined
     return provider.queryRealname({ providerTemplateId: id, traceId: input.traceId })
   }
+  if (dnsOperation(input)) {
+    const recordId =
+      input.operation === 'dns_record_add' ? providerRecordId(operation) : input.providerRecordId
+    return requireDnsProvider(provider).queryDnsRecords({
+      domainAscii: input.domainAscii,
+      host: recordId ? undefined : input.record.host,
+      limit: getEnv().DNS_RECORD_MAX_PER_DOMAIN,
+      page: 1,
+      providerRecordId: recordId,
+      traceId: input.traceId,
+      type: recordId ? undefined : input.record.type,
+      value: recordId ? undefined : input.record.value,
+    })
+  }
   return provider.queryAsset({ domainAscii: input.domainAscii, traceId: input.traceId })
+}
+
+function sameDnsRecord(actual: WestDigitalDnsRecord, expected: WestDigitalDnsRecordInput): boolean {
+  return (
+    actual.host === expected.host &&
+    actual.lineCode === expected.lineCode &&
+    actual.priority === expected.priority &&
+    actual.ttl === expected.ttl &&
+    actual.type === expected.type &&
+    actual.value === expected.value
+  )
 }
 
 function confirmed(
@@ -322,6 +436,20 @@ function confirmed(
   if (!result?.ok) return false
   if (input.operation === 'realname')
     return 'state' in result.data && result.data.state !== 'unknown'
+  if (dnsOperation(input)) {
+    if (!('items' in result.data)) return false
+    const recordId = input.operation === 'dns_record_add' ? undefined : input.providerRecordId
+    const matching = result.data.items.filter(
+      (record) => (!recordId || record.id === recordId) && sameDnsRecord(record, input.record),
+    )
+    if (input.operation === 'dns_record_delete') {
+      return !result.data.items.some((record) => record.id === input.providerRecordId)
+    }
+    if (input.operation === 'dns_record_pause') {
+      return matching.length === 1 && matching[0]?.paused === input.paused
+    }
+    return matching.length === 1
+  }
   if (!('domainAscii' in result.data) || result.data.domainAscii !== input.domainAscii) return false
   if (input.operation === 'nameserver') {
     const actual = new Set(result.data.nameservers.map((value) => value.toLowerCase()))
@@ -339,6 +467,7 @@ function view(operation: OperationRecord, idempotentReplay: boolean): WestDigita
     operationId: String(operation.id),
     operationKey: operation.operationKey,
     providerRequestId: operation.providerRequestId ?? undefined,
+    providerRecordId: providerRecordId(operation),
     status:
       operation.status === 'succeeded'
         ? 'succeeded'
@@ -420,7 +549,7 @@ async function safetyRejectedResult(
 export async function executeWestDigitalWriteOperation(
   req: PayloadRequest,
   input: WestDigitalWriteOperationInput,
-  provider: WestDigitalWriteProvider,
+  provider: WestDigitalWriteProvider | WestDigitalManagedProvider,
 ): Promise<Result<WestDigitalOperationView>> {
   const operationKey = generateWestDigitalOperationKey(input)
   const prepared = await prepareOperation(req, input, operationKey)

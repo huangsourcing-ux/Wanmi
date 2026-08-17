@@ -39,6 +39,7 @@ const schema = z
     ALLOW_REAL_WECHATPAY_PAYMENTS: booleanFromString,
     ALLOW_REAL_WECHATPAY_REFUNDS: booleanFromString,
     ALLOW_REAL_WESTDIGITAL: booleanFromString,
+    ALLOW_REAL_WESTDIGITAL_DNS_WRITES: booleanFromString,
     ALLOW_REAL_WESTDIGITAL_NAMESERVER_WRITES: booleanFromString,
     ALLOW_REAL_WESTDIGITAL_READS: booleanFromString,
     ALLOW_REAL_WESTDIGITAL_REALNAME_WRITES: booleanFromString,
@@ -89,6 +90,9 @@ const schema = z
     DNS_READ_RATE_PER_SECOND: z.coerce.number().positive().default(20),
     DNS_RESPONSE_MAX_BYTES: z.coerce.number().int().positive().default(65_536),
     DNS_TIMEOUT_MS: z.coerce.number().int().positive().default(3_000),
+    DNS_RECORD_CHANGE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).max(1_000).default(20),
+    DNS_RECORD_MAX_PER_DOMAIN: z.coerce.number().int().min(1).max(500).default(100),
+    DNS_RECORD_PREVIEW_TTL_SECONDS: z.coerce.number().int().min(60).max(900).default(300),
     DOMAIN_EXPIRY_REMINDER_DAYS: z
       .string()
       .regex(/^\d{1,3}(?:,\d{1,3})*$/u)
