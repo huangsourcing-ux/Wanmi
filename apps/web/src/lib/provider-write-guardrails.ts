@@ -9,6 +9,9 @@ export type WestDigitalGuardedWrite =
         | 'dns_record_delete'
         | 'dns_record_modify'
         | 'dns_record_pause'
+        | 'domain_contact_update'
+        | 'domain_management_password'
+        | 'domain_template_transfer'
         | 'nameserver'
         | 'realname'
     }
@@ -63,6 +66,13 @@ function westDigitalCapabilityEnabled(operation: WestDigitalGuardedWrite['operat
   if (operation === 'realname') return env.ALLOW_REAL_WESTDIGITAL_REALNAME_WRITES
   if (operation === 'register') return env.ALLOW_REAL_WESTDIGITAL_REGISTRATION_WRITES
   if (operation === 'renew') return env.ALLOW_REAL_WESTDIGITAL_RENEWAL_WRITES
+  if (
+    operation === 'domain_contact_update' ||
+    operation === 'domain_management_password' ||
+    operation === 'domain_template_transfer'
+  ) {
+    return env.ALLOW_REAL_WESTDIGITAL_DOMAIN_MANAGEMENT_WRITES
+  }
   return env.ALLOW_REAL_WESTDIGITAL_NAMESERVER_WRITES
 }
 

@@ -19,6 +19,7 @@ import {
   type NameserverChangeJobInput,
 } from '@/services/domains/nameserver-changes'
 import { runConfiguredDomainExpiryReminders } from '@/services/domains/expiry-reminders'
+import { runConfiguredDomainAssetSynchronization } from '@/services/domains/domain-assets'
 import { runOperationsMonitoring } from '@/services/operations/monitoring'
 import { recordCommerceWorkerHeartbeat } from '@/services/operations/worker-heartbeat'
 import { runWalletLedgerConsistencyCheck } from '@/services/wallet/invariants'
@@ -235,6 +236,22 @@ export const domainExpiryReminders: WorkflowConfig = {
   },
 }
 
+export const domainAssetSynchronization: WorkflowConfig = {
+  slug: 'domainAssetSynchronization',
+  concurrency: {
+    exclusive: true,
+    key: () => 'domain:asset-synchronization',
+    supersedes: true,
+  },
+  inputSchema: [],
+  queue: 'background',
+  retries: 0,
+  schedule: [{ cron: '0 15 1 * * *', queue: 'background' }],
+  handler: async ({ job, req }) => {
+    await runConfiguredDomainAssetSynchronization(req, `domain-asset-sync-${job.id}`)
+  },
+}
+
 export const walletLedgerConsistencyCheck: WorkflowConfig = {
   slug: 'walletLedgerConsistencyCheck',
   concurrency: {
@@ -293,6 +310,7 @@ export const workflows = [
   realnameCleanup,
   westdigitalBalanceMonitoring,
   domainExpiryReminders,
+  domainAssetSynchronization,
   walletLedgerConsistencyCheck,
   commerceFulfillment,
   commerceWorkerHeartbeat,

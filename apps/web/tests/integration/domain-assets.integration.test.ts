@@ -121,6 +121,9 @@ async function createAsset(
           registeredAt: '2026-08-08T04:00:00.000Z',
           registrar: 'west',
           status: 'active',
+          syncReviewStatus: 'none',
+          syncVersion: 0,
+          upstreamOwnershipStatus: 'unknown',
         },
         overrideAccess: true,
       }),
@@ -357,6 +360,9 @@ afterAll(async () => {
     )
   }
   for (const assetId of assetIds) {
+    await payload.db.pool.query('DELETE FROM domain_asset_sync_events WHERE asset_id = $1', [
+      assetId,
+    ])
     await ignorePayloadNotFound(() =>
       payload.delete({ collection: 'domainAssets', id: assetId, overrideAccess: true }),
     )
@@ -452,7 +458,7 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
     expect(hiddenOrder.totalDocs).toBe(0)
   })
 
-  it('refreshes only confirmed facts and preserves the complete asset on upstream failure', async () => {
+  it('records upstream differences without overwriting local facts and fails closed on query failure', async () => {
     const customer = await createCustomer('sync')
     const template = await createTemplate(customer.id, 'sync')
     const asset = await createAsset(customer.id, template.id, `${fixturePrefix}-sync`)
@@ -470,13 +476,33 @@ describe('D6-04 domain assets, nameservers and expiry reminders', () => {
     expect(synced).toMatchObject({
       data: {
         asset: {
-          nameservers: ['ns1.synced.example', 'ns2.synced.example'],
-          registrar: 'west-confirmed',
+          nameservers: ['ns1.before.example', 'ns2.before.example'],
+          registrar: 'west',
           status: 'active',
         },
       },
-      state: 'ready',
+      problem: { code: 'DOMAIN_ASSET_SYNC_DIFFERENCE_PENDING' },
+      state: 'degraded',
     })
+    const differences = await payload.find({
+      collection: 'domainAssetSyncEvents',
+      limit: 10,
+      overrideAccess: true,
+      where: {
+        and: [
+          { asset: { equals: asset.id } },
+          { outcome: { equals: 'difference' } },
+          { resolutionStatus: { equals: 'pending' } },
+        ],
+      },
+    })
+    expect(differences.totalDocs).toBe(1)
+    expect(differences.docs[0]?.differences).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'nameservers' }),
+        expect.objectContaining({ field: 'registrar' }),
+      ]),
+    )
     const beforeFailure = await payload.findByID({
       collection: 'domainAssets',
       id: asset.id,

@@ -1,8 +1,12 @@
+import { randomUUID } from 'node:crypto'
+
+import { sql } from '@payloadcms/db-postgres'
 import { commitTransaction, initTransaction, killTransaction, type PayloadRequest } from 'payload'
 
 import { isCustomerUser } from '@/access/roles'
 import { AppError, toProblemDetails } from '@/lib/errors'
 import type { WestDigitalDomainAsset, WestDigitalWriteProvider } from '@/providers/types'
+import { createConfiguredWestDigitalWriteAdapter } from '@/providers/westdigital-write-fixtures'
 import {
   domainAssetDetailResultSchema,
   domainAssetListResultSchema,
@@ -15,6 +19,12 @@ import { recordAuditEvent } from '@/services/audit/record-audit-event'
 import { assertCustomerAccountCapabilityFromSnapshot } from '@/services/auth/account-state'
 import { queryWestDigitalAsset } from '@/services/providers/westdigital-operations'
 
+import {
+  assertDomainCapability,
+  type DomainCapabilityDeclaration,
+  WESTDIGITAL_DOMAIN_CAPABILITIES,
+} from './capabilities'
+
 type AssetRecord = {
   customer: number | string | { id: number | string }
   domainAscii: string
@@ -26,6 +36,9 @@ type AssetRecord = {
   registeredAt: string
   registrar: string
   status: 'active' | 'expired' | 'pending' | 'unknown'
+  syncReviewStatus?: 'matched' | 'none' | 'pending'
+  syncVersion?: null | number
+  upstreamOwnershipStatus?: 'confirmed' | 'not_owned' | 'unknown'
 }
 
 type CustomerIdentity = {
@@ -68,6 +81,22 @@ async function transaction<T>(req: PayloadRequest, work: () => Promise<T>): Prom
     if (started) await killTransaction(req)
     throw error
   }
+}
+
+async function database(req: PayloadRequest) {
+  const transactionId = await req.transactionID
+  const session = transactionId ? req.payload.db.sessions?.[transactionId] : undefined
+  const current = session?.db as
+    | {
+        execute(
+          statement: ReturnType<typeof sql>,
+        ): Promise<{ rows?: Array<{ id: number | string }> }>
+      }
+    | undefined
+  if (!current) {
+    throw new AppError('DOMAIN_ASSET_SYNC_CAS_UNAVAILABLE', '无法原子记录域名资产同步状态', 503)
+  }
+  return current
 }
 
 export async function findOwnedDomainAsset(
@@ -196,96 +225,317 @@ function confirmedFacts(asset: WestDigitalDomainAsset): WestDigitalDomainAsset {
   }
 }
 
+type SyncFacts = {
+  expiresAt: string
+  nameservers: string[]
+  registeredAt: string
+  registrar: string
+  status: AssetRecord['status']
+}
+
+type SyncDifference = { field: keyof SyncFacts; local: unknown; upstream: unknown }
+
+type SyncOutcome = 'difference' | 'matched' | 'not_owned' | 'ownership_unknown'
+
+function normalizedNameservers(values: string[]): string[] {
+  return values.map((value) => value.toLowerCase()).sort()
+}
+
+function localSyncFacts(asset: AssetRecord): SyncFacts {
+  return {
+    expiresAt: new Date(asset.expiresAt).toISOString(),
+    nameservers: normalizedNameservers(asset.nameservers ?? []),
+    registeredAt: new Date(asset.registeredAt).toISOString(),
+    registrar: asset.registrar,
+    status: asset.status,
+  }
+}
+
+function upstreamSyncFacts(asset: WestDigitalDomainAsset): SyncFacts {
+  const confirmed = confirmedFacts(asset)
+  return {
+    expiresAt: confirmed.expiresAt,
+    nameservers: normalizedNameservers(confirmed.nameservers),
+    registeredAt: confirmed.registeredAt,
+    registrar: confirmed.registrarCode,
+    status: confirmed.status,
+  }
+}
+
+function factDifferences(local: SyncFacts, upstream: SyncFacts): SyncDifference[] {
+  const differences: SyncDifference[] = []
+  for (const field of [
+    'expiresAt',
+    'nameservers',
+    'registeredAt',
+    'registrar',
+    'status',
+  ] as const) {
+    if (JSON.stringify(local[field]) !== JSON.stringify(upstream[field])) {
+      differences.push({ field, local: local[field], upstream: upstream[field] })
+    }
+  }
+  return differences
+}
+
+async function recordSyncObservation(
+  req: PayloadRequest,
+  input: {
+    actor: { id: number | string; type: 'customer' } | { type: 'system' }
+    asset: AssetRecord
+    differences?: SyncDifference[]
+    localFacts: SyncFacts
+    observedAt: string
+    outcome: SyncOutcome
+    providerErrorCode?: string
+    traceId: string
+    upstreamFacts?: SyncFacts
+  },
+): Promise<AssetRecord> {
+  return transaction(req, async () => {
+    const event = await req.payload.create({
+      collection: 'domainAssetSyncEvents',
+      data: {
+        asset: input.asset.id as never,
+        customer: relationId(input.asset.customer) as never,
+        differences: input.differences,
+        eventKey: `domain-sync:${input.asset.id}:${input.observedAt}:${input.outcome}:${randomUUID()}`,
+        localFacts: input.localFacts,
+        observedAt: input.observedAt,
+        outcome: input.outcome,
+        providerErrorCode: input.providerErrorCode,
+        resolutionStatus: input.outcome === 'matched' ? 'not_required' : 'pending',
+        traceId: input.traceId,
+        upstreamFacts: input.upstreamFacts,
+      },
+      overrideAccess: true,
+      req,
+    })
+    const ownership =
+      input.outcome === 'matched' || input.outcome === 'difference'
+        ? 'confirmed'
+        : input.outcome === 'not_owned'
+          ? 'not_owned'
+          : 'unknown'
+    const review = input.outcome === 'matched' ? 'matched' : 'pending'
+    const blocked = ownership === 'confirmed' ? null : input.observedAt
+    const reason =
+      ownership === 'not_owned'
+        ? 'DOMAIN_UPSTREAM_ASSET_NOT_OWNED'
+        : ownership === 'unknown'
+          ? 'DOMAIN_UPSTREAM_OWNERSHIP_UNCONFIRMED'
+          : null
+    const updated = await (
+      await database(req)
+    ).execute(sql`
+      UPDATE domain_assets
+      SET upstream_ownership_status = ${ownership},
+          sync_review_status = ${review},
+          sync_version = sync_version + 1,
+          last_ownership_checked_at = ${input.observedAt},
+          operation_blocked_at = ${blocked},
+          operation_block_reason = ${reason},
+          last_synced_at = CASE
+            WHEN ${input.outcome} = 'matched' THEN ${input.observedAt}
+            ELSE last_synced_at
+          END,
+          updated_at = NOW()
+      WHERE id = ${input.asset.id}
+        AND sync_version = ${input.asset.syncVersion ?? 0}
+        AND (
+          domain_management_lease_key IS NULL
+          OR domain_management_lease_expires_at <= NOW()
+        )
+      RETURNING id
+    `)
+    if (updated.rows?.[0]?.id === undefined) {
+      throw new AppError('DOMAIN_ASSET_SYNC_STATE_CONFLICT', '域名资产同步状态发生并发冲突', 409)
+    }
+    await recordAuditEvent(req, {
+      action: 'domain.asset_sync.observation_recorded',
+      actor: input.actor,
+      metadata: {
+        differenceFields: input.differences?.map((difference) => difference.field),
+        outcome: input.outcome,
+        providerErrorCode: input.providerErrorCode,
+      },
+      targetId: event.id,
+    })
+    return (await req.payload.findByID({
+      collection: 'domainAssets',
+      depth: 0,
+      id: input.asset.id,
+      overrideAccess: true,
+      req,
+    })) as unknown as AssetRecord
+  })
+}
+
+async function observeDomainAsset(
+  req: PayloadRequest,
+  asset: AssetRecord,
+  input: {
+    actor: { id: number | string; type: 'customer' } | { type: 'system' }
+    provider: WestDigitalWriteProvider
+    traceId: string
+  },
+) {
+  const localFacts = localSyncFacts(asset)
+  const queried = await queryWestDigitalAsset(
+    req,
+    {
+      actor: input.actor,
+      domainAscii: asset.domainAscii,
+      targetId: asset.id,
+      traceId: input.traceId,
+    },
+    input.provider,
+  )
+  const observedAt = queried.meta?.observedAt ?? new Date().toISOString()
+  if (queried.state !== 'ready') {
+    const providerErrorCode =
+      'problem' in queried ? queried.problem.code : 'DOMAIN_ASSET_SYNC_EMPTY'
+    const outcome: SyncOutcome =
+      providerErrorCode === 'WESTDIGITAL_ASSET_NOT_IN_ACCOUNT' ? 'not_owned' : 'ownership_unknown'
+    const updated = await recordSyncObservation(req, {
+      actor: input.actor,
+      asset,
+      localFacts,
+      observedAt,
+      outcome,
+      providerErrorCode,
+      traceId: input.traceId,
+    })
+    return { outcome, providerErrorCode, queried, updated } as const
+  }
+  let upstreamFacts: SyncFacts
+  try {
+    upstreamFacts = upstreamSyncFacts(queried.data)
+  } catch {
+    const providerErrorCode = 'DOMAIN_ASSET_SYNC_INVALID'
+    const outcome = 'ownership_unknown' as const
+    const updated = await recordSyncObservation(req, {
+      actor: input.actor,
+      asset,
+      localFacts,
+      observedAt,
+      outcome,
+      providerErrorCode,
+      traceId: input.traceId,
+    })
+    return { outcome, providerErrorCode, queried, updated } as const
+  }
+  const differences = factDifferences(localFacts, upstreamFacts)
+  const outcome = differences.length ? ('difference' as const) : ('matched' as const)
+  const updated = await recordSyncObservation(req, {
+    actor: input.actor,
+    asset,
+    differences,
+    localFacts,
+    observedAt,
+    outcome,
+    traceId: input.traceId,
+    upstreamFacts,
+  })
+  return { differences, outcome, queried, updated } as const
+}
+
 export async function syncCustomerDomainAsset(
   req: PayloadRequest,
   assetId: number | string,
   options: {
+    capabilities?: DomainCapabilityDeclaration
     customer: CustomerIdentity
     provider: WestDigitalWriteProvider
     traceId: string
   },
 ): Promise<DomainAssetDetailResult> {
+  assertDomainCapability('asset_sync', options.capabilities ?? WESTDIGITAL_DOMAIN_CAPABILITIES)
   const asset = await findOwnedDomainAsset(req, assetId, options.customer)
-  const queried = await queryWestDigitalAsset(
-    req,
-    {
-      actor: { id: options.customer.id, type: 'customer' },
-      domainAscii: asset.domainAscii,
-      targetId: asset.id,
+  const observation = await observeDomainAsset(req, asset, {
+    actor: { id: options.customer.id, type: 'customer' },
+    provider: options.provider,
+    traceId: options.traceId,
+  })
+  const detail = await detailForAsset(req, observation.updated, options.customer)
+  if (observation.outcome === 'matched') return detail
+  const code =
+    observation.outcome === 'difference'
+      ? 'DOMAIN_ASSET_SYNC_DIFFERENCE_PENDING'
+      : observation.outcome === 'not_owned'
+        ? 'DOMAIN_UPSTREAM_ASSET_NOT_OWNED'
+        : 'DOMAIN_UPSTREAM_OWNERSHIP_UNCONFIRMED'
+  return domainAssetDetailResultSchema.parse({
+    data: detail.data,
+    meta: {
+      lastSuccessfulAt: new Date(asset.lastSyncedAt).toISOString(),
+      observedAt: observation.queried.meta?.observedAt,
+      stale: true,
       traceId: options.traceId,
     },
-    options.provider,
-  )
-  if (queried.state !== 'ready') {
-    const stale = await detailForAsset(req, asset, options.customer)
-    const problem =
-      'problem' in queried
-        ? queried.problem
-        : toProblemDetails(
-            new AppError('DOMAIN_ASSET_SYNC_EMPTY', '上游未返回可确认的域名资产', 503),
-            options.traceId,
-          )
-    return domainAssetDetailResultSchema.parse({
-      data: stale.data,
-      meta: {
-        ...queried.meta,
-        lastSuccessfulAt: new Date(asset.lastSyncedAt).toISOString(),
-        stale: true,
-      },
-      problem,
-      state: 'degraded',
-    })
-  }
-
-  let facts: WestDigitalDomainAsset
-  try {
-    facts = confirmedFacts(queried.data)
-  } catch {
-    const stale = await detailForAsset(req, asset, options.customer)
-    return domainAssetDetailResultSchema.parse({
-      data: stale.data,
-      meta: {
-        lastSuccessfulAt: new Date(asset.lastSyncedAt).toISOString(),
-        observedAt: queried.meta?.observedAt,
-        stale: true,
-        traceId: options.traceId,
-      },
-      problem: toProblemDetails(
-        new AppError('DOMAIN_ASSET_SYNC_INVALID', '上游资产事实无法安全确认', 503),
-        options.traceId,
+    problem: toProblemDetails(
+      new AppError(
+        code,
+        code === 'DOMAIN_ASSET_SYNC_DIFFERENCE_PENDING'
+          ? '本地与上游域名事实不一致，已记录差异并等待处理'
+          : code === 'DOMAIN_UPSTREAM_ASSET_NOT_OWNED'
+            ? '该域名已不属于当前上游账户，已阻止操作'
+            : '无法确认域名仍属于当前上游账户，已阻止操作',
+        409,
       ),
-      state: 'degraded',
-    })
-  }
-
-  const updated = await transaction(req, async () => {
-    const document = (await req.payload.update({
-      collection: 'domainAssets',
-      data: {
-        expiresAt: facts.expiresAt,
-        lastSyncedAt: queried.meta?.observedAt ?? new Date().toISOString(),
-        nameservers: facts.nameservers,
-        registeredAt: facts.registeredAt,
-        registrar: facts.registrarCode,
-        status: facts.status,
-      },
-      id: asset.id,
-      overrideAccess: true,
-      req,
-    })) as unknown as AssetRecord
-    await recordAuditEvent(req, {
-      action: 'domain.asset.synced',
-      actor: { id: options.customer.id, type: 'customer' },
-      metadata: {
-        domainAscii: asset.domainAscii,
-        observedAt: queried.meta?.observedAt,
-        outcome: 'succeeded',
-      },
-      targetId: asset.id,
-    })
-    return document
+      options.traceId,
+    ),
+    state: 'degraded',
   })
-  return detailForAsset(req, updated, options.customer)
+}
+
+export async function runDomainAssetSynchronization(
+  req: PayloadRequest,
+  provider: WestDigitalWriteProvider,
+  traceId: string,
+  capabilities: DomainCapabilityDeclaration = WESTDIGITAL_DOMAIN_CAPABILITIES,
+) {
+  if (req.user) {
+    throw new AppError('DOMAIN_ASSET_SYNC_JOB_ONLY', '域名资产全量同步只能由后台任务执行', 403)
+  }
+  assertDomainCapability('asset_sync', capabilities)
+  const counts: Record<SyncOutcome, number> = {
+    difference: 0,
+    matched: 0,
+    not_owned: 0,
+    ownership_unknown: 0,
+  }
+  let page = 1
+  while (true) {
+    const assets = await req.payload.find({
+      collection: 'domainAssets',
+      depth: 0,
+      limit: 100,
+      overrideAccess: true,
+      page,
+      req,
+      sort: 'id',
+    })
+    for (const document of assets.docs) {
+      const asset = document as unknown as AssetRecord
+      const observation = await observeDomainAsset(req, asset, {
+        actor: { type: 'system' },
+        provider,
+        traceId: `${traceId}-asset-${asset.id}`,
+      })
+      counts[observation.outcome] += 1
+    }
+    if (!assets.hasNextPage) break
+    page += 1
+  }
+  return counts
+}
+
+export async function runConfiguredDomainAssetSynchronization(
+  req: PayloadRequest,
+  traceId: string,
+) {
+  return runDomainAssetSynchronization(req, createConfiguredWestDigitalWriteAdapter(), traceId)
 }
 
 export function domainAssetOwnerId(asset: AssetRecord): number | string {

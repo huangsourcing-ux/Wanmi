@@ -112,6 +112,9 @@ async function createFixture(
       registeredAt: '2026-08-17T04:00:00.000Z',
       registrar: 'west',
       status: 'active',
+      syncReviewStatus: 'none',
+      syncVersion: 0,
+      upstreamOwnershipStatus: 'unknown',
     },
     overrideAccess: true,
   })
@@ -169,6 +172,28 @@ function statefulProvider(
       records.set(current.id, { ...current, paused: input.body.val === '1' })
       return { body: { clientid, result: 200 }, status: 200 }
     }
+    if (input.operation === 'asset_query') {
+      return {
+        body: {
+          clientid,
+          data: {
+            dns1: 'ns1.before.example',
+            dns2: 'ns2.before.example',
+            dns3: '',
+            dns4: '',
+            dns5: '',
+            dns6: '',
+            domain: input.body.domain,
+            expdate: '2028-08-17 12:00:00',
+            id: '44169980',
+            regdate: '2026-08-17 12:00:00',
+            registrars: 'west',
+          },
+          result: 200,
+        },
+        status: 200,
+      }
+    }
     const filtered = [...records.values()].filter(
       (record) =>
         (!input.body.host || record.host === input.body.host) &&
@@ -202,6 +227,29 @@ function statefulProvider(
     }
   })
   return { provider: new WestDigitalWriteAdapter({ transport }), records, transport }
+}
+
+function ownedAssetResponse(input: WestDigitalWriteTransportRequest) {
+  return {
+    body: {
+      clientid: `${fixturePrefix}-${input.requestId}`,
+      data: {
+        dns1: 'ns1.before.example',
+        dns2: 'ns2.before.example',
+        dns3: '',
+        dns4: '',
+        dns5: '',
+        dns6: '',
+        domain: input.body.domain,
+        expdate: '2028-08-17 12:00:00',
+        id: '44169980',
+        regdate: '2026-08-17 12:00:00',
+        registrars: 'west',
+      },
+      result: 200,
+    },
+    status: 200,
+  }
 }
 
 function ordinaryRecord(host = 'www', value = '192.0.2.10') {
@@ -701,6 +749,7 @@ describe('D9-D-1 DNS record management', () => {
     const { asset, customer, req } = await createFixture('explicit-rejection')
     const transport = new FixtureWestDigitalWriteTransport((input) => {
       const clientid = `${fixturePrefix}-${input.requestId}`
+      if (input.operation === 'asset_query') return ownedAssetResponse(input)
       if (input.operation === 'dns_record_query') {
         return {
           body: {
@@ -1836,6 +1885,7 @@ describe('D9-D-1 DNS record management', () => {
     let submitted = false
     const transport = new FixtureWestDigitalWriteTransport(async (input) => {
       const clientid = `${fixturePrefix}-${input.requestId}`
+      if (input.operation === 'asset_query') return ownedAssetResponse(input)
       if (input.operation === 'dns_record_add') {
         submitted = true
         return { body: { clientid, data: { id: 131 }, result: 200 }, status: 200 }
@@ -2076,6 +2126,7 @@ describe('D9-D-1 DNS record management', () => {
     const { asset, customer, req } = await createFixture('unknown')
     const transport = new FixtureWestDigitalWriteTransport((input) => {
       if (input.operation === 'dns_record_add') timeoutAfterSubmission()
+      if (input.operation === 'asset_query') return ownedAssetResponse(input)
       const clientid = `${fixturePrefix}-${input.requestId}`
       return {
         body: {
@@ -2136,6 +2187,7 @@ describe('D9-D-1 DNS record management', () => {
       let submitted = false
       const transport = new FixtureWestDigitalWriteTransport((input) => {
         const clientid = `${fixturePrefix}-${input.requestId}`
+        if (input.operation === 'asset_query') return ownedAssetResponse(input)
         if (input.operation === 'dns_record_add') {
           submitted = true
           return { body: { clientid, data: { id: 141 }, result: 200 }, status: 200 }
@@ -2185,6 +2237,7 @@ describe('D9-D-1 DNS record management', () => {
     const { asset, customer, req } = await createFixture('pause-not-confirmed')
     const transport = new FixtureWestDigitalWriteTransport((input) => {
       const clientid = `${fixturePrefix}-${input.requestId}`
+      if (input.operation === 'asset_query') return ownedAssetResponse(input)
       if (input.operation === 'dns_record_pause') {
         return { body: { clientid, result: 200 }, status: 200 }
       }

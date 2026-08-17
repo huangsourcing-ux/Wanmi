@@ -142,6 +142,14 @@ export const auditEventDefinitions = {
     actorTypes: ['customer'],
     targetType: 'dns-record-change',
   },
+  'domain.management.operation_recorded': {
+    actorTypes: ['customer'],
+    targetType: 'domain-management-event',
+  },
+  'domain.asset_sync.observation_recorded': {
+    actorTypes: ['customer', 'system'],
+    targetType: 'domain-asset-sync-event',
+  },
   'operations.monitoring.alerted': {
     actorTypes: ['system'],
     targetType: 'operations-monitoring',

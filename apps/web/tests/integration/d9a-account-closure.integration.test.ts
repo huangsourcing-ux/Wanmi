@@ -161,6 +161,9 @@ async function createAsset(ownerId: number, label: string) {
       registeredAt: '2026-08-16T00:00:00.000Z',
       registrar: 'westdigital',
       status: 'active',
+      syncReviewStatus: 'none',
+      syncVersion: 0,
+      upstreamOwnershipStatus: 'unknown',
     },
     overrideAccess: true,
   })

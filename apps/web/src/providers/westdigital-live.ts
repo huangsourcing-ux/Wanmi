@@ -76,7 +76,12 @@ export class LiveWestDigitalTransport
         !('operation' in request) ||
         request.operation === 'availability' ||
         request.operation === 'price' ||
-        request.operation === 'dns_record_query'
+        request.operation === 'asset_query' ||
+        request.operation === 'dns_record_query' ||
+        request.operation === 'domain_certificate_get' ||
+        request.operation === 'domain_information_query' ||
+        request.operation === 'domain_management_password_get' ||
+        request.operation === 'realname_query'
       ) {
         throw error
       }
