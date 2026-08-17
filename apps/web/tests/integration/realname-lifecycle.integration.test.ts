@@ -5,6 +5,8 @@ import { createLocalReq, getPayload, type Payload } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { MockRealnameObjectProvider } from '@/providers/oss-realname'
+import type { Admin } from '@/payload-types'
+import { executeAccountClosure } from '@/services/auth/account-closure'
 import { requestCustomerDeletion } from '@/services/auth/otp'
 import { uploadRealnameDocument } from '@/services/realname/documents'
 import { realnameCleanupDeadline, runRealnameCleanup } from '@/services/realname/lifecycle'
@@ -16,7 +18,8 @@ import { grantSensitivePersonalInformationConsent } from '../fixtures/consents'
 import { issueStepUpGrantFixture } from '../fixtures/step-up'
 
 const fixturePrefix = `d4-lifecycle-${randomUUID()}`
-const created: Array<{ collection: 'customers'; id: number | string }> = []
+const created: Array<{ collection: 'admins' | 'customers'; id: number | string }> = []
+let administrator: Admin
 let payload: Payload
 
 class TrackingObjectProvider extends MockRealnameObjectProvider {
@@ -39,6 +42,18 @@ async function requestFor(user: unknown, suffix: string) {
 
 beforeAll(async () => {
   payload = await getPayload({ config })
+  administrator = await payload.create({
+    collection: 'admins',
+    context: { adminAccountOperation: 'bootstrap' },
+    data: {
+      email: `${fixturePrefix}@example.test`,
+      password: `D4-lifecycle-${randomUUID()}`,
+      roles: ['system_admin'],
+      status: 'active',
+    },
+    overrideAccess: true,
+  })
+  created.push({ collection: 'admins', id: administrator.id })
 })
 
 afterAll(async () => {
@@ -114,14 +129,31 @@ describe('D4 real-name retention lifecycle', () => {
       user,
       await issueStepUpGrantFixture(payload, req, customer.id, 'account_deletion'),
     )
+    await payload.db.pool.query(
+      `UPDATE account_closure_requests
+       SET cooldown_ends_at = NOW() - INTERVAL '1 second'
+       WHERE request_key = $1 AND event_type = 'requested'`,
+      [deletion.requestId],
+    )
+    const adminReq = await requestFor(
+      { ...administrator, collection: 'admins' as const },
+      'execute-closure',
+    )
+    const executed = await executeAccountClosure(adminReq, {
+      actorId: administrator.id,
+      note: 'D4 retention lifecycle fixture',
+      requestId: deletion.requestId,
+    })
+    expect(executed).toMatchObject({ status: 'closed' })
+    if (executed.status !== 'closed') throw new Error('fixture account closure was blocked')
     const disabled = await payload.findByID({
       collection: 'realnameTemplates',
       id: template.id,
       overrideAccess: true,
     })
     expect(disabled).toMatchObject({
-      cleanupDueAt: realnameCleanupDeadline(deletion.deletionRequestedAt),
-      disabledAt: deletion.deletionRequestedAt,
+      cleanupDueAt: realnameCleanupDeadline(executed.executedAt),
+      disabledAt: executed.executedAt,
       status: 'disabled',
     })
 
@@ -131,14 +163,14 @@ describe('D4 real-name retention lifecycle', () => {
     )
     await expect(
       runRealnameCleanup(systemReq, {
-        now: new Date(new Date(deletion.deletionRequestedAt).getTime() + 29 * 86_400_000),
+        now: new Date(new Date(executed.executedAt).getTime() + 29 * 86_400_000),
         provider: providers.objects,
         templateId: template.id,
       }),
     ).resolves.toEqual({ cleaned: 0, failed: 0 })
     await expect(
       runRealnameCleanup(systemReq, {
-        now: new Date(new Date(deletion.deletionRequestedAt).getTime() + 30 * 86_400_000),
+        now: new Date(new Date(executed.executedAt).getTime() + 30 * 86_400_000),
         provider: providers.objects,
         templateId: template.id,
       }),

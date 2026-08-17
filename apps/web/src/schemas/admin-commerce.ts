@@ -22,6 +22,7 @@ export const manualOrderActionRequestSchema = z
     actionType: z.enum(['special_refund', 'invoice_note']),
     amountMinor: z.number().int().positive().safe().optional(),
     evidence: manualCommerceEvidenceSchema,
+    invoiceStatus: z.enum(['processing', 'completed', 'cancelled']).optional(),
     reason: z.string().trim().min(3).max(1000),
   })
   .strict()
@@ -38,6 +39,20 @@ export const manualOrderActionRequestSchema = z
         code: 'custom',
         message: '发票备注不得填写退款金额',
         path: ['amountMinor'],
+      })
+    }
+    if (value.actionType === 'invoice_note' && value.invoiceStatus === undefined) {
+      context.addIssue({
+        code: 'custom',
+        message: '发票记录必须填写处理状态',
+        path: ['invoiceStatus'],
+      })
+    }
+    if (value.actionType === 'special_refund' && value.invoiceStatus !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        message: '特殊退款不得填写发票处理状态',
+        path: ['invoiceStatus'],
       })
     }
   })

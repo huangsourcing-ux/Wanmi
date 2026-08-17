@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import {
+  ACCOUNT_CLOSURE_BLOCKERS,
   ADMIN_ROLES,
   CUSTOMER_ACCOUNT_STATUSES,
   CUSTOMER_CAPABILITY_RESTRICTIONS,
@@ -267,14 +268,58 @@ export const customerDeletionRequestSchema = z
   .object({
     confirmation: z.literal('DELETE_MY_ACCOUNT'),
     deviceId: z.string().min(16).max(128),
+    reason: z.string().trim().min(3).max(1_000),
     stepUpToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
   })
   .strict()
 
+export const accountClosureBlockerSchema = z.enum(ACCOUNT_CLOSURE_BLOCKERS)
+
 export const customerDeletionResponseSchema = z.object({
+  blockers: z.array(accountClosureBlockerSchema),
+  cooldownEndsAt: z.iso.datetime(),
   deletionRequestedAt: z.iso.datetime(),
-  status: z.literal('closing'),
+  requestId: z.uuid(),
+  status: z.literal('pending'),
 })
+
+export const accountClosureRequestIdSchema = z
+  .uuid()
+  .refine((value) => value !== '00000000-0000-0000-0000-000000000000')
+
+export const accountClosureRevokeSchema = z
+  .object({
+    confirmation: z.literal('KEEP_MY_ACCOUNT'),
+    reason: z.string().trim().min(3).max(1_000),
+  })
+  .strict()
+
+export const accountClosureRevokeResponseSchema = z.object({
+  requestId: z.uuid(),
+  revokedAt: z.iso.datetime(),
+  status: z.literal('revoked'),
+})
+
+export const accountClosureExecuteSchema = z
+  .object({
+    confirmation: z.literal('EXECUTE_ACCOUNT_CLOSURE'),
+    note: z.string().trim().min(3).max(2_000),
+  })
+  .strict()
+
+export const accountClosureExecuteResponseSchema = z.discriminatedUnion('status', [
+  z.object({
+    blockers: z.array(accountClosureBlockerSchema).min(1),
+    requestId: z.uuid(),
+    status: z.literal('blocked'),
+  }),
+  z.object({
+    executedAt: z.iso.datetime(),
+    identityRebindAllowedAt: z.iso.datetime(),
+    requestId: z.uuid(),
+    status: z.literal('closed'),
+  }),
+])
 
 export const customerAccountStatusSchema = z.enum(CUSTOMER_ACCOUNT_STATUSES)
 export const customerCapabilityRestrictionSchema = z.enum(CUSTOMER_CAPABILITY_RESTRICTIONS)

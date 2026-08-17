@@ -70,6 +70,13 @@
       "phase": "expand",
       "reason": "新增账户找回追加式记录表，并为人工复核追加支付通知关联；旧代码可忽略新表与可空列，新代码仅在迁移完成后启用 A5 找回流程。",
       "rollback": "retain"
+    },
+    "20260817_000646_d9a_account_closure": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增账户关闭追加式记录表、关闭并发控制列及身份重绑定冷却列，并为发票人工动作追加显式状态；旧代码可忽略新表与可空列，新代码仅在迁移完成后启用 A6 关闭流程。",
+      "rollback": "retain"
     }
   }
 }

@@ -98,6 +98,26 @@ export type StepUpPurpose = (typeof STEP_UP_PURPOSES)[number]
 
 export const ONE_TIME_STEP_UP_PURPOSES = ['realname_change', 'account_deletion'] as const
 
+export const ACCOUNT_CLOSURE_BLOCKERS = [
+  'closure_cooldown_active',
+  'domains_held',
+  'unfinished_orders',
+  'pending_automatic_renewals',
+  'refund_or_reconciliation_issue',
+  'invoice_processing',
+  'security_freeze_or_dispute',
+  'positive_balance',
+  'domains_held_check_unavailable',
+  'unfinished_orders_check_unavailable',
+  'pending_automatic_renewals_check_unavailable',
+  'refund_or_reconciliation_issue_check_unavailable',
+  'invoice_processing_check_unavailable',
+  'security_freeze_or_dispute_check_unavailable',
+  'positive_balance_check_unavailable',
+] as const
+
+export type AccountClosureBlocker = (typeof ACCOUNT_CLOSURE_BLOCKERS)[number]
+
 export type ProviderError = {
   code: string
   message: string

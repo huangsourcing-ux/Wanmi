@@ -18,7 +18,8 @@
     "20260816_061548_d9a_account_state_capabilities",
     "20260816_061549_d9a_account_state_backfill",
     "20260816_121523_d9a_consent_personal_information",
-    "20260816_150802_d9a_account_recovery"
+    "20260816_150802_d9a_account_recovery",
+    "20260817_000646_d9a_account_closure"
   ],
   "rollback": {
     "database": "retain",

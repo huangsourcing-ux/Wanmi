@@ -1,6 +1,7 @@
 import type { CollectionConfig } from 'payload'
 
 import {
+  ACCOUNT_CLOSURE_BLOCKERS,
   ADMIN_ROLES,
   CONSENT_TYPES,
   CUSTOMER_ACCOUNT_STATUSES,
@@ -211,6 +212,26 @@ export const Customers: CollectionConfig = {
       },
     },
     { name: 'deletionRequestedAt', type: 'date', index: true },
+    {
+      name: 'activeAccountClosureRequestKey',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
+      unique: true,
+    },
+    {
+      name: 'accountClosureVersion',
+      type: 'number',
+      access: { read: sensitiveFieldRead },
+      defaultValue: 0,
+      min: 0,
+    },
+    {
+      name: 'accountClosureExecutionClaimedAt',
+      type: 'date',
+      access: { read: sensitiveFieldRead },
+      index: true,
+    },
     { name: 'legacyProfileCompletedAt', type: 'date', index: true },
     {
       name: 'consentStateVersion',
@@ -278,7 +299,83 @@ export const CustomerIdentities: CollectionConfig = {
     { name: 'verifiedAt', type: 'date', index: true, required: true },
     { name: 'boundAt', type: 'date', index: true, required: true },
     { name: 'unboundAt', type: 'date', index: true },
+    {
+      name: 'releasedIdentifierHash',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
+    },
+    { name: 'rebindAllowedAt', type: 'date', index: true },
     { name: 'lastUsedAt', type: 'date', index: true },
+  ],
+}
+
+export function validateAccountClosureBlockers(value: unknown): true | string {
+  return Array.isArray(value) &&
+    new Set(value).size === value.length &&
+    value.every((item) => (ACCOUNT_CLOSURE_BLOCKERS as readonly unknown[]).includes(item))
+    ? true
+    : '账户关闭阻塞项无效'
+}
+
+export const AccountClosureRequests: CollectionConfig = {
+  slug: 'accountClosureRequests',
+  access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
+  admin: { group: ADMIN_GROUPS.identity, hidden: systemAdminHidden },
+  hooks: {
+    beforeChange: [
+      ({ operation }) => {
+        if (operation === 'update') {
+          throw new AppError('ACCOUNT_CLOSURE_RECORD_APPEND_ONLY', '账户关闭记录只允许追加', 409)
+        }
+      },
+    ],
+    beforeDelete: [
+      () => {
+        throw new AppError('ACCOUNT_CLOSURE_RECORD_APPEND_ONLY', '账户关闭记录只允许追加', 409)
+      },
+    ],
+  },
+  indexes: [{ fields: ['customer', 'requestedAt'] }, { fields: ['requestKey', 'eventType'] }],
+  fields: [
+    { name: 'recordKey', type: 'text', index: true, required: true, unique: true },
+    { name: 'requestKey', type: 'text', index: true, required: true },
+    {
+      name: 'eventType',
+      type: 'select',
+      options: ['requested', 'blockers_refreshed', 'revoked', 'executed'],
+      required: true,
+    },
+    {
+      name: 'customer',
+      type: 'relationship',
+      relationTo: 'customers',
+      index: true,
+      required: true,
+    },
+    { name: 'requestedAt', type: 'date', index: true, required: true },
+    { name: 'reason', type: 'textarea', access: { read: sensitiveFieldRead }, required: true },
+    {
+      name: 'currentBlockers',
+      type: 'json',
+      required: true,
+      validate: validateAccountClosureBlockers,
+    },
+    { name: 'cooldownStartedAt', type: 'date', index: true, required: true },
+    { name: 'cooldownEndsAt', type: 'date', index: true, required: true },
+    { name: 'revokedAt', type: 'date', index: true },
+    { name: 'executedAt', type: 'date', index: true },
+    { name: 'identityRebindAllowedAt', type: 'date', index: true },
+    { name: 'dataRetentionResult', type: 'json', access: { read: sensitiveFieldRead } },
+    { name: 'anonymizationResult', type: 'json', access: { read: sensitiveFieldRead } },
+    { name: 'actorType', type: 'select', options: ['customer', 'admin'], required: true },
+    { name: 'actorId', type: 'text', access: { read: sensitiveFieldRead }, required: true },
+    {
+      name: 'stepUpGrant',
+      type: 'relationship',
+      relationTo: 'stepUpGrants',
+      access: { read: sensitiveFieldRead },
+    },
   ],
 }
 

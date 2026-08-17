@@ -15,19 +15,14 @@ import { createSmsProvider } from '@/providers/aliyunsms'
 import { createCaptchaProvider, type CaptchaProvider } from '@/providers/aliyuncaptcha'
 import type { SmsRequestInput, SmsVerifyInput } from '@/schemas/auth'
 import type { Customer } from '@/payload-types'
-import { disableCustomerRealnameTemplates } from '@/services/realname/lifecycle'
 
-import {
-  accountRestrictions,
-  assertCustomerAccountCapabilityFromSnapshot,
-  transitionCustomerAccount,
-} from './account-state'
+import { assertCustomerAccountCapabilityFromSnapshot } from './account-state'
+import { requestAccountClosure } from './account-closure'
 import { clientHashes, normalizeChinesePhone } from './client-facts'
 import { authenticateVerifiedPhone, type IdentityAuthenticationResult } from './customer-identities'
 import { revokeAllCustomerSessions } from './customer-sessions'
 import { recordCustomerSecurityEvent } from './security-events'
 import { enforceSmsRateLimits } from './sms-rate-limit'
-import { authorizeStepUpGrant } from './step-up'
 
 const genericRequestResult = {
   accepted: true as const,
@@ -288,55 +283,12 @@ async function createCustomerReq(payload: Payload, headers: Headers): Promise<Pa
 export async function requestCustomerDeletion(
   req: PayloadRequest,
   customer: CustomerIdentity,
-  input: { deviceId: string; stepUpToken: string },
-): Promise<{ deletionRequestedAt: string; status: 'closing' }> {
-  const now = new Date().toISOString()
-  const startedTransaction = await initTransaction(req)
-  try {
-    if (customer.status !== 'active' && customer.status !== 'restricted') {
-      throw new AppError('ACCOUNT_STATE_TRANSITION_INVALID', '当前账号状态不可申请注销', 409)
-    }
-    const grant = await authorizeStepUpGrant(req, {
-      customerId: customer.id,
-      deviceId: input.deviceId,
-      headers: req.headers,
-      purpose: 'account_deletion',
-      stepUpToken: input.stepUpToken,
-    })
-    const disabledTemplateCount = await disableCustomerRealnameTemplates(req, {
-      actor: { id: customer.id, type: 'customer' },
-      customerId: customer.id,
-      startedAt: now,
-    })
-    const updated = await transitionCustomerAccount(req, {
-      actor: { id: customer.id, type: 'customer' },
-      changedAt: now,
-      customerId: customer.id,
-      evidence: {
-        observedAt: now,
-        reference: `step-up-grant:${grant.grantId}`,
-        source: 'customer_request',
-      },
-      expectedRestrictions: accountRestrictions(customer),
-      expectedStatus: customer.status,
-      reason: 'customer_requested_account_closure',
-      restrictions: [],
-      status: 'closing',
-    })
-    await recordCustomerSecurityEvent(req, customer.id, 'deletion_requested', {
-      deletionRequestedAt: now,
-      disabledTemplateCount,
-      stepUpGrantId: grant.grantId,
-    })
-    if (startedTransaction) await commitTransaction(req)
-    return {
-      deletionRequestedAt: updated.deletionRequestedAt ?? now,
-      status: 'closing',
-    }
-  } catch (error) {
-    if (startedTransaction) await killTransaction(req)
-    throw error
-  }
+  input: { deviceId: string; reason?: string; stepUpToken: string },
+) {
+  return requestAccountClosure(req, customer, {
+    ...input,
+    reason: input.reason ?? 'customer_requested_account_closure',
+  })
 }
 
 export function customerCookie(token: string, expiresAt: string): string {
