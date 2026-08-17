@@ -272,7 +272,14 @@ export async function getCustomerDnsRecord(
 }
 
 function highRiskRecord(record: Pick<WestDigitalDnsRecordInput, 'host' | 'type'>): boolean {
-  return record.type === 'MX' || (record.host === '@' && ['A', 'CNAME'].includes(record.type))
+  // TXT cannot be root-only: the most dangerous records live below underscore-prefixed hosts.
+  // _acme-challenge can authorize DNS-01 TLS issuance and enable interception, _dmarc can admit
+  // forged mail, and selector._domainkey can enable forged DKIM signatures.
+  return (
+    record.type === 'MX' ||
+    record.type === 'TXT' ||
+    (record.host === '@' && ['A', 'AAAA', 'CNAME'].includes(record.type))
+  )
 }
 
 async function authorizeRecordRisk(

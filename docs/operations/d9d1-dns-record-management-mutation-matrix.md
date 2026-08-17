@@ -18,12 +18,21 @@ node apps/web/scripts/mutate-d9d1-dns-migration.mjs [mutation-id]
 
 | 层级                              | 独立变异数 | 结果    |
 | --------------------------------- | ---------: | ------- |
-| 服务、路由、访问、provider 与契约 |        175 | 175/175 |
+| 服务、路由、访问、provider 与契约 |        178 | 178/178 |
 | 原子认领、速率与释放 SQL 谓词     |         10 | 10/10   |
 | migration 升级、回滚与约束        |         41 | 41/41   |
-| **合计**                          |    **226** | 226/226 |
+| **合计**                          |    **229** | 229/229 |
 
-## 1. 服务、路由、访问、provider 与契约（175/175）
+本次 A4 补正新增三项独立变异，定向实跑的原始行为失败如下；三次均退出非零并由脚本判定
+`RESULT KILLED_BY_BEHAVIOR`：
+
+| 变异                      | 原始失败                                                                                           |
+| ------------------------- | -------------------------------------------------------------------------------------------------- |
+| 从根域高风险类型移除 AAAA | `AssertionError: promise resolved "{ …(3) }" instead of rejecting`                                 |
+| 从高风险类型移除 TXT      | `AssertionError: promise resolved "{ …(3) }" instead of rejecting`                                 |
+| 将 TXT 收窄为仅根域       | `AssertionError: promise resolved "{ data: { …(6) }, meta: { …(3) }, …(1) }" instead of rejecting` |
+
+## 1. 服务、路由、访问、provider 与契约（178/178）
 
 下表中的每个反引号 ID 都是一次独立运行；相同 guard 在不同调用点分别计数。相同测试名可通过不同的
 局部行为断言分别杀死多个独立维度，但每次运行只施加一个变异。
@@ -81,6 +90,9 @@ node apps/web/scripts/mutate-d9d1-dns-migration.mjs [mutation-id]
 | 记录风险调用点         | `record-risk-pause-callpoint`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `rejects high-risk root A pause at its own call point without step-up`                                 |   1/1 |
 | 记录风险判定           | `risk-device-required`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `requires the high-risk deviceId even when the other step-up field is present`                         |   1/1 |
 | 记录风险判定           | `risk-mx-type`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `rejects MX without its purpose-bound step-up grant`                                                   |   1/1 |
+| 记录风险判定           | `risk-root-aaaa-type`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `rejects root AAAA without its purpose-bound step-up grant`                                            |   1/1 |
+| 记录风险判定           | `risk-txt-type`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `rejects root TXT without its purpose-bound step-up grant`                                             |   1/1 |
+| 记录风险判定           | `risk-txt-root-only`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `rejects _acme-challenge TXT without its purpose-bound step-up grant`                                  |   1/1 |
 | 记录风险判定           | `risk-purpose-mx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `accepts confirmed root A and MX changes with their distinct step-up purposes`                         |   1/1 |
 | 记录风险判定           | `risk-root-host`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `rejects root A without its purpose-bound step-up grant`                                               |   1/1 |
 | 记录风险判定           | `risk-root-record-types`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `rejects root CNAME without its purpose-bound step-up grant`                                           |   1/1 |
@@ -148,5 +160,5 @@ provider operation，执行真实 DOWN，断言只删除本切片 schema 和 DNS
   `customer_id` SQL 谓词、已由严格格式/HMAC/精确 JSON 覆盖的预览重复检查、已由业务键前缀绑定的
   digest 重复维度，以及已由 strict Zod schema 覆盖的路由 query allowlist。它们不以“幸存变异”
   或源码断言虚增判定点数量。
-- 三个脚本最终分别输出 `TOTAL 175/175`、`TOTAL 10/10` 与 `TOTAL 41/41`；全部变异运行后源码均由
+- 三个脚本最终分别输出 `TOTAL 178/178`、`TOTAL 10/10` 与 `TOTAL 41/41`；全部变异运行后源码均由
   `finally` 恢复。

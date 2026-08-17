@@ -178,25 +178,38 @@ for (const mutation of [
 for (const mutation of [
   {
     id: 'risk-mx-type',
-    search:
-      "  return record.type === 'MX' || (record.host === '@' && ['A', 'CNAME'].includes(record.type))\n",
-    replacement:
-      "  return false || (record.host === '@' && ['A', 'CNAME'].includes(record.type))\n",
+    search: "    record.type === 'MX' ||\n",
+    replacement: '    false ||\n',
     test: 'rejects MX without its purpose-bound step-up grant',
   },
   {
+    id: 'risk-txt-type',
+    search: "    record.type === 'TXT' ||\n",
+    replacement: '    false ||\n',
+    test: 'rejects root TXT without its purpose-bound step-up grant',
+  },
+  {
+    id: 'risk-txt-root-only',
+    search: "    record.type === 'TXT' ||\n",
+    replacement: "    (record.host === '@' && record.type === 'TXT') ||\n",
+    test: 'rejects _acme-challenge TXT without its purpose-bound step-up grant',
+  },
+  {
+    id: 'risk-root-aaaa-type',
+    search: "    (record.host === '@' && ['A', 'AAAA', 'CNAME'].includes(record.type))\n",
+    replacement: "    (record.host === '@' && ['A', 'CNAME'].includes(record.type))\n",
+    test: 'rejects root AAAA without its purpose-bound step-up grant',
+  },
+  {
     id: 'risk-root-host',
-    search:
-      "  return record.type === 'MX' || (record.host === '@' && ['A', 'CNAME'].includes(record.type))\n",
-    replacement:
-      "  return record.type === 'MX' || (false && ['A', 'CNAME'].includes(record.type))\n",
+    search: "    (record.host === '@' && ['A', 'AAAA', 'CNAME'].includes(record.type))\n",
+    replacement: "    (false && ['A', 'AAAA', 'CNAME'].includes(record.type))\n",
     test: 'rejects root A without its purpose-bound step-up grant',
   },
   {
     id: 'risk-root-record-types',
-    search:
-      "  return record.type === 'MX' || (record.host === '@' && ['A', 'CNAME'].includes(record.type))\n",
-    replacement: "  return record.type === 'MX' || (record.host === '@' && false)\n",
+    search: "    (record.host === '@' && ['A', 'AAAA', 'CNAME'].includes(record.type))\n",
+    replacement: "    (record.host === '@' && false)\n",
     test: 'rejects root CNAME without its purpose-bound step-up grant',
   },
   {

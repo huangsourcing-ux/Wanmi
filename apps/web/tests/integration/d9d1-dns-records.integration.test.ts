@@ -785,6 +785,159 @@ describe('D9-D-1 DNS record management', () => {
     expect(transport.requests).toHaveLength(0)
   })
 
+  it('rejects root AAAA without its purpose-bound step-up grant', async () => {
+    const { asset, customer, req } = await createFixture('root-aaaa-missing-step-up')
+    const { provider, transport } = statefulProvider()
+    await expect(
+      addCustomerDnsRecord(
+        req,
+        asset.id,
+        {
+          confirmed: true,
+          host: '@',
+          idempotencyKey: randomUUID(),
+          line: '默认',
+          priority: 10,
+          ttl: 600,
+          type: 'AAAA',
+          value: '2001:db8::10',
+        },
+        {
+          customer: customerIdentity(customer.id),
+          provider,
+          traceId: `${fixturePrefix}-root-aaaa-missing-step-up`,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'STEP_UP_GRANT_REQUIRED', status: 403 })
+    expect(transport.requests).toHaveLength(0)
+  })
+
+  it('requires secondary confirmation independently for root AAAA with a valid step-up grant', async () => {
+    const { asset, customer, req } = await createFixture('root-aaaa-confirmation')
+    const grant = await issueStepUpGrantFixture(
+      payload,
+      req,
+      Number(customer.id),
+      'dns_record_change',
+    )
+    const { provider, transport } = statefulProvider()
+    await expect(
+      addCustomerDnsRecord(
+        req,
+        asset.id,
+        {
+          ...grant,
+          host: '@',
+          idempotencyKey: randomUUID(),
+          line: '默认',
+          priority: 10,
+          ttl: 600,
+          type: 'AAAA',
+          value: '2001:db8::11',
+        },
+        {
+          customer: customerIdentity(customer.id),
+          provider,
+          traceId: `${fixturePrefix}-root-aaaa-confirmation`,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'DNS_RECORD_CONFIRMATION_REQUIRED', status: 400 })
+    expect(transport.requests).toHaveLength(0)
+  })
+
+  it('adds a subdomain AAAA without step-up', async () => {
+    const { asset, customer, req } = await createFixture('subdomain-aaaa-normal-risk')
+    const { provider, transport } = statefulProvider()
+    await expect(
+      addCustomerDnsRecord(
+        req,
+        asset.id,
+        {
+          host: 'ipv6',
+          idempotencyKey: randomUUID(),
+          line: '默认',
+          priority: 10,
+          ttl: 600,
+          type: 'AAAA',
+          value: '2001:db8::12',
+        },
+        {
+          customer: customerIdentity(customer.id),
+          provider,
+          traceId: `${fixturePrefix}-subdomain-aaaa-normal-risk`,
+        },
+      ),
+    ).resolves.toMatchObject({ data: { status: 'succeeded' }, state: 'ready' })
+    expect(transport.writeCount).toBe(1)
+  })
+
+  it('rejects root TXT without its purpose-bound step-up grant', async () => {
+    const { asset, customer, req } = await createFixture('root-txt-missing-step-up')
+    const { provider, transport } = statefulProvider()
+    await expect(
+      addCustomerDnsRecord(
+        req,
+        asset.id,
+        {
+          confirmed: true,
+          host: '@',
+          idempotencyKey: randomUUID(),
+          line: '默认',
+          priority: 10,
+          ttl: 600,
+          type: 'TXT',
+          value: 'site-verification=root',
+        },
+        {
+          customer: customerIdentity(customer.id),
+          provider,
+          traceId: `${fixturePrefix}-root-txt-missing-step-up`,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'STEP_UP_GRANT_REQUIRED', status: 403 })
+    expect(transport.requests).toHaveLength(0)
+  })
+
+  it('rejects _acme-challenge TXT without its purpose-bound step-up grant', async () => {
+    const { asset, customer, req } = await createFixture('acme-txt-missing-step-up')
+    const { provider, transport } = statefulProvider()
+    await expect(
+      addCustomerDnsRecord(
+        req,
+        asset.id,
+        {
+          confirmed: true,
+          host: '_acme-challenge',
+          idempotencyKey: randomUUID(),
+          line: '默认',
+          priority: 10,
+          ttl: 600,
+          type: 'TXT',
+          value: 'dns-01-proof',
+        },
+        {
+          customer: customerIdentity(customer.id),
+          provider,
+          traceId: `${fixturePrefix}-acme-txt-missing-step-up`,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'STEP_UP_GRANT_REQUIRED', status: 403 })
+    expect(transport.requests).toHaveLength(0)
+  })
+
+  it('keeps ordinary subdomain A in the current-session tier without step-up', async () => {
+    const { asset, customer, req } = await createFixture('subdomain-a-normal-risk')
+    const { provider, transport } = statefulProvider()
+    await expect(
+      addCustomerDnsRecord(req, asset.id, ordinaryRecord('api'), {
+        customer: customerIdentity(customer.id),
+        provider,
+        traceId: `${fixturePrefix}-subdomain-a-normal-risk`,
+      }),
+    ).resolves.toMatchObject({ data: { status: 'succeeded' }, state: 'ready' })
+    expect(transport.writeCount).toBe(1)
+  })
+
   it('requires secondary confirmation independently from a valid root-record step-up grant', async () => {
     const { asset, customer, req } = await createFixture('root-confirmation')
     const grant = await issueStepUpGrantFixture(
