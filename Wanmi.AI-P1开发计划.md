@@ -1610,9 +1610,10 @@ D9-D-1 证据（2026-08-17，仅本节第 1 项）：
 - 迁移 `20260817_065450_d9d1_dns_record_management` 在普通 merge
   `main@facd8e8638add481f34098ed2d0dd4c0dc2e52c8` 后重新
   生成，与 D9-B-1 的 `20260817_040409_d9b1_wallet_ledger` 无时间戳冲突；再次运行 `pnpm generate` 的
-  生成相关 diff 前后 SHA-256 相同。安全/正确性判定按调用点清点并实跑：服务、路由、访问、provider
-  与契约 175/175，原子 SQL 谓词 10/10，migration 升级/回滚/约束 41/41，合计 226/226 均由指定
-  `AssertionError` 行为断言独立杀死；
+  生成相关 diff 前后 SHA-256 相同。收尾期间 `main` 又前进到纯文档基线 `5dc92bb`，本分支再次普通
+  merge 并运行 `pnpm generate`，工作树保持零 diff；没有 rebase、force push 或钱包文件改动。
+  安全/正确性判定按调用点清点并实跑：服务、路由、访问、provider 与契约 175/175，原子 SQL 谓词
+  10/10，migration 升级/回滚/约束 41/41，合计 226/226 均由指定 `AssertionError` 行为断言独立杀死；
   逐项对照见 `docs/operations/d9d1-dns-record-management-mutation-matrix.md`。
 - PR #95 首轮 required CI 在并发 lease 用例中得到 3 个成功而非 1 个，定位为测试只用
   `Promise.all`、未强制请求在 lease 持有期间重叠。修正后由 fixture 的首个查询闸门明确保持 lease，等待
