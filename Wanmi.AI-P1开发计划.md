@@ -1587,9 +1587,40 @@ account`、`fails closed when the consistency task cannot query every required l
 
 ### 16.9 D9-D 域名控制台增强
 
-- [ ] DNS 解析记录管理：添加、修改、删除、暂停/恢复、按域名与按记录查询；记录类型与解析线路按
+- [x] DNS 解析记录管理：添加、修改、删除、暂停/恢复、按域名与按记录查询；记录类型与解析线路按
       西部数码文档实现（线路中文↔内部码映射不自造）；变更追加式记录并审计；单域名记录数与变更
       速率有可配置上限；
+
+D9-D-1 证据（2026-08-17，仅本节第 1 项）：
+
+- `apps/web/src/providers/westdigital-dns.ts` 严格按仓库根目录只读的《西部数码业务API接口文档
+  （v2）新.md》实现 `adddnsrecord`、`moddnsrecord`、`deldnsrecord`、`pause`、`getdnsrecord`，并固定
+  默认/电信/联通/移动/教育网/搜索引擎/境外及文档别名的中文↔内部码映射；暂停 `val=1`、恢复
+  `val=0`。fixture transport 覆盖完整写后查询链路，所有真实 provider 闸门保持 false。
+- 添加、修改、删除、暂停/恢复、按域名与按记录查询入口见
+  `apps/web/src/app/api/v1/domains/[assetId]/dns-records/`；服务统一复用 A3 账户能力、D6-01
+  `executeWestDigitalWriteOperation` 唯一业务键与状态不明只查询语义。普通子域添加只要求当前会话并
+  审计；根域 A/CNAME 和 MX 修改要求 purpose-bound step-up 与二次确认；NS 沿既有服务补齐二次确认并
+  继续复用 A5 冷静期。为满足 A4 批量删除档位，本切片只提供 step-up + HMAC 绑定变更预览的同步删除
+  安全入口；未实现第 4～5 项的离线任务、通用批量任务或其他批量能力，因此后续 checkbox 保持未勾选。
+- `dnsRecordChanges` 参照 consent record 的 Hook 保持只追加，用户读取按 owner 限定；provider 状态不明
+  只追加 `pending_query`，不写本地确认事实。单域名记录数与一分钟变更上限可配置；互斥和速率在同一
+  Payload transaction 中使用单条 `UPDATE ... WHERE ... RETURNING` 认领/释放，未使用
+  `payload.update({ where })`。
+- 迁移 `20260817_065450_d9d1_dns_record_management` 在普通 merge
+  `main@facd8e8638add481f34098ed2d0dd4c0dc2e52c8` 后重新
+  生成，与 D9-B-1 的 `20260817_040409_d9b1_wallet_ledger` 无时间戳冲突；再次运行 `pnpm generate` 的
+  生成相关 diff 前后 SHA-256 相同。安全/正确性判定按调用点清点并实跑：服务、路由、访问、provider
+  与契约 175/175，原子 SQL 谓词 9/9，migration 升级/回滚/约束 41/41，合计 225/225 均由指定
+  `AssertionError` 行为断言独立杀死；
+  逐项对照见 `docs/operations/d9d1-dns-record-management-mutation-matrix.md`。
+- 最终代码状态在全新本地 fixture 数据库完整运行 `make check` 退出 0：命名 migration 的独立
+  UP/DOWN/UP verifier、12 项 release migration policy、全部 migration/生成物、lint、
+  TypeScript strict、104 文件 743/743 单元、36 文件 448/448 PostgreSQL/MinIO 集成、Next.js 宿主构建、
+  linux/amd64 同镜像构建、依赖审计、工作树与 201 commits 历史 Gitleaks、Trivy 全部通过。未实现或留桩
+  DNSSEC、DDNS、常用邮箱解析、域名转入/转出、域名管理密码、域名信息/过户/证书、离线任务、资产同步
+  或 capability 扩展；本节其余六项保持未勾选。
+
 - [ ] 域名管理密码获取与修改：**step-up + 绑定渠道确认**，明文不进日志、审计元数据与前端缓存；
 - [ ] 修改域名信息；过户到本人已通过的实名模板（「模板过户」与「实时过户」差异在联调中确认并
       记录选型理由）；域名证书下载；

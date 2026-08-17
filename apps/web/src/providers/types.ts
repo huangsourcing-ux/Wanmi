@@ -1,5 +1,6 @@
 import type { ProviderResult } from '@/lib/domain'
 import type { DnsRecord, DnsRecordType } from '@/schemas/dns'
+import type { ManagedDnsRecordType, WestDigitalDnsLineCode } from '@/schemas/dns-management'
 import type { TlsCertificate, TlsFinding } from '@/schemas/tls'
 
 export interface HealthAwareProvider {
@@ -242,6 +243,63 @@ export type WestDigitalWriteConfirmation = {
   state: 'accepted' | 'failed' | 'pending' | 'succeeded' | 'unknown'
 }
 
+export type WestDigitalDnsRecord = {
+  host: string
+  id: string
+  lineCode: WestDigitalDnsLineCode
+  paused: boolean
+  priority: number
+  ttl: number
+  type: ManagedDnsRecordType
+  value: string
+}
+
+export type WestDigitalDnsRecordInput = Omit<WestDigitalDnsRecord, 'id' | 'paused'>
+
+export type WestDigitalDnsRecordPage = {
+  items: WestDigitalDnsRecord[]
+  limit: number
+  page: number
+  pageCount: number
+  total: number
+}
+
+export interface WestDigitalDnsProvider extends HealthAwareProvider {
+  addDnsRecord(input: {
+    domainAscii: string
+    record: WestDigitalDnsRecordInput
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalWriteConfirmation & { providerRecordId: string }>>
+  deleteDnsRecord(input: {
+    domainAscii: string
+    providerRecordId: string
+    record: WestDigitalDnsRecordInput
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalWriteConfirmation>>
+  modifyDnsRecord(input: {
+    domainAscii: string
+    providerRecordId: string
+    record: WestDigitalDnsRecordInput
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalWriteConfirmation>>
+  queryDnsRecords(input: {
+    domainAscii: string
+    host?: string
+    limit: number
+    page: number
+    providerRecordId?: string
+    traceId: string
+    type?: ManagedDnsRecordType
+    value?: string
+  }): Promise<ProviderResult<WestDigitalDnsRecordPage>>
+  setDnsRecordPaused(input: {
+    domainAscii: string
+    paused: boolean
+    providerRecordId: string
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalWriteConfirmation>>
+}
+
 export interface WestDigitalWriteProvider extends HealthAwareProvider {
   changeNameservers(input: {
     domainAscii: string
@@ -280,6 +338,8 @@ export interface WestDigitalWriteProvider extends HealthAwareProvider {
     years: number
   }): Promise<ProviderResult<WestDigitalWriteConfirmation>>
 }
+
+export type WestDigitalManagedProvider = WestDigitalWriteProvider & WestDigitalDnsProvider
 
 export type PaymentChannel = 'h5' | 'native'
 

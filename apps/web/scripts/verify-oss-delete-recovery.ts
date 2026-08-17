@@ -35,6 +35,7 @@ function preflight(): void {
     env.ALLOW_REAL_WESTDIGITAL_REGISTRATION_WRITES,
     env.ALLOW_REAL_WESTDIGITAL_RENEWAL_WRITES,
     env.ALLOW_REAL_WESTDIGITAL_NAMESERVER_WRITES,
+    env.ALLOW_REAL_WESTDIGITAL_DNS_WRITES,
   ]
   assert(
     forbidden.every((enabled) => !enabled),

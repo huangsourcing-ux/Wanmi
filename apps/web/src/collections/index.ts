@@ -25,6 +25,7 @@ import {
   ToolPages,
   Topics,
 } from './content'
+import { DnsRecordChanges } from './dns-management'
 import {
   DomainAssets,
   DomainExpiryReminders,
@@ -117,6 +118,7 @@ export const collections: CollectionConfig[] = [
   DomainExpiryReminders,
   Renewals,
   NameserverChanges,
+  DnsRecordChanges,
   ManualReviews,
   Reconciliations,
   AuditLogs,

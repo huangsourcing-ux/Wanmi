@@ -4,7 +4,13 @@ import { normalizeDomain } from '@/lib/domain-name'
 export type WestDigitalGuardedWrite =
   | {
       domainAscii: string
-      operation: 'nameserver' | 'realname'
+      operation:
+        | 'dns_record_add'
+        | 'dns_record_delete'
+        | 'dns_record_modify'
+        | 'dns_record_pause'
+        | 'nameserver'
+        | 'realname'
     }
   | {
       clientPriceFen: number
@@ -53,6 +59,7 @@ function normalizedAllowlist(raw: string): Set<string> {
 
 function westDigitalCapabilityEnabled(operation: WestDigitalGuardedWrite['operation']): boolean {
   const env = getEnv()
+  if (operation.startsWith('dns_record_')) return env.ALLOW_REAL_WESTDIGITAL_DNS_WRITES
   if (operation === 'realname') return env.ALLOW_REAL_WESTDIGITAL_REALNAME_WRITES
   if (operation === 'register') return env.ALLOW_REAL_WESTDIGITAL_REGISTRATION_WRITES
   if (operation === 'renew') return env.ALLOW_REAL_WESTDIGITAL_RENEWAL_WRITES
@@ -69,7 +76,9 @@ export function authorizeWestDigitalWrite(
   requireGate(env.ALLOW_REAL_WESTDIGITAL, 'WESTDIGITAL_PROVIDER_WRITE_DISABLED')
   requireGate(
     westDigitalCapabilityEnabled(input.operation),
-    `WESTDIGITAL_${input.operation.toUpperCase()}_WRITE_DISABLED`,
+    input.operation.startsWith('dns_record_')
+      ? 'WESTDIGITAL_DNS_WRITE_DISABLED'
+      : `WESTDIGITAL_${input.operation.toUpperCase()}_WRITE_DISABLED`,
   )
 
   const domain = normalizeDomain(input.domainAscii)

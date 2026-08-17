@@ -138,6 +138,10 @@ export const auditEventDefinitions = {
     actorTypes: ['admin', 'customer', 'system'],
     targetType: 'nameserver-change',
   },
+  'domain.dns_record.change_recorded': {
+    actorTypes: ['customer'],
+    targetType: 'dns-record-change',
+  },
   'operations.monitoring.alerted': {
     actorTypes: ['system'],
     targetType: 'operations-monitoring',

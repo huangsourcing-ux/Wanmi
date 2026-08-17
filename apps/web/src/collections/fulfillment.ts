@@ -45,7 +45,18 @@ export const ProviderOperations: CollectionConfig = {
     {
       name: 'operation',
       type: 'select',
-      options: ['realname', 'register', 'renew', 'refund', 'nameserver', 'query'],
+      options: [
+        'realname',
+        'register',
+        'renew',
+        'refund',
+        'nameserver',
+        'query',
+        'dns_record_add',
+        'dns_record_modify',
+        'dns_record_delete',
+        'dns_record_pause',
+      ],
       required: true,
     },
     {
@@ -143,6 +154,21 @@ export const DomainAssets: CollectionConfig = {
     },
     { name: 'nameservers', type: 'text', hasMany: true, required: true },
     { name: 'lastSyncedAt', type: 'date', required: true },
+    {
+      name: 'dnsMutationLeaseKey',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
+    },
+    { name: 'dnsMutationLeaseExpiresAt', type: 'date', access: { read: sensitiveFieldRead } },
+    { name: 'dnsChangeWindowStartedAt', type: 'date', access: { read: sensitiveFieldRead } },
+    {
+      name: 'dnsChangeCount',
+      type: 'number',
+      access: { read: sensitiveFieldRead },
+      defaultValue: 0,
+      min: 0,
+    },
   ],
 }
 

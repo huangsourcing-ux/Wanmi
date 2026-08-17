@@ -141,6 +141,164 @@ describe('WestDigital write adapter fixtures', () => {
     })
   })
 
+  it('maps the documented DNS record query and write contracts, including pause 1 and resume 0', async () => {
+    const transport = new FixtureWestDigitalWriteTransport((input) => {
+      const clientid = `fixture-${input.requestId}`
+      if (input.operation === 'dns_record_add') {
+        return { body: { clientid, data: { id: 701 }, result: 200 }, status: 200 }
+      }
+      if (input.operation === 'dns_record_query') {
+        return {
+          body: {
+            clientid,
+            data: {
+              items: [
+                {
+                  id: 701,
+                  item: 'www',
+                  level: 10,
+                  line: 'LTEL',
+                  pause: 1,
+                  ttl: 600,
+                  type: 'A',
+                  value: '192.0.2.10',
+                },
+              ],
+              limit: 20,
+              pagecount: 1,
+              pageno: 1,
+              total: 1,
+            },
+            result: 200,
+          },
+          status: 200,
+        }
+      }
+      return { body: { clientid, result: 200 }, status: 200 }
+    })
+    const provider = new WestDigitalWriteAdapter({ transport })
+    const record = {
+      host: 'www',
+      lineCode: 'LTEL' as const,
+      priority: 10,
+      ttl: 600,
+      type: 'A' as const,
+      value: '192.0.2.10',
+    }
+
+    await expect(
+      provider.addDnsRecord({
+        domainAscii: 'wanmi-test.com',
+        record,
+        traceId: 'trace-dns-add',
+      }),
+    ).resolves.toMatchObject({ data: { providerRecordId: '701', state: 'accepted' }, ok: true })
+    await expect(
+      provider.modifyDnsRecord({
+        domainAscii: 'wanmi-test.com',
+        providerRecordId: '701',
+        record: { ...record, value: '192.0.2.11' },
+        traceId: 'trace-dns-modify',
+      }),
+    ).resolves.toMatchObject({ data: { state: 'accepted' }, ok: true })
+    await expect(
+      provider.deleteDnsRecord({
+        domainAscii: 'wanmi-test.com',
+        providerRecordId: '701',
+        record,
+        traceId: 'trace-dns-delete',
+      }),
+    ).resolves.toMatchObject({ data: { state: 'accepted' }, ok: true })
+    await expect(
+      provider.setDnsRecordPaused({
+        domainAscii: 'wanmi-test.com',
+        paused: true,
+        providerRecordId: '701',
+        traceId: 'trace-dns-pause',
+      }),
+    ).resolves.toMatchObject({ data: { state: 'accepted' }, ok: true })
+    await expect(
+      provider.setDnsRecordPaused({
+        domainAscii: 'wanmi-test.com',
+        paused: false,
+        providerRecordId: '701',
+        traceId: 'trace-dns-resume',
+      }),
+    ).resolves.toMatchObject({ data: { state: 'accepted' }, ok: true })
+    await expect(
+      provider.queryDnsRecords({
+        domainAscii: 'wanmi-test.com',
+        host: 'www',
+        limit: 20,
+        page: 1,
+        traceId: 'trace-dns-query',
+        type: 'A',
+        value: '192.0.2.10',
+      }),
+    ).resolves.toMatchObject({
+      data: {
+        items: [
+          {
+            host: 'www',
+            id: '701',
+            lineCode: 'LTEL',
+            paused: true,
+            priority: 10,
+            ttl: 600,
+            type: 'A',
+            value: '192.0.2.10',
+          },
+        ],
+      },
+      ok: true,
+    })
+
+    expect(transport.requests.map(({ body }) => body)).toEqual([
+      {
+        act: 'adddnsrecord',
+        domain: 'wanmi-test.com',
+        host: 'www',
+        level: '10',
+        line: 'LTEL',
+        ttl: '600',
+        type: 'A',
+        value: '192.0.2.10',
+      },
+      {
+        act: 'moddnsrecord',
+        domain: 'wanmi-test.com',
+        host: 'www',
+        id: '701',
+        level: '10',
+        line: 'LTEL',
+        ttl: '600',
+        type: 'A',
+        value: '192.0.2.11',
+      },
+      {
+        act: 'deldnsrecord',
+        domain: 'wanmi-test.com',
+        host: 'www',
+        id: '701',
+        line: 'LTEL',
+        type: 'A',
+        value: '192.0.2.10',
+      },
+      { act: 'pause', domain: 'wanmi-test.com', id: '701', val: '1' },
+      { act: 'pause', domain: 'wanmi-test.com', id: '701', val: '0' },
+      {
+        act: 'getdnsrecord',
+        domain: 'wanmi-test.com',
+        host: 'www',
+        limit: '20',
+        pageno: '1',
+        type: 'A',
+        value: '192.0.2.10',
+      },
+    ])
+    expect(transport.writeCount).toBe(5)
+  })
+
   it('never constructs a live runtime transport', () => {
     vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'false')
     vi.stubEnv('WESTDIGITAL_MODE', 'fixture')
