@@ -15,6 +15,7 @@ import { AppError } from '@/lib/errors'
 import type { Customer } from '@/payload-types'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
 import { disableCustomerRealnameTemplates } from '@/services/realname/lifecycle'
+import { hasPositiveWalletAvailableBalance } from '@/services/wallet/ledger'
 
 import { accountRestrictions, transitionCustomerAccount } from './account-state'
 import { authTransactionDatabase, inAuthTransaction } from './atomic'
@@ -167,24 +168,19 @@ async function securityFreezeOrDispute(database: Database, customerId: number): 
   return databaseBoolean(result.rows?.[0]?.blocked)
 }
 
-async function positiveBalance(database: Database, customerId: number): Promise<boolean> {
-  const relation = await database.execute(sql`
-    SELECT to_regclass('wallet_accounts')::text AS relation_name
-  `)
-  if (!relation.rows?.[0]?.relation_name) return false
-  const result = await database.execute(sql`
-    SELECT EXISTS (
-      SELECT 1
-      FROM wallet_accounts
-      WHERE customer_id = ${customerId}
-        AND posted_balance - held_balance > 0
-    ) AS blocked
-  `)
-  return databaseBoolean(result.rows?.[0]?.blocked)
+async function positiveBalance(
+  _database: Database,
+  customerId: number,
+  req: PayloadRequest,
+): Promise<boolean> {
+  return hasPositiveWalletAvailableBalance(req, customerId)
 }
 
 const PRECONDITION_CHECKS: ReadonlyArray<
-  readonly [BaseBlocker, (database: Database, customerId: number) => Promise<boolean>]
+  readonly [
+    BaseBlocker,
+    (database: Database, customerId: number, req: PayloadRequest) => Promise<boolean>,
+  ]
 > = [
   ['domains_held', domainsHeld],
   ['unfinished_orders', unfinishedOrders],
@@ -203,7 +199,7 @@ export async function collectAccountClosureBlockers(
   const blockers: AccountClosureBlocker[] = []
   for (const [blocker, check] of PRECONDITION_CHECKS) {
     try {
-      if (await check(database, customerId)) blockers.push(blocker)
+      if (await check(database, customerId, req)) blockers.push(blocker)
     } catch {
       blockers.push(unavailableBlocker(blocker))
     }

@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   database: { execute: vi.fn() },
   disableTemplates: vi.fn(),
+  positiveBalance: vi.fn(),
   security: vi.fn(),
   transition: vi.fn(),
 }))
@@ -21,6 +22,9 @@ vi.mock('@/services/auth/account-state', () => ({
 }))
 
 vi.mock('@/services/auth/step-up', () => ({ authorizeStepUpGrant: mocks.authorize }))
+vi.mock('@/services/wallet/ledger', () => ({
+  hasPositiveWalletAvailableBalance: mocks.positiveBalance,
+}))
 vi.mock('@/services/audit/record-audit-event', () => ({ recordAuditEvent: mocks.audit }))
 vi.mock('@/services/auth/security-events', () => ({
   recordCustomerSecurityEvent: mocks.security,
@@ -84,6 +88,7 @@ beforeEach(() => {
   mocks.create.mockReset().mockResolvedValue({ id: 1 })
   mocks.transition.mockReset().mockResolvedValue({ status: 'closed' })
   mocks.disableTemplates.mockReset().mockResolvedValue(0)
+  mocks.positiveBalance.mockReset().mockResolvedValue(false)
   mocks.audit.mockReset().mockResolvedValue(undefined)
   mocks.security.mockReset().mockResolvedValue(undefined)
   mocks.authorize.mockReset().mockResolvedValue({

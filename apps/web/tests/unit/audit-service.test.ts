@@ -83,6 +83,7 @@ describe('shared audit event service', () => {
         'redirect.delete',
         'redirect.update',
         'system.local_api.read',
+        'wallet.ledger_invariant.failed',
       ].sort(),
     )
   })
