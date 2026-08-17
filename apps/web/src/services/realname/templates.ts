@@ -138,7 +138,9 @@ function requireCustomer(req: PayloadRequest): { id: number | string } {
   return req.user
 }
 
-function profileFromRecord(template: TemplateRecord): WestDigitalRealnameProfile {
+export function realnameTemplateProviderProfile(
+  template: TemplateRecord,
+): WestDigitalRealnameProfile {
   return profileSchema.parse({
     addressChinese: template.addressChinese,
     addressEnglish: template.addressEnglish,
@@ -409,7 +411,7 @@ export async function submitRealnameTemplate(
   })
   const result = await provider
     .createTemplate({
-      profile: profileFromRecord(pending),
+      profile: realnameTemplateProviderProfile(pending),
       traceId: getTraceId(req.headers),
     })
     .catch(() => null)

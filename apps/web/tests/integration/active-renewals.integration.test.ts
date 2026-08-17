@@ -125,6 +125,9 @@ async function assetFor(owner: Awaited<ReturnType<typeof customer>>, suffix: str
           registeredAt: '2026-08-08T12:00:00.000Z',
           registrar: 'west',
           status: 'active',
+          syncReviewStatus: 'none',
+          syncVersion: 0,
+          upstreamOwnershipStatus: 'unknown',
         },
         overrideAccess: true,
       }),
@@ -694,10 +697,14 @@ describe('D6-05 active renewals', () => {
 
   it('routes an explicit failure to automatic full refund', async () => {
     const fixture = await paidRenewal('failure')
-    const transport = new FixtureWestDigitalWriteTransport(() => ({
-      body: { clientid: `${fixturePrefix}-failure`, result: 500 },
-      status: 200,
-    }))
+    const transport = new FixtureWestDigitalWriteTransport((input) =>
+      input.operation === 'asset_query'
+        ? assetResponse(fixture.domainAscii)
+        : {
+            body: { clientid: `${fixturePrefix}-failure`, result: 500 },
+            status: 200,
+          },
+    )
     const result = await runCommerceFulfillment(
       await request('failure'),
       {
@@ -735,6 +742,9 @@ describe('D6-05 active renewals', () => {
   it('moves a post-submission timeout to manual review and only queries on replay', async () => {
     const fixture = await paidRenewal('timeout')
     const transport = new FixtureWestDigitalWriteTransport((input) => {
+      if (input.operation === 'asset_query') {
+        return assetResponse(fixture.domainAscii, originalExpiresAt)
+      }
       if (input.operation === 'renew') timeoutAfterSubmission()
       throw new WestDigitalWriteTransportError('TEMPORARILY_UNAVAILABLE', 'not_submitted')
     })

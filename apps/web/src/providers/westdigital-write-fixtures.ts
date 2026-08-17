@@ -49,6 +49,9 @@ function isWriteOperation(operation: WestDigitalWriteTransportRequest['operation
     'dns_record_delete',
     'dns_record_modify',
     'dns_record_pause',
+    'domain_contact_update',
+    'domain_management_password_modify',
+    'domain_template_transfer',
     'nameserver',
     'realname_create',
     'register',
@@ -84,6 +87,8 @@ async function interruptValidationDelay(signal: AbortSignal): Promise<void> {
 
 function createDefaultFixture(): WestDigitalWriteFixtureHandler {
   const records = new Map<string, Record<string, string>>()
+  const managementPasswords = new Map<string, string>()
+  const templateIds = new Map<string, string>()
   let nextRecordId = 900_001
   return (input): WestDigitalWriteTransportResponse => {
     const clientid = `fixture-${input.requestId}`
@@ -108,6 +113,67 @@ function createDefaultFixture(): WestDigitalWriteFixtureHandler {
     }
     if (input.operation === 'renew' || input.operation === 'nameserver') {
       return { body: { clientid, result: 200 }, status: 200 }
+    }
+    if (input.operation === 'domain_management_password_get') {
+      return {
+        body: {
+          clientid,
+          data: {
+            domainpwd: managementPasswords.get(input.body.domain!) ?? 'fixture-domain-password',
+          },
+          result: 200,
+        },
+        status: 200,
+      }
+    }
+    if (input.operation === 'domain_management_password_modify') {
+      managementPasswords.set(input.body.domain!, input.body.domainpwd!)
+      return { body: { clientid, result: 200 }, status: 200 }
+    }
+    if (input.operation === 'domain_contact_update') {
+      return { body: { clientid, data: {}, result: 200 }, status: 200 }
+    }
+    if (input.operation === 'domain_template_transfer') {
+      templateIds.set(input.body.domain!, input.body.c_sysid!)
+      return {
+        body: {
+          clientid,
+          data: {
+            [input.body.domain!]: {
+              admin_id: { result: 200 },
+              bill_id: { result: 200 },
+              dom_id: { result: 200 },
+              tech_id: { result: 200 },
+            },
+            c_sysid: Number(input.body.c_sysid),
+          },
+          result: 200,
+        },
+        status: 200,
+      }
+    }
+    if (input.operation === 'domain_information_query') {
+      return {
+        body: {
+          clientid,
+          data: {
+            c_sysid: Number(templateIds.get(input.body.domain!) ?? '1664777'),
+            domain: input.body.domain,
+          },
+          result: 200,
+        },
+        status: 200,
+      }
+    }
+    if (input.operation === 'domain_certificate_get') {
+      return {
+        body: {
+          clientid,
+          data: { certurl: Buffer.from('fixture-domain-certificate').toString('base64') },
+          result: 200,
+        },
+        status: 200,
+      }
     }
     if (input.operation === 'dns_record_add') {
       const id = String(nextRecordId++)

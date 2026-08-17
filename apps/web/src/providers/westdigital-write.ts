@@ -7,7 +7,9 @@ import { normalizeDomain } from '@/lib/domain-name'
 
 import { mapWestDigitalRealnameCreateFields } from './westdigital-realname'
 import type {
+  WestDigitalDomainContactType,
   WestDigitalDomainAsset,
+  WestDigitalDomainInformation,
   WestDigitalDnsRecordInput,
   WestDigitalDnsRecordPage,
   WestDigitalManagedProvider,
@@ -19,6 +21,12 @@ import { managedDnsRecordTypeSchema, westDigitalDnsLineCodeSchema } from '@/sche
 
 export type WestDigitalWriteTransportOperation =
   | 'asset_query'
+  | 'domain_certificate_get'
+  | 'domain_contact_update'
+  | 'domain_information_query'
+  | 'domain_management_password_get'
+  | 'domain_management_password_modify'
+  | 'domain_template_transfer'
   | 'dns_record_add'
   | 'dns_record_delete'
   | 'dns_record_modify'
@@ -101,6 +109,18 @@ const assetDataSchema = z
     registrars: z.string().optional(),
   })
   .passthrough()
+const domainInformationDataSchema = z
+  .object({
+    c_sysid: z.union([z.string(), z.number()]).transform(String),
+    domain: z.string().min(1),
+  })
+  .passthrough()
+const domainManagementPasswordDataSchema = z.object({
+  domainpwd: z.string().min(1).max(128),
+})
+const domainCertificateDataSchema = z.object({
+  certurl: z.string().min(1),
+})
 const dnsRecordIdDataSchema = z.object({
   id: z.union([z.string(), z.number().int()]).transform(String).pipe(z.string().regex(/^\d+$/u)),
 })
@@ -505,6 +525,133 @@ export class WestDigitalWriteAdapter implements WestDigitalManagedProvider {
       },
       path: '/v2/domain/',
       write: false,
+      documentedNotOwnedResult: 404,
+    })
+  }
+
+  async getDomainManagementPassword(input: { domainAscii: string; traceId: string }) {
+    return this.request({
+      body: { act: 'getpwd', domain: asciiDomain(input.domainAscii) },
+      input,
+      operation: 'domain_management_password_get',
+      parse: (envelope) => ({
+        managementPassword: domainManagementPasswordDataSchema.parse(envelope.data).domainpwd,
+      }),
+      path: '/v2/domain/',
+      write: false,
+    })
+  }
+
+  async modifyDomainManagementPassword(input: {
+    domainAscii: string
+    managementPassword: string
+    traceId: string
+  }) {
+    return this.request({
+      body: {
+        act: 'modpwd',
+        domain: asciiDomain(input.domainAscii),
+        domainpwd: z.string().min(8).max(128).parse(input.managementPassword),
+      },
+      input,
+      operation: 'domain_management_password_modify',
+      parse: (envelope) => ({ providerClientId: envelope.clientid!, state: 'succeeded' as const }),
+      path: '/v2/domain/',
+      write: true,
+    })
+  }
+
+  async updateDomainContact(input: {
+    contactType: WestDigitalDomainContactType
+    domainAscii: string
+    profile: WestDigitalRealnameProfile
+    traceId: string
+  }) {
+    const fields = mapWestDigitalRealnameCreateFields(input.profile)
+    return this.request({
+      body: {
+        act: 'domainmodisub',
+        c_adr: fields.c_adr,
+        c_adr_m: fields.c_adr_m,
+        c_co: fields.c_co,
+        c_ct: fields.c_ct,
+        c_ct_m: fields.c_ct_m,
+        c_dt_m: fields.c_dt_m,
+        c_em: fields.c_em,
+        c_fn: fields.c_fn,
+        c_fn_m: fields.c_fn_m,
+        c_ln: fields.c_ln,
+        c_ln_m: fields.c_ln_m,
+        c_pc: fields.c_pc,
+        c_ph: fields.c_ph,
+        c_ph_code: fields.c_ph_code,
+        c_ph_fj: fields.c_ph_fj,
+        c_ph_num: fields.c_ph_num,
+        c_ph_type: fields.c_ph_type,
+        c_st: fields.c_st,
+        c_st_m: fields.c_st_m,
+        cocode: fields.cocode,
+        domain: asciiDomain(input.domainAscii),
+        eppidtype: z.enum(['dom_id', 'admin_id', 'tech_id', 'bill_id']).parse(input.contactType),
+        fullname: fields.fullname,
+      },
+      input,
+      operation: 'domain_contact_update',
+      parse: (envelope) => ({ providerClientId: envelope.clientid!, state: 'succeeded' as const }),
+      path: '/v2/audit/',
+      write: true,
+    })
+  }
+
+  async transferDomainToTemplate(input: {
+    domainAscii: string
+    providerTemplateId: string
+    traceId: string
+  }) {
+    return this.request({
+      body: {
+        act: 'auditghsub',
+        c_sysid: z.string().regex(/^\d+$/u).parse(input.providerTemplateId),
+        domain: asciiDomain(input.domainAscii),
+        eppidtype: 'dom_id,admin_id,tech_id,bill_id',
+      },
+      input,
+      operation: 'domain_template_transfer',
+      parse: (envelope) => ({ providerClientId: envelope.clientid!, state: 'succeeded' as const }),
+      path: '/v2/audit/',
+      write: true,
+    })
+  }
+
+  async queryDomainInformation(input: {
+    domainAscii: string
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalDomainInformation>> {
+    const expected = asciiDomain(input.domainAscii)
+    return this.request({
+      body: { act: 'domaininfo', domain: expected },
+      input,
+      operation: 'domain_information_query',
+      parse: (envelope) => {
+        const data = domainInformationDataSchema.parse(envelope.data)
+        if (asciiDomain(data.domain) !== expected) throw new Error('Mismatched domain information')
+        return { domainAscii: expected, providerTemplateId: data.c_sysid }
+      },
+      path: '/v2/audit/',
+      write: false,
+    })
+  }
+
+  async getDomainCertificate(input: { domainAscii: string; traceId: string }) {
+    return this.request({
+      body: { act: 'cert', domain: asciiDomain(input.domainAscii), img: '1' },
+      input,
+      operation: 'domain_certificate_get',
+      parse: (envelope) => ({
+        certificateBase64: domainCertificateDataSchema.parse(envelope.data).certurl,
+      }),
+      path: '/v2/domain/',
+      write: false,
     })
   }
 
@@ -543,6 +690,7 @@ export class WestDigitalWriteAdapter implements WestDigitalManagedProvider {
     parse: (envelope: z.infer<typeof envelopeSchema>) => T
     path: '/v2/audit/' | '/v2/domain/'
     write: boolean
+    documentedNotOwnedResult?: 404
   }): Promise<ProviderResult<T>> {
     const requestId = this.requestIdFactory()
     const observedAt = () => this.now().toISOString()
@@ -567,6 +715,19 @@ export class WestDigitalWriteAdapter implements WestDigitalManagedProvider {
         )
       }
       const envelope = envelopeSchema.safeParse(response.body)
+      if (
+        envelope.success &&
+        input.documentedNotOwnedResult !== undefined &&
+        envelope.data.result === input.documentedNotOwnedResult
+      ) {
+        return failure(
+          'WESTDIGITAL_ASSET_NOT_IN_ACCOUNT',
+          '西部数码当前账户下不存在该域名资产',
+          observedAt(),
+          requestId,
+          { retryable: false, statusKnown: true },
+        )
+      }
       if (!envelope.success || envelope.data.result !== 200 || !envelope.data.clientid) {
         return failure(
           'WESTDIGITAL_EXPLICIT_REJECTION',

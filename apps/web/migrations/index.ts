@@ -40,6 +40,7 @@ import * as migration_20260816_150802_d9a_account_recovery from './20260816_1508
 import * as migration_20260817_000646_d9a_account_closure from './20260817_000646_d9a_account_closure'
 import * as migration_20260817_040409_d9b1_wallet_ledger from './20260817_040409_d9b1_wallet_ledger'
 import * as migration_20260817_065450_d9d1_dns_record_management from './20260817_065450_d9d1_dns_record_management'
+import * as migration_20260817_150002_d9d2_domain_management_sync from './20260817_150002_d9d2_domain_management_sync'
 
 export const migrations = [
   {
@@ -251,5 +252,10 @@ export const migrations = [
     up: migration_20260817_065450_d9d1_dns_record_management.up,
     down: migration_20260817_065450_d9d1_dns_record_management.down,
     name: '20260817_065450_d9d1_dns_record_management',
+  },
+  {
+    up: migration_20260817_150002_d9d2_domain_management_sync.up,
+    down: migration_20260817_150002_d9d2_domain_management_sync.down,
+    name: '20260817_150002_d9d2_domain_management_sync',
   },
 ]

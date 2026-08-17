@@ -91,6 +91,13 @@
       "phase": "expand",
       "reason": "新增 DNS 变更追加式记录、域名变更互斥与速率列及 provider DNS 操作枚举；旧代码可忽略新增结构，新代码仅在迁移完成后启用解析记录管理。",
       "rollback": "retain"
+    },
+    "20260817_150002_d9d2_domain_management_sync": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增域名管理与资产同步追加式记录、上游归属和同步状态、管理互斥列及 provider/Job 枚举；旧代码可忽略新增结构，新代码仅在迁移完成后启用域名管理和同步。",
+      "rollback": "retain"
     }
   }
 }

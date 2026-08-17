@@ -1221,8 +1221,13 @@ capability restrictions` 三个 `WHERE` 谓词（`account-state.ts:310-312`）�
     the identity-risk cooldown even with a valid grant”证明冷静期会在 grant 有效时仍硬阻断。A3 已把
     Name Server 变更接入 `nameserver_change` grant、显式二次确认与同一冷静期断言，并把账号删除接入
     一次性 `account_deletion` grant；`d9a-account-state.integration.test.ts:304` 验证两者在冷静期持有效
-    grant 仍拒绝。但 D9-B 与 D9-D 的其余实际高风险动作，以及表中的变更预览、通知及绑定渠道确认
-    尚无完整实现/集成测试，故风险表整体不能勾选；下表文字与保护等级保持不变。
+    grant 仍拒绝。D9-D-1 已覆盖 DNS 高风险档和批量删除预览；D9-D-2 又在
+    `apps/web/src/services/domains/domain-management.ts:275-355`、`:378-542`、`:616-635` 将获取/修改
+    管理密码接入 step-up + 当前全部 active 绑定渠道确认，将联系人修改与模板过户接入
+    `realname_change` step-up + 二次确认，并由
+    `apps/web/tests/integration/d9d2-domain-management.integration.test.ts:406`、`:484`、`:632`、`:2146`
+    逐项验证。但 D9-B 交互式余额消费、关闭域名锁及其通知仍无完整实现/集成测试，故风险表整体不能
+    勾选；下表文字与保护等级保持不变。
 
 | 操作                                       | 保护                               |
 | ------------------------------------------ | ---------------------------------- |
@@ -1629,17 +1634,64 @@ D9-D-1 证据（2026-08-17，仅本节第 1 项）：
   DNSSEC、DDNS、常用邮箱解析、域名转入/转出、域名管理密码、域名信息/过户/证书、离线任务、资产同步
   或 capability 扩展；本节其余六项保持未勾选。
 
-- [ ] 域名管理密码获取与修改：**step-up + 绑定渠道确认**，明文不进日志、审计元数据与前端缓存；
-- [ ] 修改域名信息；过户到本人已通过的实名模板（「模板过户」与「实时过户」差异在联调中确认并
+- [x] 域名管理密码获取与修改：**step-up + 绑定渠道确认**，明文不进日志、审计元数据与前端缓存；
+- [x] 修改域名信息；过户到本人已通过的实名模板（「模板过户」与「实时过户」差异在联调中确认并
       记录选型理由）；域名证书下载；
 - [ ] 对接域名批量任务与**离线任务 API（V2）**：返回任务标识后查询结果，**不假设同步返回**；
       复用 D6-01 `providerOperations` 的唯一操作键、原子认领、状态不明只查询与有限重试语义；
 - [ ] 批量操作逐项幂等、部分失败可见（六状态 partial）、**批量删除与 NS 修改前提供 dry-run 与
       影响预览**；
-- [ ] 上游资产状态同步任务；本地与上游不一致时的处理；**域名已不属于当前上游账户时自动阻止操作**；
-- [ ] **能力声明**：注册商不支持某项能力时返回明确的 capability 错误而非通用失败。P1 只有
+- [x] 上游资产状态同步任务；本地与上游不一致时的处理；**域名已不属于当前上游账户时自动阻止操作**；
+- [x] **能力声明**：注册商不支持某项能力时返回明确的 capability 错误而非通用失败。P1 只有
       `westdigital` 一个 adapter，API 契约与数据模型不写死其语义，但**不建设完整多注册商抽象层**
       （现有 PRD、技术栈与开发计划均未提出多注册商目标）。
+
+D9-D-2 证据（2026-08-17，仅本节第 2、3、6、7 项）：
+
+- 管理密码：`apps/web/src/services/domains/domain-management.ts:275-315` 和 `:378-503` 对读取、修改两个
+  调用点分别复用 A3、A4 `domain_management_password`、A5 冷静期、失败关闭上游归属与当前 active
+  绑定渠道查询；成功后复用 A2 通知路径向全部 active provider 逐渠道追加 outcome。响应路由在
+  `apps/web/src/app/api/v1/domains/[assetId]/management-password/route.ts:23-76` 固定 `no-store`。
+  集成用例 `apps/web/tests/integration/d9d2-domain-management.integration.test.ts:406`“rejects password read
+  and write independently without step-up or an active bound channel”、`:484`“returns password plaintext
+  once, notifies every active provider, and never persists or logs the value”、`:599`“does not let a
+  notification delivery failure roll back a completed password read”分别验证缺 step-up、缺绑定渠道拒绝，
+  逐渠道告知，以及直接读取带 customer/asset/action `where` 的审计、事件、provider operation、安全事件
+  与捕获日志后均不含明文、长度或哈希。
+- 信息、模板过户与证书：`apps/web/src/services/domains/domain-management.ts:317-355`、`:506-714` 要求模板
+  属于当前 customer，并把本地 approved、上游 review approved、providerConfirmedAt 和文档格式的模板
+  ID 四个事实耦合校验；联系人修改与模板过户都要求 `realname_change` step-up + `confirmed === true`，
+  三个写均复用 D6-01，过户只在上游明确成功后以 `UPDATE ... WHERE id/旧模板/sync_version RETURNING`
+  更新本地事实，冲突转待核对；证书严格解码并 `no-store` 返回。集成用例 `:632`“rejects contact and
+  transfer independently for foreign, unapproved, missing-step-up, and unconfirmed targets”、`:780`
+  “requires every coupled approval fact before a realname template can change a domain”、`:829`“updates one
+  documented contact role and transfers only to an owned approved template”、`:895`“keeps certificate
+  download at current-session risk while auditing and returning bytes”、`:923`“rejects a non-base64
+  certificate body before returning or confirming it”覆盖完整错误路径。
+- 同步与归属阻断：`apps/web/src/services/domains/domain-assets.ts:281-440` 逐项比较到期时间、NS、注册时间、
+  注册商与状态；差异只追加 `domainAssetSyncEvents` 并标记 pending，不覆盖本地事实。`:443-539` 提供客户
+  主动同步和仅系统 principal 可执行的独占 background 日任务；同步状态以同事务
+  `UPDATE ... WHERE id/sync_version/无活跃管理 lease RETURNING` 更新。D6-01 在
+  `apps/web/src/services/providers/westdigital-operations.ts:630-703` 对除注册/实名外的全部域名写统一调用
+  `:859-884` 的 `assertWestDigitalDomainOwnership`，查询失败、归属 unknown/not-owned 均失败关闭，因此
+  既有 DNS 写也自动受阻。集成用例 `:1240`“blocks every slice operation and an existing DNS write when
+  upstream ownership is absent”、`:1346`“fails every management write closed when upstream ownership cannot
+  be queried”、`:1437`、`:1541`、`:1590`、`:1780`分别覆盖每个管理调用点重查、not-owned 追加状态、
+  五项事实不覆盖和同步 CAS/lease 互斥。
+- 能力声明：`apps/web/src/services/domains/capabilities.ts:3-69` 为七项本切片能力建立显式表，明确
+  `realtime_transfer` 不支持并为每项保留专门 capability code；客户声明入口先校验本人资产，不引入多
+  注册商接口层。单元用例 `apps/web/tests/unit/d9d2-domain-management-contract.test.ts:120`“declares every
+  slice capability explicitly and returns a dedicated code for each unsupported item”和集成用例
+  `apps/web/tests/integration/d9d2-domain-management.integration.test.ts:949`“returns dedicated capability
+  errors at every implemented capability call point”按能力及调用点验证不退化为通用失败。
+- 追加式载体、migration 与变异：`apps/web/src/collections/domain-management.ts:22-176` 的管理事件和同步
+  事件在系统 override 下仍拒绝 update/delete；migration
+  `apps/web/migrations/20260817_150002_d9d2_domain_management_sync.ts:1` 及独立 verifier 覆盖 UP、约束、
+  DOWN 精确恢复、再 UP；release policy/manifest 同步登记为 additive expand。最终代码的服务/路由/访问/provider/契约
+  122/122、SQL/CAS 20/20、migration/发布元数据 95/95，合计 237/237 个删除/短路变异均由指定行为断言
+  独立杀死；逐调用点清单、唯一用例与 A4 风险表
+  逐项自查见 `docs/operations/d9d2-domain-management-mutation-matrix.md`。真实西部数码、DNS 与域名管理
+  写闸门全部保持 false，没有部署或生产写入。第 4～5 项离线/批量任务保持未勾选且未实现或留桩。
 
 **本模块明确不做**：DNSSEC（配置错误会导致解析整体失效）、注册 DNS / glue records（仅自建 DNS
 场景）、DDNS 与常用邮箱解析、域名转入/转出。

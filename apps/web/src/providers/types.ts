@@ -238,6 +238,13 @@ export type WestDigitalDomainAsset = {
   status: 'active' | 'expired' | 'pending' | 'unknown'
 }
 
+export type WestDigitalDomainContactType = 'admin_id' | 'bill_id' | 'dom_id' | 'tech_id'
+
+export type WestDigitalDomainInformation = {
+  domainAscii: string
+  providerTemplateId: string
+}
+
 export type WestDigitalWriteConfirmation = {
   providerClientId: string
   state: 'accepted' | 'failed' | 'pending' | 'succeeded' | 'unknown'
@@ -339,7 +346,39 @@ export interface WestDigitalWriteProvider extends HealthAwareProvider {
   }): Promise<ProviderResult<WestDigitalWriteConfirmation>>
 }
 
-export type WestDigitalManagedProvider = WestDigitalWriteProvider & WestDigitalDnsProvider
+export interface WestDigitalDomainManagementProvider extends WestDigitalWriteProvider {
+  getDomainCertificate(input: {
+    domainAscii: string
+    traceId: string
+  }): Promise<ProviderResult<{ certificateBase64: string }>>
+  getDomainManagementPassword(input: {
+    domainAscii: string
+    traceId: string
+  }): Promise<ProviderResult<{ managementPassword: string }>>
+  modifyDomainManagementPassword(input: {
+    domainAscii: string
+    managementPassword: string
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalWriteConfirmation>>
+  queryDomainInformation(input: {
+    domainAscii: string
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalDomainInformation>>
+  transferDomainToTemplate(input: {
+    domainAscii: string
+    providerTemplateId: string
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalWriteConfirmation>>
+  updateDomainContact(input: {
+    contactType: WestDigitalDomainContactType
+    domainAscii: string
+    profile: WestDigitalRealnameProfile
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalWriteConfirmation>>
+}
+
+export type WestDigitalManagedProvider = WestDigitalDomainManagementProvider &
+  WestDigitalDnsProvider
 
 export type PaymentChannel = 'h5' | 'native'
 

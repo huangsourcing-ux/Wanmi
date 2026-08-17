@@ -11,6 +11,8 @@ import { authorizeWestDigitalWrite, ProviderWriteGuardError } from '@/lib/provid
 import type { Result } from '@/schemas/api'
 import type {
   WestDigitalDomainAsset,
+  WestDigitalDomainManagementProvider,
+  WestDigitalDomainContactType,
   WestDigitalDnsRecord,
   WestDigitalDnsRecordInput,
   WestDigitalManagedProvider,
@@ -79,6 +81,25 @@ export type WestDigitalWriteOperationInput =
       record: WestDigitalDnsRecordInput
     })
   | (SharedInput & {
+      businessKey: string
+      domainAscii: string
+      managementPassword: string
+      operation: 'domain_management_password'
+    })
+  | (SharedInput & {
+      businessKey: string
+      contactType: WestDigitalDomainContactType
+      domainAscii: string
+      operation: 'domain_contact_update'
+      profile: WestDigitalRealnameProfile
+    })
+  | (SharedInput & {
+      businessKey: string
+      domainAscii: string
+      operation: 'domain_template_transfer'
+      providerTemplateId: string
+    })
+  | (SharedInput & {
       domainAscii: string
       operation: 'dns_record_modify'
       providerRecordId: string
@@ -113,6 +134,12 @@ type WestDigitalDnsWriteOperation = Extract<
   { operation: `dns_record_${string}` }
 >['operation']
 
+type WestDigitalBusinessKeyOperation =
+  | WestDigitalDnsWriteOperation
+  | 'domain_contact_update'
+  | 'domain_management_password'
+  | 'domain_template_transfer'
+
 function stable(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
   if (value && typeof value === 'object') {
@@ -126,7 +153,7 @@ function stable(value: unknown): string {
 
 export function generateWestDigitalDnsBusinessOperationKey(input: {
   businessKey: string
-  operation: WestDigitalDnsWriteOperation
+  operation: WestDigitalBusinessKeyOperation
   targetId: number | string
 }): string {
   const digest = createHash('sha256')
@@ -140,7 +167,13 @@ export function generateWestDigitalDnsBusinessOperationKey(input: {
 }
 
 export function generateWestDigitalOperationKey(input: WestDigitalWriteOperationInput): string {
-  if (dnsOperation(input) && input.businessKey) {
+  if (
+    input.businessKey &&
+    (dnsOperation(input) ||
+      input.operation === 'domain_management_password' ||
+      input.operation === 'domain_contact_update' ||
+      input.operation === 'domain_template_transfer')
+  ) {
     return generateWestDigitalDnsBusinessOperationKey({
       businessKey: input.businessKey,
       operation: input.operation,
@@ -342,6 +375,19 @@ function requireDnsProvider(
   return provider
 }
 
+function requireDomainManagementProvider(
+  provider: WestDigitalWriteProvider | WestDigitalManagedProvider,
+): WestDigitalDomainManagementProvider {
+  if (!('getDomainManagementPassword' in provider)) {
+    throw new AppError(
+      'WESTDIGITAL_DOMAIN_MANAGEMENT_PROVIDER_UNAVAILABLE',
+      '域名管理 Provider 能力不可用',
+      503,
+    )
+  }
+  return provider
+}
+
 async function submit(
   provider: WestDigitalWriteProvider | WestDigitalManagedProvider,
   input: WestDigitalWriteOperationInput,
@@ -350,6 +396,12 @@ async function submit(
   if (input.operation === 'register') return provider.register(input)
   if (input.operation === 'renew') return provider.renew(input)
   if (input.operation === 'nameserver') return provider.changeNameservers(input)
+  if (input.operation === 'domain_management_password')
+    return requireDomainManagementProvider(provider).modifyDomainManagementPassword(input)
+  if (input.operation === 'domain_contact_update')
+    return requireDomainManagementProvider(provider).updateDomainContact(input)
+  if (input.operation === 'domain_template_transfer')
+    return requireDomainManagementProvider(provider).transferDomainToTemplate(input)
   const dnsProvider = requireDnsProvider(provider)
   if (input.operation === 'dns_record_add') return dnsProvider.addDnsRecord(input)
   if (input.operation === 'dns_record_modify') return dnsProvider.modifyDnsRecord(input)
@@ -401,6 +453,21 @@ async function queryStatus(
     if (!id) return undefined
     return provider.queryRealname({ providerTemplateId: id, traceId: input.traceId })
   }
+  if (input.operation === 'domain_management_password') {
+    return requireDomainManagementProvider(provider).getDomainManagementPassword({
+      domainAscii: input.domainAscii,
+      traceId: input.traceId,
+    })
+  }
+  if (
+    input.operation === 'domain_contact_update' ||
+    input.operation === 'domain_template_transfer'
+  ) {
+    return requireDomainManagementProvider(provider).queryDomainInformation({
+      domainAscii: input.domainAscii,
+      traceId: input.traceId,
+    })
+  }
   if (dnsOperation(input)) {
     const recordId =
       input.operation === 'dns_record_add' ? providerRecordId(operation) : input.providerRecordId
@@ -436,6 +503,19 @@ function confirmed(
   if (!result?.ok) return false
   if (input.operation === 'realname')
     return 'state' in result.data && result.data.state !== 'unknown'
+  if (input.operation === 'domain_management_password') {
+    return (
+      'managementPassword' in result.data &&
+      result.data.managementPassword === input.managementPassword
+    )
+  }
+  if (input.operation === 'domain_template_transfer') {
+    return (
+      'providerTemplateId' in result.data &&
+      result.data.providerTemplateId === input.providerTemplateId
+    )
+  }
+  if (input.operation === 'domain_contact_update') return false
   if (dnsOperation(input)) {
     if (!('items' in result.data)) return false
     const recordId = input.operation === 'dns_record_add' ? undefined : input.providerRecordId
@@ -451,6 +531,7 @@ function confirmed(
     return matching.length === 1
   }
   if (!('domainAscii' in result.data) || result.data.domainAscii !== input.domainAscii) return false
+  if (!('nameservers' in result.data)) return false
   if (input.operation === 'nameserver') {
     const actual = new Set(result.data.nameservers.map((value) => value.toLowerCase()))
     return input.nameservers.every((value) => actual.has(value.toLowerCase()))
@@ -608,6 +689,18 @@ export async function executeWestDigitalWriteOperation(
   }
 
   try {
+    if (input.operation !== 'realname' && input.operation !== 'register') {
+      await assertWestDigitalDomainOwnership(
+        req,
+        {
+          actor: input.actor,
+          domainAscii: input.domainAscii,
+          targetId: input.targetId,
+          traceId: `${input.traceId}-ownership`,
+        },
+        provider,
+      )
+    }
     const authorization = authorizeWestDigitalWrite(input, operationKey)
     if (authorization) await consumeProviderWriteBudget(req, authorization)
   } catch (error) {
@@ -683,6 +776,21 @@ export async function executeWestDigitalWriteOperation(
       'submitted',
       submitted.requestId,
     )
+    if (submitted.data.state === 'succeeded') {
+      operation = await recordOutcome(
+        req,
+        input,
+        operation,
+        {
+          lastCheckedAt: new Date().toISOString(),
+          safeResult: { ...safeResult, confirmed: true },
+          status: 'succeeded',
+        },
+        'status_confirmed',
+        submitted.requestId,
+      )
+      break
+    }
     const queried = await queryStatus(provider, input, operation)
     operation = await recordOutcome(
       req,
@@ -746,4 +854,31 @@ export async function queryWestDigitalAsset(
     ),
     state: 'error',
   }
+}
+
+export async function assertWestDigitalDomainOwnership(
+  req: PayloadRequest,
+  input: { actor: AuditActor; domainAscii: string; targetId: number | string; traceId: string },
+  provider: WestDigitalWriteProvider,
+): Promise<WestDigitalDomainAsset> {
+  const queried = await queryWestDigitalAsset(req, input, provider)
+  if (queried.state === 'ready') return queried.data
+  const code =
+    'problem' in queried && queried.problem.code === 'WESTDIGITAL_ASSET_NOT_IN_ACCOUNT'
+      ? 'DOMAIN_UPSTREAM_ASSET_NOT_OWNED'
+      : 'DOMAIN_UPSTREAM_OWNERSHIP_UNCONFIRMED'
+  throw new AppError(
+    code,
+    code === 'DOMAIN_UPSTREAM_ASSET_NOT_OWNED'
+      ? '该域名已不属于当前上游账户，已阻止操作'
+      : '无法确认域名仍属于当前上游账户，已阻止操作',
+    409,
+    {
+      action: '等待上游同步或转人工核对后再操作',
+      dataSource: westDigitalDataSource(),
+      observedAt: queried.meta?.observedAt,
+      retryable: false,
+      title: '上游域名归属未通过',
+    },
+  )
 }

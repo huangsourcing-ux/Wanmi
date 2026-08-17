@@ -121,6 +121,8 @@ export interface Config {
     renewals: Renewal;
     nameserverChanges: NameserverChange;
     dnsRecordChanges: DnsRecordChange;
+    domainManagementEvents: DomainManagementEvent;
+    domainAssetSyncEvents: DomainAssetSyncEvent;
     manualReviews: ManualReview;
     reconciliations: Reconciliation;
     auditLogs: AuditLog;
@@ -205,6 +207,8 @@ export interface Config {
     renewals: RenewalsSelect<false> | RenewalsSelect<true>;
     nameserverChanges: NameserverChangesSelect<false> | NameserverChangesSelect<true>;
     dnsRecordChanges: DnsRecordChangesSelect<false> | DnsRecordChangesSelect<true>;
+    domainManagementEvents: DomainManagementEventsSelect<false> | DomainManagementEventsSelect<true>;
+    domainAssetSyncEvents: DomainAssetSyncEventsSelect<false> | DomainAssetSyncEventsSelect<true>;
     manualReviews: ManualReviewsSelect<false> | ManualReviewsSelect<true>;
     reconciliations: ReconciliationsSelect<false> | ReconciliationsSelect<true>;
     auditLogs: AuditLogsSelect<false> | AuditLogsSelect<true>;
@@ -248,6 +252,7 @@ export interface Config {
       realnameCleanup: WorkflowRealnameCleanup;
       westdigitalBalanceMonitoring: WorkflowWestdigitalBalanceMonitoring;
       domainExpiryReminders: WorkflowDomainExpiryReminders;
+      domainAssetSynchronization: WorkflowDomainAssetSynchronization;
       walletLedgerConsistencyCheck: WorkflowWalletLedgerConsistencyCheck;
       commerceFulfillment: WorkflowCommerceFulfillment;
       commerceWorkerHeartbeat: WorkflowCommerceWorkerHeartbeat;
@@ -601,6 +606,14 @@ export interface DomainAsset {
   status: 'active' | 'expired' | 'pending' | 'unknown';
   nameservers: string[];
   lastSyncedAt: string;
+  upstreamOwnershipStatus: 'confirmed' | 'not_owned' | 'unknown';
+  syncReviewStatus: 'none' | 'matched' | 'pending';
+  syncVersion: number;
+  lastOwnershipCheckedAt?: string | null;
+  operationBlockedAt?: string | null;
+  operationBlockReason?: string | null;
+  domainManagementLeaseKey?: string | null;
+  domainManagementLeaseExpiresAt?: string | null;
   dnsMutationLeaseKey?: string | null;
   dnsMutationLeaseExpiresAt?: string | null;
   dnsChangeWindowStartedAt?: string | null;
@@ -776,7 +789,10 @@ export interface ProviderOperation {
     | 'dns_record_add'
     | 'dns_record_modify'
     | 'dns_record_delete'
-    | 'dns_record_pause';
+    | 'dns_record_pause'
+    | 'domain_management_password'
+    | 'domain_contact_update'
+    | 'domain_template_transfer';
   status: 'prepared' | 'submitted' | 'succeeded' | 'failed' | 'unknown';
   providerRequestId?: string | null;
   attemptCount: number;
@@ -1739,6 +1755,76 @@ export interface DnsRecordChange {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "domainManagementEvents".
+ */
+export interface DomainManagementEvent {
+  id: number;
+  eventKey: string;
+  customer: number | Customer;
+  asset: number | DomainAsset;
+  operation:
+    | 'management_password_read'
+    | 'management_password_modify'
+    | 'contact_information_update'
+    | 'template_transfer'
+    | 'certificate_download';
+  event: 'requested' | 'confirmed' | 'failed' | 'pending_query';
+  contactType?: ('dom_id' | 'admin_id' | 'tech_id' | 'bill_id') | null;
+  realnameTemplate?: (number | null) | RealnameTemplate;
+  providerOperation?: (number | null) | ProviderOperation;
+  operationKey?: string | null;
+  errorCode?: string | null;
+  occurredAt: string;
+  traceId?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "domainAssetSyncEvents".
+ */
+export interface DomainAssetSyncEvent {
+  id: number;
+  eventKey: string;
+  customer: number | Customer;
+  asset: number | DomainAsset;
+  outcome: 'matched' | 'difference' | 'not_owned' | 'ownership_unknown';
+  resolutionStatus: 'not_required' | 'pending';
+  localFacts?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  upstreamFacts?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  differences?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  providerErrorCode?: string | null;
+  observedAt: string;
+  traceId?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "reconciliations".
  */
 export interface Reconciliation {
@@ -2286,6 +2372,7 @@ export interface PayloadJob {
         | 'realnameCleanup'
         | 'westdigitalBalanceMonitoring'
         | 'domainExpiryReminders'
+        | 'domainAssetSynchronization'
         | 'walletLedgerConsistencyCheck'
         | 'commerceFulfillment'
         | 'commerceWorkerHeartbeat'
@@ -3579,6 +3666,14 @@ export interface DomainAssetsSelect<T extends boolean = true> {
   status?: T;
   nameservers?: T;
   lastSyncedAt?: T;
+  upstreamOwnershipStatus?: T;
+  syncReviewStatus?: T;
+  syncVersion?: T;
+  lastOwnershipCheckedAt?: T;
+  operationBlockedAt?: T;
+  operationBlockReason?: T;
+  domainManagementLeaseKey?: T;
+  domainManagementLeaseExpiresAt?: T;
   dnsMutationLeaseKey?: T;
   dnsMutationLeaseExpiresAt?: T;
   dnsChangeWindowStartedAt?: T;
@@ -3668,6 +3763,45 @@ export interface DnsRecordChangesSelect<T extends boolean = true> {
   batchKey?: T;
   errorCode?: T;
   occurredAt?: T;
+  traceId?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "domainManagementEvents_select".
+ */
+export interface DomainManagementEventsSelect<T extends boolean = true> {
+  eventKey?: T;
+  customer?: T;
+  asset?: T;
+  operation?: T;
+  event?: T;
+  contactType?: T;
+  realnameTemplate?: T;
+  providerOperation?: T;
+  operationKey?: T;
+  errorCode?: T;
+  occurredAt?: T;
+  traceId?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "domainAssetSyncEvents_select".
+ */
+export interface DomainAssetSyncEventsSelect<T extends boolean = true> {
+  eventKey?: T;
+  customer?: T;
+  asset?: T;
+  outcome?: T;
+  resolutionStatus?: T;
+  localFacts?: T;
+  upstreamFacts?: T;
+  differences?: T;
+  providerErrorCode?: T;
+  observedAt?: T;
   traceId?: T;
   updatedAt?: T;
   createdAt?: T;
@@ -4191,6 +4325,13 @@ export interface WorkflowWestdigitalBalanceMonitoring {
  * via the `definition` "WorkflowDomainExpiryReminders".
  */
 export interface WorkflowDomainExpiryReminders {
+  input?: unknown;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WorkflowDomainAssetSynchronization".
+ */
+export interface WorkflowDomainAssetSynchronization {
   input?: unknown;
 }
 /**
