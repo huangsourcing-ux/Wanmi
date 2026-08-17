@@ -27,6 +27,8 @@ const recordGuardTest =
   'rejects missing, unreadable, malformed-id, malformed-blocker, and malformed-time requested records'
 const finalExecutionTest =
   'allows exactly one final execution, closes through A3, and enforces persisted rebind time'
+const wechatRegistrationRebindTest =
+  'rejects full Wechat registration with a released openid before its rebind cooldown'
 const auditTest =
   'records request, revocation, execution, and blocked-review audit and security events'
 const accessTest = 'keeps closure records append-only and customer reads owner-scoped'
@@ -428,6 +430,18 @@ for (const [id, search, replacement, test, testFile = integrationTest] of [
     'appends a distinct immutable blocker refresh on every blocked retry',
   ],
   [
+    'request-customer-actor-call',
+    '  assertCustomerActor(req, customer.id)\n  if (customer.status',
+    '  if (customer.status',
+    actorTest,
+  ],
+  [
+    'revoke-customer-actor-call',
+    '  assertCustomerActor(req, customer.id)\n  return inAuthTransaction(req, async () => {\n    const request = await requestedClosure(req, input.requestId)\n',
+    '  return inAuthTransaction(req, async () => {\n    const request = await requestedClosure(req, input.requestId)\n',
+    actorTest,
+  ],
+  [
     'request-active-source-state',
     "  if (customer.status !== 'active' && customer.status !== 'restricted') {\n",
     "  if (false && customer.status !== 'restricted') {\n",
@@ -759,6 +773,12 @@ for (const [id, search, replacement, test = rebindTest] of [
     '      await assertReleasedIdentityRebindAllowed(req, {\n        identifierHash: phoneIntent.identifierHash,\n        provider: phoneIntent.provider,\n        providerInstanceId: phoneIntent.providerInstanceId,\n      })\n',
     '',
     finalExecutionTest,
+  ],
+  [
+    'registration-primary-rebind-check',
+    '        await assertReleasedIdentityRebindAllowed(req, {\n          identifierHash: primary.identifierHash,\n          provider: primary.provider,\n          providerInstanceId: primary.providerInstanceId,\n        })\n',
+    '',
+    wechatRegistrationRebindTest,
   ],
   [
     'binding-rebind-check',

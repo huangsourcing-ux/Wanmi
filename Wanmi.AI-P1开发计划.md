@@ -1309,10 +1309,13 @@ capability restrictions` 三个 `WHERE` 谓词（`account-state.ts:310-312`）�
     `releasedIdentifierHash`、`rebindAllowedAt` 和 request 级 `identityRebindAllowedAt`。
     `apps/web/src/services/auth/account-closure.ts:541-562,649-700` 解除 active 身份时保存原 hash 与精确到期时间；
     `apps/web/src/services/auth/customer-identities.ts:204-252,381-429,597-614,827-833` 在 phone/Wechat 登录、
-    注册及绑定四个入口统一拒绝到期前重绑，查询失败或损坏时间失败关闭。集成用例
-    `apps/web/tests/integration/d9a-account-closure.integration.test.ts:1284-1558,1638-1858` 验证 30 天差值、四入口
-    到期前拒绝、到期后允许及 provider/instance/hash/优先级。SQL 63/63 与 JS/权限/早退 124/124，合计
-    187/187 个独立删除/短路变异均由指定行为断言杀死，逐点对照见
+    注册 phone intent、微信注册 primary intent 及绑定五个调用入口统一拒绝到期前重绑，查询失败或损坏时间
+    失败关闭。集成用例 `apps/web/tests/integration/d9a-account-closure.integration.test.ts:1411-1845,1951`
+    验证 30 天差值、五入口到期前拒绝、落库时间到期后允许及 provider/instance/hash/优先级；其中
+    `:1736` 完整执行账户关闭释放 openid 后，以微信 intent + 手机号 intent 注册新账号，断言冷静期错误和
+    带 phone/source `where` 的零新增计数，`:1770` 仅把该释放记录的 `rebind_allowed_at` 改到过去后注册成功。
+    SQL 63/63 与 JS/权限/早退 127/127，合计 190/190 个独立删除/短路变异均由指定行为断言杀死；清单按
+    调用点计数，`:597` phone intent 与 `:607` primary intent 分别由不同用例杀死，逐点对照见
     `docs/operations/d9a-a6-security-mutation-matrix.md`。
 
 #### A7 同意与个人信息

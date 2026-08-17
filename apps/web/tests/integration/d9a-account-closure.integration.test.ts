@@ -213,6 +213,124 @@ async function expireClosureCooldown(requestId: string): Promise<void> {
   )
 }
 
+async function createReleasedWechatRegistrationFixture(label: string) {
+  const originalPhone = `+86137${randomInt(10_000_000, 100_000_000)}`
+  const openid = `${prefix}-${label}-openid-${randomUUID()}`
+  const originalCustomer = await payload.create({
+    collection: 'customers',
+    data: {
+      accountType: 'registered',
+      capabilityRestrictions: [],
+      defaultCustomerProfileType: 'individual',
+      phone: originalPhone,
+      phoneMasked: maskPhone(originalPhone),
+      registrationSource: 'phone',
+      status: 'active',
+    },
+    overrideAccess: true,
+  })
+  await payload.create({
+    collection: 'customerIdentities',
+    data: {
+      ...protectedIdentifier(originalPhone),
+      boundAt: new Date().toISOString(),
+      customer: originalCustomer.id,
+      provider: 'phone',
+      providerInstanceId: identityProviderInstance('phone'),
+      status: 'active',
+      verifiedAt: new Date().toISOString(),
+    },
+    overrideAccess: true,
+  })
+  const wechatIdentity = await payload.create({
+    collection: 'customerIdentities',
+    data: {
+      ...protectedIdentifier(openid),
+      boundAt: new Date().toISOString(),
+      customer: originalCustomer.id,
+      provider: 'wechat',
+      providerInstanceId: identityProviderInstance('wechat'),
+      status: 'active',
+      verifiedAt: new Date().toISOString(),
+    },
+    overrideAccess: true,
+  })
+
+  const requested = await closureRequest(originalCustomer, `${label}-closure`)
+  await expireClosureCooldown(requested.requestId)
+  const completed = await executeAccountClosure(await requestFor(adminUser(), `${label}-execute`), {
+    actorId: administrator.id,
+    note: '释放微信身份以验证注册重绑定冷却',
+    requestId: requested.requestId,
+  })
+  if (completed.status !== 'closed') throw new Error('fixture account closure was blocked')
+  await expect(
+    payload.findByID({
+      collection: 'customerIdentities',
+      id: wechatIdentity.id,
+      overrideAccess: true,
+    }),
+  ).resolves.toMatchObject({
+    rebindAllowedAt: completed.identityRebindAllowedAt,
+    releasedIdentifierHash: hmac(openid, getEnv().SESSION_PEPPER),
+    status: 'unbound',
+  })
+
+  const registrationPhone = `+86136${randomInt(10_000_000, 100_000_000)}`
+  const deviceId = `${prefix}-${label}-device-${randomUUID()}`
+  const authFlowToken = `${prefix}-${label}-flow-${randomUUID()}`
+  const requestHeaders = headers(`${label}-registration`)
+  const hashes = clientHashes(requestHeaders, deviceId)
+  const registrationReq = await createLocalReq({ req: { headers: requestHeaders } }, payload)
+  const phoneIntent = await createRegistrationIntent(registrationReq, {
+    ...hashes,
+    identifier: registrationPhone,
+    phoneMasked: maskPhone(registrationPhone),
+    provider: 'phone',
+    source: 'phone',
+  })
+  const wechatIntent = await createRegistrationIntent(registrationReq, {
+    deviceHash: hmac(authFlowToken, getEnv().SESSION_PEPPER),
+    identifier: openid,
+    ipHash: hashes.ipHash,
+    provider: 'wechat',
+    source: 'wechat_qrcode',
+  })
+
+  return {
+    authFlowToken,
+    deviceId,
+    openid,
+    phoneRegistrationToken: phoneIntent.registrationToken,
+    rebindAllowedAt: completed.identityRebindAllowedAt,
+    registrationHeaders: requestHeaders,
+    registrationPhone,
+    registrationToken: wechatIntent.registrationToken,
+    releasedIdentityId: wechatIdentity.id,
+  }
+}
+
+async function completeReleasedWechatRegistration(
+  fixture: Awaited<ReturnType<typeof createReleasedWechatRegistrationFixture>>,
+) {
+  return registerCustomer(
+    await createLocalReq({ req: { headers: fixture.registrationHeaders } }, payload),
+    {
+      acceptedDeviceIdentifierNotice: true,
+      acceptedPrivacyPolicy: true,
+      acceptedServiceTerms: true,
+      commercialSmsOptIn: false,
+      confirmsAdultOrAuthorizedRepresentative: true,
+      defaultCustomerProfileType: 'individual',
+      deviceId: fixture.deviceId,
+      phoneRegistrationToken: fixture.phoneRegistrationToken,
+      registrationToken: fixture.registrationToken,
+    },
+    fixture.registrationHeaders,
+    fixture.authFlowToken,
+  )
+}
+
 type PersistentBlocker = Exclude<
   AccountClosureBlocker,
   `${string}_check_unavailable` | 'closure_cooldown_active' | 'positive_balance'
@@ -1108,6 +1226,12 @@ describe('D9-A A6 account closure', () => {
 
     const requested = await closureRequest(owner, 'actor-owner')
     await expect(
+      revokeAccountClosure(await requestFor(customerUser(other), 'actor-revoke-principal'), owner, {
+        reason: '请求主体与目标客户不一致不得撤销',
+        requestId: requested.requestId,
+      }),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_CLOSURE_FORBIDDEN', status: 403 })
+    await expect(
       revokeAccountClosure(await requestFor(customerUser(other), 'actor-revoke'), other, {
         reason: '其他客户不得代为撤销',
         requestId: requested.requestId,
@@ -1604,6 +1728,115 @@ describe('D9-A A6 account closure', () => {
       executedAt: completed.value.executedAt,
       identityRebindAllowedAt: completed.value.identityRebindAllowedAt,
     })
+  })
+
+  it('rejects full Wechat registration with a released openid before its rebind cooldown', async () => {
+    const fixture = await createReleasedWechatRegistrationFixture('wechat-registration-cooldown')
+    expect(new Date(fixture.rebindAllowedAt).getTime()).toBeGreaterThan(Date.now())
+    await expect(
+      payload.count({
+        collection: 'customers',
+        overrideAccess: true,
+        where: {
+          and: [
+            { phone: { equals: fixture.registrationPhone } },
+            { registrationSource: { equals: 'wechat_qrcode' } },
+          ],
+        },
+      }),
+    ).resolves.toMatchObject({ totalDocs: 0 })
+
+    await expect(completeReleasedWechatRegistration(fixture)).rejects.toMatchObject({
+      code: 'IDENTITY_REBIND_COOLDOWN_ACTIVE',
+      status: 409,
+    })
+    await expect(
+      payload.count({
+        collection: 'customers',
+        overrideAccess: true,
+        where: {
+          and: [
+            { phone: { equals: fixture.registrationPhone } },
+            { registrationSource: { equals: 'wechat_qrcode' } },
+          ],
+        },
+      }),
+    ).resolves.toMatchObject({ totalDocs: 0 })
+  })
+
+  it('allows full Wechat registration with the same released openid after its persisted cooldown', async () => {
+    const fixture = await createReleasedWechatRegistrationFixture(
+      'wechat-registration-after-cooldown',
+    )
+    expect(new Date(fixture.rebindAllowedAt).getTime()).toBeGreaterThan(Date.now())
+    const releasedIdentifierHash = hmac(fixture.openid, getEnv().SESSION_PEPPER)
+    const updateResult = await payload.db.pool.query<{ rebind_allowed_at: Date }>(
+      `UPDATE customer_identities
+       SET rebind_allowed_at = NOW() - INTERVAL '1 second'
+       WHERE id = $1
+         AND provider = 'wechat'
+         AND status = 'unbound'
+         AND released_identifier_hash = $2
+       RETURNING rebind_allowed_at`,
+      [fixture.releasedIdentityId, releasedIdentifierHash],
+    )
+    expect(updateResult.rowCount).toBe(1)
+    expect(updateResult.rows[0]!.rebind_allowed_at.getTime()).toBeLessThan(Date.now())
+    await expect(
+      payload.count({
+        collection: 'customers',
+        overrideAccess: true,
+        where: {
+          and: [
+            { phone: { equals: fixture.registrationPhone } },
+            { registrationSource: { equals: 'wechat_qrcode' } },
+          ],
+        },
+      }),
+    ).resolves.toMatchObject({ totalDocs: 0 })
+
+    const result = await completeReleasedWechatRegistration(fixture)
+    expect(result).toMatchObject({
+      customer: { id: expect.any(Number) },
+      kind: 'authenticated',
+    })
+    await expect(
+      payload.findByID({
+        collection: 'customers',
+        id: result.customer.id,
+        overrideAccess: true,
+      }),
+    ).resolves.toMatchObject({
+      phone: fixture.registrationPhone,
+      registrationSource: 'wechat_qrcode',
+      status: 'active',
+    })
+    await expect(
+      payload.count({
+        collection: 'customers',
+        overrideAccess: true,
+        where: {
+          and: [
+            { phone: { equals: fixture.registrationPhone } },
+            { registrationSource: { equals: 'wechat_qrcode' } },
+          ],
+        },
+      }),
+    ).resolves.toMatchObject({ totalDocs: 1 })
+    await expect(
+      payload.count({
+        collection: 'customerIdentities',
+        overrideAccess: true,
+        where: {
+          and: [
+            { customer: { equals: result.customer.id } },
+            { provider: { equals: 'wechat' } },
+            { status: { equals: 'active' } },
+            { identifierHash: { equals: releasedIdentifierHash } },
+          ],
+        },
+      }),
+    ).resolves.toMatchObject({ totalDocs: 1 })
   })
 
   it('keeps every execution-claim id, request-key, unclaimed, allowed-status, and returned-row predicate necessary', async () => {

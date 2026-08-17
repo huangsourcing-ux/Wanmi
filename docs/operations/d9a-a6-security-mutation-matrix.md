@@ -7,7 +7,7 @@
 - 完整逐点映射：分别在上述命令后加 `--list`，输出每个 ID 的精确文件和唯一行为用例。
 - 计入标准：每次只写入一个删除或短路变异；指定 Vitest 必须非零退出且包含
   `AssertionError:`。编译、装载、定位或其他非行为失败不计为杀死；执行器在 `finally` 恢复源码。
-- 最终结果：SQL 63/63、安全/正确性 124/124，合计 **187/187
+- 最终结果：SQL 63/63、安全/正确性 127/127，合计 **190/190
   `KILLED_BY_BEHAVIOR`**；无 survivor，无非行为失败被计入结果。
 
 ## 汇总
@@ -23,14 +23,14 @@
 | schema               |      28 | 三类输入及非零 UUID                                 | 28/28 KILLED       |
 | route                |      22 | body 边界、JSON、身份门禁及 202 语义                | 22/22 KILLED       |
 | fail-closed-guards   |      13 | 查询结果、持久化 blocker/时间及查询失败             | 13/13 KILLED       |
-| actor                |       6 | customer 归属与 system_admin principal              | 6/6 KILLED         |
+| actor                |       8 | customer 归属、调用入口与 system_admin principal    | 8/8 KILLED         |
 | closure-workflow     |      18 | 一次性授权、状态、claim、冷静期与早退               | 18/18 KILLED       |
 | shared-step-up       |       2 | `account_deletion` 一次性分类及 A4 身份风险冷静期   | 2/2 KILLED         |
 | final-effects        |      10 | A3 两段迁移、实名、身份、匿名化和结果记录           | 10/10 KILLED       |
 | audit-security       |       7 | 四类 audit action 与三类安全事件                    | 7/7 KILLED         |
 | collection           |       8 | 追加式权限、敏感字段及 blocker 校验                 | 8/8 KILLED         |
-| rebind-guards        |      10 | 重绑定失败关闭、时间判断及四个调用入口              | 10/10 KILLED       |
-| **合计**             | **187** |                                                     | **187/187 KILLED** |
+| rebind-guards        |      11 | 重绑定失败关闭、时间判断及五个调用入口              | 11/11 KILLED       |
+| **合计**             | **190** |                                                     | **190/190 KILLED** |
 
 ## SQL 谓词逐点清单（63/63）
 
@@ -88,7 +88,7 @@
 customer、purpose、device、未消费、未过期中的一项；基线全部以 `STEP_UP_GRANT_INVALID` 拒绝，删除
 对应谓词时只有该项被错误放行。最终 count 以六个目标 customer 的 `where` 限定且必须为 0。
 
-## JS guard、权限、迁移调用与早退逐点清单（124/124）
+## JS guard、权限、迁移调用与早退逐点清单（127/127）
 
 ### Schema（28/28）
 
@@ -132,13 +132,14 @@ customer、purpose、device、未消费、未过期中的一项；基线全部�
 行为断言要求数据库只返回真正 boolean；任一前置查询抛错必须生成独立 unavailable blocker；持久化的
 ID、blocker 数组和三个时间字段损坏、requested 查询失败或缺行均稳定失败关闭。
 
-### Actor 与权限（6/6）
+### Actor 与权限（8/8）
 
 `customer-actor-kind`, `customer-actor-id`, `admin-system-role`, `admin-matching-id`,
-`admin-id-safe-integer`, `admin-id-positive`。
+`admin-id-safe-integer`, `admin-id-positive`, `request-customer-actor-call`,
+`revoke-customer-actor-call`。
 
 用例分别提供同 ID 非 customer、其他 customer、非 system_admin、principal 不匹配、非整数和非正管理员
-ID；任何关闭写入前都必须拒绝。
+ID；申请与撤销各自删除 `assertCustomerActor` 调用也分别失败。任何关闭写入前都必须拒绝。
 
 ### 申请、撤销、执行与早退（18/18）
 
@@ -182,15 +183,40 @@ audit count 逐项限定 target/action，安全事件 count 限定 customer/even
 read、系统 override update/delete 都拒绝，reason 对 customer 隐藏，blocker 列表必须为数组、无重复且值在
 固定 allowlist。
 
-### 身份重绑定 guard 与调用面（10/10）
+### 身份重绑定 guard 与调用面（11/11）
 
 `rebind-query-failure`, `rebind-no-row`, `rebind-current-bound-guard`,
 `rebind-released-hash-guard`, `rebind-timestamp-finite`, `rebind-expiry-allow`,
 `phone-auth-rebind-check`, `wechat-auth-rebind-check`,
-`registration-phone-rebind-check`, `binding-rebind-check`。
+`registration-phone-rebind-check`, `registration-primary-rebind-check`,
+`binding-rebind-check`。
 
-查询失败、当前仍绑定、released hash 错配和时间损坏都失败关闭；到期前 phone/Wechat 登录、注册和绑定四个
-入口全部拒绝，到期后允许。SQL 选择与 JS guard 两层分别变异，避免只证明其中一层。
+查询失败、当前仍绑定、released hash 错配和时间损坏都失败关闭；到期前 phone 登录、Wechat 登录、
+手机号注册 intent、微信注册 primary intent 和已登录绑定五个调用入口全部拒绝，到期后允许。SQL 选择与
+JS guard 两层分别变异，避免只证明其中一层。
+
+本轮按调用点重新清点，而不是把同一 guard 函数视为一个判定点：
+
+| 调用点                                               | 独立变异 ID                         | 独立行为用例                                                                                        |
+| ---------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `customer-identities.ts:381` phone 登录              | `phone-auth-rebind-check`           | `allows exactly one final execution, closes through A3, and enforces persisted rebind time`         |
+| `customer-identities.ts:421` Wechat 登录             | `wechat-auth-rebind-check`          | `allows exactly one final execution, closes through A3, and enforces persisted rebind time`         |
+| `customer-identities.ts:597` 注册 phone intent       | `registration-phone-rebind-check`   | `allows exactly one final execution, closes through A3, and enforces persisted rebind time`         |
+| `customer-identities.ts:607` 微信注册 primary intent | `registration-primary-rebind-check` | `rejects full Wechat registration with a released openid before its rebind cooldown`                |
+| `customer-identities.ts:827` 已登录身份绑定          | `binding-rebind-check`              | `allows exactly one final execution, closes through A3, and enforces persisted rebind time`         |
+| `account-closure.ts:349` 申请 customer actor         | `request-customer-actor-call`       | `enforces customer ownership and an active matching system-admin identity before any closure write` |
+| `account-closure.ts:430` 撤销 customer actor         | `revoke-customer-actor-call`        | `enforces customer ownership and an active matching system-admin identity before any closure write` |
+
+审核要求的两个注册调用点分别单独实跑，原始失败行为如下：
+
+- 只删除 `:607`：`AssertionError: promise resolved "{ customer: { id: 1041, …(2) }, …(3) }" instead of rejecting`；
+- 保留 `:607`、只删除 `:597`：`AssertionError: promise resolved "{ customer: { id: 1038, …(2) }, …(3) }" instead of rejecting`。
+
+同一守卫多调用点自查还发现 `assertCustomerActor` 的申请/撤销两处；补充调用点变异后分别得到
+`AssertionError: expected AppError: step-up 授权无效、已过期或用途不匹配 { …(3) } to match object { …(2) }`
+和 `AssertionError: promise resolved "{ …(3) }" instead of rejecting`。A6 的 system-admin、step-up/身份风险
+冷静期守卫各只有一个调用点；两段状态迁移、四类 audit action、三类 security event 已按各自调用阶段配置
+独立变异，不存在再把多调用点合并计数的情形。
 
 ## 基线恢复与完整门禁
 
