@@ -19,9 +19,9 @@ node apps/web/scripts/mutate-d9d1-dns-migration.mjs [mutation-id]
 | 层级                              | 独立变异数 | 结果    |
 | --------------------------------- | ---------: | ------- |
 | 服务、路由、访问、provider 与契约 |        175 | 175/175 |
-| 原子认领、速率与释放 SQL 谓词     |          9 | 9/9     |
+| 原子认领、速率与释放 SQL 谓词     |         10 | 10/10   |
 | migration 升级、回滚与约束        |         41 | 41/41   |
-| **合计**                          |    **225** | 225/225 |
+| **合计**                          |    **226** | 226/226 |
 
 ## 1. 服务、路由、访问、provider 与契约（175/175）
 
@@ -100,7 +100,7 @@ node apps/web/scripts/mutate-d9d1-dns-migration.mjs [mutation-id]
 | 西部数码契约           | `adapter-act-add`; `adapter-act-modify`; `adapter-act-delete`; `adapter-act-pause`; `adapter-act-query`; `adapter-pause-value`; `adapter-query-limit`; `adapter-query-page`; `adapter-response-paused`; `adapter-response-host`; `adapter-response-id`; `adapter-response-line`; `adapter-response-priority`; `adapter-response-ttl`; `adapter-response-type`; `adapter-response-value`                                                                                                                                                           | `maps the documented DNS record query and write contracts, including pause 1 and resume 0`             | 16/16 |
 | 西部数码请求调用点     | `adapter-domain-1`; `adapter-domain-2`; `adapter-domain-3`; `adapter-domain-4`; `adapter-host-1`; `adapter-host-2`; `adapter-host-3`; `adapter-line-1`; `adapter-line-2`; `adapter-line-3`; `adapter-type-1`; `adapter-type-2`; `adapter-type-3`; `adapter-value-1`; `adapter-value-2`; `adapter-value-3`; `adapter-level-1`; `adapter-level-2`; `adapter-ttl-1`; `adapter-ttl-2`; `adapter-query-domain`; `adapter-record-id-1`; `adapter-record-id-2`; `adapter-record-id-3`; `adapter-query-host`; `adapter-query-type`; `adapter-query-value` | `maps the documented DNS record query and write contracts, including pause 1 and resume 0`             | 27/27 |
 
-## 2. 原子认领、速率与释放 SQL 谓词（9/9）
+## 2. 原子认领、速率与释放 SQL 谓词（10/10）
 
 所有变更互斥均在调用方 Payload transaction 内执行单条 `UPDATE ... WHERE ... RETURNING`。认领失败、
 速率超限、lease 被其他执行者替换或释放结果不唯一时均失败关闭。
@@ -109,6 +109,7 @@ node apps/web/scripts/mutate-d9d1-dns-migration.mjs [mutation-id]
 | --------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------- | ---: |
 | `claim-target-id`           | claim 限定目标 `domain_assets.id`      | `adds an ordinary subdomain without step-up and records scoped append-only audit history` |  1/1 |
 | `claim-empty-lease`         | claim 接受空 lease                     | `adds an ordinary subdomain without step-up and records scoped append-only audit history` |  1/1 |
+| `claim-mutual-exclusion`    | claim 要求当前 lease 为空或已过期      | `atomically admits exactly one concurrent mutation for the same domain and business key`  |  1/1 |
 | `claim-expired-lease`       | claim 接受已过期 lease                 | `reclaims an expired lease and resets an expired high-count rate window`                  |  1/1 |
 | `claim-expired-rate-window` | claim 接受已过期的一分钟速率窗口       | `reclaims an expired lease and resets an expired high-count rate window`                  |  1/1 |
 | `claim-current-rate-cap`    | 当前窗口要求 `count <= limit - delta`  | `enforces the configurable per-domain mutation rate before another provider write`        |  1/1 |
@@ -147,5 +148,5 @@ provider operation，执行真实 DOWN，断言只删除本切片 schema 和 DNS
   `customer_id` SQL 谓词、已由严格格式/HMAC/精确 JSON 覆盖的预览重复检查、已由业务键前缀绑定的
   digest 重复维度，以及已由 strict Zod schema 覆盖的路由 query allowlist。它们不以“幸存变异”
   或源码断言虚增判定点数量。
-- 三个脚本最终分别输出 `TOTAL 175/175`、`TOTAL 9/9` 与 `TOTAL 41/41`；全部变异运行后源码均由
+- 三个脚本最终分别输出 `TOTAL 175/175`、`TOTAL 10/10` 与 `TOTAL 41/41`；全部变异运行后源码均由
   `finally` 恢复。

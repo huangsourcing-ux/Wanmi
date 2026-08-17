@@ -23,6 +23,14 @@ const mutations = [
     test: 'adds an ordinary subdomain without step-up and records scoped append-only audit history',
   },
   {
+    id: 'claim-mutual-exclusion',
+    predicate: 'claim requires the current lease to be empty or expired',
+    search:
+      '        AND (\n          dns_mutation_lease_key IS NULL\n          OR dns_mutation_lease_expires_at <= NOW()\n        )\n',
+    replacement: '        AND TRUE\n',
+    test: 'atomically admits exactly one concurrent mutation for the same domain and business key',
+  },
+  {
     id: 'claim-expired-lease',
     predicate: 'claim lease allows dns_mutation_lease_expires_at <= NOW()',
     search: '          OR dns_mutation_lease_expires_at <= NOW()\n',

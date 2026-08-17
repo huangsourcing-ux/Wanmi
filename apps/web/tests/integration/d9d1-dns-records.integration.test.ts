@@ -13,6 +13,7 @@ import {
 import {
   WestDigitalWriteAdapter,
   WestDigitalWriteTransportError,
+  type WestDigitalWriteTransportRequest,
 } from '@/providers/westdigital-write'
 import {
   addCustomerDnsRecord,
@@ -124,10 +125,14 @@ function hash(value: string): number {
   return result
 }
 
-function statefulProvider(initial: FixtureRecord[] = []) {
+function statefulProvider(
+  initial: FixtureRecord[] = [],
+  beforeRequest?: (input: WestDigitalWriteTransportRequest) => Promise<void> | void,
+) {
   const records = new Map(initial.map((record) => [record.id, { ...record }]))
   let nextId = Math.max(700, ...initial.map((record) => Number(record.id))) + 1
-  const transport = new FixtureWestDigitalWriteTransport((input) => {
+  const transport = new FixtureWestDigitalWriteTransport(async (input) => {
+    await beforeRequest?.(input)
     const clientid = `${fixturePrefix}-${input.requestId}`
     if (input.operation === 'dns_record_add') {
       const id = String(nextId++)
@@ -1606,22 +1611,49 @@ describe('D9-D-1 DNS record management', () => {
 
   it('atomically admits exactly one concurrent mutation for the same domain and business key', async () => {
     const { asset, customer } = await createFixture('concurrent-lease')
-    const { provider, transport } = statefulProvider()
+    let releaseFirstQuery!: () => void
+    let signalFirstQueryStarted!: () => void
+    const firstQueryStarted = new Promise<void>((resolve) => {
+      signalFirstQueryStarted = resolve
+    })
+    const firstQueryGate = new Promise<void>((resolve) => {
+      releaseFirstQuery = resolve
+    })
+    let firstQueryBlocked = false
+    const { provider, transport } = statefulProvider([], async (providerRequest) => {
+      if (firstQueryBlocked || providerRequest.operation !== 'dns_record_query') return
+      firstQueryBlocked = true
+      signalFirstQueryStarted()
+      await firstQueryGate
+    })
     const input = ordinaryRecord('concurrent')
-    const settled = await Promise.allSettled(
-      Array.from({ length: 5 }, async (_, index) =>
-        addCustomerDnsRecord(
-          await request(customer, `concurrent-lease-${index}`),
-          asset.id,
-          input,
-          {
-            customer: customerIdentity(customer.id),
-            provider,
-            traceId: `${fixturePrefix}-concurrent-lease-${index}`,
-          },
-        ),
-      ),
+    const requests = await Promise.all(
+      Array.from({ length: 5 }, (_, index) => request(customer, `concurrent-lease-${index}`)),
     )
+    let settledBeforeRelease = 0
+    let signalFourContendersSettled!: () => void
+    const fourContendersSettled = new Promise<void>((resolve) => {
+      signalFourContendersSettled = resolve
+    })
+    const mutations = requests.map((mutationRequest, index) =>
+      addCustomerDnsRecord(mutationRequest, asset.id, input, {
+        customer: customerIdentity(customer.id),
+        provider,
+        traceId: `${fixturePrefix}-concurrent-lease-${index}`,
+      })
+        .then(
+          (value) => ({ status: 'fulfilled' as const, value }),
+          (reason: unknown) => ({ reason, status: 'rejected' as const }),
+        )
+        .finally(() => {
+          settledBeforeRelease += 1
+          if (settledBeforeRelease === 4) signalFourContendersSettled()
+        }),
+    )
+    await firstQueryStarted
+    await fourContendersSettled
+    releaseFirstQuery()
+    const settled = await Promise.all(mutations)
     expect(settled.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
     const rejected = settled.filter(
       (result): result is PromiseRejectedResult => result.status === 'rejected',

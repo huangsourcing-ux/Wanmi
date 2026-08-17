@@ -1611,13 +1611,17 @@ D9-D-1 证据（2026-08-17，仅本节第 1 项）：
   `main@facd8e8638add481f34098ed2d0dd4c0dc2e52c8` 后重新
   生成，与 D9-B-1 的 `20260817_040409_d9b1_wallet_ledger` 无时间戳冲突；再次运行 `pnpm generate` 的
   生成相关 diff 前后 SHA-256 相同。安全/正确性判定按调用点清点并实跑：服务、路由、访问、provider
-  与契约 175/175，原子 SQL 谓词 9/9，migration 升级/回滚/约束 41/41，合计 225/225 均由指定
+  与契约 175/175，原子 SQL 谓词 10/10，migration 升级/回滚/约束 41/41，合计 226/226 均由指定
   `AssertionError` 行为断言独立杀死；
   逐项对照见 `docs/operations/d9d1-dns-record-management-mutation-matrix.md`。
+- PR #95 首轮 required CI 在并发 lease 用例中得到 3 个成功而非 1 个，定位为测试只用
+  `Promise.all`、未强制请求在 lease 持有期间重叠。修正后由 fixture 的首个查询闸门明确保持 lease，等待
+  其余四个竞争者失败后再释放；该用例连续 10 次定向通过，并新增“删除整个 lease 互斥条件”的独立 SQL
+  短路变异，由同一行为断言杀死。
 - 最终代码状态在全新本地 fixture 数据库完整运行 `make check` 退出 0：命名 migration 的独立
   UP/DOWN/UP verifier、12 项 release migration policy、全部 migration/生成物、lint、
   TypeScript strict、104 文件 743/743 单元、36 文件 448/448 PostgreSQL/MinIO 集成、Next.js 宿主构建、
-  linux/amd64 同镜像构建、依赖审计、工作树与 201 commits 历史 Gitleaks、Trivy 全部通过。未实现或留桩
+  linux/amd64 同镜像构建、依赖审计、工作树与 204 commits 历史 Gitleaks、Trivy 全部通过。未实现或留桩
   DNSSEC、DDNS、常用邮箱解析、域名转入/转出、域名管理密码、域名信息/过户/证书、离线任务、资产同步
   或 capability 扩展；本节其余六项保持未勾选。
 
