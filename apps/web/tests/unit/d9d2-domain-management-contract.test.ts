@@ -273,6 +273,7 @@ describe('D9-D-2 domain management contract', () => {
   })
 
   it('keeps all real domain-management writes behind their dedicated disabled-by-default gate', () => {
+    vi.stubEnv('CI', 'false')
     vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'true')
     vi.stubEnv('ALLOW_REAL_WESTDIGITAL', 'true')
     vi.stubEnv('ALLOW_REAL_WESTDIGITAL_DOMAIN_MANAGEMENT_WRITES', 'false')
