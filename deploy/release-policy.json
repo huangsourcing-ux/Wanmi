@@ -77,6 +77,13 @@
       "phase": "expand",
       "reason": "新增账户关闭追加式记录表、关闭并发控制列及身份重绑定冷却列，并为发票人工动作追加显式状态；旧代码可忽略新表与可空列，新代码仅在迁移完成后启用 A6 关闭流程。",
       "rollback": "retain"
+    },
+    "20260817_040409_d9b1_wallet_ledger": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增钱包账户、追加式账本、钱包事务表及后台一致性任务枚举；旧代码可忽略新增结构，新代码仅在迁移完成后启用账本服务。",
+      "rollback": "retain"
     }
   }
 }

@@ -76,6 +76,9 @@ const customerReads = [
   'realnameDocuments',
   'realnameTemplates',
   'renewals',
+  'walletAccounts',
+  'walletEntries',
+  'walletTransactions',
 ]
 const contentWrites = [
   'articles',
@@ -352,6 +355,9 @@ describe('D1 administrator navigation groups', () => {
     topics: ADMIN_GROUPS.content,
     toolObservabilityBuckets: ADMIN_GROUPS.operations,
     userFeedback: ADMIN_GROUPS.operations,
+    walletAccounts: ADMIN_GROUPS.commerce,
+    walletEntries: ADMIN_GROUPS.commerce,
+    walletTransactions: ADMIN_GROUPS.commerce,
     wechatAuthorizationCodes: ADMIN_GROUPS.identity,
     wechatLoginScenes: ADMIN_GROUPS.identity,
     wechatOAuthStates: ADMIN_GROUPS.identity,

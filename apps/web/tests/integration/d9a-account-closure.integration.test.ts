@@ -195,6 +195,50 @@ async function blockersFor(customer: Customer): Promise<AccountClosureBlocker[]>
   return inAuthTransaction(req, () => collectAccountClosureBlockers(req, Number(customer.id)))
 }
 
+type SqlDatabase = {
+  execute: (statement: ReturnType<typeof sql>) => Promise<unknown>
+}
+
+async function createTemporaryWalletLedger(
+  database: SqlDatabase,
+  balances: Array<{ customerId: number; heldBalance: number; postedBalance: number }>,
+): Promise<void> {
+  await database.execute(sql`
+    CREATE TEMP TABLE wallet_accounts (
+      id integer PRIMARY KEY,
+      customer_id integer NOT NULL,
+      ledger_version numeric NOT NULL
+    ) ON COMMIT DROP
+  `)
+  await database.execute(sql`
+    CREATE TEMP TABLE wallet_entries (
+      id serial PRIMARY KEY,
+      account_id integer NOT NULL,
+      entry_type text NOT NULL,
+      amount_fen numeric NOT NULL,
+      ledger_sequence numeric NOT NULL,
+      posted_balance_after_fen numeric NOT NULL,
+      held_balance_after_fen numeric NOT NULL
+    ) ON COMMIT DROP
+  `)
+  for (const [index, balance] of balances.entries()) {
+    const accountId = index + 1
+    await database.execute(sql`
+      INSERT INTO wallet_accounts (id, customer_id, ledger_version)
+      VALUES (${accountId}, ${balance.customerId}, 2)
+    `)
+    await database.execute(sql`
+      INSERT INTO wallet_entries (
+        account_id, entry_type, amount_fen, ledger_sequence,
+        posted_balance_after_fen, held_balance_after_fen
+      ) VALUES
+        (${accountId}, 'credit', ${balance.postedBalance}, 1, ${balance.postedBalance}, 0),
+        (${accountId}, 'hold', ${balance.heldBalance}, 2,
+          ${balance.postedBalance}, ${balance.heldBalance})
+    `)
+  }
+}
+
 async function closureRequest(customer: Customer, label: string) {
   const req = await requestFor(customerUser(customer), label)
   const grant = await issueStepUpGrantFixture(payload, req, customer.id, 'account_deletion')
@@ -492,17 +536,9 @@ describe('D9-A A6 account closure', () => {
         const database = req.payload.db.sessions?.[transactionId!]?.db as {
           execute: (statement: ReturnType<typeof sql>) => Promise<unknown>
         }
-        await database.execute(sql`
-          CREATE TEMP TABLE wallet_accounts (
-            customer_id integer NOT NULL,
-            posted_balance numeric NOT NULL,
-            held_balance numeric NOT NULL
-          ) ON COMMIT DROP
-        `)
-        await database.execute(sql`
-          INSERT INTO wallet_accounts (customer_id, posted_balance, held_balance)
-          VALUES (${unrelated.id}, 101, 1)
-        `)
+        await createTemporaryWalletLedger(database, [
+          { customerId: Number(unrelated.id), heldBalance: 1, postedBalance: 101 },
+        ])
         return collectAccountClosureBlockers(req, Number(target.id))
       }),
     ).resolves.toEqual([])
@@ -521,7 +557,7 @@ describe('D9-A A6 account closure', () => {
     await expect(blockersFor(customer)).resolves.toEqual([expectedBlocker])
   })
 
-  it('blocks with only positive_balance when the future wallet ledger exists and is positive', async () => {
+  it('blocks with only positive_balance when the append-only wallet ledger is positive', async () => {
     const customer = await createCustomer('positive-balance')
     const req = await requestFor(customerUser(customer), 'positive-balance')
     await expect(
@@ -530,20 +566,28 @@ describe('D9-A A6 account closure', () => {
         const database = req.payload.db.sessions?.[transactionId!]?.db as {
           execute: (statement: ReturnType<typeof sql>) => Promise<unknown>
         }
-        await database.execute(sql`
-          CREATE TEMP TABLE wallet_accounts (
-            customer_id integer NOT NULL,
-            posted_balance numeric NOT NULL,
-            held_balance numeric NOT NULL
-          ) ON COMMIT DROP
-        `)
-        await database.execute(sql`
-          INSERT INTO wallet_accounts (customer_id, posted_balance, held_balance)
-          VALUES (${customer.id}, 101, 1)
-        `)
+        await createTemporaryWalletLedger(database, [
+          { customerId: Number(customer.id), heldBalance: 1, postedBalance: 101 },
+        ])
         return collectAccountClosureBlockers(req, Number(customer.id))
       }),
     ).resolves.toEqual(['positive_balance'])
+  })
+
+  it('fails closed when the wallet balance ledger is inconsistent', async () => {
+    const customer = await createCustomer('inconsistent-balance')
+    const req = await requestFor(customerUser(customer), 'inconsistent-balance')
+    await expect(
+      inAuthTransaction(req, async () => {
+        const transactionId = await req.transactionID
+        const database = req.payload.db.sessions?.[transactionId!]?.db as SqlDatabase
+        await createTemporaryWalletLedger(database, [
+          { customerId: Number(customer.id), heldBalance: 1, postedBalance: 101 },
+        ])
+        await database.execute(sql`UPDATE wallet_accounts SET ledger_version = 3`)
+        return collectAccountClosureBlockers(req, Number(customer.id))
+      }),
+    ).resolves.toEqual(['positive_balance_check_unavailable'])
   })
 
   it.each(['record-key', 'summary'] as const)(
@@ -719,17 +763,10 @@ describe('D9-A A6 account closure', () => {
         const database = req.payload.db.sessions?.[transactionId!]?.db as {
           execute: (statement: ReturnType<typeof sql>) => Promise<unknown>
         }
-        await database.execute(sql`
-          CREATE TEMP TABLE wallet_accounts (
-            customer_id integer NOT NULL,
-            posted_balance numeric NOT NULL,
-            held_balance numeric NOT NULL
-          ) ON COMMIT DROP
-        `)
-        await database.execute(sql`
-          INSERT INTO wallet_accounts (customer_id, posted_balance, held_balance)
-          VALUES (${customer.id}, 100, 100), (${supportCustomer.id}, 101, 1)
-        `)
+        await createTemporaryWalletLedger(database, [
+          { customerId: Number(customer.id), heldBalance: 100, postedBalance: 100 },
+          { customerId: Number(supportCustomer.id), heldBalance: 1, postedBalance: 101 },
+        ])
         return collectAccountClosureBlockers(req, Number(customer.id))
       }),
     ).resolves.toEqual([])
@@ -765,7 +802,7 @@ describe('D9-A A6 account closure', () => {
                   const current = call
                   call += 1
                   if (current === failingCall) throw new Error('fixture query failure')
-                  if (current === 6) return { rows: [{ relation_name: null }] }
+                  if (current === 6) return { rows: [] }
                   return { rows: [{ blocked: false }] }
                 },
               },
@@ -788,7 +825,7 @@ describe('D9-A A6 account closure', () => {
     'invoice_processing',
     'security_freeze_or_dispute',
     'positive_balance',
-  ] as const)('fails closed when %s returns a non-boolean database value', async (blocker) => {
+  ] as const)('fails closed when %s returns malformed database data', async (blocker) => {
     let call = 0
     const malformedCall = [
       'domains_held',
@@ -798,7 +835,7 @@ describe('D9-A A6 account closure', () => {
       'invoice_processing',
       'security_freeze_or_dispute',
     ].indexOf(blocker)
-    const targetCall = blocker === 'positive_balance' ? 7 : malformedCall
+    const targetCall = blocker === 'positive_balance' ? 6 : malformedCall
     const transactionId = randomUUID()
     const req = {
       payload: {
@@ -809,15 +846,14 @@ describe('D9-A A6 account closure', () => {
                 execute: async () => {
                   const current = call
                   call += 1
-                  if (current === targetCall) return { rows: [{ blocked: 'yes' }] }
-                  if (current === 6) {
-                    return {
-                      rows: [
-                        {
-                          relation_name: blocker === 'positive_balance' ? 'wallet_accounts' : null,
-                        },
-                      ],
+                  if (current === targetCall) {
+                    if (blocker === 'positive_balance') {
+                      return { rows: [{ customer_id: 42, id: null, ledger_version: 0 }] }
                     }
+                    return { rows: [{ blocked: 'yes', consistent: true }] }
+                  }
+                  if (current === 6) {
+                    return { rows: [] }
                   }
                   return { rows: [{ blocked: false }] }
                 },
@@ -854,17 +890,9 @@ describe('D9-A A6 account closure', () => {
         const database = req.payload.db.sessions?.[transactionId!]?.db as {
           execute: (statement: ReturnType<typeof sql>) => Promise<unknown>
         }
-        await database.execute(sql`
-          CREATE TEMP TABLE wallet_accounts (
-            customer_id integer NOT NULL,
-            posted_balance numeric NOT NULL,
-            held_balance numeric NOT NULL
-          ) ON COMMIT DROP
-        `)
-        await database.execute(sql`
-          INSERT INTO wallet_accounts (customer_id, posted_balance, held_balance)
-          VALUES (${customer.id}, 101, 1)
-        `)
+        await createTemporaryWalletLedger(database, [
+          { customerId: Number(customer.id), heldBalance: 1, postedBalance: 101 },
+        ])
         return executeAccountClosure(req, {
           actorId: administrator.id,
           note: '仅命中余额前置项',

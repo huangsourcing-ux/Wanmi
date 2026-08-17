@@ -21,6 +21,7 @@ import {
 import { runConfiguredDomainExpiryReminders } from '@/services/domains/expiry-reminders'
 import { runOperationsMonitoring } from '@/services/operations/monitoring'
 import { recordCommerceWorkerHeartbeat } from '@/services/operations/worker-heartbeat'
+import { runWalletLedgerConsistencyCheck } from '@/services/wallet/invariants'
 
 const probeInput = [{ name: 'traceId', type: 'text', required: true }] as const
 
@@ -234,6 +235,22 @@ export const domainExpiryReminders: WorkflowConfig = {
   },
 }
 
+export const walletLedgerConsistencyCheck: WorkflowConfig = {
+  slug: 'walletLedgerConsistencyCheck',
+  concurrency: {
+    exclusive: true,
+    key: () => 'wallet:ledger-consistency',
+    supersedes: true,
+  },
+  inputSchema: [],
+  queue: 'background',
+  retries: 0,
+  schedule: [{ cron: '0 30 2 * * *', queue: 'background' }],
+  handler: async ({ req }) => {
+    await runWalletLedgerConsistencyCheck(req)
+  },
+}
+
 export const wechatRefund: WorkflowConfig<{ refundId: number; traceId: string }> = {
   slug: 'wechatRefund',
   concurrency: ({ input }) => `wechat-refund:${input.refundId}`,
@@ -276,6 +293,7 @@ export const workflows = [
   realnameCleanup,
   westdigitalBalanceMonitoring,
   domainExpiryReminders,
+  walletLedgerConsistencyCheck,
   commerceFulfillment,
   commerceWorkerHeartbeat,
   nameserverChange,

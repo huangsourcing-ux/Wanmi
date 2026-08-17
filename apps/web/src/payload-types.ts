@@ -110,6 +110,9 @@ export interface Config {
     orderManualActions: OrderManualAction;
     refundNotifications: RefundNotification;
     refunds: Refund;
+    walletAccounts: WalletAccount;
+    walletTransactions: WalletTransaction;
+    walletEntries: WalletEntry;
     providerOperations: ProviderOperation;
     providerWriteBudgets: ProviderWriteBudget;
     providerWriteBudgetDebits: ProviderWriteBudgetDebit;
@@ -190,6 +193,9 @@ export interface Config {
     orderManualActions: OrderManualActionsSelect<false> | OrderManualActionsSelect<true>;
     refundNotifications: RefundNotificationsSelect<false> | RefundNotificationsSelect<true>;
     refunds: RefundsSelect<false> | RefundsSelect<true>;
+    walletAccounts: WalletAccountsSelect<false> | WalletAccountsSelect<true>;
+    walletTransactions: WalletTransactionsSelect<false> | WalletTransactionsSelect<true>;
+    walletEntries: WalletEntriesSelect<false> | WalletEntriesSelect<true>;
     providerOperations: ProviderOperationsSelect<false> | ProviderOperationsSelect<true>;
     providerWriteBudgets: ProviderWriteBudgetsSelect<false> | ProviderWriteBudgetsSelect<true>;
     providerWriteBudgetDebits: ProviderWriteBudgetDebitsSelect<false> | ProviderWriteBudgetDebitsSelect<true>;
@@ -240,6 +246,7 @@ export interface Config {
       realnameCleanup: WorkflowRealnameCleanup;
       westdigitalBalanceMonitoring: WorkflowWestdigitalBalanceMonitoring;
       domainExpiryReminders: WorkflowDomainExpiryReminders;
+      walletLedgerConsistencyCheck: WorkflowWalletLedgerConsistencyCheck;
       commerceFulfillment: WorkflowCommerceFulfillment;
       commerceWorkerHeartbeat: WorkflowCommerceWorkerHeartbeat;
       nameserverChange: WorkflowNameserverChange;
@@ -1551,6 +1558,52 @@ export interface Refund {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "walletAccounts".
+ */
+export interface WalletAccount {
+  id: number;
+  customer: number | Customer;
+  currency: 'CNY';
+  ledgerVersion: number;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "walletTransactions".
+ */
+export interface WalletTransaction {
+  id: number;
+  transactionKey: string;
+  customer: number | Customer;
+  account: number | WalletAccount;
+  type: 'credit' | 'hold';
+  status: 'posted' | 'held' | 'captured' | 'released';
+  amountFen: number;
+  resolvedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "walletEntries".
+ */
+export interface WalletEntry {
+  id: number;
+  entryKey: string;
+  customer: number | Customer;
+  account: number | WalletAccount;
+  transaction: number | WalletTransaction;
+  entryType: 'credit' | 'hold' | 'capture' | 'release';
+  amountFen: number;
+  ledgerSequence: number;
+  postedBalanceAfterFen: number;
+  heldBalanceAfterFen: number;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "providerWriteBudgets".
  */
 export interface ProviderWriteBudget {
@@ -2169,6 +2222,7 @@ export interface PayloadJob {
         | 'realnameCleanup'
         | 'westdigitalBalanceMonitoring'
         | 'domainExpiryReminders'
+        | 'walletLedgerConsistencyCheck'
         | 'commerceFulfillment'
         | 'commerceWorkerHeartbeat'
         | 'nameserverChange'
@@ -3356,6 +3410,49 @@ export interface RefundsSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "walletAccounts_select".
+ */
+export interface WalletAccountsSelect<T extends boolean = true> {
+  customer?: T;
+  currency?: T;
+  ledgerVersion?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "walletTransactions_select".
+ */
+export interface WalletTransactionsSelect<T extends boolean = true> {
+  transactionKey?: T;
+  customer?: T;
+  account?: T;
+  type?: T;
+  status?: T;
+  amountFen?: T;
+  resolvedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "walletEntries_select".
+ */
+export interface WalletEntriesSelect<T extends boolean = true> {
+  entryKey?: T;
+  customer?: T;
+  account?: T;
+  transaction?: T;
+  entryType?: T;
+  amountFen?: T;
+  ledgerSequence?: T;
+  postedBalanceAfterFen?: T;
+  heldBalanceAfterFen?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "providerOperations_select".
  */
 export interface ProviderOperationsSelect<T extends boolean = true> {
@@ -4003,6 +4100,13 @@ export interface WorkflowWestdigitalBalanceMonitoring {
  * via the `definition` "WorkflowDomainExpiryReminders".
  */
 export interface WorkflowDomainExpiryReminders {
+  input?: unknown;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WorkflowWalletLedgerConsistencyCheck".
+ */
+export interface WorkflowWalletLedgerConsistencyCheck {
   input?: unknown;
 }
 /**

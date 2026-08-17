@@ -38,6 +38,7 @@ import * as migration_20260816_061549_d9a_account_state_backfill from './2026081
 import * as migration_20260816_121523_d9a_consent_personal_information from './20260816_121523_d9a_consent_personal_information'
 import * as migration_20260816_150802_d9a_account_recovery from './20260816_150802_d9a_account_recovery'
 import * as migration_20260817_000646_d9a_account_closure from './20260817_000646_d9a_account_closure'
+import * as migration_20260817_040409_d9b1_wallet_ledger from './20260817_040409_d9b1_wallet_ledger'
 
 export const migrations = [
   {
@@ -239,5 +240,10 @@ export const migrations = [
     up: migration_20260817_000646_d9a_account_closure.up,
     down: migration_20260817_000646_d9a_account_closure.down,
     name: '20260817_000646_d9a_account_closure',
+  },
+  {
+    up: migration_20260817_040409_d9b1_wallet_ledger.up,
+    down: migration_20260817_040409_d9b1_wallet_ledger.down,
+    name: '20260817_040409_d9b1_wallet_ledger',
   },
 ]

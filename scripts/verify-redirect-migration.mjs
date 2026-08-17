@@ -1667,6 +1667,71 @@ function verifyProviderWriteBudgetSchema(stage) {
   }
 }
 
+function verifyWalletLedgerSchema(stage) {
+  const schema = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (to_regclass('public.wallet_accounts') IS NOT NULL)::text || ':' ||
+         (to_regclass('public.wallet_transactions') IS NOT NULL)::text || ':' ||
+         (to_regclass('public.wallet_entries') IS NOT NULL)::text || ':' ||
+         (SELECT count(*)::text
+          FROM pg_constraint
+          WHERE conname IN (
+            'wallet_accounts_ledger_version_safe_integer',
+            'wallet_transactions_amount_safe_integer',
+            'wallet_transactions_state_valid',
+            'wallet_entries_safe_integers'
+          )) || ':' ||
+         (SELECT count(*)::text
+          FROM pg_constraint
+          WHERE conrelid IN (
+            'wallet_accounts'::regclass,
+            'wallet_transactions'::regclass,
+            'wallet_entries'::regclass
+          ) AND contype = 'f') || ':' ||
+         (to_regclass('public.customer_currency_idx') IS NOT NULL)::text || ':' ||
+         (to_regclass('public.wallet_transactions_transaction_key_idx') IS NOT NULL)::text || ':' ||
+         (to_regclass('public.wallet_entries_entry_key_idx') IS NOT NULL)::text || ':' ||
+         (to_regclass('public."account_ledgerSequence_idx"') IS NOT NULL)::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1
+           FROM information_schema.columns
+           WHERE table_schema = 'public'
+             AND table_name = 'wallet_accounts'
+             AND column_name IN (
+               'posted_balance', 'posted_balance_fen',
+               'held_balance', 'held_balance_fen',
+               'available_balance', 'available_balance_fen'
+             )
+         ))::text || ':' ||
+         ('walletLedgerConsistencyCheck' = ANY(
+           enum_range(NULL::enum_payload_jobs_workflow_slug)::text[]
+         ))::text || ':' ||
+         (NOT EXISTS (
+           SELECT 1
+           FROM information_schema.columns
+           WHERE table_schema = 'public'
+             AND table_name = 'payload_locked_documents_rels'
+             AND column_name IN (
+               'wallet_accounts_id', 'wallet_transactions_id', 'wallet_entries_id'
+             )
+         ))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (schema !== 'true:true:true:4:6:true:true:true:true:true:true:true') {
+    throw new Error(`D9-B-1 wallet ledger schema invalid after ${stage}: ${schema}`)
+  }
+}
+
 function verifyD9AIdentityRegistrationSchema(stage) {
   const shape = postgres(
     [
@@ -1766,6 +1831,7 @@ try {
   verifyDomainAssetOperationsSchema('empty-database migration')
   verifyProviderWriteBudgetSchema('empty-database migration')
   verifyD9AIdentityRegistrationSchema('empty-database migration')
+  verifyWalletLedgerSchema('empty-database migration')
   postgres([
     'psql',
     '--username',
@@ -3971,8 +4037,47 @@ try {
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
   verifyD9AIdentityRegistrationSchema('legacy phone isolation down/up round trip')
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 118
+     WHERE name = '20260817_040409_d9b1_wallet_ledger';`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const walletSchemaAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (to_regclass('public.wallet_accounts') IS NULL)::text || ':' ||
+         (to_regclass('public.wallet_transactions') IS NULL)::text || ':' ||
+         (to_regclass('public.wallet_entries') IS NULL)::text || ':' ||
+         (NOT ('walletLedgerConsistencyCheck' = ANY(
+           enum_range(NULL::enum_payload_jobs_workflow_slug)::text[]
+         )))::text`,
+    ],
+    { capture: true },
+  ).trim()
+  if (walletSchemaAfterDown !== 'true:true:true:true') {
+    throw new Error(`D9-B-1 migration down left wallet schema behind: ${walletSchemaAfterDown}`)
+  }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyWalletLedgerSchema('D9-B-1 down/up round trip')
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, the D6-02 commerce-fulfillment migration, the D6-03 West Digital balance-monitoring workflow migration, the D6-04 domain-asset operations migration, the D6-05 active-renewal migration, the D7-05 provider write budget historical backfill/down-up round trips, the D7-06 application master-key historical invalidation/down-up round trip, and the D9-A-1 identity/consent historical normalization, isolation, and down/up round trip without fabricated consent.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, the D6-02 commerce-fulfillment migration, the D6-03 West Digital balance-monitoring workflow migration, the D6-04 domain-asset operations migration, the D6-05 active-renewal migration, the D7-05 provider write budget historical backfill/down-up round trips, the D7-06 application master-key historical invalidation/down-up round trip, the D9-A-1 identity/consent historical normalization, isolation, and down/up round trip without fabricated consent, and the D9-B-1 wallet ledger empty/down-up schema contract.\n',
   )
 } finally {
   migrationIdentityKey.fill(0)

@@ -855,6 +855,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-14 | v2.9 生产发布与存储边界冻结项变更     | 只允许发布已合并 `main`；固定 linux/amd64 镜像经 SSH 直传、节点 loopback registry 与 digest 校验路径；静态资源随镜像服务；禁止对象存储中转、源码包上传及实名证件存储混用                      | 跨文档基线/版本/上一批准标签、Runbook 引用与 `verify-operations` 校验；任务勾选逐项保持不变；仅文档 diff                                                                                                                                                    | 不改变产品范围、D9 决定、迁移或回滚兼容规则；缺少已批准设施时必须停止，不得自行创建或取用替代资源                                                                        |
 | 2026-08-15 | v3.0 D9-A 短信 step-up 冻结项变更     | step-up 由短信验证码校验产生，不引入独立操作密码及设置/重置流程；风险分级表、高风险冷静期和 `renewalMandate` 独立授权边界不变                                                                 | 跨文档新基线/版本/上一批准标签一致性检查；A4 实现、迁移、用途隔离、原子一次性消费、冷静期与频控测试随同一切片交付                                                                                                                                           | 不改变 A3、A5～A7、D9-B～E 范围；不降低任何高风险动作保护等级，不授权真实短信、生产数据修改或部署                                                                        |
 | 2026-08-16 | v3.1 验证分层冻结项变更               | 新增文档、快速、集成和完整门禁档位；required CI job 始终触发，可靠确认纯 `.md` 才降至文档档位，否则失败关闭到完整门禁                                                                         | 分类器四类最低输入行为测试、门禁分支定向变异、最终状态本地 `make check` 与精确 commit CI 结论                                                                                                                                                               | 不改业务代码、A3～A7 实现、产品/交易/实名/上线门槛；不部署、不生产写入；`make check-release` 不新增                                                                      |
+| 2026-08-17 | D9-B-1 钱包账本基础                   | 新增无余额真源字段的三 Collection、追加式 entries、账本推导三态余额、hold/capture/release、原子额度门与一致性 Job；不含充值、消费订单、退款、对账和后台审批                                   | 四类核心并发、账本差异注入、43/43 聚焦用例及 54/54 注销兼容回归；服务/访问/任务 94/94、SQL 20/20、迁移 38/38，合计 152/152 变异被行为断言杀死；最终本地 `make check` 通过，精确 commit CI 结论随 PR 记录                                                    | 只勾选 16.7 B2 前五项和 D9-B 前两个退出条件；B1、B2 第四 ledger、B3～B5 全部保持未勾选；未部署、未生产写入、未开启真实 provider 闸门                                     |
 
 ## 13. 范围追踪矩阵
 
@@ -1492,7 +1493,7 @@ D9-A-1b 集成测试并行隔离修正（2026-08-15）：归一化失败用例�
 #### B1 充值订单
 
 - [ ] 独立于账本的 `walletTopUpOrders`，状态 `created → payment_pending → provider_confirmed →
-  credited`，另有 `refund_pending`、`refunded`、`closed`、`unknown`；
+credited`，另有 `refund_pending`、`refunded`、`closed`、`unknown`；
 - [ ] **入账只能由服务端主动查单确认的真实支付产生**（复用 D5-03 路径），通知/回调不作为入账
       依据；
 - [ ] 唯一约束：平台充值订单号、微信交易号、账本幂等键、原路退款单号；
@@ -1501,17 +1502,47 @@ D9-A-1b 集成测试并行隔离修正（2026-08-15）：归一化失败用例�
 
 #### B2 余额账本与三态余额
 
-- [ ] `walletAccounts` / `walletEntries`（追加式）/ `walletTransactions`，**不设可变余额字段
+- [x] `walletAccounts` / `walletEntries`（追加式）/ `walletTransactions`，**不设可变余额字段
       作为真源**；
-- [ ] 三态余额：`postedBalance`、`heldBalance`、`availableBalance = posted − held`；
-- [ ] 异步任务采用 **hold → capture / release**：先冻结，上游确认成功后 capture，明确失败
+- [x] 三态余额：`postedBalance`、`heldBalance`、`availableBalance = posted − held`；
+- [x] 异步任务采用 **hold → capture / release**：先冻结，上游确认成功后 capture，明确失败
       release，**状态不明继续保持 hold**。这比「先扣款再反复退款」更适合无人值守任务，也避免
       多域名争抢余额时结果随机；
-- [ ] 原子扣减：`UPDATE ... WHERE ... AND used + $delta <= available RETURNING id`，命中 0 行
+- [x] 原子扣减：`UPDATE ... WHERE ... AND used + $delta <= available RETURNING id`，命中 0 行
       即拒绝，不得透支。**禁止 `payload.update({ where })` 做互斥**（本项目已在 D5
       `transitionOrder`、D6-01、D6-02 三次踩过）；
-- [ ] 账本不变量 `期初 + 入账 − 出账 = 期末`，由一致性校验任务验证，差异只追加证据不自动改账；
+- [x] 账本不变量 `期初 + 入账 − 出账 = 期末`，由一致性校验任务验证，差异只追加证据不自动改账；
 - [ ] 余额账本作为**第四个 ledger** 接入 D5-04 对账。
+
+D9-B-1 证据（2026-08-17，仅本段前五项）：
+
+- 三个 Collection 与无余额真源字段见 `apps/web/src/collections/wallet.ts:32-143`；entry 的 update/delete
+  追加式 Hook 见 `:91-103`。行为用例：`keeps mutable balance fields out of wallet accounts and derives
+all three states from entries`、`rejects wallet entry updates and deletes in collection hooks`、
+  `rejects wallet entry updates and deletes even for overrideAccess system calls`。
+- 三态余额由 entry 聚合与最后快照交叉推导，见 `apps/web/src/services/wallet/ledger.ts:97-159`；credit、
+  hold、settlement 三个返回调用点分别计算 posted − held，见 `:434-529`、`:598-618`。行为用例：
+  `returns posted minus held at every credit, hold, and settlement callpoint`、`keeps an unknown asynchronous
+outcome held without appending a terminal entry`。
+- hold/capture/release 与 unknown 保持 hold 见 `apps/web/src/services/wallet/ledger.ts:487-673`；同一 hold 的
+  capture/release 通过 transaction-bound `UPDATE ... WHERE transaction_key AND status='held' AND EXISTS
+(...) RETURNING` 认领，见 `:563-576`。行为用例：`lets exactly one concurrent capture or release settle
+the same hold`、`makes concurrent retries of the same capture idempotent with one terminal entry`、
+  `routes confirmed and failed outcomes to capture and release while unknown remains held`。
+- 原子额度门见 `apps/web/src/services/wallet/ledger.ts:248-278`，同一事务按目标账户从账本推导 available，
+  0 行以余额不足或账本不可用失败关闭；实现没有 `payload.update({ where })`。行为用例：`allows exactly
+the funded number of N concurrent holds without exceeding available balance`、`atomically reaches the exact
+available-balance boundary and never derives a negative value`、`derives the hold ceiling from only the
+requested account entries`。
+- 一致性任务在 repeatable-read/read-only 快照中验证序列、客户归属、posted/held 方程、版本和
+  transaction-entry 历史，见 `apps/web/src/services/wallet/invariants.ts:40-252`；独占 background Job 见
+  `apps/web/src/jobs/config.ts:238-251`。行为用例：`detects a manufactured opening-credit-debit-ending mismatch
+and appends audit evidence`、`reports every independently corruptible ledger invariant against the affected
+account`、`fails closed when the consistency task cannot query every required ledger relation`。
+- 调用点清单与独立删除/短路变异结果见
+  `docs/operations/d9b1-wallet-ledger-mutation-matrix.md`：服务/访问/任务 94/94、原子 SQL 20/20、迁移
+  38/38，合计 152/152；聚焦恢复后 43/43、D9-A 注销兼容回归 54/54，通过独立迁移行为验证。充值、
+  余额支付、退款、第四 ledger 对账、`adminApprovalRequests` 和角色调整均未实现，相关条目保持未勾选。
 
 #### B3 余额支付订单
 
@@ -1654,7 +1685,7 @@ D9-D 的基础解析联调如证明必须先开通付费智能 DNS，应将对�
 ### 16.13 横向能力（随各阶段建设）
 
 - [ ] **通知 outbox**：`domain event → transactional outbox → notification job → channel delivery
-  → provider receipt`。幂等发送、重试策略、死信队列、投递状态、模板版本、消息内容快照；短信
+→ provider receipt`。幂等发送、重试策略、死信队列、投递状态、模板版本、消息内容快照；短信
       失败后站内兜底；高风险安全事件向全部已验证渠道发送；消息正文不可变与已读状态分表；
 - [ ] **交易类通知不可退订**，系统尽力发送、重试并记录投递结果；**外部渠道投递失败不得改变交易
       与资产状态**（不承诺必达）；微信服务号可作为后续通知渠道；
@@ -1682,8 +1713,17 @@ D9-D 的基础解析联调如证明必须先开通付费智能 DNS，应将对�
 
 **D9-B**
 
-- [ ] 余额并发消费不透支：N 路并发超额消费只有额度内成功，账本与派生余额一致；
-- [ ] 账本满足 `期初 + 入账 − 出账 = 期末`；
+- [x] 余额并发消费不透支：N 路并发超额消费只有额度内成功，账本与派生余额一致；
+      证据：`apps/web/tests/integration/d9b1-wallet-ledger.integration.test.ts:204` 用例 `allows exactly the funded
+number of N concurrent holds without exceeding available balance`（10 路各 30 分、余额 100 分，恰好 3 路
+      成功）；`:243` 用例 `atomically reaches the exact available-balance boundary and never derives a negative
+value`（8 路各 25 分，恰好 4 路成功，available 精确为 0）。额度与账户限定 SQL 变异 4/4 被单独杀死。
+- [x] 账本满足 `期初 + 入账 − 出账 = 期末`；证据：
+      `apps/web/tests/integration/d9b1-wallet-ledger.integration.test.ts:817` 用例 `detects a manufactured
+opening-credit-debit-ending mismatch and appends audit evidence` 人为把期末 posted 改 1 分后，Job 以
+      `WALLET_LEDGER_INVARIANT_VIOLATION` 拒绝并追加恰好 1 条限定账户/trace 的审计；`:1602` 逐项制造并
+      检出 sequence、owner、posted、held、version、transaction-entry 和 history 差异。不变量判定变异
+      16/16 被单独杀死。
 - [ ] 充值只能由服务端确认的真实支付产生，伪造回调不入账；同一交易号不得入账两个账户；
 - [ ] 原路退款与余额回退不能同时发生；
 - [ ] 余额账本作为第四 ledger 参与对账，差异只追加不自动改账；

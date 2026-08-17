@@ -122,6 +122,10 @@ export const auditEventDefinitions = {
     actorTypes: ['provider', 'system'],
     targetType: 'renewal',
   },
+  'wallet.ledger_invariant.failed': {
+    actorTypes: ['system'],
+    targetType: 'wallet-ledger',
+  },
   'domain.asset.synced': {
     actorTypes: ['customer', 'system'],
     targetType: 'domain-asset',
