@@ -2,7 +2,7 @@
 
 本文件是 Wanmi.AI 仓库内 Codex/AI 开发代理的执行规范。适用于仓库根目录及全部子目录；更深目录如有 `AGENTS.md`，只可补充局部约束，不得放宽本文件的产品、安全和上线门槛。
 
-当前项目负责人批准并冻结的 P1 文档基线为 `P1-BASELINE-2026-08-16.1`，对应批准标签 `p1-docs-approved-2026-08-16-1`。本基线在上一基线 `P1-BASELINE-2026-08-15.1`（标签 `p1-docs-approved-2026-08-15-1`）之上，新增按改动风险分层的验证与报告规范，保留 `make check` 的完整门禁语义，并固定发布以精确提交的绿色 CI 和不可变镜像 digest 为依据；不改变 P1 产品范围、架构、D9-A 短信 `stepUpGrant`、风险分级、高风险冷静期、`renewalMandate` 独立授权、订单状态、退款、实名归属、12～16 周工期口径或生产上线门槛。上一基线及其之前关于生产发布、存储边界、D9 用户系统和版本化应用主密钥的决定全部继续有效。
+当前项目负责人批准并冻结的 P1 文档基线为 `P1-BASELINE-2026-08-17.1`，对应批准标签 `p1-docs-approved-2026-08-17-1`。本基线在上一基线 `P1-BASELINE-2026-08-16.1`（标签 `p1-docs-approved-2026-08-16-1`）之上，新增并发与互斥约束、D9 既有能力复用索引，以及按调用点和耦合关系计数的判定点变异口径，明确以同事务条件更新和 `RETURNING` 取得互斥授权、账本真源与追加式记录边界；不改变上一基线的验证分层、`make check` 完整门禁、精确提交绿色 CI 与不可变镜像 digest 发布依据，也不改变 P1 产品范围、架构、D9-A 短信 `stepUpGrant`、风险分级、高风险冷静期、`renewalMandate` 独立授权、订单状态集合与合法迁移、退款、实名归属、12～16 周工期口径或生产上线门槛。上一基线及其之前关于生产发布、存储边界、D9 用户系统和版本化应用主密钥的决定全部继续有效。
 
 ## 1. 项目目标
 
@@ -164,6 +164,33 @@ await payload.find({
 - CI 检查类型和迁移漂移；
 - 嵌套写操作传递同一 `req` 以维持事务。
 
+### 并发与互斥
+
+- **`payload.update({ where })` 不是 CAS**：Payload 会先按条件查找、再按 `id` 更新，并发下可能让多个执行者重复放行。任何互斥、状态迁移、一次性消费或额度扣减，必须在同一事务内执行单条 `UPDATE ... WHERE <期望前置状态> ... RETURNING <id>`，以返回行数判定是否取得授权；命中 0 行即拒绝，不得先读后写推测授权。
+- 原子认领与条件更新参考 `apps/web/src/services/providers/westdigital-operations.ts` 的 `claimAttempt`、`apps/web/src/services/auth/step-up.ts` 的 `authorizeStepUpGrant`、`apps/web/src/services/wallet/ledger.ts` 的 `reserveLedgerVersion`；后续实现必须复用相同的同事务、条件谓词与 `RETURNING` 判定模式。
+- 金额一律使用整数分（fen）保存和传递，计算使用 `BigInt`，禁止浮点金额、隐式单位换算或以格式化字符串参与运算。
+- 涉及余额或额度的判定，必须先在同一事务内取得目标行锁，再从追加式事实记录推导可用值；不得把可变缓存字段、接口展示余额或事务外快照作为真源。
+- 追加式记录，包括同意、账本、找回、注销和解析变更，必须同时使用 `beforeChange` 在 `operation === 'update'` 时拒绝修改、使用 `beforeDelete` 拒绝删除；不能只依赖 access control 或后台隐藏。参考 `apps/web/src/collections/identity.ts` 的 `ConsentRecords` 和 `apps/web/src/collections/wallet.ts` 的 `WalletEntries`。
+- 上游状态不明一律保持当前状态、只查询不重试，不得推测成功或失败。
+
+### D9 既有能力复用索引
+
+后续 D9 切片必须复用下列既有能力及其唯一业务入口，不得建立平行状态机、授权、通知、人工复核、审计、会话或钱包实现：
+
+| 能力                      | 必须复用的函数或载体                                                                                           | 文件路径                                                                                             |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 账户状态迁移              | `transitionCustomerAccount`                                                                                    | `apps/web/src/services/auth/account-state.ts`                                                        |
+| 能力拦截                  | `assertCustomerAccountCapability`、`assertCustomerAccountCapabilityFromSnapshot`                               | `apps/web/src/services/auth/account-state.ts`                                                        |
+| step-up 授权              | `authorizeStepUpGrant`                                                                                         | `apps/web/src/services/auth/step-up.ts`                                                              |
+| 冷静期判定                | `assertIdentityRiskCooldownInactive`                                                                           | `apps/web/src/services/auth/step-up.ts`                                                              |
+| 会话撤销                  | `revokeAllCustomerSessions`；需要同时记录安全动作与审计时使用 `revokeCustomerSessionsForSecurityEvent`         | `apps/web/src/services/auth/customer-sessions.ts`；`apps/web/src/services/auth/account-state.ts`     |
+| 旧渠道通知                | `notifyFormerCustomerIdentities`                                                                               | `apps/web/src/services/auth/customer-identities.ts`                                                  |
+| 人工复核                  | `submitAccountRecoveryRequest`、`decideAccountRecovery`；统一载体 `ManualReviews`                              | `apps/web/src/services/auth/account-recovery.ts`；`apps/web/src/collections/operations.ts`           |
+| 审计与安全事件            | `recordAuditEvent`、`recordCustomerSecurityEvent`                                                              | `apps/web/src/services/audit/record-audit-event.ts`；`apps/web/src/services/auth/security-events.ts` |
+| 钱包 hold/capture/release | `holdWalletBalance`、`captureWalletHold`、`releaseWalletHold`；上游 unknown 使用 `resolveWalletHold` 保持 hold | `apps/web/src/services/wallet/ledger.ts`                                                             |
+
+新增、重命名、拆分或废止上述领域能力时，必须在同一切片同步更新本索引、调用方和验证证据；**新增能力时必须同步更新该索引**。
+
 ## 7. 认证和权限
 
 ### 管理员
@@ -224,7 +251,7 @@ cancelled
 
 ### 金额和报价
 
-- 金额使用整数最小货币单位或精确 decimal，禁止浮点；
+- 金额一律使用整数分（fen）并以 `BigInt` 计算，禁止浮点；
 - 报价保存上游成本、加价规则、最终价和 5 分钟有效期快照；
 - 未配置加价的 TLD 不开放购买；
 - 创建订单时重新验证报价、TLD、实名模板和域名状态；
@@ -303,6 +330,8 @@ cancelled
 7. 发布以精确 commit 的绿色 CI 和不可变镜像 digest 为依据，不在生产服务器重新构建或重新运行源码测试。
 8. 生产只读调查不运行代码测试；应验证连接目标、只读事务、SQL 作用范围、敏感字段未输出和停止条件是否触发。
 9. **分层节省的成本必须投入定向变异证据。** 涉及安全或正确性的每一个判定条件，包括 SQL 谓词、门禁分支和状态机迁移，至少要有一条行为断言能在该条件被删除时失败；源码文本断言只能作为补充，不得成为唯一保护。
+   - **判定点按调用点计数，不按函数计数。** 同一个守卫函数被多处调用时，每个调用点都是独立判定点，必须分别变异。A6 曾因只按 `assertReleasedIdentityRebindAllowed` 函数计数而漏测其 5 个调用点中的微信注册路径，后续不得重复该口径。
+   - **判定点不限于 SQL 谓词与显式 guard。** 还包括 JS 层早退分支、角色与身份判断、状态机白名单、能力拦截插入点，以及两个值之间必须同步变化的耦合关系。A7 的 `documentVersion` 与 `documentHash` 必须同步变化，否则版本标签可静默漂移；此类耦合关系必须作为独立判定点变异。
 10. PR 报告必须分别列出：定向验证做了什么、完整门禁是否运行及在何处运行、对应 commit SHA 的 CI 结论，以及**是否发生任何生产写入**。
 
 仓库统一档位为：`make check-docs`（文档）、`make check-fast`（lint、TypeScript strict、单元测试和生成物/schema drift）、`make check-integration`（PostgreSQL/MinIO、migration 和集成测试）及语义保持不变的 `make check`（完整门禁）。`make check-release` 不建立；发布继续使用 `verify-release` 与 ADR-0006。
