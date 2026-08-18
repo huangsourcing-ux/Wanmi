@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 
 import config from '@payload-config'
 import { createLocalReq, getPayload, type Payload, type PayloadRequest } from 'payload'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import type { PaymentProvider, RefundProvider, WestDigitalWriteProvider } from '@/providers/types'
 import { createWechatPayFixture } from '@/providers/wechatpay'
@@ -203,6 +203,24 @@ async function pay(fixture: Fixture, suffix: string) {
   )
 }
 
+async function completeBalanceRefund(fixture: Fixture, suffix: string) {
+  await pay(fixture, `${suffix}-pay`)
+  await requestBalanceRegistrationFailureRefund(await systemRequest(`${suffix}-refund`), {
+    evidence: { result: 'failed' },
+    note: 'fixture',
+    orderId: fixture.order.id,
+    traceId: `${prefix}-${suffix}-refund`,
+  })
+  const refunds = await payload.find({
+    collection: 'refunds',
+    limit: 2,
+    overrideAccess: true,
+    where: { order: { equals: fixture.order.id } },
+  })
+  expect(refunds.totalDocs).toBe(1)
+  return refunds.docs[0]!
+}
+
 function assetResponse(domain: string) {
   return {
     body: {
@@ -293,6 +311,100 @@ function forbiddenRefundProvider(): RefundProvider {
     }),
     queryRefund: fail,
     verifyRefundNotification: fail,
+  }
+}
+
+function observedRefundProvider(): {
+  calls: { createRefund: number; queryRefund: number; verifyRefundNotification: number }
+  provider: RefundProvider
+} {
+  const calls = { createRefund: 0, queryRefund: 0, verifyRefundNotification: 0 }
+  return {
+    calls,
+    provider: {
+      createRefund: async () => {
+        calls.createRefund += 1
+        throw new Error('Wechat refund create must not run for a balance order')
+      },
+      health: async () => ({
+        data: { healthy: true },
+        observedAt: new Date().toISOString(),
+        ok: true,
+        requestId: `${prefix}-observed-refund-health`,
+      }),
+      queryRefund: async () => {
+        calls.queryRefund += 1
+        throw new Error('Wechat refund query must not run for a balance order')
+      },
+      verifyRefundNotification: async () => {
+        calls.verifyRefundNotification += 1
+        throw new Error('Wechat refund notification verification must not run for a balance order')
+      },
+    },
+  }
+}
+
+async function createPaymentTransactionSignal(
+  fixture: Fixture,
+  suffix: string,
+  input: { merchantOrderNumber: string; wechatTransactionId: null | string },
+): Promise<void> {
+  const observedAt = new Date().toISOString()
+  await payload.create({
+    collection: 'paymentNotifications',
+    data: {
+      amountMinor,
+      confirmationStatus: 'confirmed',
+      currency: 'CNY',
+      merchantOrderNumber: input.merchantOrderNumber,
+      notificationId: `${prefix}-${suffix}-${randomUUID()}`,
+      order: fixture.order.id,
+      paidAt: observedAt,
+      payloadDigest: 'd'.repeat(64),
+      providerRequestId: `${prefix}-${suffix}-provider`,
+      receivedAt: observedAt,
+      signatureVerified: true,
+      source: 'query',
+      wechatTransactionId: input.wechatTransactionId,
+    },
+    overrideAccess: true,
+  })
+}
+
+async function withOrderWechatTransactionSignals<T>(
+  signals: ReadonlyMap<string, null | string>,
+  work: () => Promise<T>,
+): Promise<T> {
+  const originalFindByID = payload.findByID.bind(payload)
+  const findByID = vi.spyOn(payload, 'findByID')
+  findByID.mockImplementation((async (args) => {
+    const doc = await originalFindByID(args)
+    const key = String(args.id)
+    if (args.collection !== 'orders' || !signals.has(key)) return doc
+    return { ...doc, wechatTransactionId: signals.get(key) }
+  }) as typeof payload.findByID)
+  try {
+    return await work()
+  } finally {
+    findByID.mockRestore()
+  }
+}
+
+async function withWalletTransactionSignalOverride<T>(
+  override: Record<string, unknown>,
+  work: () => Promise<T>,
+): Promise<T> {
+  const originalFind = payload.find.bind(payload)
+  const find = vi.spyOn(payload, 'find')
+  find.mockImplementation((async (args) => {
+    const result = await originalFind(args)
+    if (args.collection !== 'walletTransactions' || !result.docs[0]) return result
+    return { ...result, docs: [{ ...result.docs[0], ...override }, ...result.docs.slice(1)] }
+  }) as typeof payload.find)
+  try {
+    return await work()
+  } finally {
+    find.mockRestore()
   }
 }
 
@@ -773,9 +885,13 @@ describe('D9-B-3 balance payment and channel-bound refunds', () => {
 
   it('rejects a missing frozen quote expiry before any balance hold', async () => {
     const fixture = await createFixture('invalid-snapshot')
-    await payload.db.pool.query(`UPDATE orders SET quote_snapshot = '{}'::jsonb WHERE id = $1`, [
-      fixture.order.id,
-    ])
+    await payload.db.pool.query(
+      `UPDATE orders
+       SET quote_snapshot = '{}'::jsonb,
+           payment_expires_at = $1
+       WHERE id = $2`,
+      [new Date(Date.now() + 120_000).toISOString(), fixture.order.id],
+    )
     await expect(pay(fixture, 'invalid-snapshot-pay')).rejects.toMatchObject({
       code: 'ORDER_QUOTE_SNAPSHOT_INVALID',
     })
@@ -969,6 +1085,325 @@ describe('D9-B-3 balance payment and channel-bound refunds', () => {
         })
       ).totalDocs,
     ).toBe(0)
+  })
+
+  it('routes a balance order by paymentChannel when a decoy WeChat transaction id exists', async () => {
+    const dispatch = await createFixture('channel-transaction-balance')
+    await pay(dispatch, 'channel-transaction-balance-pay')
+    const dispatchMerchant = `WM${randomUUID().replaceAll('-', '').slice(0, 30)}`
+    const dispatchTransaction = `4200${randomUUID().replaceAll('-', '').slice(0, 28)}`
+    await payload.update({
+      collection: 'orders',
+      data: { merchantOrderNumber: dispatchMerchant },
+      id: dispatch.order.id,
+      overrideAccess: true,
+    })
+    await createPaymentTransactionSignal(dispatch, 'channel-transaction-balance', {
+      merchantOrderNumber: dispatchMerchant,
+      wechatTransactionId: dispatchTransaction,
+    })
+
+    const job = await createFixture('channel-transaction-job')
+    await pay(job, 'channel-transaction-job-pay')
+    const jobMerchant = `WM${randomUUID().replaceAll('-', '').slice(0, 30)}`
+    const jobTransaction = `4200${randomUUID().replaceAll('-', '').slice(0, 28)}`
+    await payload.update({
+      collection: 'orders',
+      data: { merchantOrderNumber: jobMerchant },
+      id: job.order.id,
+      overrideAccess: true,
+    })
+    await createPaymentTransactionSignal(job, 'channel-transaction-job', {
+      merchantOrderNumber: jobMerchant,
+      wechatTransactionId: jobTransaction,
+    })
+    const rogueRefund = await payload.create({
+      collection: 'refunds',
+      data: {
+        amountMinor,
+        createdTraceId: `${prefix}-channel-transaction-job`,
+        currency: 'CNY',
+        order: job.order.id,
+        refundNumber: `WR${randomUUID().replaceAll('-', '')}`,
+        status: 'pending',
+      },
+      overrideAccess: true,
+    })
+    const observed = observedRefundProvider()
+
+    await withOrderWechatTransactionSignals(
+      new Map([
+        [String(dispatch.order.id), dispatchTransaction],
+        [String(job.order.id), jobTransaction],
+      ]),
+      async () => {
+        await expect(
+          requestWechatRegistrationFailureRefund(
+            await systemRequest('channel-transaction-direct-wechat'),
+            {
+              evidence: { result: 'failed' },
+              note: 'fixture',
+              orderId: dispatch.order.id,
+              traceId: `${prefix}-channel-transaction-direct-wechat`,
+            },
+          ),
+        ).rejects.toMatchObject({ code: 'REFUND_CHANNEL_MISMATCH' })
+
+        await expect(
+          requestAutomaticRegistrationFailureRefund(
+            await systemRequest('channel-transaction-auto'),
+            {
+              evidence: { result: 'failed' },
+              note: 'fixture',
+              orderId: dispatch.order.id,
+              traceId: `${prefix}-channel-transaction-auto`,
+            },
+          ),
+        ).resolves.toMatchObject({ idempotentReplay: false })
+
+        await expect(
+          runWechatRefund(
+            await systemRequest('channel-transaction-job-run'),
+            {
+              refundId: Number(rogueRefund.id),
+              traceId: `${prefix}-channel-transaction-job-run`,
+            },
+            observed.provider,
+          ),
+        ).rejects.toMatchObject({ code: 'REFUND_CHANNEL_MISMATCH' })
+      },
+    )
+
+    expect(observed.calls).toEqual({
+      createRefund: 0,
+      queryRefund: 0,
+      verifyRefundNotification: 0,
+    })
+    await expect(
+      readWalletBalance(
+        await systemRequest('channel-transaction-balance-read'),
+        dispatch.accountId,
+      ),
+    ).resolves.toEqual({
+      availableBalance: BigInt(amountMinor),
+      heldBalance: 0n,
+      postedBalance: BigInt(amountMinor),
+    })
+    const queuedWechatRefunds = await payload.db.pool.query(
+      `SELECT COUNT(*)::int AS count
+       FROM payload_jobs
+       WHERE workflow_slug = 'wechatRefund'
+         AND (input->>'refundId')::int IN (
+           SELECT id FROM refunds WHERE order_id = $1
+         )`,
+      [dispatch.order.id],
+    )
+    expect(queuedWechatRefunds.rows[0]?.count).toBe(0)
+    const providerOperations = await payload.count({
+      collection: 'providerOperations',
+      overrideAccess: true,
+      where: {
+        and: [{ operation: { equals: 'refund' } }, { order: { equals: job.order.id } }],
+      },
+    })
+    expect(providerOperations.totalDocs).toBe(0)
+  })
+
+  it('routes a native order by paymentChannel when its WeChat transaction id is missing', async () => {
+    const fixture = await createFixture('channel-transaction-native')
+    const merchantOrderNumber = `WM${randomUUID().replaceAll('-', '').slice(0, 30)}`
+    await payload.update({
+      collection: 'orders',
+      data: {
+        merchantOrderNumber,
+        paidAt: new Date().toISOString(),
+        paymentChannel: 'native',
+        status: 'paid',
+      },
+      id: fixture.order.id,
+      overrideAccess: true,
+    })
+    await createPaymentTransactionSignal(fixture, 'channel-transaction-native', {
+      merchantOrderNumber,
+      wechatTransactionId: null,
+    })
+    await holdWalletBalance(await systemRequest('channel-transaction-native-decoy-hold'), {
+      accountId: fixture.accountId,
+      amountFen: amountMinor,
+      transactionKey: balancePaymentTransactionKey(fixture.order.id),
+    })
+    const creditsBefore = await payload.count({
+      collection: 'walletEntries',
+      overrideAccess: true,
+      where: {
+        and: [{ account: { equals: fixture.accountId } }, { entryType: { equals: 'credit' } }],
+      },
+    })
+
+    await expect(
+      withOrderWechatTransactionSignals(new Map([[String(fixture.order.id), null]]), async () =>
+        requestAutomaticRegistrationFailureRefund(
+          await systemRequest('channel-transaction-native-refund'),
+          {
+            evidence: { result: 'failed' },
+            note: 'fixture',
+            orderId: fixture.order.id,
+            traceId: `${prefix}-channel-transaction-native-refund`,
+          },
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'REFUND_PAYMENT_EVIDENCE_MISMATCH' })
+
+    const creditsAfter = await payload.count({
+      collection: 'walletEntries',
+      overrideAccess: true,
+      where: {
+        and: [{ account: { equals: fixture.accountId } }, { entryType: { equals: 'credit' } }],
+      },
+    })
+    expect(creditsAfter.totalDocs).toBe(creditsBefore.totalDocs)
+    const releases = await payload.count({
+      collection: 'walletEntries',
+      overrideAccess: true,
+      where: {
+        and: [
+          { account: { equals: fixture.accountId } },
+          { entryType: { equals: 'release' } },
+          { transaction: { exists: true } },
+        ],
+      },
+    })
+    expect(releases.totalDocs).toBe(0)
+    await expect(
+      readWalletBalance(
+        await systemRequest('channel-transaction-native-balance-read'),
+        fixture.accountId,
+      ),
+    ).resolves.toEqual({
+      availableBalance: 0n,
+      heldBalance: BigInt(amountMinor),
+      postedBalance: BigInt(amountMinor),
+    })
+  })
+
+  it.each([
+    ['type-only', { type: 'credit' }],
+    ['status-only', { status: 'posted' }],
+  ])('rejects a hold with an independently contradictory %s signal', async (suffix, override) => {
+    const fixture = await createFixture(`hold-signal-${suffix}`)
+    await pay(fixture, `hold-signal-${suffix}-pay`)
+    await expect(
+      withWalletTransactionSignalOverride(override, async () =>
+        requestBalanceRegistrationFailureRefund(
+          await systemRequest(`hold-signal-${suffix}-refund`),
+          {
+            evidence: { result: 'failed' },
+            note: 'fixture',
+            orderId: fixture.order.id,
+            traceId: `${prefix}-hold-signal-${suffix}-refund`,
+          },
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'REFUND_AMOUNT_MISMATCH' })
+    const releases = await payload.count({
+      collection: 'walletEntries',
+      overrideAccess: true,
+      where: {
+        and: [{ account: { equals: fixture.accountId } }, { entryType: { equals: 'release' } }],
+      },
+    })
+    expect(releases.totalDocs).toBe(0)
+  })
+
+  it('rejects a completed balance-refund replay when only its amount disagrees', async () => {
+    const fixture = await createFixture('replay-amount-signal')
+    const refund = await completeBalanceRefund(fixture, 'replay-amount-signal')
+    await payload.update({
+      collection: 'refunds',
+      data: { amountMinor: amountMinor + 1 },
+      id: refund.id,
+      overrideAccess: true,
+    })
+
+    await expect(
+      requestBalanceRegistrationFailureRefund(await systemRequest('replay-amount-signal-retry'), {
+        evidence: { result: 'failed' },
+        note: 'fixture replay',
+        orderId: fixture.order.id,
+        traceId: `${prefix}-replay-amount-signal-retry`,
+      }),
+    ).rejects.toMatchObject({ code: 'REFUND_AMOUNT_MISMATCH' })
+    const reviews = await payload.count({
+      collection: 'manualReviews',
+      overrideAccess: true,
+      where: {
+        and: [
+          { order: { equals: fixture.order.id } },
+          { reasonCode: { equals: 'wallet.refund_amount_mismatch' } },
+          { status: { equals: 'open' } },
+        ],
+      },
+    })
+    expect(reviews.totalDocs).toBe(1)
+  })
+
+  it('rejects a completed balance-refund replay when only the order terminal status disagrees', async () => {
+    const fixture = await createFixture('replay-order-status-signal')
+    await completeBalanceRefund(fixture, 'replay-order-status-signal')
+    await payload.db.pool.query(`UPDATE orders SET status = 'refund_pending' WHERE id = $1`, [
+      fixture.order.id,
+    ])
+
+    await expect(
+      requestBalanceRegistrationFailureRefund(
+        await systemRequest('replay-order-status-signal-retry'),
+        {
+          evidence: { result: 'failed' },
+          note: 'fixture replay',
+          orderId: fixture.order.id,
+          traceId: `${prefix}-replay-order-status-signal-retry`,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'BALANCE_REFUND_STATE_CONFLICT' })
+    const releases = await payload.count({
+      collection: 'walletEntries',
+      overrideAccess: true,
+      where: {
+        and: [{ account: { equals: fixture.accountId } }, { entryType: { equals: 'release' } }],
+      },
+    })
+    expect(releases.totalDocs).toBe(1)
+  })
+
+  it('rejects a completed balance-refund replay when only the refund terminal status disagrees', async () => {
+    const fixture = await createFixture('replay-refund-status-signal')
+    const refund = await completeBalanceRefund(fixture, 'replay-refund-status-signal')
+    await payload.update({
+      collection: 'refunds',
+      data: { status: 'pending' },
+      id: refund.id,
+      overrideAccess: true,
+    })
+
+    await expect(
+      requestBalanceRegistrationFailureRefund(
+        await systemRequest('replay-refund-status-signal-retry'),
+        {
+          evidence: { result: 'failed' },
+          note: 'fixture replay',
+          orderId: fixture.order.id,
+          traceId: `${prefix}-replay-refund-status-signal-retry`,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'ORDER_NOT_REFUNDABLE' })
+    const releases = await payload.count({
+      collection: 'walletEntries',
+      overrideAccess: true,
+      where: {
+        and: [{ account: { equals: fixture.accountId } }, { entryType: { equals: 'release' } }],
+      },
+    })
+    expect(releases.totalDocs).toBe(1)
   })
 
   it('never refunds a succeeded balance-paid registration order', async () => {
