@@ -51,6 +51,7 @@ export const domainCapabilityItemSchema = z.strictObject({
     'asset_sync',
     'certificate_download',
     'contact_information_update',
+    'domain_lock_status',
     'management_password_read',
     'management_password_write',
     'realtime_transfer',
@@ -64,7 +65,7 @@ export const domainCapabilityItemSchema = z.strictObject({
 })
 
 export const domainCapabilitiesResultSchema = createResultSchema(
-  z.strictObject({ capabilities: z.array(domainCapabilityItemSchema).length(7) }),
+  z.strictObject({ capabilities: z.array(domainCapabilityItemSchema).length(8) }),
 )
 
 export type DomainContactUpdateRequest = z.infer<typeof domainContactUpdateRequestSchema>

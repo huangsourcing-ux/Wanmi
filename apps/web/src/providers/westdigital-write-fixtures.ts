@@ -51,6 +51,7 @@ function isWriteOperation(operation: WestDigitalWriteTransportRequest['operation
     'dns_record_pause',
     'offline_dns_record_delete_submit',
     'domain_contact_update',
+    'domain_lock',
     'domain_management_password_modify',
     'domain_template_transfer',
     'nameserver',
@@ -113,7 +114,11 @@ function createDefaultFixture(): WestDigitalWriteFixtureHandler {
         status: 200,
       }
     }
-    if (input.operation === 'renew' || input.operation === 'nameserver') {
+    if (
+      input.operation === 'renew' ||
+      input.operation === 'nameserver' ||
+      input.operation === 'domain_lock'
+    ) {
       return { body: { clientid, result: 200 }, status: 200 }
     }
     if (input.operation === 'domain_management_password_get') {

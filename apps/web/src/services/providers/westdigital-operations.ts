@@ -76,6 +76,12 @@ export type WestDigitalWriteOperationInput =
       operation: 'nameserver'
     })
   | (SharedInput & {
+      businessKey: string
+      domainAscii: string
+      locked: boolean
+      operation: 'domain_lock'
+    })
+  | (SharedInput & {
       domainAscii: string
       operation: 'dns_record_add'
       record: WestDigitalDnsRecordInput
@@ -145,6 +151,7 @@ type WestDigitalBusinessKeyOperation =
   | WestDigitalDnsWriteOperation
   | 'dns_record_batch_delete'
   | 'domain_contact_update'
+  | 'domain_lock'
   | 'domain_management_password'
   | 'domain_template_transfer'
 
@@ -180,6 +187,7 @@ export function generateWestDigitalOperationKey(input: WestDigitalWriteOperation
     (dnsOperation(input) ||
       input.operation === 'domain_management_password' ||
       input.operation === 'domain_contact_update' ||
+      input.operation === 'domain_lock' ||
       input.operation === 'domain_template_transfer')
   ) {
     return generateWestDigitalDnsBusinessOperationKey({
@@ -404,6 +412,8 @@ async function submit(
   if (input.operation === 'register') return provider.register(input)
   if (input.operation === 'renew') return provider.renew(input)
   if (input.operation === 'nameserver') return provider.changeNameservers(input)
+  if (input.operation === 'domain_lock')
+    return requireDomainManagementProvider(provider).setDomainLock(input)
   if (input.operation === 'domain_management_password')
     return requireDomainManagementProvider(provider).modifyDomainManagementPassword(input)
   if (input.operation === 'domain_contact_update')
@@ -479,6 +489,7 @@ async function queryStatus(
     if (!id) return undefined
     return provider.queryRealname({ providerTemplateId: id, traceId: input.traceId })
   }
+  if (input.operation === 'domain_lock') return undefined
   if (input.operation === 'domain_management_password') {
     return requireDomainManagementProvider(provider).getDomainManagementPassword({
       domainAscii: input.domainAscii,
@@ -551,6 +562,7 @@ function confirmed(
     )
   }
   if (input.operation === 'domain_contact_update') return false
+  if (input.operation === 'domain_lock') return false
   if (input.operation === 'dns_record_batch_delete') {
     return 'state' in result.data && result.data.state === 'succeeded'
   }

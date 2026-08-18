@@ -54,6 +54,7 @@ describe('D9-D-2 domain management routes', () => {
           { name: 'asset_sync', supported: true },
           { name: 'certificate_download', supported: true },
           { name: 'contact_information_update', supported: true },
+          { name: 'domain_lock_status', supported: true },
           { name: 'management_password_read', supported: true },
           { name: 'management_password_write', supported: true },
           {

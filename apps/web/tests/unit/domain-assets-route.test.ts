@@ -9,13 +9,17 @@ const customer = { collection: 'customers' as const, id: 42, status: 'active' }
 const req = { user: customer } as never
 const asset = {
   domainAscii: 'owner.example',
+  domainLockStatus: 'locked' as const,
   expiresAt: '2027-08-08T00:00:00.000Z',
+  expiryReminderChannels: ['in_app', 'sms'] as const,
+  expiryReminderDays: [30, 7, 1],
   id: '7',
   lastSyncedAt: '2026-08-08T00:00:00.000Z',
   nameservers: ['ns1.example.net', 'ns2.example.net'],
   registeredAt: '2026-08-08T00:00:00.000Z',
   registrar: 'west',
   status: 'active' as const,
+  tags: ['production'],
 }
 
 function context() {
@@ -24,15 +28,32 @@ function context() {
 
 describe('D6-04 domain asset routes', () => {
   it('returns only the safe six-state list contract with no-store', async () => {
-    const list = vi.fn().mockResolvedValue({ data: { items: [asset], total: 1 }, state: 'ready' })
+    const list = vi.fn().mockResolvedValue({
+      data: { items: [asset], page: 2, pageSize: 25, total: 1, totalPages: 1 },
+      state: 'ready',
+    })
     const response = await createDomainListHandler({ list, resolveContext: context })(
-      new Request('http://wanmi.local/api/v1/domains'),
+      new Request(
+        'http://wanmi.local/api/v1/domains?query=owner&status=active&lockStatus=locked&tag=production&expiresWithinDays=30&page=2&pageSize=25&sort=-domainAscii',
+      ),
     )
 
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('no-store')
-    expect(await response.json()).toEqual({ data: { items: [asset], total: 1 }, state: 'ready' })
-    expect(list).toHaveBeenCalledWith(req, customer)
+    expect(await response.json()).toEqual({
+      data: { items: [asset], page: 2, pageSize: 25, total: 1, totalPages: 1 },
+      state: 'ready',
+    })
+    expect(list).toHaveBeenCalledWith(req, customer, {
+      expiresWithinDays: 30,
+      lockStatus: 'locked',
+      page: 2,
+      pageSize: 25,
+      query: 'owner',
+      sort: '-domainAscii',
+      status: 'active',
+      tag: 'production',
+    })
   })
 
   it('keeps detail failures no-store without exposing internal data', async () => {

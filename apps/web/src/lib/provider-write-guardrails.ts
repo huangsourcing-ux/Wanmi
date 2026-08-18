@@ -11,6 +11,7 @@ export type WestDigitalGuardedWrite =
         | 'dns_record_modify'
         | 'dns_record_pause'
         | 'domain_contact_update'
+        | 'domain_lock'
         | 'domain_management_password'
         | 'domain_template_transfer'
         | 'nameserver'
@@ -69,6 +70,7 @@ function westDigitalCapabilityEnabled(operation: WestDigitalGuardedWrite['operat
   if (operation === 'renew') return env.ALLOW_REAL_WESTDIGITAL_RENEWAL_WRITES
   if (
     operation === 'domain_contact_update' ||
+    operation === 'domain_lock' ||
     operation === 'domain_management_password' ||
     operation === 'domain_template_transfer'
   ) {
