@@ -18,6 +18,10 @@ import { recordAuditEvent } from '@/services/audit/record-audit-event'
 import type { ManualCommerceEvidence } from '@/schemas/admin-commerce'
 import { enqueueCommerceFulfillment } from '@/services/commerce/fulfillment'
 import { assertCustomerAccountCapability } from '@/services/auth/account-state'
+import {
+  findWalletTopUpByOrderNumber,
+  processWalletTopUpPaymentNotification,
+} from '@/services/wallet/top-ups'
 
 type CustomerIdentity = {
   collection: 'customers'
@@ -325,7 +329,7 @@ async function archiveVerifiedNotification(
   notification: Extract<VerifiedPaymentNotification, { verified: true }>,
   digest: string,
   receivedAt: string,
-  orderId?: number | string,
+  target?: { orderId?: number | string; walletTopUpOrderId?: number | string },
 ): Promise<VerifiedArchive> {
   const assertMatches = (archive: VerifiedArchive): VerifiedArchive => {
     if (
@@ -362,7 +366,7 @@ async function archiveVerifiedNotification(
         currency: notification.currency,
         merchantOrderNumber: notification.merchantOrderNumber,
         notificationId: notification.notificationId,
-        ...(orderId === undefined ? {} : { order: orderId as never }),
+        ...(target?.orderId === undefined ? {} : { order: target.orderId as never }),
         paidAt: notification.paidAt,
         payloadDigest: digest,
         processingStatus: 'pending',
@@ -370,6 +374,9 @@ async function archiveVerifiedNotification(
         replayCount: 0,
         signatureVerified: true,
         verifiedAt: new Date().toISOString(),
+        ...(target?.walletTopUpOrderId === undefined
+          ? {}
+          : { walletTopUpOrder: target.walletTopUpOrderId as never }),
         wechatTransactionId: notification.transactionId,
       },
       overrideAccess: true,
@@ -683,8 +690,29 @@ export async function processWechatPaymentNotification(
     )
   }
   const order = await findOrderByMerchantNumber(req, verified.merchantOrderNumber)
+  const walletTopUp = order
+    ? undefined
+    : await findWalletTopUpByOrderNumber(req, verified.merchantOrderNumber)
   const receivedAt = input.receivedAt ?? new Date().toISOString()
-  const archive = await archiveVerifiedNotification(req, verified, digest, receivedAt, order?.id)
+  const archive = await archiveVerifiedNotification(req, verified, digest, receivedAt, {
+    orderId: order?.id,
+    walletTopUpOrderId: walletTopUp?.id,
+  })
+  if (walletTopUp) {
+    try {
+      const result = await processWalletTopUpPaymentNotification(
+        req,
+        verified,
+        provider,
+        input.traceId,
+      )
+      await markArchiveProcessed(req, archive.id, 'processed')
+      return { idempotentReplay: result.idempotentReplay ?? false, order: walletTopUp }
+    } catch (error) {
+      await markArchiveProcessed(req, archive.id, 'failed').catch(() => undefined)
+      throw error
+    }
+  }
   if (!order) {
     if (!(await notificationById(req, verified.notificationId))) {
       await req.payload.create({

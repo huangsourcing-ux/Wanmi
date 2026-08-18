@@ -113,6 +113,7 @@ export interface Config {
     walletAccounts: WalletAccount;
     walletTransactions: WalletTransaction;
     walletEntries: WalletEntry;
+    walletTopUpOrders: WalletTopUpOrder;
     providerOperations: ProviderOperation;
     providerWriteBudgets: ProviderWriteBudget;
     providerWriteBudgetDebits: ProviderWriteBudgetDebit;
@@ -199,6 +200,7 @@ export interface Config {
     walletAccounts: WalletAccountsSelect<false> | WalletAccountsSelect<true>;
     walletTransactions: WalletTransactionsSelect<false> | WalletTransactionsSelect<true>;
     walletEntries: WalletEntriesSelect<false> | WalletEntriesSelect<true>;
+    walletTopUpOrders: WalletTopUpOrdersSelect<false> | WalletTopUpOrdersSelect<true>;
     providerOperations: ProviderOperationsSelect<false> | ProviderOperationsSelect<true>;
     providerWriteBudgets: ProviderWriteBudgetsSelect<false> | ProviderWriteBudgetsSelect<true>;
     providerWriteBudgetDebits: ProviderWriteBudgetDebitsSelect<false> | ProviderWriteBudgetDebitsSelect<true>;
@@ -504,6 +506,7 @@ export interface ManualReview {
   order?: (number | null) | Order;
   realnameTemplate?: (number | null) | RealnameTemplate;
   paymentNotification?: (number | null) | PaymentNotification;
+  walletTopUpOrder?: (number | null) | WalletTopUpOrder;
   domainAsset?: (number | null) | DomainAsset;
   nameserverChange?: (number | null) | NameserverChange;
   reasonCode: string;
@@ -738,6 +741,51 @@ export interface PaymentNotification {
   paidAt?: string | null;
   payloadDigest: string;
   providerRequestId?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "walletTopUpOrders".
+ */
+export interface WalletTopUpOrder {
+  id: number;
+  topUpOrderNumber: string;
+  customer: number | Customer;
+  account: number | WalletAccount;
+  amountFen: number;
+  currency: 'CNY';
+  fundingSource: 'wechat';
+  paymentChannel?: ('native' | 'h5') | null;
+  status:
+    | 'created'
+    | 'payment_pending'
+    | 'provider_confirmed'
+    | 'credited'
+    | 'refund_pending'
+    | 'refunded'
+    | 'closed'
+    | 'unknown';
+  wechatTransactionId?: string | null;
+  ledgerTransactionKey: string;
+  originalRefundNumber?: string | null;
+  paymentExpiresAt?: string | null;
+  providerPaidAt?: string | null;
+  providerConfirmedAt?: string | null;
+  creditedAt?: string | null;
+  refundedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "walletAccounts".
+ */
+export interface WalletAccount {
+  id: number;
+  customer: number | Customer;
+  currency: 'CNY';
+  ledgerVersion: number;
   updatedAt: string;
   createdAt: string;
 }
@@ -1503,6 +1551,7 @@ export interface PaymentNotificationArchive {
   id: number;
   notificationId: string;
   order?: (number | null) | Order;
+  walletTopUpOrder?: (number | null) | WalletTopUpOrder;
   payloadDigest: string;
   merchantOrderNumber: string;
   wechatTransactionId: string;
@@ -1585,18 +1634,6 @@ export interface Refund {
   lastCheckedAt?: string | null;
   refundedAt?: string | null;
   createdTraceId: string;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "walletAccounts".
- */
-export interface WalletAccount {
-  id: number;
-  customer: number | Customer;
-  currency: 'CNY';
-  ledgerVersion: number;
   updatedAt: string;
   createdAt: string;
 }
@@ -3485,6 +3522,7 @@ export interface PaymentNotificationsSelect<T extends boolean = true> {
 export interface PaymentNotificationArchivesSelect<T extends boolean = true> {
   notificationId?: T;
   order?: T;
+  walletTopUpOrder?: T;
   payloadDigest?: T;
   merchantOrderNumber?: T;
   wechatTransactionId?: T;
@@ -3599,6 +3637,30 @@ export interface WalletEntriesSelect<T extends boolean = true> {
   ledgerSequence?: T;
   postedBalanceAfterFen?: T;
   heldBalanceAfterFen?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "walletTopUpOrders_select".
+ */
+export interface WalletTopUpOrdersSelect<T extends boolean = true> {
+  topUpOrderNumber?: T;
+  customer?: T;
+  account?: T;
+  amountFen?: T;
+  currency?: T;
+  fundingSource?: T;
+  paymentChannel?: T;
+  status?: T;
+  wechatTransactionId?: T;
+  ledgerTransactionKey?: T;
+  originalRefundNumber?: T;
+  paymentExpiresAt?: T;
+  providerPaidAt?: T;
+  providerConfirmedAt?: T;
+  creditedAt?: T;
+  refundedAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -3816,6 +3878,7 @@ export interface ManualReviewsSelect<T extends boolean = true> {
   order?: T;
   realnameTemplate?: T;
   paymentNotification?: T;
+  walletTopUpOrder?: T;
   domainAsset?: T;
   nameserverChange?: T;
   reasonCode?: T;

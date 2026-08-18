@@ -126,6 +126,26 @@ export const auditEventDefinitions = {
     actorTypes: ['system'],
     targetType: 'wallet-ledger',
   },
+  'wallet.top_up.created': {
+    actorTypes: ['customer'],
+    targetType: 'wallet-top-up-order',
+  },
+  'wallet.top_up.payment_started': {
+    actorTypes: ['customer'],
+    targetType: 'wallet-top-up-order',
+  },
+  'wallet.top_up.payment_observed': {
+    actorTypes: ['provider'],
+    targetType: 'wallet-top-up-order',
+  },
+  'wallet.top_up.credited': {
+    actorTypes: ['provider'],
+    targetType: 'wallet-top-up-order',
+  },
+  'wallet.top_up.refunded': {
+    actorTypes: ['provider'],
+    targetType: 'wallet-top-up-order',
+  },
   'domain.asset.synced': {
     actorTypes: ['customer', 'system'],
     targetType: 'domain-asset',
