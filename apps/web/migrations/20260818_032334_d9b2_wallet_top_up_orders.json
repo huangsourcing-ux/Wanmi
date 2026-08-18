@@ -17203,6 +17203,343 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.domain_batch_operation_events": {
+      "name": "domain_batch_operation_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "event_key": {
+          "name": "event_key",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "batch_key": {
+          "name": "batch_key",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_key": {
+          "name": "item_key",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "customer_id": {
+          "name": "customer_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "asset_id": {
+          "name": "asset_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nameserver_change_id": {
+          "name": "nameserver_change_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "operation": {
+          "name": "operation",
+          "type": "enum_domain_batch_operation_events_operation",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event": {
+          "name": "event",
+          "type": "enum_domain_batch_operation_events_event",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason_code": {
+          "name": "reason_code",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trace_id": {
+          "name": "trace_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "domain_batch_operation_events_event_key_idx": {
+          "name": "domain_batch_operation_events_event_key_idx",
+          "columns": [
+            {
+              "expression": "event_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_batch_key_idx": {
+          "name": "domain_batch_operation_events_batch_key_idx",
+          "columns": [
+            {
+              "expression": "batch_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_item_key_idx": {
+          "name": "domain_batch_operation_events_item_key_idx",
+          "columns": [
+            {
+              "expression": "item_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_customer_idx": {
+          "name": "domain_batch_operation_events_customer_idx",
+          "columns": [
+            {
+              "expression": "customer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_asset_idx": {
+          "name": "domain_batch_operation_events_asset_idx",
+          "columns": [
+            {
+              "expression": "asset_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_nameserver_change_idx": {
+          "name": "domain_batch_operation_events_nameserver_change_idx",
+          "columns": [
+            {
+              "expression": "nameserver_change_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_reason_code_idx": {
+          "name": "domain_batch_operation_events_reason_code_idx",
+          "columns": [
+            {
+              "expression": "reason_code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_occurred_at_idx": {
+          "name": "domain_batch_operation_events_occurred_at_idx",
+          "columns": [
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_trace_id_idx": {
+          "name": "domain_batch_operation_events_trace_id_idx",
+          "columns": [
+            {
+              "expression": "trace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_updated_at_idx": {
+          "name": "domain_batch_operation_events_updated_at_idx",
+          "columns": [
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_created_at_idx": {
+          "name": "domain_batch_operation_events_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "batchKey_occurredAt_idx": {
+          "name": "batchKey_occurredAt_idx",
+          "columns": [
+            {
+              "expression": "batch_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_occurredAt_3_idx": {
+          "name": "customer_occurredAt_3_idx",
+          "columns": [
+            {
+              "expression": "customer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "domain_batch_operation_events_customer_id_customers_id_fk": {
+          "name": "domain_batch_operation_events_customer_id_customers_id_fk",
+          "tableFrom": "domain_batch_operation_events",
+          "tableTo": "customers",
+          "columnsFrom": ["customer_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "domain_batch_operation_events_asset_id_domain_assets_id_fk": {
+          "name": "domain_batch_operation_events_asset_id_domain_assets_id_fk",
+          "tableFrom": "domain_batch_operation_events",
+          "tableTo": "domain_assets",
+          "columnsFrom": ["asset_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "domain_batch_operation_events_nameserver_change_id_nameserver_changes_id_fk": {
+          "name": "domain_batch_operation_events_nameserver_change_id_nameserver_changes_id_fk",
+          "tableFrom": "domain_batch_operation_events",
+          "tableTo": "nameserver_changes",
+          "columnsFrom": ["nameserver_change_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.manual_reviews": {
       "name": "manual_reviews",
       "schema": "",
@@ -24561,6 +24898,7 @@
         "dns_record_add",
         "dns_record_modify",
         "dns_record_delete",
+        "dns_record_batch_delete",
         "dns_record_pause",
         "domain_management_password",
         "domain_contact_update",
@@ -24673,6 +25011,16 @@
       "name": "enum_domain_asset_sync_events_resolution_status",
       "schema": "public",
       "values": ["not_required", "pending"]
+    },
+    "public.enum_domain_batch_operation_events_operation": {
+      "name": "enum_domain_batch_operation_events_operation",
+      "schema": "public",
+      "values": ["nameserver_change"]
+    },
+    "public.enum_domain_batch_operation_events_event": {
+      "name": "enum_domain_batch_operation_events_event",
+      "schema": "public",
+      "values": ["requested", "pending_query", "confirmed", "failed"]
     },
     "public.enum_manual_reviews_status": {
       "name": "enum_manual_reviews_status",
@@ -24947,6 +25295,6 @@
     "tables": {},
     "columns": {}
   },
-  "id": "afc28cd3-9b68-4a7e-b842-49eac0976b87",
+  "id": "3c6572da-800d-40b6-b163-efada86eca62",
   "prevId": "00000000-0000-0000-0000-000000000000"
 }
