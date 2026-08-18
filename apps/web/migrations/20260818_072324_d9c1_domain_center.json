@@ -24935,7 +24935,7 @@
     "public.enum_orders_payment_channel": {
       "name": "enum_orders_payment_channel",
       "schema": "public",
-      "values": ["native", "h5"]
+      "values": ["native", "h5", "balance"]
     },
     "public.enum_order_events_from_status": {
       "name": "enum_order_events_from_status",
@@ -25525,6 +25525,6 @@
     "tables": {},
     "columns": {}
   },
-  "id": "cf4b6412-35bc-45a0-9199-65284e024520",
+  "id": "ec4e8698-08e0-4854-a4a7-f3194484b9e0",
   "prevId": "00000000-0000-0000-0000-000000000000"
 }

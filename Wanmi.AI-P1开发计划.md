@@ -1646,10 +1646,12 @@ decoy WeChat transaction id exists` 构造 balance + 已确认微信交易号，
   `docs/operations/d9b3-balance-payment-refund-mutation-matrix.md`；M67 另以
   `apps/web/tests/unit/d9b2-wallet-top-up-routes.test.ts:133` 的 `rejects the balance payment channel before the
 top-up payment service call` 杀死订单/充值 schema 串用变异；恢复源码后 D9-B-3 42/42、10 文件聚焦 138/138 通过。
-- 最终代码状态在隔离本地 fixture 数据库、`ALLOW_REAL_WECHATPAY=false`、
+- 最终代码状态以普通 merge（未 rebase）纳入 `main@6af99a2` 后，在隔离本地 fixture 数据库、
+  `ALLOW_REAL_WECHATPAY=false`、
   `ALLOW_REAL_WECHATPAY_PAYMENTS=false`、`ALLOW_REAL_WECHATPAY_REFUNDS=false` 下完整运行一次 `make check` 并退出
-  0：783/783 单元、599/599 PostgreSQL/MinIO 集成及 migration、lint、TypeScript strict、Next.js、
-  linux/amd64 镜像、依赖/秘密扫描全部通过。第四 ledger 对账、资金规则配置、审批工作流和角色调整均未由本切片实现。
+  0：788/788 单元、618/618 PostgreSQL/MinIO 集成及 migration、lint、TypeScript strict、Next.js、
+  linux/amd64 镜像、依赖/秘密扫描全部通过。主线 D9-C-1 的累计 schema snapshot 已机械同步 `balance` enum，
+  生产服务文件仍无补测 diff。第四 ledger 对账、资金规则配置、审批工作流和角色调整均未由本切片实现。
 
 #### B4 退款与资金规则（不可提现 ≠ 不可退款）
 

@@ -142,7 +142,7 @@ Tests  2 failed | 37 skipped (39)
 ## 恢复态验证
 
 - 71 个变异全部恢复后，D9-B-3 具名集成文件 42/42 通过；支付、履约、主动续费、退款、余额控制、充值 route 与 audit 的 10 文件聚焦回归 138/138 通过。
-- 最终代码状态在隔离 fixture 库 `wanmi_d9b3_supplement_20260818`、`NODE_ENV` 未设置、provider 总闸及三项 `ALLOW_REAL_WECHATPAY*` 显式为 false 时运行 `make check` 并退出 0：783/783 unit、599/599 PostgreSQL/MinIO integration，以及完整 migration、lint、TypeScript strict、宿主/镜像构建、依赖与秘密扫描全部通过。专用库经精确名称和 0 活动连接核验后删除。
+- 补测提交先在隔离 fixture 库 `wanmi_d9b3_supplement_20260818` 通过 783/783 unit、599/599 integration 的完整 `make check`。随后 `origin/main` 前进至 D9-C-1，本分支以普通 merge（未 rebase）纳入 `main@6af99a2`；首次合并态门禁在测试前被 schema drift 正确拦截，原因是主线较新的累计 D9-C-1 snapshot 尚未包含本分支较早的 `balance` enum。机械刷新该累计 snapshot 后，最终代码状态在全新隔离 fixture 库 `wanmi_d9b3_supplement_merge_20260818`、`NODE_ENV` 未设置、provider 总闸及三项 `ALLOW_REAL_WECHATPAY*` 显式为 false 时再次从头运行 `make check` 并退出 0：788/788 unit、618/618 PostgreSQL/MinIO integration，以及完整 migration、lint、TypeScript strict、宿主/镜像构建、依赖与秘密扫描全部通过。门禁结束后查询确认该精确库名已不存在且活动连接为 0。
 - 本轮没有修改 `refunds.ts`、`balance-payments.ts` 或其他生产实现；未部署、未访问生产、未开启真实支付闸门、未发起真实资金请求。
 
 ## 并发与三态结论
