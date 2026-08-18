@@ -12910,6 +12910,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "wallet_top_up_order_id": {
+          "name": "wallet_top_up_order_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "payload_digest": {
           "name": "payload_digest",
           "type": "varchar",
@@ -13039,6 +13045,21 @@
           "method": "btree",
           "with": {}
         },
+        "payment_notification_archives_wallet_top_up_order_idx": {
+          "name": "payment_notification_archives_wallet_top_up_order_idx",
+          "columns": [
+            {
+              "expression": "wallet_top_up_order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "payment_notification_archives_updated_at_idx": {
           "name": "payment_notification_archives_updated_at_idx",
           "columns": [
@@ -13077,6 +13098,19 @@
           "tableTo": "orders",
           "columnsFrom": [
             "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "payment_notification_archives_wallet_top_up_order_id_wallet_top_up_orders_id_fk": {
+          "name": "payment_notification_archives_wallet_top_up_order_id_wallet_top_up_orders_id_fk",
+          "tableFrom": "payment_notification_archives",
+          "tableTo": "wallet_top_up_orders",
+          "columnsFrom": [
+            "wallet_top_up_order_id"
           ],
           "columnsTo": [
             "id"
@@ -14330,6 +14364,345 @@
           "tableTo": "wallet_transactions",
           "columnsFrom": [
             "transaction_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.wallet_top_up_orders": {
+      "name": "wallet_top_up_orders",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "top_up_order_number": {
+          "name": "top_up_order_number",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "customer_id": {
+          "name": "customer_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_fen": {
+          "name": "amount_fen",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "enum_wallet_top_up_orders_currency",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "funding_source": {
+          "name": "funding_source",
+          "type": "enum_wallet_top_up_orders_funding_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payment_channel": {
+          "name": "payment_channel",
+          "type": "enum_wallet_top_up_orders_payment_channel",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "enum_wallet_top_up_orders_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'created'"
+        },
+        "wechat_transaction_id": {
+          "name": "wechat_transaction_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ledger_transaction_key": {
+          "name": "ledger_transaction_key",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_refund_number": {
+          "name": "original_refund_number",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payment_expires_at": {
+          "name": "payment_expires_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_paid_at": {
+          "name": "provider_paid_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_confirmed_at": {
+          "name": "provider_confirmed_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "credited_at": {
+          "name": "credited_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refunded_at": {
+          "name": "refunded_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "wallet_top_up_orders_top_up_order_number_idx": {
+          "name": "wallet_top_up_orders_top_up_order_number_idx",
+          "columns": [
+            {
+              "expression": "top_up_order_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "wallet_top_up_orders_customer_idx": {
+          "name": "wallet_top_up_orders_customer_idx",
+          "columns": [
+            {
+              "expression": "customer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "wallet_top_up_orders_account_idx": {
+          "name": "wallet_top_up_orders_account_idx",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "wallet_top_up_orders_status_idx": {
+          "name": "wallet_top_up_orders_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "wallet_top_up_orders_wechat_transaction_id_idx": {
+          "name": "wallet_top_up_orders_wechat_transaction_id_idx",
+          "columns": [
+            {
+              "expression": "wechat_transaction_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "wallet_top_up_orders_ledger_transaction_key_idx": {
+          "name": "wallet_top_up_orders_ledger_transaction_key_idx",
+          "columns": [
+            {
+              "expression": "ledger_transaction_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "wallet_top_up_orders_original_refund_number_idx": {
+          "name": "wallet_top_up_orders_original_refund_number_idx",
+          "columns": [
+            {
+              "expression": "original_refund_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "wallet_top_up_orders_updated_at_idx": {
+          "name": "wallet_top_up_orders_updated_at_idx",
+          "columns": [
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "wallet_top_up_orders_created_at_idx": {
+          "name": "wallet_top_up_orders_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_createdAt_idx": {
+          "name": "customer_createdAt_idx",
+          "columns": [
+            {
+              "expression": "customer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "account_status_1_idx": {
+          "name": "account_status_1_idx",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "wallet_top_up_orders_customer_id_customers_id_fk": {
+          "name": "wallet_top_up_orders_customer_id_customers_id_fk",
+          "tableFrom": "wallet_top_up_orders",
+          "tableTo": "customers",
+          "columnsFrom": [
+            "customer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "wallet_top_up_orders_account_id_wallet_accounts_id_fk": {
+          "name": "wallet_top_up_orders_account_id_wallet_accounts_id_fk",
+          "tableFrom": "wallet_top_up_orders",
+          "tableTo": "wallet_accounts",
+          "columnsFrom": [
+            "account_id"
           ],
           "columnsTo": [
             "id"
@@ -17326,6 +17699,355 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.domain_batch_operation_events": {
+      "name": "domain_batch_operation_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "event_key": {
+          "name": "event_key",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "batch_key": {
+          "name": "batch_key",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_key": {
+          "name": "item_key",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "customer_id": {
+          "name": "customer_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "asset_id": {
+          "name": "asset_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nameserver_change_id": {
+          "name": "nameserver_change_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "operation": {
+          "name": "operation",
+          "type": "enum_domain_batch_operation_events_operation",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event": {
+          "name": "event",
+          "type": "enum_domain_batch_operation_events_event",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason_code": {
+          "name": "reason_code",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trace_id": {
+          "name": "trace_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "domain_batch_operation_events_event_key_idx": {
+          "name": "domain_batch_operation_events_event_key_idx",
+          "columns": [
+            {
+              "expression": "event_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_batch_key_idx": {
+          "name": "domain_batch_operation_events_batch_key_idx",
+          "columns": [
+            {
+              "expression": "batch_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_item_key_idx": {
+          "name": "domain_batch_operation_events_item_key_idx",
+          "columns": [
+            {
+              "expression": "item_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_customer_idx": {
+          "name": "domain_batch_operation_events_customer_idx",
+          "columns": [
+            {
+              "expression": "customer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_asset_idx": {
+          "name": "domain_batch_operation_events_asset_idx",
+          "columns": [
+            {
+              "expression": "asset_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_nameserver_change_idx": {
+          "name": "domain_batch_operation_events_nameserver_change_idx",
+          "columns": [
+            {
+              "expression": "nameserver_change_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_reason_code_idx": {
+          "name": "domain_batch_operation_events_reason_code_idx",
+          "columns": [
+            {
+              "expression": "reason_code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_occurred_at_idx": {
+          "name": "domain_batch_operation_events_occurred_at_idx",
+          "columns": [
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_trace_id_idx": {
+          "name": "domain_batch_operation_events_trace_id_idx",
+          "columns": [
+            {
+              "expression": "trace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_updated_at_idx": {
+          "name": "domain_batch_operation_events_updated_at_idx",
+          "columns": [
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "domain_batch_operation_events_created_at_idx": {
+          "name": "domain_batch_operation_events_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "batchKey_occurredAt_idx": {
+          "name": "batchKey_occurredAt_idx",
+          "columns": [
+            {
+              "expression": "batch_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_occurredAt_3_idx": {
+          "name": "customer_occurredAt_3_idx",
+          "columns": [
+            {
+              "expression": "customer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "domain_batch_operation_events_customer_id_customers_id_fk": {
+          "name": "domain_batch_operation_events_customer_id_customers_id_fk",
+          "tableFrom": "domain_batch_operation_events",
+          "tableTo": "customers",
+          "columnsFrom": [
+            "customer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "domain_batch_operation_events_asset_id_domain_assets_id_fk": {
+          "name": "domain_batch_operation_events_asset_id_domain_assets_id_fk",
+          "tableFrom": "domain_batch_operation_events",
+          "tableTo": "domain_assets",
+          "columnsFrom": [
+            "asset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "domain_batch_operation_events_nameserver_change_id_nameserver_changes_id_fk": {
+          "name": "domain_batch_operation_events_nameserver_change_id_nameserver_changes_id_fk",
+          "tableFrom": "domain_batch_operation_events",
+          "tableTo": "nameserver_changes",
+          "columnsFrom": [
+            "nameserver_change_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.manual_reviews": {
       "name": "manual_reviews",
       "schema": "",
@@ -17362,6 +18084,12 @@
         },
         "payment_notification_id": {
           "name": "payment_notification_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "wallet_top_up_order_id": {
+          "name": "wallet_top_up_order_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": false
@@ -17497,6 +18225,21 @@
           "columns": [
             {
               "expression": "payment_notification_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "manual_reviews_wallet_top_up_order_idx": {
+          "name": "manual_reviews_wallet_top_up_order_idx",
+          "columns": [
+            {
+              "expression": "wallet_top_up_order_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -17657,6 +18400,19 @@
           "tableTo": "payment_notifications",
           "columnsFrom": [
             "payment_notification_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "manual_reviews_wallet_top_up_order_id_wallet_top_up_orders_id_fk": {
+          "name": "manual_reviews_wallet_top_up_order_id_wallet_top_up_orders_id_fk",
+          "tableFrom": "manual_reviews",
+          "tableTo": "wallet_top_up_orders",
+          "columnsFrom": [
+            "wallet_top_up_order_id"
           ],
           "columnsTo": [
             "id"
@@ -25330,6 +26086,42 @@
         "release"
       ]
     },
+    "public.enum_wallet_top_up_orders_currency": {
+      "name": "enum_wallet_top_up_orders_currency",
+      "schema": "public",
+      "values": [
+        "CNY"
+      ]
+    },
+    "public.enum_wallet_top_up_orders_funding_source": {
+      "name": "enum_wallet_top_up_orders_funding_source",
+      "schema": "public",
+      "values": [
+        "wechat"
+      ]
+    },
+    "public.enum_wallet_top_up_orders_payment_channel": {
+      "name": "enum_wallet_top_up_orders_payment_channel",
+      "schema": "public",
+      "values": [
+        "native",
+        "h5"
+      ]
+    },
+    "public.enum_wallet_top_up_orders_status": {
+      "name": "enum_wallet_top_up_orders_status",
+      "schema": "public",
+      "values": [
+        "created",
+        "payment_pending",
+        "provider_confirmed",
+        "credited",
+        "refund_pending",
+        "refunded",
+        "closed",
+        "unknown"
+      ]
+    },
     "public.enum_provider_operations_target_type": {
       "name": "enum_provider_operations_target_type",
       "schema": "public",
@@ -25360,6 +26152,7 @@
         "dns_record_add",
         "dns_record_modify",
         "dns_record_delete",
+        "dns_record_batch_delete",
         "dns_record_pause",
         "domain_management_password",
         "domain_contact_update",
@@ -25547,6 +26340,23 @@
       "values": [
         "not_required",
         "pending"
+      ]
+    },
+    "public.enum_domain_batch_operation_events_operation": {
+      "name": "enum_domain_batch_operation_events_operation",
+      "schema": "public",
+      "values": [
+        "nameserver_change"
+      ]
+    },
+    "public.enum_domain_batch_operation_events_event": {
+      "name": "enum_domain_batch_operation_events_event",
+      "schema": "public",
+      "values": [
+        "requested",
+        "pending_query",
+        "confirmed",
+        "failed"
       ]
     },
     "public.enum_manual_reviews_status": {

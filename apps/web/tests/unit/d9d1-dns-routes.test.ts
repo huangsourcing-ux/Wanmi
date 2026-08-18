@@ -68,7 +68,10 @@ describe('D9-D-1 DNS management routes', () => {
       state: 'ready',
     })
     const deleteBatch = vi.fn().mockResolvedValue({
-      data: { items: [mutation.data, { ...mutation.data, providerRecordId: '72' }] },
+      data: {
+        batchKey: 'a'.repeat(64),
+        items: [mutation.data, { ...mutation.data, providerRecordId: '72' }],
+      },
       state: 'ready',
     })
     const collection = createDnsRecordCollectionHandlers({ add, list, resolveContext })

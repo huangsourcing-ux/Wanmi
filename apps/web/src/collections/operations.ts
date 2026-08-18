@@ -47,6 +47,12 @@ export const ManualReviews: CollectionConfig = {
       index: true,
     },
     {
+      name: 'walletTopUpOrder',
+      type: 'relationship',
+      relationTo: 'walletTopUpOrders',
+      index: true,
+    },
+    {
       name: 'domainAsset',
       type: 'relationship',
       relationTo: 'domainAssets',

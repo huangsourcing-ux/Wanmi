@@ -8,7 +8,7 @@
 
 - 按调用点而非函数计数；同一能力在注册、续费、直接退款、退款 Job 等入口分别计数。
 - 每次只删除一个判定、短路一个分支，或把一个安全关键事实来源替换为可构造出等价表象的错误来源；仅运行能杀死该变异的具名行为用例。
-- 每个变异均在指定行为断言处非零退出，随后立即恢复源码；所有变异恢复后，D9-B-3 及受影响回归为 9 文件 109/109 通过。
+- 每个变异均在指定行为断言处非零退出，随后立即恢复源码；所有变异恢复后，D9-B-3 及受影响回归为 10 文件 131/131 通过。
 - 数据库计数断言均带订单、钱包、transaction key、refund、trace 或 fixture scope 的 `where` 限定。测试环境显式保持 `ALLOW_REAL_WECHATPAY=false`、`ALLOW_REAL_WECHATPAY_PAYMENTS=false`、`ALLOW_REAL_WECHATPAY_REFUNDS=false`。
 
 ## 对照表
@@ -81,6 +81,7 @@
 | M64 | 删除订单冻结金额必须为正的判定                                                   | `rejects a corrupted non-positive order frozen amount before touching the wallet`                                                  | killed |
 | M65 | **来源替换：**报价有效期改读订单支付 expiry/当前构造值，不读冻结 quote snapshot  | `rejects a missing frozen quote expiry before any balance hold`                                                                    | killed |
 | M66 | 删除余额退款的可退款状态白名单                                                   | `rejects a cancelled balance order as non-refundable without releasing its hold`                                                   | killed |
+| M67 | **合并边界：**充值支付路由改用包含 `balance` 的订单支付 schema                   | `rejects the balance payment channel before the top-up payment service call`                                                       | killed |
 
 ## 并发与三态结论
 

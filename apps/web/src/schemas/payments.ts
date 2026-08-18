@@ -8,6 +8,10 @@ export const paymentCreateRequestSchema = z.strictObject({
   channel: z.enum(['native', 'h5', 'balance']),
 })
 
+export const wechatPaymentCreateRequestSchema = z.strictObject({
+  channel: z.enum(['native', 'h5']),
+})
+
 export const paymentSessionSchema = z.discriminatedUnion('channel', [
   z.strictObject({
     channel: z.literal('native'),
@@ -44,3 +48,4 @@ export const paymentStatusResultSchema = createResultSchema(paymentStatusSchema)
 export type PaymentCreateRequest = z.infer<typeof paymentCreateRequestSchema>
 export type PaymentSessionResult = z.infer<typeof paymentSessionResultSchema>
 export type PaymentStatusResult = z.infer<typeof paymentStatusResultSchema>
+export type WechatPaymentCreateRequest = z.infer<typeof wechatPaymentCreateRequestSchema>

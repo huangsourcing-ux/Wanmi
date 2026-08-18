@@ -91,6 +91,11 @@ describe('shared audit event service', () => {
         'wallet.balance_refund.blocked',
         'wallet.balance_refund.completed',
         'wallet.ledger_invariant.failed',
+        'wallet.top_up.created',
+        'wallet.top_up.credited',
+        'wallet.top_up.payment_observed',
+        'wallet.top_up.payment_started',
+        'wallet.top_up.refunded',
       ].sort(),
     )
   })

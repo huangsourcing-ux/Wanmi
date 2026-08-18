@@ -76,7 +76,7 @@ export const DnsRecordChanges: CollectionConfig = {
       index: true,
     },
     { name: 'operationKey', type: 'text', access: { read: sensitiveFieldRead }, index: true },
-    { name: 'batchKey', type: 'text', access: { read: sensitiveFieldRead }, index: true },
+    { name: 'batchKey', type: 'text', index: true },
     { name: 'errorCode', type: 'text', access: { read: sensitiveFieldRead }, index: true },
     { name: 'occurredAt', type: 'date', index: true, required: true },
     { name: 'traceId', type: 'text', access: { read: sensitiveFieldRead }, index: true },

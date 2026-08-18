@@ -26,7 +26,11 @@ import {
   Topics,
 } from './content'
 import { DnsRecordChanges } from './dns-management'
-import { DomainAssetSyncEvents, DomainManagementEvents } from './domain-management'
+import {
+  DomainAssetSyncEvents,
+  DomainBatchOperationEvents,
+  DomainManagementEvents,
+} from './domain-management'
 import {
   DomainAssets,
   DomainExpiryReminders,
@@ -64,7 +68,7 @@ import {
   UserFeedback,
 } from './operations'
 import { RealnameDocuments, RealnameTemplates } from './realname'
-import { WalletAccounts, WalletEntries, WalletTransactions } from './wallet'
+import { WalletAccounts, WalletEntries, WalletTopUpOrders, WalletTransactions } from './wallet'
 
 export const collections: CollectionConfig[] = [
   Admins,
@@ -112,6 +116,7 @@ export const collections: CollectionConfig[] = [
   WalletAccounts,
   WalletTransactions,
   WalletEntries,
+  WalletTopUpOrders,
   ProviderOperations,
   ProviderWriteBudgets,
   ProviderWriteBudgetDebits,
@@ -122,6 +127,7 @@ export const collections: CollectionConfig[] = [
   DnsRecordChanges,
   DomainManagementEvents,
   DomainAssetSyncEvents,
+  DomainBatchOperationEvents,
   ManualReviews,
   Reconciliations,
   AuditLogs,
