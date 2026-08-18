@@ -1409,7 +1409,7 @@ function verifyCustomerQuoteSchema(stage) {
   }
 }
 
-function verifyWechatPaymentSchema(stage) {
+function verifyWechatPaymentSchema(stage, paymentChannels = 'native,h5,balance') {
   const columns = postgres(
     [
       'psql',
@@ -1489,7 +1489,9 @@ function verifyWechatPaymentSchema(stage) {
     ],
     { capture: true },
   ).trim()
-  if (enums !== 'native,h5:notification,query:confirmed,mismatch,not_paid,rejected,unknown') {
+  if (
+    enums !== `${paymentChannels}:notification,query:confirmed,mismatch,not_paid,rejected,unknown`
+  ) {
     throw new Error(`D5-03 payment enums invalid after ${stage}: ${enums}`)
   }
 }
@@ -1800,6 +1802,133 @@ function verifyD9AIdentityRegistrationSchema(stage) {
       `D9-A-1 state tables or identity unique index invalid after ${stage}: ${tablesAndIndex}`,
     )
   }
+}
+
+function verifyD9B3BalancePaymentMigration() {
+  const balanceRollbackOutput = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SET session_replication_role = replica;
+       INSERT INTO orders (
+         order_number,
+         customer_id,
+         quote_id,
+         realname_template_id,
+         domain_ascii,
+         status,
+         amount_minor,
+         currency,
+         quote_snapshot,
+         payment_channel
+       ) VALUES (
+         'D9B3-MIGRATION-ROLLBACK-FIXTURE',
+         -1,
+         -1,
+         -1,
+         'd9b3-migration.example',
+         'pending_payment',
+         1,
+         'CNY',
+         '{}'::jsonb,
+         'balance'
+       )
+       RETURNING id`,
+    ],
+    { capture: true },
+  ).trim()
+  const balanceRollbackIds = balanceRollbackOutput.split('\n').filter((line) => /^\d+$/u.test(line))
+  if (balanceRollbackIds.length !== 1) {
+    throw new Error(
+      `D9-B-3 rollback fixture could not select exactly one order: ${JSON.stringify(balanceRollbackOutput)}`,
+    )
+  }
+  const balanceRollbackFixture = balanceRollbackIds[0]
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE payload_migrations SET batch = 119
+     WHERE name = '20260818_064923_d9b3_balance_payment_refund';`,
+  ])
+  let unsafeBalanceRollbackRejected = false
+  try {
+    run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'], { capture: true })
+  } catch (error) {
+    const failure = [error?.message, error?.stdout, error?.stderr]
+      .filter(Boolean)
+      .map(String)
+      .join('\n')
+    unsafeBalanceRollbackRejected = failure.includes(
+      'cannot roll back D9-B-3 while balance-payment orders exist',
+    )
+  }
+  if (!unsafeBalanceRollbackRejected) {
+    throw new Error('D9-B-3 migration down accepted an existing balance-payment order')
+  }
+  const retainedBalanceEnum = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT
+         (payment_channel::text = 'balance')::text || ':' ||
+         ('balance' = ANY(enum_range(NULL::enum_orders_payment_channel)::text[]))::text
+       FROM orders
+       WHERE id = ${balanceRollbackFixture}`,
+    ],
+    { capture: true },
+  ).trim()
+  if (retainedBalanceEnum !== 'true:true') {
+    throw new Error(`D9-B-3 failed rollback was not atomic: ${retainedBalanceEnum}`)
+  }
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `UPDATE orders SET payment_channel = NULL WHERE id = ${balanceRollbackFixture};`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'payload', 'migrate:down'])
+  const balanceEnumAfterDown = postgres(
+    [
+      'psql',
+      '--username',
+      'wanmi',
+      '--dbname',
+      databaseName,
+      '--tuples-only',
+      '--no-align',
+      '--command',
+      `SELECT array_to_string(enum_range(NULL::enum_orders_payment_channel), ',')`,
+    ],
+    { capture: true },
+  ).trim()
+  if (balanceEnumAfterDown !== 'native,h5') {
+    throw new Error(`D9-B-3 migration down left an invalid channel enum: ${balanceEnumAfterDown}`)
+  }
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyWechatPaymentSchema('D9-B-3 guarded down/up round trip')
 }
 
 let created = false
@@ -2885,7 +3014,7 @@ try {
      )`,
   ])
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
-  verifyWechatPaymentSchema('D5-03 migration round trip')
+  verifyWechatPaymentSchema('D5-03 migration round trip', 'native,h5')
   const legacyPayment = postgres(
     [
       'psql',
@@ -4076,8 +4205,25 @@ try {
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
   verifyWalletLedgerSchema('D9-B-1 down/up round trip')
 
+  postgres([
+    'psql',
+    '--username',
+    'wanmi',
+    '--dbname',
+    databaseName,
+    '--set',
+    'ON_ERROR_STOP=1',
+    '--command',
+    `DELETE FROM payload_migrations
+     WHERE name = '20260818_064923_d9b3_balance_payment_refund';`,
+  ])
+  run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
+  verifyWechatPaymentSchema('D9-B-3 reapplied after historical round trips')
+
+  verifyD9B3BalancePaymentMigration()
+
   process.stdout.write(
-    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, the D6-02 commerce-fulfillment migration, the D6-03 West Digital balance-monitoring workflow migration, the D6-04 domain-asset operations migration, the D6-05 active-renewal migration, the D7-05 provider write budget historical backfill/down-up round trips, the D7-06 application master-key historical invalidation/down-up round trip, the D9-A-1 identity/consent historical normalization, isolation, and down/up round trip without fabricated consent, and the D9-B-1 wallet ledger empty/down-up schema contract.\n',
+    'Verified empty-database migrations, D1-03 legacy redirects, D1-05 legacy administrator MFA, the last-system-admin constraint, the D1-07 audit reader index, the D1-08 event schema, the D2-07 price snapshot schema, the D2-11 observability aggregate schema, the D3-01 content CMS backfill, the D3-02 relation/SEO migration, the D3-03 controlled-advertising migration, the D3-04 event/maintenance migration, the D3-05 managed form migration, the D4-01 customer authentication/SMS migration, the D4-02 real-name template migration, the D4-03 private-document migration, the D4-04 real-name lifecycle migration, the D5-01 customer quote migration, the D5-03 Wechat payment migration, the D5-04 Wechat refund/reconciliation migration, the D5-05 price rule migration, the D5-06 payment front-end/timeout migration, the D5-07 payment recovery/manual audit migration, the D6-01 West Digital provider-operation migration, the D6-02 commerce-fulfillment migration, the D6-03 West Digital balance-monitoring workflow migration, the D6-04 domain-asset operations migration, the D6-05 active-renewal migration, the D7-05 provider write budget historical backfill/down-up round trips, the D7-06 application master-key historical invalidation/down-up round trip, the D9-A-1 identity/consent historical normalization, isolation, and down/up round trip without fabricated consent, the D9-B-1 wallet ledger empty/down-up schema contract, and the D9-B-3 guarded balance-channel enum down/up contract.\n',
   )
 } finally {
   migrationIdentityKey.fill(0)

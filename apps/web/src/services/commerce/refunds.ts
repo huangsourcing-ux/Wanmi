@@ -6,7 +6,10 @@ import { AppError } from '@/lib/errors'
 import type { OrderStatus } from '@/lib/domain'
 import type { RefundOrder, RefundProvider, VerifiedRefundNotification } from '@/providers/types'
 import { paymentPayloadDigest } from '@/providers/wechatpay'
+import { recordAuditEvent } from '@/services/audit/record-audit-event'
+import { releaseWalletHold } from '@/services/wallet/ledger'
 
+import { loadBalancePaymentHold, type BalancePaymentOrder } from './balance-payments'
 import { transitionOrder } from './order-state'
 
 type RefundJobInput = {
@@ -17,10 +20,12 @@ type RefundJobInput = {
 type OrderRecord = {
   amountMinor: number
   currency: 'CNY'
+  customer: { id: number | string } | number | string
   id: number | string
   merchantOrderNumber?: null | string
   orderNumber: string
   paidAt?: null | string
+  paymentChannel?: 'balance' | 'h5' | 'native' | null
   status: OrderStatus
 }
 
@@ -120,7 +125,7 @@ async function assertConfirmedPayment(req: PayloadRequest, order: OrderRecord): 
   }
 }
 
-export async function requestAutomaticRegistrationFailureRefund(
+export async function requestWechatRegistrationFailureRefund(
   req: PayloadRequest,
   input: {
     evidence: Record<string, unknown>
@@ -143,6 +148,12 @@ export async function requestAutomaticRegistrationFailureRefund(
       overrideAccess: true,
       req,
     })) as unknown as OrderRecord
+    if (order.paymentChannel === 'balance') {
+      throw new AppError('REFUND_CHANNEL_MISMATCH', '余额支付订单不得进入微信原路退款', 409)
+    }
+    if (order.paymentChannel !== 'native' && order.paymentChannel !== 'h5') {
+      throw new AppError('REFUND_PAYMENT_CHANNEL_INVALID', '订单支付渠道无效，禁止退款', 409)
+    }
     if (order.status === 'succeeded') {
       throw new AppError('SUCCEEDED_ORDER_REFUND_FORBIDDEN', '注册成功的订单不可退款', 409)
     }
@@ -217,6 +228,236 @@ export async function requestAutomaticRegistrationFailureRefund(
   }
 }
 
+async function markBalanceRefundForManualReview(
+  req: PayloadRequest,
+  input: {
+    evidence: Record<string, unknown>
+    orderId: number | string
+    reasonCode: string
+  },
+): Promise<void> {
+  const order = (await req.payload.findByID({
+    collection: 'orders',
+    depth: 0,
+    id: input.orderId,
+    overrideAccess: true,
+    req,
+  })) as unknown as OrderRecord
+  if (
+    order.status !== 'manual_review' &&
+    order.status !== 'refunded' &&
+    order.status !== 'succeeded'
+  ) {
+    await transitionOrder(req, order.id, 'manual_review', {
+      actorType: 'system',
+      evidence: input.evidence,
+      reasonCode: input.reasonCode,
+    })
+  }
+  await openManualReview(req, order.id, input.reasonCode, input.evidence)
+  await recordAuditEvent(req, {
+    action: 'wallet.balance_refund.blocked',
+    actor: { type: 'system' },
+    metadata: { ...input.evidence, reasonCode: input.reasonCode },
+    targetId: order.id,
+  })
+}
+
+export async function requestBalanceRegistrationFailureRefund(
+  req: PayloadRequest,
+  input: {
+    evidence: Record<string, unknown>
+    note: string
+    orderId: number | string
+    traceId: string
+    transition?: {
+      actorId?: string
+      actorType: 'admin' | 'system'
+      reasonCode: string
+    }
+  },
+): Promise<{ idempotentReplay: boolean; refundId: number | string; refundNumber: string }> {
+  const startedTransaction = await initTransaction(req)
+  let mismatch:
+    | {
+        evidence: Record<string, unknown>
+        error: AppError
+        reasonCode: string
+      }
+    | undefined
+  try {
+    const order = (await req.payload.findByID({
+      collection: 'orders',
+      depth: 0,
+      id: input.orderId,
+      overrideAccess: true,
+      req,
+    })) as unknown as OrderRecord
+    if (order.paymentChannel !== 'balance') {
+      throw new AppError('REFUND_CHANNEL_MISMATCH', '微信支付订单不得退回余额', 409)
+    }
+    if (order.status === 'succeeded') {
+      throw new AppError('SUCCEEDED_ORDER_REFUND_FORBIDDEN', '注册成功的订单不可退款', 409)
+    }
+    const existing = await req.payload.find({
+      collection: 'refunds',
+      depth: 0,
+      limit: 1,
+      overrideAccess: true,
+      req,
+      where: { order: { equals: order.id } },
+    })
+    const existingRefund = existing.docs[0] as unknown as RefundRecord | undefined
+    if (existingRefund && order.status === 'refunded' && existingRefund.status === 'succeeded') {
+      if (existingRefund.amountMinor !== order.amountMinor) {
+        mismatch = {
+          error: new AppError('REFUND_AMOUNT_MISMATCH', '退款金额与订单冻结金额不一致', 409),
+          evidence: {
+            orderAmountMinor: order.amountMinor,
+            refundAmountMinor: existingRefund.amountMinor,
+          },
+          reasonCode: 'wallet.refund_amount_mismatch',
+        }
+      } else {
+        if (startedTransaction) await commitTransaction(req)
+        return {
+          idempotentReplay: true,
+          refundId: existingRefund.id,
+          refundNumber: existingRefund.refundNumber,
+        }
+      }
+    }
+    if (!mismatch && !['paid', 'fulfilling', 'refund_pending'].includes(order.status)) {
+      throw new AppError('ORDER_NOT_REFUNDABLE', '订单当前状态不可发起自动退款', 409)
+    }
+    if (!mismatch && (!Number.isSafeInteger(order.amountMinor) || order.amountMinor <= 0)) {
+      mismatch = {
+        error: new AppError('REFUND_AMOUNT_MISMATCH', '订单冻结金额无效，禁止退款', 409),
+        evidence: { orderAmountMinor: order.amountMinor },
+        reasonCode: 'wallet.refund_amount_mismatch',
+      }
+    }
+    let hold: Awaited<ReturnType<typeof loadBalancePaymentHold>> | undefined
+    if (!mismatch) {
+      try {
+        hold = await loadBalancePaymentHold(req, order as unknown as BalancePaymentOrder)
+      } catch (error) {
+        if (!(error instanceof AppError) || error.code !== 'BALANCE_PAYMENT_HOLD_MISMATCH')
+          throw error
+        mismatch = {
+          error: new AppError('REFUND_AMOUNT_MISMATCH', '退款金额与订单冻结金额不一致', 409),
+          evidence: { orderAmountMinor: order.amountMinor },
+          reasonCode: 'wallet.refund_amount_mismatch',
+        }
+      }
+    }
+    if (mismatch) {
+      if (startedTransaction) await killTransaction(req)
+      await markBalanceRefundForManualReview(req, {
+        evidence: mismatch.evidence,
+        orderId: order.id,
+        reasonCode: mismatch.reasonCode,
+      })
+      throw mismatch.error
+    }
+    if (existingRefund) {
+      throw new AppError('BALANCE_REFUND_STATE_CONFLICT', '余额退款状态冲突，需要人工核对', 409)
+    }
+    if (order.status !== 'refund_pending') {
+      await transitionOrder(req, order.id, 'refund_pending', {
+        actorId: input.transition?.actorId,
+        actorType: input.transition?.actorType ?? 'system',
+        evidence: input.evidence,
+        note: input.note,
+        reasonCode: input.transition?.reasonCode ?? 'registration.failed_refund_required',
+      })
+    }
+    const created = await req.payload.create({
+      collection: 'refunds',
+      data: {
+        amountMinor: order.amountMinor,
+        createdTraceId: input.traceId,
+        currency: 'CNY',
+        order: order.id as never,
+        refundNumber: refundNumber(),
+        status: 'pending',
+      },
+      overrideAccess: true,
+      req,
+    })
+    await transitionOrder(req, order.id, 'refunding', {
+      actorType: 'system',
+      evidence: {
+        amountMinor: order.amountMinor,
+        holdTransactionId: String(hold!.transactionId),
+        paymentChannel: order.paymentChannel,
+      },
+      reasonCode: 'wallet.balance_refund_processing',
+    })
+    const released = await releaseWalletHold(req, hold!.transactionKey)
+    if (released.status !== 'released') {
+      throw new AppError('BALANCE_REFUND_RELEASE_INVALID', '余额退款释放状态无效', 409)
+    }
+    const refundedAt = new Date().toISOString()
+    await transitionOrder(req, order.id, 'refunded', {
+      actorType: 'system',
+      evidence: {
+        amountMinor: order.amountMinor,
+        holdTransactionId: String(hold!.transactionId),
+        paymentChannel: order.paymentChannel,
+      },
+      reasonCode: 'wallet.balance_refund_confirmed',
+    })
+    await req.payload.update({
+      collection: 'refunds',
+      data: { lastCheckedAt: refundedAt, refundedAt, status: 'succeeded' },
+      id: created.id,
+      overrideAccess: true,
+      req,
+    })
+    await recordAuditEvent(req, {
+      action: 'wallet.balance_refund.completed',
+      actor: { type: 'system' },
+      metadata: {
+        amountMinor: order.amountMinor,
+        holdTransactionId: String(hold!.transactionId),
+        paymentChannel: order.paymentChannel,
+        refundId: String(created.id),
+      },
+      targetId: order.id,
+    })
+    if (startedTransaction) await commitTransaction(req)
+    return {
+      idempotentReplay: false,
+      refundId: created.id,
+      refundNumber: created.refundNumber,
+    }
+  } catch (error) {
+    if (startedTransaction && !mismatch) await killTransaction(req)
+    throw error
+  }
+}
+
+export async function requestAutomaticRegistrationFailureRefund(
+  req: PayloadRequest,
+  input: Parameters<typeof requestWechatRegistrationFailureRefund>[1],
+) {
+  const order = (await req.payload.findByID({
+    collection: 'orders',
+    depth: 0,
+    id: input.orderId,
+    overrideAccess: true,
+    req,
+  })) as unknown as OrderRecord
+  if (order.paymentChannel === 'balance') {
+    return requestBalanceRegistrationFailureRefund(req, input)
+  }
+  if (order.paymentChannel === 'native' || order.paymentChannel === 'h5') {
+    return requestWechatRegistrationFailureRefund(req, input)
+  }
+  throw new AppError('REFUND_PAYMENT_CHANNEL_INVALID', '订单支付渠道无效，禁止退款', 409)
+}
+
 async function loadRefundAndOrder(req: PayloadRequest, refundId: number | string) {
   const refund = (await req.payload.findByID({
     collection: 'refunds',
@@ -232,6 +473,12 @@ async function loadRefundAndOrder(req: PayloadRequest, refundId: number | string
     overrideAccess: true,
     req,
   })) as unknown as OrderRecord
+  if (order.paymentChannel === 'balance') {
+    throw new AppError('REFUND_CHANNEL_MISMATCH', '余额支付订单不得进入微信原路退款', 409)
+  }
+  if (order.paymentChannel !== 'native' && order.paymentChannel !== 'h5') {
+    throw new AppError('REFUND_PAYMENT_CHANNEL_INVALID', '订单支付渠道无效，禁止退款', 409)
+  }
   if (order.status === 'succeeded') {
     throw new AppError('SUCCEEDED_ORDER_REFUND_FORBIDDEN', '注册成功的订单不可退款', 409)
   }

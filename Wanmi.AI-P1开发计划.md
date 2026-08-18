@@ -857,6 +857,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-16 | v3.1 验证分层冻结项变更               | 新增文档、快速、集成和完整门禁档位；required CI job 始终触发，可靠确认纯 `.md` 才降至文档档位，否则失败关闭到完整门禁                                                                         | 分类器四类最低输入行为测试、门禁分支定向变异、最终状态本地 `make check` 与精确 commit CI 结论                                                                                                                                                               | 不改业务代码、A3～A7 实现、产品/交易/实名/上线门槛；不部署、不生产写入；`make check-release` 不新增                                                                      |
 | 2026-08-17 | v3.3 DNS 高风险分级冻结项变更         | A4 高风险档新增根域 AAAA 与全部主机 TXT；复用 `dns_record_change`，保留全部主机 MX、根域 A/CNAME 与 NS 原保护等级                                                                             | 根域 AAAA 缺 step-up/二次确认、子域 AAAA 普通档、根域/`_acme-challenge` TXT 拒绝、普通子域 A 普通档独立用例；新增 3 项定向变异与最终 `make check`                                                                                                           | 只补正 16.9 第 1 项和冻结风险表；SRV 不升级，16.9 其余六项不实现，不部署、不生产写入、不打开真实 provider 闸门                                                           |
 | 2026-08-17 | D9-B-1 钱包账本基础                   | 新增无余额真源字段的三 Collection、追加式 entries、账本推导三态余额、hold/capture/release、原子额度门与一致性 Job；不含充值、消费订单、退款、对账和后台审批                                   | 四类核心并发、账本差异注入、43/43 聚焦用例及 54/54 注销兼容回归；服务/访问/任务 94/94、SQL 20/20、迁移 38/38，合计 152/152 变异被行为断言杀死；最终本地 `make check` 通过，精确 commit CI 结论随 PR 记录                                                    | 只勾选 16.7 B2 前五项和 D9-B 前两个退出条件；B1、B2 第四 ledger、B3～B5 全部保持未勾选；未部署、未生产写入、未开启真实 provider 闸门                                     |
+| 2026-08-18 | D9-B-3 余额支付与退款双路径           | 订单持久化 `balance` 渠道；余额下单同事务原子 hold 并即时进入已支付；履约成功 capture、明确失败 release、unknown 保持 hold；按持久化渠道分派余额回退或既有微信原路退款，显式拒绝混合支付及双路径互串 | 35/35 D9-B-3、109/109 受影响聚焦回归；支付/capture-release/退款 N 路并发均恰好一次；按调用点 66/66 删除、短路及事实来源替换变异由独立行为断言杀死；最终本地 `make check` 通过 755/755 单元、512/512 集成及完整迁移、构建与安全门禁 | 只完成 16.7 B3 三项及 D9-B 第三退出条件；第四 ledger、资金规则、审批、角色及 B1/B4/B5 未实现或留桩；全程 fixture，微信真实闸 false，无部署或生产写入            |
 
 ## 13. 范围追踪矩阵
 
@@ -1553,11 +1554,49 @@ account`、`fails closed when the consistency task cannot query every required l
 
 #### B3 余额支付订单
 
-- [ ] `orders.paymentChannel` 新增 `balance`；余额支付即时，无 `code_url`、不轮询、不超时关单；
+- [x] `orders.paymentChannel` 新增 `balance`；余额支付即时，无 `code_url`、不轮询、不超时关单；
       其「服务端确认」等价于**同一事务内成功的原子扣减**；
-- [ ] 混合支付（余额 + 微信同单）**P1 不做**；
-- [ ] 退款：余额支付退回余额；微信支付走 D5-04 原路退款；两条路径不得互串；退款金额一律以订单
+- [x] 混合支付（余额 + 微信同单）**P1 不做**；
+- [x] 退款：余额支付退回余额；微信支付走 D5-04 原路退款；两条路径不得互串；退款金额一律以订单
       冻结金额为准。
+
+D9-B-3 证据（2026-08-18，仅本段三项）：
+
+- `Orders.paymentChannel` 的 `balance` 枚举见 `apps/web/src/collections/commerce.ts:387`；请求按显式渠道分派见
+  `apps/web/src/app/api/v1/orders/[orderNumber]/payments/route.ts:96-120`。余额渠道使用同事务订单 CAS 与 B-1
+  `holdWalletBalance`，见 `apps/web/src/services/commerce/balance-payments.ts:149-167,214-301`；没有生成
+  `code_url`、`h5_url`、商户单号或支付过期时间。行为用例：`holds atomically, returns no WeChat URL,
+  skips provider polling, and is skipped by timeout close`、`rejects insufficient balance without making
+  available negative or marking the order paid`。
+- 余额查询直接返回服务端订单状态、不会调用微信 provider，超时关单查询显式排除 `balance`，见
+  `apps/web/src/services/commerce/payments.ts:914-937,999-1029`。同单 8 路余额支付以及余额/微信竞争均只允许
+  一个订单行 CAS 中标，见 `apps/web/tests/integration/d9b3-balance-payments.integration.test.ts:574,1352`；
+  balance 与微信两个 CAS 的每个 `WHERE` 前置谓词及 `RETURNING id` 均有独立数据库行为用例。
+- 履约成功按订单记录渠道 capture，注册与续费调用点见
+  `apps/web/src/services/commerce/fulfillment.ts:416,635`；注册预检不可售、注册明确失败及续费明确失败按渠道退款，
+  见 `:314,691,849`；unknown 路径不 capture、不 release。行为用例：`captures on confirmed fulfillment,
+  releases on explicit failure, and keeps unknown outcomes held`、`captures the stored balance hold when a
+  renewal is confirmed`、`releases the stored balance hold when renewal failure is explicit`。
+- 自动退款只读取 `orders.paymentChannel` 分派，余额路径验证订单冻结金额与 hold 的 transaction key、owner、
+  type/status 和金额，见 `apps/web/src/services/commerce/balance-payments.ts:170-211`、
+  `apps/web/src/services/commerce/refunds.ts:289-458`；金额不一致回滚资金事务并复用 `manualReviews` 与审计，
+  正常路径只用 B-1 `releaseWalletHold`，微信路径继续复用 D5-04。行为用例：`rejects both refund-path crossings
+  before any opposite-channel effect`、`rejects an order/hold amount mismatch, records one scoped manual review,
+  and keeps the hold`、`routes solely by the stored paymentChannel even when indirect WeChat signals disagree`。
+- 混合支付使用专门错误码 `MIXED_PAYMENT_CHANNELS_FORBIDDEN`，余额与微信方向分别见
+  `apps/web/src/services/commerce/balance-payments.ts:249-257`、`apps/web/src/services/commerce/payments.ts:224,243-252`；
+  孤立 `h5`、`native`、商户单号、支付过期时间信号及两渠道并发均有独立行为断言，不会部分处理或静默选路。
+- 同一 hold 的 N 路 capture/release 与同一订单 N 路余额退款均恰好一次生效，见
+  `apps/web/tests/integration/d9b3-balance-payments.integration.test.ts:1390,1427`；所有数量断言均带 customer、
+  order、transaction key、entry type/status、refund 或 audit action/target 的 `where` 限定。
+- schema migration `20260818_064923_d9b3_balance_payment_refund` 只扩展订单支付渠道；down 在存在 balance
+  订单时失败关闭并保持事务原子，见 `apps/web/migrations/20260818_064923_d9b3_balance_payment_refund.ts:3-20`。
+  按调用点清点的 66/66 删除、短路和事实来源替换变异均由独立行为断言杀死，对照见
+  `docs/operations/d9b3-balance-payment-refund-mutation-matrix.md`；恢复源码后聚焦 109/109 通过。
+- 最终代码状态在隔离本地 fixture 数据库、`ALLOW_REAL_WECHATPAY=false`、
+  `ALLOW_REAL_WECHATPAY_PAYMENTS=false`、`ALLOW_REAL_WECHATPAY_REFUNDS=false` 下完整运行一次 `make check` 并退出
+  0：755/755 单元、512/512 PostgreSQL/MinIO 集成及 migration、lint、TypeScript strict、Next.js、
+  linux/amd64 镜像、依赖/秘密扫描全部通过。第四 ledger 对账、资金规则配置、审批工作流和角色调整均未实现或留桩。
 
 #### B4 退款与资金规则（不可提现 ≠ 不可退款）
 
@@ -1816,7 +1855,10 @@ opening-credit-debit-ending mismatch and appends audit evidence` 人为把期末
       检出 sequence、owner、posted、held、version、transaction-entry 和 history 差异。不变量判定变异
       16/16 被单独杀死。
 - [ ] 充值只能由服务端确认的真实支付产生，伪造回调不入账；同一交易号不得入账两个账户；
-- [ ] 原路退款与余额回退不能同时发生；
+- [x] 原路退款与余额回退不能同时发生；证据：`requestAutomaticRegistrationFailureRefund` 只按订单持久化的
+      `paymentChannel` 分派，直接余额/微信入口与微信退款 Job 都有反向渠道门；交叉路径、诱饵微信信号、同单
+      并发退款行为用例均证明只产生一种退款事实，见 D9-B-3 证据及
+      `docs/operations/d9b3-balance-payment-refund-mutation-matrix.md` M32～M35、M46～M51；
 - [ ] 余额账本作为第四 ledger 参与对账，差异只追加不自动改账；
 - [ ] 后台高风险资金操作在冷静延迟未满时不可执行，发起与审批分离配置生效。
 

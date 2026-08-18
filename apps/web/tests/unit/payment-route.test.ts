@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createPaymentRouteHandlers } from '@/app/api/v1/orders/[orderNumber]/payments/route'
 import { AppError } from '@/lib/errors'
 import type { PaymentProvider } from '@/providers/types'
-import { paymentStatusResultSchema } from '@/schemas/payments'
+import { paymentSessionResultSchema, paymentStatusResultSchema } from '@/schemas/payments'
 
 const provider = {} as PaymentProvider
 const context = {
@@ -63,5 +63,47 @@ describe('GET /api/v1/orders/:orderNumber/payments', () => {
       problem: { code: 'PAYMENT_STATUS_RATE_LIMITED', retryAfterSeconds: 3 },
       state: 'rate_limited',
     })
+  })
+})
+
+describe('POST /api/v1/orders/:orderNumber/payments', () => {
+  it('dispatches balance without invoking the WeChat payment path or returning provider URLs', async () => {
+    const ready = {
+      data: {
+        amountMinor: 12_300,
+        channel: 'balance' as const,
+        currency: 'CNY' as const,
+        orderNumber: 'WM-ORDER-7',
+        status: 'paid' as const,
+      },
+      state: 'ready' as const,
+    }
+    const createBalance = vi.fn(async () => ready)
+    const createWechat = vi.fn()
+    const handler = createPaymentRouteHandlers({
+      createBalance,
+      createWechat,
+      provider,
+      resolveContext: async () => context,
+    }).POST
+    const response = await handler(
+      new Request('http://wanmi.test/api/v1/orders/WM-ORDER-7/payments', {
+        body: JSON.stringify({ channel: 'balance' }),
+        headers: { 'content-type': 'application/json', 'x-request-id': 'trace-balance-route' },
+        method: 'POST',
+      }),
+      routeContext,
+    )
+    expect(response.status).toBe(201)
+    const body = paymentSessionResultSchema.parse(await response.json())
+    expect(body).toEqual(ready)
+    if (body.state !== 'ready') throw new Error('Expected ready balance payment response')
+    expect(body.data).not.toHaveProperty('codeUrl')
+    expect(body.data).not.toHaveProperty('h5Url')
+    expect(createBalance).toHaveBeenCalledWith(context.req, 'WM-ORDER-7', {
+      customer: context.customer,
+      traceId: 'trace-balance-route',
+    })
+    expect(createWechat).not.toHaveBeenCalled()
   })
 })

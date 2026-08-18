@@ -111,6 +111,7 @@ async function createPaidOrder(
       merchantOrderNumber,
       orderNumber: `${prefix}-${suffix}`,
       paidAt: now.toISOString(),
+      paymentChannel: 'native',
       quote: quote.id,
       quoteSnapshot: { expiresAt: new Date(now.getTime() + 240_000).toISOString() },
       realnameTemplate: template.id,

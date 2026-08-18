@@ -22,7 +22,8 @@
     "20260817_000646_d9a_account_closure",
     "20260817_040409_d9b1_wallet_ledger",
     "20260817_065450_d9d1_dns_record_management",
-    "20260817_150002_d9d2_domain_management_sync"
+    "20260817_150002_d9d2_domain_management_sync",
+    "20260818_064923_d9b3_balance_payment_refund"
   ],
   "rollback": {
     "database": "retain",

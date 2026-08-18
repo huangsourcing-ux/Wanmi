@@ -1,18 +1,10 @@
 import { sql } from '@payloadcms/db-postgres'
 import { z } from 'zod'
-import {
-  commitTransaction,
-  initTransaction,
-  killTransaction,
-  type PayloadRequest,
-} from 'payload'
+import { commitTransaction, initTransaction, killTransaction, type PayloadRequest } from 'payload'
 
 import { AppError } from '@/lib/errors'
 import type { ProviderResult } from '@/lib/domain'
-import type {
-  WestDigitalAvailability,
-  WestDigitalWriteProvider,
-} from '@/providers/types'
+import type { WestDigitalAvailability, WestDigitalWriteProvider } from '@/providers/types'
 import { createConfiguredWestDigitalWriteAdapter } from '@/providers/westdigital-write-fixtures'
 import {
   executeWestDigitalWriteOperation,
@@ -22,6 +14,7 @@ import {
 } from '@/services/providers/westdigital-operations'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
 
+import { captureBalancePaymentForFulfillment } from './balance-payments'
 import { transitionOrder } from './order-state'
 import { requestAutomaticRegistrationFailureRefund } from './refunds'
 import {
@@ -66,6 +59,7 @@ type OrderRecord = {
   quoteSnapshot: unknown
   realnameTemplate: number | string | { id: number | string }
   operation?: 'registration' | 'renewal'
+  paymentChannel?: 'balance' | 'h5' | 'native' | null
   status: string
 }
 
@@ -101,12 +95,14 @@ const quoteSnapshotSchema = z.object({
   assetExpiresAt: dateString.optional(),
   availabilityObservedAt: dateString,
   availabilityRequestId: z.string().min(1),
-  calculation: z.object({
-    registrationPriceFen: money,
-    renewalPriceFen: money,
-    upstreamRegistrationPriceFen: money,
-    upstreamRenewalPriceFen: money,
-  }).passthrough(),
+  calculation: z
+    .object({
+      registrationPriceFen: money,
+      renewalPriceFen: money,
+      upstreamRegistrationPriceFen: money,
+      upstreamRenewalPriceFen: money,
+    })
+    .passthrough(),
   createdTraceId: z.string().min(1),
   currency: z.literal('CNY'),
   customerId: z.string().min(1),
@@ -154,7 +150,9 @@ async function database(req: PayloadRequest) {
   const session = transactionId ? req.payload.db.sessions?.[transactionId] : undefined
   const current = session?.db as
     | {
-        execute(statement: ReturnType<typeof sql>): Promise<{ rows?: Array<{ id: number | string }> }>
+        execute(
+          statement: ReturnType<typeof sql>,
+        ): Promise<{ rows?: Array<{ id: number | string }> }>
       }
     | undefined
   if (!current) {
@@ -168,7 +166,9 @@ export async function enqueueCommerceFulfillment(
   input: { orderId: number | string; traceId: string },
 ): Promise<{ idempotentReplay: boolean; jobId?: number | string }> {
   return transaction(req, async () => {
-    const claimed = await (await database(req)).execute(sql`
+    const claimed = await (
+      await database(req)
+    ).execute(sql`
       UPDATE orders
       SET fulfillment_job_queued_at = NOW(), updated_at = NOW()
       WHERE id = ${input.orderId}
@@ -319,7 +319,14 @@ async function preflight(
       orderId: order.id,
       traceId,
     })
-    return { state: 'refund_pending' as const }
+    const refundedOrder = await req.payload.findByID({
+      collection: 'orders',
+      depth: 0,
+      id: order.id,
+      overrideAccess: true,
+      req,
+    })
+    return { state: refundedOrder.status as 'refund_pending' | 'refunded' }
   }
 
   const balance = await provider.queryBalance({ traceId }).catch(() => undefined)
@@ -404,6 +411,7 @@ async function createConfirmedAsset(
       overrideAccess: true,
       req,
     })) as unknown as OrderRecord
+    await captureBalancePaymentForFulfillment(req, order.id)
     if (current.status === 'succeeded') return true
     await transitionOrder(req, order.id, 'succeeded', {
       actorType: 'provider',
@@ -624,6 +632,7 @@ async function commitConfirmedRenewal(
       overrideAccess: true,
       req,
     })) as unknown as OrderRecord
+    await captureBalancePaymentForFulfillment(req, input.order.id)
     if (currentOrder.status !== 'succeeded') {
       await transitionOrder(req, input.order.id, 'succeeded', {
         actorType: 'provider',
@@ -685,7 +694,17 @@ async function runRenewalFulfillment(
       orderId: order.id,
       traceId: input.traceId,
     })
-    return { idempotentReplay: operationData?.idempotentReplay ?? false, status: 'refund_pending' as const }
+    const refundedOrder = await req.payload.findByID({
+      collection: 'orders',
+      depth: 0,
+      id: order.id,
+      overrideAccess: true,
+      req,
+    })
+    return {
+      idempotentReplay: operationData?.idempotentReplay ?? false,
+      status: refundedOrder.status as 'refund_pending' | 'refunded',
+    }
   }
   if (operation.state !== 'ready' || !operationData || operationData.status !== 'succeeded') {
     await markRenewalStatus(req, renewal.id, 'manual_review', operationKey)
@@ -694,7 +713,10 @@ async function runRenewalFulfillment(
       providerRequestId: operationData?.providerRequestId,
       traceId: input.traceId,
     })
-    return { idempotentReplay: operationData?.idempotentReplay ?? false, status: 'manual_review' as const }
+    return {
+      idempotentReplay: operationData?.idempotentReplay ?? false,
+      status: 'manual_review' as const,
+    }
   }
   const confirmed = await queryWestDigitalAsset(
     req,
@@ -797,7 +819,9 @@ export async function runCommerceFulfillment(
       req,
     })) as unknown as TemplateRecord
     if (!parsed.success || !template.providerTemplateId) {
-      await ensureManualReview(req, order, 'registration.resume_evidence_invalid', { traceId: input.traceId })
+      await ensureManualReview(req, order, 'registration.resume_evidence_invalid', {
+        traceId: input.traceId,
+      })
       return { idempotentReplay: true, status: 'manual_review' as const }
     }
     snapshot = parsed.data
@@ -805,24 +829,20 @@ export async function runCommerceFulfillment(
   }
 
   const writeInput: WestDigitalWriteOperationInput = {
-      actor: { type: 'system' },
-      clientPriceFen: snapshot.upstreamCostMinor,
-      domainAscii: order.domainAscii,
-      nameservers: ['ns1.myhostadmin.net', 'ns2.myhostadmin.net'],
-      operation: 'register',
-      orderId: order.id,
-      premium: false,
-      providerTemplateId,
-      targetId: order.id,
-      traceId: input.traceId,
-      years: snapshot.years,
-    }
+    actor: { type: 'system' },
+    clientPriceFen: snapshot.upstreamCostMinor,
+    domainAscii: order.domainAscii,
+    nameservers: ['ns1.myhostadmin.net', 'ns2.myhostadmin.net'],
+    operation: 'register',
+    orderId: order.id,
+    premium: false,
+    providerTemplateId,
+    targetId: order.id,
+    traceId: input.traceId,
+    years: snapshot.years,
+  }
   const writeOperationKey = generateWestDigitalOperationKey(writeInput)
-  const operation = await executeWestDigitalWriteOperation(
-    req,
-    writeInput,
-    dependencies.write,
-  )
+  const operation = await executeWestDigitalWriteOperation(req, writeInput, dependencies.write)
   const operationData = 'data' in operation ? operation.data : undefined
 
   if (operation.state === 'error') {
@@ -835,7 +855,17 @@ export async function runCommerceFulfillment(
       orderId: order.id,
       traceId: input.traceId,
     })
-    return { idempotentReplay: operationData?.idempotentReplay ?? false, status: 'refund_pending' as const }
+    const refundedOrder = await req.payload.findByID({
+      collection: 'orders',
+      depth: 0,
+      id: order.id,
+      overrideAccess: true,
+      req,
+    })
+    return {
+      idempotentReplay: operationData?.idempotentReplay ?? false,
+      status: refundedOrder.status as 'refund_pending' | 'refunded',
+    }
   }
   if (operation.state !== 'ready' || !operationData || operationData.status !== 'succeeded') {
     await ensureManualReview(req, order, 'registration.provider_status_unknown', {
@@ -843,7 +873,10 @@ export async function runCommerceFulfillment(
       providerRequestId: operationData?.providerRequestId,
       traceId: input.traceId,
     })
-    return { idempotentReplay: operationData?.idempotentReplay ?? false, status: 'manual_review' as const }
+    return {
+      idempotentReplay: operationData?.idempotentReplay ?? false,
+      status: 'manual_review' as const,
+    }
   }
 
   const confirmed = await queryWestDigitalAsset(
@@ -863,11 +896,17 @@ export async function runCommerceFulfillment(
     })
     return { idempotentReplay: operationData.idempotentReplay, status: 'manual_review' as const }
   }
-  const assetRecorded = await createConfirmedAsset(req, order, relationId(order.realnameTemplate), confirmed.data, {
-    operationKey: writeOperationKey,
-    providerAssetId: confirmed.data.providerAssetId,
-    providerRequestId: operationData.providerRequestId,
-  })
+  const assetRecorded = await createConfirmedAsset(
+    req,
+    order,
+    relationId(order.realnameTemplate),
+    confirmed.data,
+    {
+      operationKey: writeOperationKey,
+      providerAssetId: confirmed.data.providerAssetId,
+      providerRequestId: operationData.providerRequestId,
+    },
+  )
   if (!assetRecorded) {
     await ensureManualReview(req, order, 'registration.asset_ownership_conflict', {
       operationKey: writeOperationKey,
@@ -899,6 +938,9 @@ function runtimeDependencies(): FulfillmentDependencies {
   }
 }
 
-export async function runConfiguredCommerceFulfillment(req: PayloadRequest, input: FulfillmentInput) {
+export async function runConfiguredCommerceFulfillment(
+  req: PayloadRequest,
+  input: FulfillmentInput,
+) {
   return runCommerceFulfillment(req, input, runtimeDependencies())
 }
