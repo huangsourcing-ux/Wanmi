@@ -480,6 +480,12 @@ export const PaymentNotificationArchives: CollectionConfig = {
   fields: [
     { name: 'notificationId', type: 'text', index: true, required: true, unique: true },
     { name: 'order', type: 'relationship', relationTo: 'orders', index: true },
+    {
+      name: 'walletTopUpOrder',
+      type: 'relationship',
+      relationTo: 'walletTopUpOrders',
+      index: true,
+    },
     { name: 'payloadDigest', type: 'text', access: { read: sensitiveFieldRead }, required: true },
     {
       name: 'merchantOrderNumber',

@@ -1499,13 +1499,54 @@ D9-A-1b 集成测试并行隔离修正（2026-08-15）：归一化失败用例�
 
 #### B1 充值订单
 
-- [ ] 独立于账本的 `walletTopUpOrders`，状态 `created → payment_pending → provider_confirmed →
+- [x] 独立于账本的 `walletTopUpOrders`，状态 `created → payment_pending → provider_confirmed →
 credited`，另有 `refund_pending`、`refunded`、`closed`、`unknown`；
-- [ ] **入账只能由服务端主动查单确认的真实支付产生**（复用 D5-03 路径），通知/回调不作为入账
+- [x] **入账只能由服务端主动查单确认的真实支付产生**（复用 D5-03 路径），通知/回调不作为入账
       依据；
-- [ ] 唯一约束：平台充值订单号、微信交易号、账本幂等键、原路退款单号；
-- [ ] 禁止：用余额给余额充值；同一微信交易号入账两个账户；已原路退回后仍保留余额；已消费余额
+- [x] 唯一约束：平台充值订单号、微信交易号、账本幂等键、原路退款单号；
+- [x] 禁止：用余额给余额充值；同一微信交易号入账两个账户；已原路退回后仍保留余额；已消费余额
       对应的充值被无条件退款。
+
+D9-B-2 证据（2026-08-18，仅 B1 四项）：
+
+- 独立 Collection、八态字段和追加式 Hook 见 `apps/web/src/collections/wallet.ts:157-225`；状态/证据
+  CHECK 及关系 migration 见 `apps/web/migrations/20260818_032334_d9b2_wallet_top_up_orders.ts:13-115`。
+  行为用例：`models the frozen top-up lifecycle independently from wallet entries`、`denies generic mutations
+and preserves top-up orders through hooks`、`rolls back the ledger credit when the credited-state update fails`。
+- 主动查单证据校验、通知/查单一致性、金额复核与同事务入账见
+  `apps/web/src/services/wallet/top-ups.ts:323-456`；通知只在既有 D5-04 验签路径归档后触发主动查单，见
+  `apps/web/src/services/commerce/payments.ts:685-715`。行为用例：`does not credit from a payment notification
+alone when the active query is not paid`、`keeps the current state and balance when the active query state is
+unknown`、`rejects an active-query amount mismatch and creates one scoped manual review`。
+- 四个数据库全局唯一索引见
+  `apps/web/migrations/20260818_032334_d9b2_wallet_top_up_orders.ts:101-107`。行为用例：
+  `enforces the platform top-up order number unique index independently`、`enforces the ledger idempotency key
+unique index independently`、`enforces one original refund number across different top-up orders`、`lets the
+database accept one global WeChat transaction across N different accounts`。
+- 余额资金源拒绝、同一交易号跨账户互斥、已入账余额原路退款扣回及余额已消费拒绝见
+  `apps/web/src/services/wallet/top-ups.ts:460-608`、`:651-746`。行为用例：`rejects using wallet balance as the
+funding source before creating an order`、`removes an unconsumed credited top-up when an original refund is
+confirmed`、`rejects an unconditional original refund after the credited balance was consumed`、`serializes
+credit and original-refund marking to one refunded nonnegative result`。
+- 全部 150 个服务/调用点、SQL、migration 与发布元数据删除/短路变异及唯一行为用例见
+  `docs/operations/d9b2-wallet-top-up-mutation-matrix.md`，结果 150/150；D9-B-2 聚焦 60/60，D5 支付通知与
+  D9-B-1 账本合并回归 114/114。余额支付、完整退款流程、第四 ledger 对账、资金规则、审批工作流和
+  角色调整均未实现或留桩，B2 第六项及 B3～B5 保持未勾选。
+
+D9-B-2 主动查单审核补测（2026-08-18）：
+
+- `apps/web/tests/integration/d9b2-wallet-top-ups.integration.test.ts:360-431` 新增三条独立通知用例：通知
+  均声称支付成功且金额与充值单完全相同，服务端主动查单分别返回 `not_paid`、`unknown` 和失败/超时；
+  每条精确断言 `queryOrder` 调用一次及 merchant/trace 参数、充值单保持 `payment_pending`、目标账户
+  credit 为 0、人工复核为 0，并用 `not_paid`、`status_unknown/unknown`、
+  `status_unknown/unavailable` observation 区分真实阻断原因。
+- `apps/web/scripts/mutate-d9b2-wallet-top-up-decisions.mjs:358-379` 将通知路径的
+  `provider.queryOrder(...)` 整段替换为由通知字段伪造的 paid 结果；第一条新增用例独立失败原文为
+  `RAW_FAILURE AssertionError: expected [] to deeply equal [ { …(2) } ]`。恢复实现后新增用例 3/3、D9-B-2
+  integration 51/51 通过。
+- 通知/查单相关 26 个变异全部由指定行为断言杀死；既有通知金额不一致用例又增加实际查询次数和精确
+  `payment_identifier_mismatch` 人工复核断言，防止由金额 CAS 或 `payment_amount_mismatch` 以错误原因
+  通过。逐用例承重点与反混淆说明见 `docs/operations/d9b2-wallet-top-up-mutation-matrix.md` 第 1.1 节。
 
 #### B2 余额账本与三态余额
 

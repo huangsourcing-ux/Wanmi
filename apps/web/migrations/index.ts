@@ -42,6 +42,7 @@ import * as migration_20260817_040409_d9b1_wallet_ledger from './20260817_040409
 import * as migration_20260817_065450_d9d1_dns_record_management from './20260817_065450_d9d1_dns_record_management'
 import * as migration_20260817_150002_d9d2_domain_management_sync from './20260817_150002_d9d2_domain_management_sync'
 import * as migration_20260818_010559_d9d3_offline_batch_operations from './20260818_010559_d9d3_offline_batch_operations'
+import * as migration_20260818_032334_d9b2_wallet_top_up_orders from './20260818_032334_d9b2_wallet_top_up_orders'
 
 export const migrations = [
   {
@@ -263,5 +264,10 @@ export const migrations = [
     up: migration_20260818_010559_d9d3_offline_batch_operations.up,
     down: migration_20260818_010559_d9d3_offline_batch_operations.down,
     name: '20260818_010559_d9d3_offline_batch_operations',
+  },
+  {
+    up: migration_20260818_032334_d9b2_wallet_top_up_orders.up,
+    down: migration_20260818_032334_d9b2_wallet_top_up_orders.down,
+    name: '20260818_032334_d9b2_wallet_top_up_orders',
   },
 ]

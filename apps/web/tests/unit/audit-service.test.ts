@@ -87,6 +87,11 @@ describe('shared audit event service', () => {
         'redirect.update',
         'system.local_api.read',
         'wallet.ledger_invariant.failed',
+        'wallet.top_up.created',
+        'wallet.top_up.credited',
+        'wallet.top_up.payment_observed',
+        'wallet.top_up.payment_started',
+        'wallet.top_up.refunded',
       ].sort(),
     )
   })
