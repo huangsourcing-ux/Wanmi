@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto'
 
 import { sql } from '@payloadcms/db-postgres'
-import { commitTransaction, initTransaction, killTransaction, type PayloadRequest } from 'payload'
+import {
+  commitTransaction,
+  initTransaction,
+  killTransaction,
+  type PayloadRequest,
+  type Where,
+} from 'payload'
 
 import { isCustomerUser } from '@/access/roles'
 import { AppError, toProblemDetails } from '@/lib/errors'
@@ -10,9 +16,11 @@ import { createConfiguredWestDigitalWriteAdapter } from '@/providers/westdigital
 import {
   domainAssetDetailResultSchema,
   domainAssetListResultSchema,
+  domainAssetListQuerySchema,
   domainAssetViewSchema,
   type DomainAssetDetailResult,
   type DomainAssetListResult,
+  type DomainAssetListQuery,
   type DomainAssetView,
 } from '@/schemas/domains'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
@@ -28,7 +36,11 @@ import {
 type AssetRecord = {
   customer: number | string | { id: number | string }
   domainAscii: string
+  domainLockStatus?: 'locked' | 'unlocked' | 'unknown'
+  domainLockUpdatedAt?: null | string
   expiresAt: string
+  expiryReminderChannels?: null | Array<'in_app' | 'sms'>
+  expiryReminderDays?: null | number[]
   id: number | string
   lastSyncedAt: string
   nameservers?: null | string[]
@@ -36,6 +48,7 @@ type AssetRecord = {
   registeredAt: string
   registrar: string
   status: 'active' | 'expired' | 'pending' | 'unknown'
+  tags?: null | string[]
   syncReviewStatus?: 'matched' | 'none' | 'pending'
   syncVersion?: null | number
   upstreamOwnershipStatus?: 'confirmed' | 'not_owned' | 'unknown'
@@ -61,13 +74,20 @@ function assertCustomer(req: PayloadRequest, customer: CustomerIdentity): void {
 function publicAsset(asset: AssetRecord): DomainAssetView {
   return domainAssetViewSchema.parse({
     domainAscii: asset.domainAscii,
+    domainLockStatus: asset.domainLockStatus ?? 'unknown',
+    domainLockUpdatedAt: asset.domainLockUpdatedAt
+      ? new Date(asset.domainLockUpdatedAt).toISOString()
+      : undefined,
     expiresAt: new Date(asset.expiresAt).toISOString(),
+    expiryReminderChannels: asset.expiryReminderChannels ?? ['in_app', 'sms'],
+    expiryReminderDays: asset.expiryReminderDays ?? [30, 7, 1],
     id: String(asset.id),
     lastSyncedAt: new Date(asset.lastSyncedAt).toISOString(),
     nameservers: asset.nameservers ?? [],
     registeredAt: new Date(asset.registeredAt).toISOString(),
     registrar: asset.registrar,
     status: asset.status,
+    tags: asset.tags ?? [],
   })
 }
 
@@ -129,21 +149,47 @@ export async function findOwnedDomainAsset(
 export async function listCustomerDomainAssets(
   req: PayloadRequest,
   customer: CustomerIdentity,
+  input: DomainAssetListQuery = domainAssetListQuerySchema.parse({}),
 ): Promise<DomainAssetListResult> {
   assertCustomer(req, customer)
+  const filters: Where[] = [{ customer: { equals: customer.id } }]
+  if (input.query) filters.push({ domainAscii: { contains: input.query } })
+  if (input.status) filters.push({ status: { equals: input.status } })
+  if (input.lockStatus) filters.push({ domainLockStatus: { equals: input.lockStatus } })
+  if (input.tag) filters.push({ tags: { contains: input.tag } })
+  if (input.expiresWithinDays !== undefined) {
+    const now = new Date()
+    filters.push(
+      { expiresAt: { greater_than_equal: now.toISOString() } },
+      {
+        expiresAt: {
+          less_than_equal: new Date(
+            now.getTime() + input.expiresWithinDays * 86_400_000,
+          ).toISOString(),
+        },
+      },
+    )
+  }
   const found = await req.payload.find({
     collection: 'domainAssets',
     depth: 0,
-    limit: 100,
+    limit: input.pageSize,
     overrideAccess: false,
+    page: input.page,
     req,
-    sort: 'expiresAt',
+    sort: input.sort,
     user: req.user,
-    where: { customer: { equals: customer.id } },
+    where: { and: filters },
   })
   const items = found.docs.map((document) => publicAsset(document as unknown as AssetRecord))
   return domainAssetListResultSchema.parse({
-    data: { items, total: found.totalDocs },
+    data: {
+      items,
+      page: input.page,
+      pageSize: input.pageSize,
+      total: found.totalDocs,
+      totalPages: found.totalPages,
+    },
     state: items.length ? 'ready' : 'empty',
   })
 }

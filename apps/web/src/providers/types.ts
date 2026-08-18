@@ -382,6 +382,11 @@ export interface WestDigitalDomainManagementProvider extends WestDigitalWritePro
     domainAscii: string
     traceId: string
   }): Promise<ProviderResult<WestDigitalDomainInformation>>
+  setDomainLock(input: {
+    domainAscii: string
+    locked: boolean
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalWriteConfirmation>>
   transferDomainToTemplate(input: {
     domainAscii: string
     providerTemplateId: string

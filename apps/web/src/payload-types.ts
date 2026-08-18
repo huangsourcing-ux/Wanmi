@@ -610,6 +610,11 @@ export interface DomainAsset {
   expiresAt: string;
   status: 'active' | 'expired' | 'pending' | 'unknown';
   nameservers: string[];
+  tags?: string[] | null;
+  expiryReminderChannels?: ('in_app' | 'sms')[] | null;
+  expiryReminderDays?: number[] | null;
+  domainLockStatus?: ('locked' | 'unlocked' | 'unknown') | null;
+  domainLockUpdatedAt?: string | null;
   lastSyncedAt: string;
   upstreamOwnershipStatus: 'confirmed' | 'not_owned' | 'unknown';
   syncReviewStatus: 'none' | 'matched' | 'pending';
@@ -841,6 +846,7 @@ export interface ProviderOperation {
     | 'dns_record_delete'
     | 'dns_record_batch_delete'
     | 'dns_record_pause'
+    | 'domain_lock'
     | 'domain_management_password'
     | 'domain_contact_update'
     | 'domain_template_transfer';
@@ -1803,9 +1809,12 @@ export interface DomainManagementEvent {
   customer: number | Customer;
   asset: number | DomainAsset;
   operation:
+    | 'domain_lock_change'
+    | 'expiry_reminder_preferences_update'
     | 'management_password_read'
     | 'management_password_modify'
     | 'contact_information_update'
+    | 'tags_update'
     | 'template_transfer'
     | 'certificate_download';
   event: 'requested' | 'confirmed' | 'failed' | 'pending_query';
@@ -1813,6 +1822,25 @@ export interface DomainManagementEvent {
   realnameTemplate?: (number | null) | RealnameTemplate;
   providerOperation?: (number | null) | ProviderOperation;
   operationKey?: string | null;
+  previousValue?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  requestedValue?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  requestedLocked?: boolean | null;
   errorCode?: string | null;
   occurredAt: string;
   traceId?: string | null;
@@ -3750,6 +3778,11 @@ export interface DomainAssetsSelect<T extends boolean = true> {
   expiresAt?: T;
   status?: T;
   nameservers?: T;
+  tags?: T;
+  expiryReminderChannels?: T;
+  expiryReminderDays?: T;
+  domainLockStatus?: T;
+  domainLockUpdatedAt?: T;
   lastSyncedAt?: T;
   upstreamOwnershipStatus?: T;
   syncReviewStatus?: T;
@@ -3866,6 +3899,9 @@ export interface DomainManagementEventsSelect<T extends boolean = true> {
   realnameTemplate?: T;
   providerOperation?: T;
   operationKey?: T;
+  previousValue?: T;
+  requestedValue?: T;
+  requestedLocked?: T;
   errorCode?: T;
   occurredAt?: T;
   traceId?: T;

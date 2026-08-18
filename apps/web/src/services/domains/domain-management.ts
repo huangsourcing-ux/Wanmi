@@ -18,6 +18,7 @@ import {
   type DomainManagementPasswordRevealRequest,
   type DomainTemplateTransferRequest,
 } from '@/schemas/domain-management'
+import { domainLockResultSchema, type DomainLockRequest } from '@/schemas/domains'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
 import { assertCustomerAccountCapability } from '@/services/auth/account-state'
 import {
@@ -47,7 +48,8 @@ type CustomerIdentity = {
   status?: null | string
 }
 
-type AssetRecord = Awaited<ReturnType<typeof findOwnedDomainAsset>> & {
+export type DomainManagedAssetRecord = Awaited<ReturnType<typeof findOwnedDomainAsset>> & {
+  domainLockStatus?: 'locked' | 'unlocked' | 'unknown'
   domainManagementLeaseExpiresAt?: null | string
   domainManagementLeaseKey?: null | string
   realnameTemplate: number | string | { id: number | string }
@@ -56,14 +58,19 @@ type AssetRecord = Awaited<ReturnType<typeof findOwnedDomainAsset>> & {
 
 const DOMAIN_MANAGEMENT_LEASE_SECONDS = 60
 
-type ManagementOperation =
+type AssetRecord = DomainManagedAssetRecord
+
+export type ManagementOperation =
   | 'certificate_download'
   | 'contact_information_update'
+  | 'domain_lock_change'
+  | 'expiry_reminder_preferences_update'
   | 'management_password_modify'
   | 'management_password_read'
+  | 'tags_update'
   | 'template_transfer'
 
-type ManagementEvent = 'confirmed' | 'failed' | 'pending_query' | 'requested'
+export type ManagementEvent = 'confirmed' | 'failed' | 'pending_query' | 'requested'
 
 type EventRecord = { id: number | string }
 
@@ -190,6 +197,36 @@ async function withManagementLease<T>(
   }
 }
 
+async function recordConfirmedDomainLock(
+  req: PayloadRequest,
+  asset: AssetRecord,
+  leaseKey: string,
+  locked: boolean,
+): Promise<void> {
+  await transaction(req, async () => {
+    const status = locked ? 'locked' : 'unlocked'
+    const updated = await (
+      await database(req)
+    ).execute(sql`
+      UPDATE domain_assets
+      SET domain_lock_status = ${status},
+          domain_lock_updated_at = NOW(),
+          sync_version = sync_version + 1,
+          updated_at = NOW()
+      WHERE id = ${asset.id}
+        AND domain_management_lease_key = ${leaseKey}
+      RETURNING id
+    `)
+    if (updated.rows?.[0]?.id === undefined) {
+      throw new AppError(
+        'DOMAIN_LOCK_LOCAL_STATE_CONFLICT',
+        '上游已确认域名锁变更，但本地状态写入发生冲突',
+        503,
+      )
+    }
+  })
+}
+
 async function findEvent(req: PayloadRequest, eventKey: string): Promise<EventRecord | undefined> {
   const found = await req.payload.find({
     collection: 'domainManagementEvents',
@@ -202,7 +239,7 @@ async function findEvent(req: PayloadRequest, eventKey: string): Promise<EventRe
   return found.docs[0] as unknown as EventRecord | undefined
 }
 
-async function appendManagementEvent(
+export async function appendManagementEvent(
   req: PayloadRequest,
   input: {
     asset: AssetRecord
@@ -213,7 +250,10 @@ async function appendManagementEvent(
     eventRoot: string
     operation: ManagementOperation
     operationKey?: string
+    previousValue?: unknown
     providerOperationId?: string
+    requestedLocked?: boolean
+    requestedValue?: unknown
     templateId?: number | string
     traceId: string
   },
@@ -235,10 +275,13 @@ async function appendManagementEvent(
           occurredAt: new Date().toISOString(),
           operation: input.operation,
           operationKey: input.operationKey,
+          previousValue: input.previousValue as never,
           providerOperation: input.providerOperationId
             ? (Number(input.providerOperationId) as never)
             : undefined,
           realnameTemplate: input.templateId as never,
+          requestedLocked: input.requestedLocked,
+          requestedValue: input.requestedValue as never,
           traceId: input.traceId,
         },
         overrideAccess: true,
@@ -252,6 +295,7 @@ async function appendManagementEvent(
           errorCode: input.errorCode,
           event: input.event,
           operation: input.operation,
+          requestedLocked: input.requestedLocked,
         },
         targetId: event.id,
       })
@@ -500,6 +544,104 @@ export async function modifyDomainManagementPassword(
       options.traceId,
     )
     return result
+  })
+}
+
+export async function setCustomerDomainLockStatus(
+  req: PayloadRequest,
+  assetId: number | string,
+  input: DomainLockRequest,
+  options: {
+    capabilities?: DomainCapabilityDeclaration
+    customer: CustomerIdentity
+    provider: WestDigitalDomainManagementProvider
+    traceId: string
+  },
+) {
+  assertDomainCapability(
+    'domain_lock_status',
+    options.capabilities ?? WESTDIGITAL_DOMAIN_CAPABILITIES,
+  )
+  await assertCustomerAccountCapability(req, options.customer.id, 'domain_write')
+  const asset = (await findOwnedDomainAsset(req, assetId, options.customer)) as AssetRecord
+  const requestedStatus = input.locked ? 'locked' : 'unlocked'
+  if ((asset.domainLockStatus ?? 'unknown') === requestedStatus) {
+    throw new AppError('DOMAIN_LOCK_STATUS_UNCHANGED', '域名锁已经处于请求状态', 409)
+  }
+  let identities: Awaited<ReturnType<typeof activeCustomerIdentities>> = []
+  if (!input.locked) {
+    await authorizeStepUpGrant(req, {
+      customerId: options.customer.id,
+      deviceId: input.deviceId,
+      headers: req.headers,
+      purpose: 'domain_lock_change',
+      stepUpToken: input.stepUpToken,
+    })
+    identities = await activeCustomerIdentities(req, customerNumber(options.customer))
+    if (!identities.length) {
+      throw new AppError(
+        'DOMAIN_LOCK_NOTIFICATION_CHANNEL_REQUIRED',
+        '关闭域名锁前必须至少保留一个可通知的绑定渠道',
+        409,
+      )
+    }
+  }
+  const writeInput: WestDigitalWriteOperationInput = {
+    actor: { id: options.customer.id, type: 'customer' },
+    businessKey: `${input.idempotencyKey}:${requestedStatus}`,
+    domainAscii: asset.domainAscii,
+    locked: input.locked,
+    operation: 'domain_lock',
+    targetId: asset.id,
+    traceId: options.traceId,
+  }
+  const operationKey = generateWestDigitalOperationKey(writeInput)
+  return withManagementLease(req, asset, operationKey, async () => {
+    await appendManagementEvent(req, {
+      asset,
+      customerId: options.customer.id,
+      event: 'requested',
+      eventRoot: operationKey,
+      operation: 'domain_lock_change',
+      operationKey,
+      previousValue: { status: asset.domainLockStatus ?? 'unknown' },
+      requestedLocked: input.locked,
+      requestedValue: { status: requestedStatus },
+      traceId: options.traceId,
+    })
+    const operationResult = publicMutationResult(
+      await executeWestDigitalWriteOperation(req, writeInput, options.provider),
+    )
+    if ('data' in operationResult && operationResult.data.status === 'succeeded') {
+      await recordConfirmedDomainLock(req, asset, operationKey, input.locked)
+    }
+    await appendManagementEvent(req, {
+      asset,
+      customerId: options.customer.id,
+      errorCode: 'problem' in operationResult ? operationResult.problem.code : undefined,
+      event: resultEvent(operationResult),
+      eventRoot: operationKey,
+      operation: 'domain_lock_change',
+      operationKey,
+      previousValue: { status: asset.domainLockStatus ?? 'unknown' },
+      providerOperationId: 'data' in operationResult ? operationResult.data.operationId : undefined,
+      requestedLocked: input.locked,
+      requestedValue: { status: requestedStatus },
+      traceId: options.traceId,
+    })
+    if (!input.locked && 'data' in operationResult && operationResult.data.status === 'succeeded') {
+      await notifyFormerCustomerIdentities(
+        req,
+        customerNumber(options.customer),
+        identities,
+        options.traceId,
+      )
+    }
+    if (!('data' in operationResult)) return domainLockResultSchema.parse(operationResult)
+    return domainLockResultSchema.parse({
+      ...operationResult,
+      data: { ...operationResult.data, locked: input.locked },
+    })
   })
 }
 

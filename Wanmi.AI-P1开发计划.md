@@ -1675,7 +1675,44 @@ top-up payment service call` 杀死订单/充值 schema 串用变异；恢复源
 
 ### 16.8 D9-C 域名用户中心
 
-- [ ] 域名列表分组或标签、搜索与筛选、批量到期提醒偏好；域名锁定状态设置；
+- [x] 域名列表分组或标签、搜索与筛选、批量到期提醒偏好；域名锁定状态设置；
+
+D9-C-1 证据（2026-08-18，仅本节第 1 项）：
+
+- 资产列表继续复用 D6 `domainAssets` 与 `listCustomerDomainAssets`
+  （`apps/web/src/services/domains/domain-assets.ts:149`），显式传 `user`、`overrideAccess: false`、owner
+  `where`、page/limit/sort 并返回 `total`/`totalPages`；列表 API
+  `apps/web/src/app/api/v1/domains/route.ts:30` 支持标签、域名、状态、锁状态、到期区间与显式分页。
+  用例 `keeps list, search, filters and mixed-owner batch preferences isolated to the authenticated owner`、
+  `uses the access-controlled Local API source and explicit owner predicates for list and batch reads` 及
+  `returns and updates every one of more than ten explicitly selected owner assets` 分别位于
+  `apps/web/tests/integration/d9c1-domain-center.integration.test.ts:310`、`:400`、`:481`，覆盖跨用户、
+  数据源替换变异与 12 条资产不漏项。
+- 标签与批量偏好唯一业务入口为 `updateCustomerDomainTags`
+  （`apps/web/src/services/domains/domain-preferences.ts:63`）和
+  `updateCustomerDomainExpiryReminderPreferences`（`:103`）；批量读取固定 `pagination: false`、用户态 access
+  control 与完整 owner 集合校验（`:114`），每个资产在同一事务写事实和追加事件。审核决定“最后一档提醒
+  不可关闭”落实于偏好校验（`:55`），D6 既有发送链路在
+  `apps/web/src/services/domains/expiry-reminders.ts:81` 重新注入最后一档并仅使用配置内档位，没有新建提醒
+  任务或短信通道。行为用例 `cannot disable the final reminder tier and the existing reminder chain honors
+valid channel preferences` 位于 `apps/web/tests/integration/d9c1-domain-center.integration.test.ts:1119`。
+- 域名锁入口 `setCustomerDomainLockStatus`
+  （`apps/web/src/services/domains/domain-management.ts:550`）复用 A3、A5 purpose-bound step-up、active 绑定
+  渠道通知、审计、management lease 和 D6-01 `executeWestDigitalWriteOperation`；关闭锁要求 step-up 并在
+  上游明确成功后逐 provider 记录通知 outcome，开启锁只要求当前会话且不通知。上游 adapter
+  `apps/web/src/providers/westdigital-write.ts:387` 严格使用本地 v2 文档的 `/v2/domain/`、`act=setlock`、
+  `domain`、`val=0|1`、`status=update`；本地确认事实以
+  `apps/web/src/services/domains/domain-management.ts:211` 的单条
+  `UPDATE ... WHERE id AND owned lease ... RETURNING id` 写入。关闭/开启/冷静期/归属回归用例分别见
+  `apps/web/tests/integration/d9c1-domain-center.integration.test.ts:740`、`:886`、`:1092`、`:1344`。
+- 命名 migration `apps/web/migrations/20260818_072324_d9c1_domain_center.ts:5` 覆盖 enum、偏好、锁事实、
+  追加事件证据与 DOWN/UP；安全/正确性按调用点逐项删除或短路，服务/路由/provider 98/98、SQL/CAS
+  6/6、migration 34/34，合计 138/138 均由指定 `AssertionError` 行为断言独立杀死，完整 ID、唯一用例
+  和数据源替换变异见 `docs/operations/d9c1-domain-center-mutation-matrix.md:1`。
+- 全程使用本地 fixture，所有 `ALLOW_REAL_WESTDIGITAL*` 与真实 provider 写闸门保持 false；未部署、未
+  访问或修改生产、未发送真实域名/短信请求。未实现或留桩 `renewalMandate`、自动续费执行规则、续费
+  提醒或余额不足处理，以下四项保持未勾选；未修改钱包文件。
+
 - [ ] **C3 自动续费授权 `renewalMandate`**：记录域名、授权范围、**用户可接受的最大扣款金额**（必填，
       不得为空或无限大）、授权时间、规则版本、撤销时间。**自动扣款只能依据有效 mandate**；
 - [ ] 自动续费执行规则须显式定义：首次尝试时间、失败重试时间、余额不足提醒次数、**多域名同时

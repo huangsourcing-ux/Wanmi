@@ -26,6 +26,7 @@ export type WestDigitalWriteTransportOperation =
   | 'domain_certificate_get'
   | 'domain_contact_update'
   | 'domain_information_query'
+  | 'domain_lock'
   | 'domain_management_password_get'
   | 'domain_management_password_modify'
   | 'domain_template_transfer'
@@ -378,6 +379,22 @@ export class WestDigitalWriteAdapter implements WestDigitalManagedProvider {
       input,
       operation: 'nameserver',
       parse: (envelope) => ({ providerClientId: envelope.clientid!, state: 'accepted' as const }),
+      path: '/v2/domain/',
+      write: true,
+    })
+  }
+
+  async setDomainLock(input: { domainAscii: string; locked: boolean; traceId: string }) {
+    return this.request({
+      body: {
+        act: 'setlock',
+        domain: asciiDomain(input.domainAscii),
+        status: 'update',
+        val: input.locked ? '1' : '0',
+      },
+      input,
+      operation: 'domain_lock',
+      parse: (envelope) => ({ providerClientId: envelope.clientid!, state: 'succeeded' as const }),
       path: '/v2/domain/',
       write: true,
     })
