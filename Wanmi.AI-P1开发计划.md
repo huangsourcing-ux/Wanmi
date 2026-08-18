@@ -1637,9 +1637,9 @@ D9-D-1 证据（2026-08-17，仅本节第 1 项）：
 - [x] 域名管理密码获取与修改：**step-up + 绑定渠道确认**，明文不进日志、审计元数据与前端缓存；
 - [x] 修改域名信息；过户到本人已通过的实名模板（「模板过户」与「实时过户」差异在联调中确认并
       记录选型理由）；域名证书下载；
-- [ ] 对接域名批量任务与**离线任务 API（V2）**：返回任务标识后查询结果，**不假设同步返回**；
+- [x] 对接域名批量任务与**离线任务 API（V2）**：返回任务标识后查询结果，**不假设同步返回**；
       复用 D6-01 `providerOperations` 的唯一操作键、原子认领、状态不明只查询与有限重试语义；
-- [ ] 批量操作逐项幂等、部分失败可见（六状态 partial）、**批量删除与 NS 修改前提供 dry-run 与
+- [x] 批量操作逐项幂等、部分失败可见（六状态 partial）、**批量删除与 NS 修改前提供 dry-run 与
       影响预览**；
 - [x] 上游资产状态同步任务；本地与上游不一致时的处理；**域名已不属于当前上游账户时自动阻止操作**；
 - [x] **能力声明**：注册商不支持某项能力时返回明确的 capability 错误而非通用失败。P1 只有
@@ -1692,6 +1692,37 @@ D9-D-2 证据（2026-08-17，仅本节第 2、3、6、7 项）：
   独立杀死；逐调用点清单、唯一用例与 A4 风险表
   逐项自查见 `docs/operations/d9d2-domain-management-mutation-matrix.md`。真实西部数码、DNS 与域名管理
   写闸门全部保持 false，没有部署或生产写入。第 4～5 项离线/批量任务保持未勾选且未实现或留桩。
+
+D9-D-3 证据（2026-08-18，仅本节第 4、5 项，至此 D9-D 完成）：
+
+- 离线任务契约：`apps/web/src/providers/westdigital-write.ts:561-622` 与
+  `apps/web/src/providers/westdigital-offline-http.ts:18-30` 严格按根目录只读文档及负责人提供的在线文档
+  实现 `add-dns-record-task`、`task-list`、`task-record-list`，使用文档的 `dodelreall`、`task_sku`、
+  `task_state`、`record_state` 与逐行字段。任务标识只落待查询事实；D6-01
+  `apps/web/src/services/providers/westdigital-operations.ts:679` 负责逐条唯一键、同事务认领、归属阻断及
+  仅查询重放。在线文档没有说明多 NS 编码，因此未猜测 NS 离线字段；NS 批量复用既有
+  `nameserverChange` Job，并仍只经 D6-01 写入口。
+- 绑定预览与逐项结果：DNS 批量删除的预览/执行/查询位于
+  `apps/web/src/services/domains/dns-records.ts:1106`、`:1184`、`:1303`；NS 批量预览/执行/查询及 worker
+  位于 `apps/web/src/services/domains/nameserver-changes.ts:419`、`:511`、`:620`、`:889`。两者复用同一
+  HMAC 预览载体，绑定 customer、批次、完整目标集合及版本事实；DNS 要求 `dns_bulk_delete` step-up +
+  预览，NS 要求 `nameserver_change` step-up + 二次确认并额外要求预览。条目键不含批次展示键，结果逐条
+  返回成功、失败、待查询及原因，整体按六状态返回 `partial`；追加式 `domainBatchOperationEvents` 即使
+  系统 override 也拒绝 update/delete。
+- 指定安全用例：DNS 新增/删除/修改漂移分别见
+  `apps/web/tests/integration/d9d1-dns-records.integration.test.ts:1716`、`:1779`、`:1658`；token 绑定见
+  `:1917`、`:1974`；提交不等于成功见 `:1509`；条目重放与 provider 次数见 `:2067`；partial 原因见
+  `:2189`；D9-D-2 归属阻断见 `:2348`；同批次和同条目 N 路并发见 `:2409`、`:2475`。NS 三类漂移、
+  跨用户/域名 token、同批次并发、归属阻断分别见
+  `apps/web/tests/integration/d9d3-nameserver-batch.integration.test.ts:318`、`:343`、`:368`、`:396`、`:541`、
+  `:753`；缺预览/step-up/二次确认分别见 `:249`、`:268`、`:291`。
+- 判定点与门禁：按调用点逐项删除/短路并实跑，业务/安全 61/61、migration/release 44/44，合计
+  105/105 均由指定 `AssertionError` 行为断言独立杀死；逐项对照、计数限定与 A4 自查见
+  `docs/operations/d9d3-offline-batch-mutation-matrix.md`。最终状态在全新本地 fixture 数据库完整运行
+  `make check` 退出 0：14 项 release policy、全部 migration 与 D9-D-1/2/3 UP/DOWN/UP、lint、
+  TypeScript strict、108 文件 772/772 单元、38 文件 504/504 PostgreSQL/MinIO 集成、宿主生产构建、
+  linux/amd64 同镜像、Node audit、工作树与 209 commits 历史 Gitleaks、Trivy 全部通过。两个专用测试库
+  经精确名称与零连接验证后删除；真实 provider 闸门全部为 false，没有部署、生产访问或生产写入。
 
 **本模块明确不做**：DNSSEC（配置错误会导致解析整体失效）、注册 DNS / glue records（仅自建 DNS
 场景）、DDNS 与常用邮箱解析、域名转入/转出。
@@ -1825,7 +1856,7 @@ opening-credit-debit-ending mismatch and appends audit evidence` 人为把期末
 - [ ] **自动续费只能依据有效 `renewalMandate` 扣款**，超出用户设定最大金额时拒绝并通知；
 - [ ] 多个域名争抢不足余额时结果具有确定性；余额不足只提醒不扣款；
 - [ ] NS、MX、解锁、管理密码操作未完成 step-up 时 fail-closed；
-- [ ] 批量与离线任务不假设同步返回，任务标识可查询，部分失败可见，批量删除有 dry-run 预览；
+- [x] 批量与离线任务不假设同步返回，任务标识可查询，部分失败可见，批量删除有 dry-run 预览；
 - [ ] 注册商不支持某能力时返回明确 capability 错误而非通用失败；
 - [ ] 域名已不属于当前上游账户时自动阻止操作。
 

@@ -299,6 +299,270 @@ describe('WestDigital write adapter fixtures', () => {
     expect(transport.writeCount).toBe(5)
   })
 
+  it('maps documented V2 offline DNS deletion submission and task queries without treating acceptance as success', async () => {
+    const transport = new FixtureWestDigitalWriteTransport((input) => {
+      const clientid = `fixture-${input.requestId}`
+      if (input.operation === 'offline_dns_record_delete_submit') {
+        return {
+          body: { clientid, code: 200, data: { task_sku: 'TASK-DNS-DELETE-1' }, msg: '成功' },
+          status: 200,
+        }
+      }
+      if (input.operation === 'offline_task_list') {
+        return {
+          body: {
+            clientid,
+            code: 200,
+            data: {
+              data: [
+                {
+                  task_act: 'dodelreall',
+                  task_sku: 'TASK-DNS-DELETE-1',
+                  task_state: 1,
+                  task_type: 'dns_record',
+                },
+              ],
+            },
+            msg: '成功',
+          },
+          status: 200,
+        }
+      }
+      return {
+        body: {
+          clientid,
+          code: 200,
+          data: {
+            data: [
+              {
+                act: 'dodelreall',
+                record_ident: 'wanmi-test.com',
+                record_result: '队列中',
+                record_state: 6,
+              },
+            ],
+          },
+          msg: '成功',
+        },
+        status: 200,
+      }
+    })
+    const provider = new WestDigitalWriteAdapter({ transport })
+    const submitted = await provider.submitOfflineDnsRecordDelete({
+      domainAscii: 'wanmi-test.com',
+      record: {
+        host: 'www',
+        lineCode: 'LTEL',
+        priority: 10,
+        ttl: 600,
+        type: 'A',
+        value: '192.0.2.10',
+      },
+      traceId: 'trace-offline-submit',
+    })
+    expect(submitted).toMatchObject({
+      data: { providerTaskKey: 'TASK-DNS-DELETE-1', state: 'accepted' },
+      ok: true,
+    })
+    await expect(
+      provider.queryOfflineDnsRecordDelete({
+        domainAscii: 'wanmi-test.com',
+        providerTaskKey: 'TASK-DNS-DELETE-1',
+        traceId: 'trace-offline-query',
+      }),
+    ).resolves.toMatchObject({
+      data: { providerTaskKey: 'TASK-DNS-DELETE-1', recordState: 6, state: 'pending' },
+      ok: true,
+    })
+    expect(
+      transport.requests.map(({ body, operation, path }) => ({ body, operation, path })),
+    ).toEqual([
+      {
+        body: { act: 'dodelreall', data: 'wanmi-test.com|www|A|192.0.2.10|电信' },
+        operation: 'offline_dns_record_delete_submit',
+        path: '/v2/offline-task/add-dns-record-task',
+      },
+      {
+        body: { page: '1', pageSize: '10', task_sku: 'TASK-DNS-DELETE-1' },
+        operation: 'offline_task_list',
+        path: '/v2/offline-task/task-list',
+      },
+      {
+        body: {
+          ident: 'wanmi-test.com',
+          page: '1',
+          pageSize: '10',
+          task_sku: 'TASK-DNS-DELETE-1',
+        },
+        operation: 'offline_task_record_list',
+        path: '/v2/offline-task/task-record-list',
+      },
+    ])
+  })
+
+  it('keeps a successful task-creation envelope without task_sku status-unknown', async () => {
+    const transport = new FixtureWestDigitalWriteTransport((input) => ({
+      body: { clientid: `fixture-${input.requestId}`, code: 200, data: true, msg: '成功' },
+      status: 200,
+    }))
+    const provider = new WestDigitalWriteAdapter({ transport })
+    await expect(
+      provider.submitOfflineDnsRecordDelete({
+        domainAscii: 'wanmi-test.com',
+        record: {
+          host: 'www',
+          lineCode: '',
+          priority: 10,
+          ttl: 600,
+          type: 'A',
+          value: '192.0.2.20',
+        },
+        traceId: 'trace-offline-missing-task-key',
+      }),
+    ).resolves.toMatchObject({
+      error: { code: 'WESTDIGITAL_WRITE_STATUS_UNKNOWN', statusKnown: false },
+      ok: false,
+    })
+    expect(transport.writeCount).toBe(1)
+  })
+
+  it.each([
+    { expected: 'succeeded', recordState: 3, taskState: 1 },
+    { expected: 'failed', recordState: 4, taskState: 1 },
+    { expected: 'failed', recordState: 6, taskState: 3 },
+    { expected: 'failed', recordState: 5, taskState: 1 },
+    { expected: 'pending', recordState: 0, taskState: 0 },
+    { expected: 'pending', recordState: 1, taskState: 1 },
+    { expected: 'pending', recordState: 2, taskState: 2 },
+    { expected: 'pending', recordState: 6, taskState: 1 },
+  ] as const)(
+    'maps documented offline task_state=$taskState and record_state=$recordState to $expected',
+    async ({ expected, recordState, taskState }) => {
+      const transport = new FixtureWestDigitalWriteTransport((input) => {
+        const clientid = `fixture-${input.requestId}`
+        if (input.operation === 'offline_task_list') {
+          return {
+            body: {
+              clientid,
+              code: 200,
+              data: {
+                data: [
+                  {
+                    task_act: 'dodelreall',
+                    task_sku: 'TASK-STATE',
+                    task_state: taskState,
+                    task_type: 'dns_record',
+                  },
+                ],
+              },
+            },
+            status: 200,
+          }
+        }
+        return {
+          body: {
+            clientid,
+            code: 200,
+            data: {
+              data: [
+                {
+                  act: 'dodelreall',
+                  record_ident: 'wanmi-test.com',
+                  record_result: 'fixture-state',
+                  record_state: recordState,
+                },
+              ],
+            },
+          },
+          status: 200,
+        }
+      })
+      const provider = new WestDigitalWriteAdapter({ transport })
+      await expect(
+        provider.queryOfflineDnsRecordDelete({
+          domainAscii: 'wanmi-test.com',
+          providerTaskKey: 'TASK-STATE',
+          traceId: `trace-offline-state-${taskState}-${recordState}`,
+        }),
+      ).resolves.toMatchObject({ data: { state: expected }, ok: true })
+    },
+  )
+
+  it.each([
+    {
+      mutation: 'task-act',
+      recordIdent: 'wanmi-test.com',
+      taskAct: 'setnsmodi',
+      taskType: 'dns_record',
+    },
+    {
+      mutation: 'task-type',
+      recordIdent: 'wanmi-test.com',
+      taskAct: 'dodelreall',
+      taskType: 'domain',
+    },
+    {
+      mutation: 'record-domain',
+      recordIdent: 'other.example',
+      taskAct: 'dodelreall',
+      taskType: 'dns_record',
+    },
+  ])(
+    'rejects mismatched offline task identity: $mutation',
+    async ({ recordIdent, taskAct, taskType }) => {
+      const transport = new FixtureWestDigitalWriteTransport((input) => {
+        const clientid = `fixture-${input.requestId}`
+        if (input.operation === 'offline_task_list') {
+          return {
+            body: {
+              clientid,
+              code: 200,
+              data: {
+                data: [
+                  {
+                    task_act: taskAct,
+                    task_sku: 'TASK-MISMATCH',
+                    task_state: 1,
+                    task_type: taskType,
+                  },
+                ],
+              },
+            },
+            status: 200,
+          }
+        }
+        return {
+          body: {
+            clientid,
+            code: 200,
+            data: {
+              data: [
+                {
+                  act: 'dodelreall',
+                  record_ident: recordIdent,
+                  record_result: 'fixture',
+                  record_state: 3,
+                },
+              ],
+            },
+          },
+          status: 200,
+        }
+      })
+      const provider = new WestDigitalWriteAdapter({ transport })
+      await expect(
+        provider.queryOfflineDnsRecordDelete({
+          domainAscii: 'wanmi-test.com',
+          providerTaskKey: 'TASK-MISMATCH',
+          traceId: 'trace-offline-mismatch',
+        }),
+      ).resolves.toMatchObject({
+        error: { code: 'WESTDIGITAL_INVALID_RESPONSE', statusKnown: true },
+        ok: false,
+      })
+    },
+  )
+
   it('never constructs a live runtime transport', () => {
     vi.stubEnv('ALLOW_REAL_PROVIDER_WRITES', 'false')
     vi.stubEnv('WESTDIGITAL_MODE', 'fixture')

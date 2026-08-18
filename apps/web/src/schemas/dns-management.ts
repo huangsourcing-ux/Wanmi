@@ -122,6 +122,12 @@ export const dnsRecordMutationViewSchema = z.strictObject({
   operationId: z.string().min(1),
   operationKey: z.string().min(1),
   providerRecordId: providerRecordIdSchema.optional(),
+  providerTaskKey: z.string().min(1).max(128).optional(),
+  reasonCode: z
+    .string()
+    .regex(/^[A-Z][A-Z0-9_]*$/u)
+    .optional(),
+  reasonMessage: z.string().min(1).max(1_024).optional(),
   status: z.enum(['failed', 'pending_query', 'succeeded']),
 })
 
@@ -137,6 +143,7 @@ export const dnsRecordBatchPreviewResultSchema = createResultSchema(
 
 export const dnsRecordBatchDeleteResultSchema = createResultSchema(
   z.strictObject({
+    batchKey: z.string().regex(/^[a-f0-9]{64}$/u),
     items: z.array(dnsRecordMutationViewSchema).min(1).max(20),
   }),
 )

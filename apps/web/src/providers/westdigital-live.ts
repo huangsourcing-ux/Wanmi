@@ -4,6 +4,7 @@ import {
   executeWestDigitalHttpRequest,
   WestDigitalHttpRequestError,
 } from '@/providers/westdigital-http'
+import { executeWestDigitalOfflineHttpRequest } from '@/providers/westdigital-offline-http'
 import type {
   WestDigitalBalanceTransport,
   WestDigitalBalanceTransportRequest,
@@ -34,9 +35,10 @@ type LiveWestDigitalTransportOptions = {
   fixedOriginFetchImpl?: typeof fetch
 }
 
-function livePath(
-  path: LiveRequest['path'],
-): '/v2/audit/' | '/v2/domain/' | '/v2/domain/query/' | '/v2/info/' {
+type StandardWestDigitalPath = '/v2/audit/' | '/v2/domain/' | '/v2/domain/query/' | '/v2/info/'
+type StandardWestDigitalInputPath = StandardWestDigitalPath | 'v2/domain/query/' | 'v2/info/'
+
+function livePath(path: StandardWestDigitalInputPath): StandardWestDigitalPath {
   if (path === 'v2/domain/query/') return '/v2/domain/query/'
   if (path === 'v2/info/') return '/v2/info/'
   return path
@@ -55,10 +57,31 @@ export class LiveWestDigitalTransport
       throw new Error('West Digital live transport credentials are missing')
     }
     try {
+      if (request.path.startsWith('/v2/offline-task/')) {
+        return await executeWestDigitalOfflineHttpRequest(
+          {
+            body: request.body,
+            path: request.path as
+              | '/v2/offline-task/add-dns-record-task'
+              | '/v2/offline-task/task-list'
+              | '/v2/offline-task/task-record-list',
+            requestId: request.requestId,
+            signal: request.signal,
+          },
+          {
+            apiPassword: env.WESTDIGITAL_API_PASSWORD,
+            ...(this.options.fixedOriginFetchImpl
+              ? { fetchImpl: this.options.fixedOriginFetchImpl }
+              : {}),
+            maxResponseBytes: env.WESTDIGITAL_READ_RESPONSE_MAX_BYTES,
+            username: env.WESTDIGITAL_USERNAME,
+          },
+        )
+      }
       return await executeWestDigitalHttpRequest(
         {
           body: request.body,
-          path: livePath(request.path),
+          path: livePath(request.path as StandardWestDigitalInputPath),
           requestId: request.requestId,
           signal: request.signal,
         },
@@ -81,6 +104,8 @@ export class LiveWestDigitalTransport
         request.operation === 'domain_certificate_get' ||
         request.operation === 'domain_information_query' ||
         request.operation === 'domain_management_password_get' ||
+        request.operation === 'offline_task_list' ||
+        request.operation === 'offline_task_record_list' ||
         request.operation === 'realname_query'
       ) {
         throw error
