@@ -81,6 +81,12 @@ export type WestDigitalWriteOperationInput =
       record: WestDigitalDnsRecordInput
     })
   | (SharedInput & {
+      domainAscii: string
+      operation: 'dns_record_batch_delete'
+      providerRecordId: string
+      record: WestDigitalDnsRecordInput
+    })
+  | (SharedInput & {
       businessKey: string
       domainAscii: string
       managementPassword: string
@@ -126,6 +132,7 @@ export type WestDigitalOperationView = {
   operationKey: string
   providerRequestId?: string
   providerRecordId?: string
+  providerTaskKey?: string
   status: 'failed' | 'succeeded' | 'unknown'
 }
 
@@ -136,6 +143,7 @@ type WestDigitalDnsWriteOperation = Extract<
 
 type WestDigitalBusinessKeyOperation =
   | WestDigitalDnsWriteOperation
+  | 'dns_record_batch_delete'
   | 'domain_contact_update'
   | 'domain_management_password'
   | 'domain_template_transfer'
@@ -403,6 +411,8 @@ async function submit(
   if (input.operation === 'domain_template_transfer')
     return requireDomainManagementProvider(provider).transferDomainToTemplate(input)
   const dnsProvider = requireDnsProvider(provider)
+  if (input.operation === 'dns_record_batch_delete')
+    return dnsProvider.submitOfflineDnsRecordDelete(input)
   if (input.operation === 'dns_record_add') return dnsProvider.addDnsRecord(input)
   if (input.operation === 'dns_record_modify') return dnsProvider.modifyDnsRecord(input)
   if (input.operation === 'dns_record_delete') return dnsProvider.deleteDnsRecord(input)
@@ -419,6 +429,7 @@ function safeProviderResult(result: Awaited<ReturnType<typeof submit>>): Record<
     ...('providerRecordId' in result.data
       ? { providerRecordId: result.data.providerRecordId }
       : {}),
+    ...('providerTaskKey' in result.data ? { providerTaskKey: result.data.providerTaskKey } : {}),
     providerState: result.data.state,
   }
 }
@@ -437,10 +448,25 @@ function providerRecordId(operation: OperationRecord): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
-function dnsOperation(
-  input: WestDigitalWriteOperationInput,
-): input is Extract<WestDigitalWriteOperationInput, { operation: `dns_record_${string}` }> {
-  return input.operation.startsWith('dns_record_')
+function providerTaskKey(operation: OperationRecord): string | undefined {
+  const result = operation.safeResult
+  if (!result || typeof result !== 'object') return undefined
+  const value = (result as { providerTaskKey?: unknown }).providerTaskKey
+  return typeof value === 'string' ? value : undefined
+}
+
+function dnsOperation(input: WestDigitalWriteOperationInput): input is Extract<
+  WestDigitalWriteOperationInput,
+  {
+    operation: 'dns_record_add' | 'dns_record_delete' | 'dns_record_modify' | 'dns_record_pause'
+  }
+> {
+  return (
+    input.operation === 'dns_record_add' ||
+    input.operation === 'dns_record_modify' ||
+    input.operation === 'dns_record_delete' ||
+    input.operation === 'dns_record_pause'
+  )
 }
 
 async function queryStatus(
@@ -456,6 +482,15 @@ async function queryStatus(
   if (input.operation === 'domain_management_password') {
     return requireDomainManagementProvider(provider).getDomainManagementPassword({
       domainAscii: input.domainAscii,
+      traceId: input.traceId,
+    })
+  }
+  if (input.operation === 'dns_record_batch_delete') {
+    const taskKey = providerTaskKey(operation)
+    if (!taskKey) return undefined
+    return requireDnsProvider(provider).queryOfflineDnsRecordDelete({
+      domainAscii: input.domainAscii,
+      providerTaskKey: taskKey,
       traceId: input.traceId,
     })
   }
@@ -516,6 +551,9 @@ function confirmed(
     )
   }
   if (input.operation === 'domain_contact_update') return false
+  if (input.operation === 'dns_record_batch_delete') {
+    return 'state' in result.data && result.data.state === 'succeeded'
+  }
   if (dnsOperation(input)) {
     if (!('items' in result.data)) return false
     const recordId = input.operation === 'dns_record_add' ? undefined : input.providerRecordId
@@ -541,6 +579,16 @@ function confirmed(
   return true
 }
 
+function explicitlyFailed(
+  input: WestDigitalWriteOperationInput,
+  result: Awaited<ReturnType<typeof queryStatus>>,
+): boolean {
+  return (
+    input.operation === 'dns_record_batch_delete' &&
+    Boolean(result?.ok && 'state' in result.data && result.data.state === 'failed')
+  )
+}
+
 function view(operation: OperationRecord, idempotentReplay: boolean): WestDigitalOperationView {
   return {
     attemptCount: operation.attemptCount ?? 0,
@@ -549,6 +597,7 @@ function view(operation: OperationRecord, idempotentReplay: boolean): WestDigita
     operationKey: operation.operationKey,
     providerRequestId: operation.providerRequestId ?? undefined,
     providerRecordId: providerRecordId(operation),
+    providerTaskKey: providerTaskKey(operation),
     status:
       operation.status === 'succeeded'
         ? 'succeeded'
@@ -659,6 +708,23 @@ export async function executeWestDigitalWriteOperation(
           status: 'succeeded',
         },
         'status_confirmed',
+        queried?.requestId,
+      )
+    } else if (explicitlyFailed(input, queried)) {
+      operation = await recordOutcome(
+        req,
+        input,
+        operation,
+        {
+          lastCheckedAt: new Date().toISOString(),
+          safeResult: {
+            ...(operation.safeResult as Record<string, unknown>),
+            confirmed: false,
+            providerState: queried?.ok && 'state' in queried.data ? queried.data.state : 'failed',
+          },
+          status: 'failed',
+        },
+        'failed',
         queried?.requestId,
       )
     } else {
@@ -787,6 +853,20 @@ export async function executeWestDigitalWriteOperation(
           status: 'succeeded',
         },
         'status_confirmed',
+        submitted.requestId,
+      )
+      break
+    }
+    if (input.operation === 'dns_record_batch_delete') {
+      operation = await recordOutcome(
+        req,
+        input,
+        operation,
+        {
+          safeResult: { ...safeResult, confirmed: false },
+          status: 'unknown',
+        },
+        'status_unknown',
         submitted.requestId,
       )
       break

@@ -5,12 +5,17 @@ import { commitTransaction, initTransaction, killTransaction, type PayloadReques
 
 import { hasRole, isActiveAdminUser } from '@/access/roles'
 import { normalizeDomain } from '@/lib/domain-name'
-import { AppError } from '@/lib/errors'
+import { getEnv } from '@/lib/env'
+import { AppError, toProblemDetails } from '@/lib/errors'
 import type { WestDigitalWriteProvider } from '@/providers/types'
 import { createConfiguredWestDigitalWriteAdapter } from '@/providers/westdigital-write-fixtures'
 import {
   nameserverChangeResultSchema,
   nameserverChangeViewSchema,
+  nameserverBatchPreviewResultSchema,
+  nameserverBatchResultSchema,
+  type NameserverBatchPreviewRequest,
+  type NameserverBatchRequest,
   type NameserverChangeRequest,
   type NameserverChangeView,
 } from '@/schemas/domains'
@@ -24,6 +29,7 @@ import {
 } from '@/services/providers/westdigital-operations'
 
 import { findOwnedDomainAsset } from './domain-assets'
+import { decodeBoundChangePreview, signBoundChangePreview } from './change-preview'
 
 type CustomerIdentity = {
   collection: 'customers'
@@ -37,6 +43,7 @@ type ChangeRecord = {
   completedAt?: null | string
   confirmedNameservers?: null | string[]
   customer: number | string | { id: number | string }
+  failureCode?: null | string
   id: number | string
   previousNameservers?: null | string[]
   providerOperation?: null | number | string | { id: number | string }
@@ -44,6 +51,34 @@ type ChangeRecord = {
   requestedById?: null | string
   requestedNameservers: string[]
   status: 'failed' | 'manual_review' | 'pending' | 'succeeded'
+}
+
+type BatchAsset = Awaited<ReturnType<typeof findOwnedDomainAsset>> & {
+  lastSyncedAt?: null | string
+  status?: null | string
+  syncVersion?: null | number
+}
+
+type BatchEventRecord = {
+  asset: number | string | { id: number | string }
+  batchKey: string
+  customer: number | string | { id: number | string }
+  event: 'confirmed' | 'failed' | 'pending_query' | 'requested'
+  id: number | string
+  itemKey: string
+  nameserverChange: number | string | { id: number | string }
+  reasonCode?: null | string
+}
+
+type NameserverBatchPreviewPayload = {
+  assetDigest: string
+  assetIds: string[]
+  batchKey: string
+  customerId: string
+  expiresAt: string
+  kind: 'nameserver_batch_change'
+  nameservers: string[]
+  version: 1
 }
 
 export type NameserverChangeJobInput = {
@@ -101,6 +136,129 @@ function normalizeNameservers(values: string[]): string[] {
 
 function changeKey(assetId: number | string, nameservers: string[]): string {
   return `nameserver:${assetId}:${createHash('sha256').update(nameservers.join('\n')).digest('hex')}`
+}
+
+function uniqueAssetIds(assetIds: number[]): number[] {
+  const unique = [...new Set(assetIds)]
+  if (unique.length !== assetIds.length) {
+    throw new AppError('NAMESERVER_BATCH_DUPLICATE_ASSET', '批量 Name Server 资产不得重复', 400)
+  }
+  return unique.sort((left, right) => left - right)
+}
+
+async function loadBatchAssets(
+  req: PayloadRequest,
+  assetIds: number[],
+  customer: CustomerIdentity,
+): Promise<BatchAsset[]> {
+  return Promise.all(
+    assetIds.map((assetId) => findOwnedDomainAsset(req, assetId, customer) as Promise<BatchAsset>),
+  )
+}
+
+function batchAssetDigest(assets: BatchAsset[], nameservers: string[]): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        assets: [...assets]
+          .sort((left, right) => Number(left.id) - Number(right.id))
+          .map((asset) => ({
+            domainAscii: asset.domainAscii,
+            id: String(asset.id),
+            lastSyncedAt: asset.lastSyncedAt,
+            nameservers: asset.nameservers,
+            status: asset.status,
+            syncVersion: asset.syncVersion,
+          })),
+        nameservers,
+      }),
+    )
+    .digest('hex')
+}
+
+function verifyNameserverBatchPreview(
+  token: string,
+  input: {
+    assetIds: number[]
+    batchKey: string
+    customerId: number | string
+    nameservers: string[]
+  },
+): NameserverBatchPreviewPayload {
+  const parsed = decodeBoundChangePreview(token, {
+    code: 'NAMESERVER_BATCH_PREVIEW_INVALID',
+    message: '批量 Name Server 预览无效或已被修改',
+  }) as Partial<NameserverBatchPreviewPayload>
+  if (
+    parsed.version !== 1 ||
+    parsed.kind !== 'nameserver_batch_change' ||
+    parsed.customerId !== String(input.customerId) ||
+    parsed.batchKey !== input.batchKey ||
+    !parsed.expiresAt ||
+    new Date(parsed.expiresAt).getTime() <= Date.now() ||
+    JSON.stringify(parsed.assetIds) !== JSON.stringify(input.assetIds.map(String)) ||
+    JSON.stringify(parsed.nameservers) !== JSON.stringify(input.nameservers)
+  ) {
+    throw new AppError('NAMESERVER_BATCH_PREVIEW_INVALID', '批量 Name Server 预览无效或已过期', 409)
+  }
+  return parsed as NameserverBatchPreviewPayload
+}
+
+async function findBatchEvent(
+  req: PayloadRequest,
+  eventKey: string,
+): Promise<BatchEventRecord | undefined> {
+  const found = await req.payload.find({
+    collection: 'domainBatchOperationEvents',
+    depth: 0,
+    limit: 1,
+    overrideAccess: true,
+    req,
+    where: { eventKey: { equals: eventKey } },
+  })
+  return found.docs[0] as unknown as BatchEventRecord | undefined
+}
+
+async function appendBatchEvent(
+  req: PayloadRequest,
+  input: {
+    assetId: number | string
+    batchKey: string
+    changeId: number | string
+    customerId: number | string
+    event: BatchEventRecord['event']
+    itemKey: string
+    reasonCode?: string
+    traceId: string
+  },
+): Promise<BatchEventRecord> {
+  const eventKey = `${input.batchKey}:${input.itemKey}:${input.event}`
+  const existing = await findBatchEvent(req, eventKey)
+  if (existing) return existing
+  try {
+    return (await req.payload.create({
+      collection: 'domainBatchOperationEvents',
+      data: {
+        asset: input.assetId as never,
+        batchKey: input.batchKey,
+        customer: input.customerId as never,
+        event: input.event,
+        eventKey,
+        itemKey: input.itemKey,
+        nameserverChange: input.changeId as never,
+        occurredAt: new Date().toISOString(),
+        operation: 'nameserver_change',
+        reasonCode: input.reasonCode,
+        traceId: input.traceId,
+      },
+      overrideAccess: true,
+      req,
+    })) as unknown as BatchEventRecord
+  } catch (error) {
+    const raced = await findBatchEvent(req, eventKey)
+    if (raced) return raced
+    throw error
+  }
 }
 
 function view(change: ChangeRecord): NameserverChangeView {
@@ -256,6 +414,264 @@ export async function requestCustomerNameserverChange(
       state: 'ready',
     })
   })
+}
+
+export async function previewCustomerNameserverBatchChange(
+  req: PayloadRequest,
+  input: NameserverBatchPreviewRequest,
+  options: { customer: CustomerIdentity; traceId: string },
+) {
+  await assertCustomerAccountCapability(req, options.customer.id, 'domain_write')
+  const assetIds = uniqueAssetIds(input.assetIds)
+  const nameservers = normalizeNameservers(input.nameservers)
+  const assets = await loadBatchAssets(req, assetIds, options.customer)
+  const expiresAt = new Date(
+    Date.now() + getEnv().DNS_RECORD_PREVIEW_TTL_SECONDS * 1_000,
+  ).toISOString()
+  const previewToken = signBoundChangePreview({
+    assetDigest: batchAssetDigest(assets, nameservers),
+    assetIds: assetIds.map(String),
+    batchKey: input.batchKey,
+    customerId: String(options.customer.id),
+    expiresAt,
+    kind: 'nameserver_batch_change',
+    nameservers,
+    version: 1,
+  } satisfies NameserverBatchPreviewPayload)
+  return nameserverBatchPreviewResultSchema.parse({
+    data: {
+      batchKey: input.batchKey,
+      expiresAt,
+      items: assets.map((asset) => ({
+        assetId: String(asset.id),
+        currentNameservers: asset.nameservers,
+        domainAscii: asset.domainAscii,
+        requestedNameservers: nameservers,
+      })),
+      previewToken,
+    },
+    meta: { dataSource: 'local', traceId: options.traceId },
+    state: 'ready',
+  })
+}
+
+function nameserverBatchItem(asset: BatchAsset, change: ChangeRecord) {
+  return {
+    assetId: String(asset.id),
+    changeId: String(change.id),
+    domainAscii: asset.domainAscii,
+    itemKey: change.changeKey ?? changeKey(asset.id, change.requestedNameservers),
+    reasonCode: change.failureCode ?? undefined,
+    status:
+      change.status === 'succeeded'
+        ? ('succeeded' as const)
+        : change.status === 'failed'
+          ? ('failed' as const)
+          : ('pending_query' as const),
+  }
+}
+
+function nameserverBatchResult(
+  batchKey: string,
+  items: Array<
+    | ReturnType<typeof nameserverBatchItem>
+    | {
+        assetId: string
+        domainAscii: string
+        itemKey: string
+        reasonCode: string
+        status: 'failed'
+      }
+  >,
+  traceId: string,
+) {
+  const data = { batchKey, items }
+  if (items.every((item) => item.status === 'succeeded')) {
+    return nameserverBatchResultSchema.parse({
+      data,
+      meta: { dataSource: 'local', traceId },
+      state: 'ready',
+    })
+  }
+  return nameserverBatchResultSchema.parse({
+    data,
+    meta: { dataSource: 'local', traceId },
+    problem: toProblemDetails(
+      new AppError(
+        'NAMESERVER_BATCH_PARTIAL',
+        '批量 Name Server 操作包含失败或待查询条目，逐条状态已返回',
+        503,
+      ),
+      traceId,
+    ),
+    state: 'partial',
+  })
+}
+
+export async function requestCustomerNameserverBatchChange(
+  req: PayloadRequest,
+  input: NameserverBatchRequest,
+  options: { customer: CustomerIdentity; traceId: string },
+) {
+  await assertCustomerAccountCapability(req, options.customer.id, 'domain_write')
+  if (!input.previewToken) {
+    throw new AppError('NAMESERVER_BATCH_PREVIEW_REQUIRED', '批量 Name Server 需要变更预览', 400)
+  }
+  if (input.confirmed !== true) {
+    throw new AppError('NAMESERVER_CONFIRMATION_REQUIRED', 'Name Server 变更需要二次确认', 400)
+  }
+  if (!input.deviceId || !input.stepUpToken) {
+    throw new AppError('STEP_UP_GRANT_REQUIRED', '批量 Name Server 需要 step-up 授权', 403)
+  }
+  await authorizeStepUpGrant(req, {
+    customerId: options.customer.id,
+    deviceId: input.deviceId,
+    headers: req.headers,
+    purpose: 'nameserver_change',
+    stepUpToken: input.stepUpToken,
+  })
+  const assetIds = uniqueAssetIds(input.assetIds)
+  const nameservers = normalizeNameservers(input.nameservers)
+  const preview = verifyNameserverBatchPreview(input.previewToken, {
+    assetIds,
+    batchKey: input.batchKey,
+    customerId: options.customer.id,
+    nameservers,
+  })
+  const assets = await loadBatchAssets(req, assetIds, options.customer)
+  if (batchAssetDigest(assets, nameservers) !== preview.assetDigest) {
+    throw new AppError(
+      'NAMESERVER_BATCH_PREVIEW_STALE',
+      'Name Server 目标资产已变化，请重新预览',
+      409,
+    )
+  }
+  const items = []
+  for (const [index, asset] of assets.entries()) {
+    const itemKey = changeKey(asset.id, nameservers)
+    let change: ChangeRecord | undefined
+    try {
+      change = await prepareChange(req, {
+        asset,
+        customer: options.customer,
+        nameservers,
+        traceId: `${options.traceId}-item-${index + 1}`,
+      })
+      await appendBatchEvent(req, {
+        assetId: asset.id,
+        batchKey: input.batchKey,
+        changeId: change.id,
+        customerId: options.customer.id,
+        event: 'requested',
+        itemKey,
+        traceId: `${options.traceId}-item-${index + 1}`,
+      })
+      await enqueueChange(req, change, `${options.traceId}-item-${index + 1}`)
+      const current = await loadChange(req, change.id)
+      const item = nameserverBatchItem(asset, current)
+      await appendBatchEvent(req, {
+        assetId: asset.id,
+        batchKey: input.batchKey,
+        changeId: change.id,
+        customerId: options.customer.id,
+        event:
+          item.status === 'succeeded'
+            ? 'confirmed'
+            : item.status === 'failed'
+              ? 'failed'
+              : 'pending_query',
+        itemKey,
+        reasonCode: item.reasonCode,
+        traceId: `${options.traceId}-item-${index + 1}`,
+      })
+      items.push(item)
+    } catch (error) {
+      const problem = toProblemDetails(error, `${options.traceId}-item-${index + 1}`)
+      if (change) {
+        const failed = await completeFailure(req, change, asset.id, {
+          actorId: String(options.customer.id),
+          failureCode: problem.code,
+          manualReview: false,
+          traceId: `${options.traceId}-item-${index + 1}`,
+        })
+        await appendBatchEvent(req, {
+          assetId: asset.id,
+          batchKey: input.batchKey,
+          changeId: failed.id,
+          customerId: options.customer.id,
+          event: 'failed',
+          itemKey,
+          reasonCode: problem.code,
+          traceId: `${options.traceId}-item-${index + 1}`,
+        })
+      }
+      items.push({
+        assetId: String(asset.id),
+        domainAscii: asset.domainAscii,
+        itemKey,
+        reasonCode: problem.code,
+        status: 'failed' as const,
+      })
+    }
+  }
+  return nameserverBatchResult(input.batchKey, items, options.traceId)
+}
+
+export async function queryCustomerNameserverBatchChange(
+  req: PayloadRequest,
+  batchKey: string,
+  options: { customer: CustomerIdentity; traceId: string },
+) {
+  await assertCustomerAccountCapability(req, options.customer.id, 'domain_write')
+  const found = await req.payload.find({
+    collection: 'domainBatchOperationEvents',
+    depth: 0,
+    limit: 20,
+    overrideAccess: false,
+    req,
+    sort: 'asset',
+    user: options.customer as never,
+    where: {
+      and: [
+        { batchKey: { equals: batchKey } },
+        { customer: { equals: options.customer.id } },
+        { event: { equals: 'requested' } },
+        { operation: { equals: 'nameserver_change' } },
+      ],
+    },
+  })
+  const events = found.docs as unknown as BatchEventRecord[]
+  if (events.length < 2) {
+    throw new AppError('NAMESERVER_BATCH_NOT_FOUND', '未找到可查询的批量 Name Server 任务', 404)
+  }
+  const items = []
+  for (const [index, event] of events.entries()) {
+    const asset = (await findOwnedDomainAsset(
+      req,
+      relationId(event.asset),
+      options.customer,
+    )) as BatchAsset
+    const change = await loadChange(req, relationId(event.nameserverChange))
+    const item = nameserverBatchItem(asset, change)
+    const itemKey = change.changeKey ?? changeKey(asset.id, change.requestedNameservers)
+    await appendBatchEvent(req, {
+      assetId: asset.id,
+      batchKey,
+      changeId: change.id,
+      customerId: options.customer.id,
+      event:
+        item.status === 'succeeded'
+          ? 'confirmed'
+          : item.status === 'failed'
+            ? 'failed'
+            : 'pending_query',
+      itemKey,
+      reasonCode: item.reasonCode,
+      traceId: `${options.traceId}-query-${index + 1}`,
+    })
+    items.push(item)
+  }
+  return nameserverBatchResult(batchKey, items, options.traceId)
 }
 
 export async function enqueueNameserverReviewQuery(
@@ -533,7 +949,26 @@ export async function runNameserverChange(
     targetId: asset.id,
     traceId: input.traceId,
   }
-  const operation = await executeWestDigitalWriteOperation(req, writeInput, provider)
+  let operation
+  try {
+    operation = await executeWestDigitalWriteOperation(req, writeInput, provider)
+  } catch (error) {
+    if (
+      !(error instanceof AppError) ||
+      !['DOMAIN_UPSTREAM_ASSET_NOT_OWNED', 'DOMAIN_UPSTREAM_OWNERSHIP_UNCONFIRMED'].includes(
+        error.code,
+      )
+    ) {
+      throw error
+    }
+    change = await completeFailure(req, change, asset.id, {
+      actorId,
+      failureCode: error.code,
+      manualReview: error.code === 'DOMAIN_UPSTREAM_OWNERSHIP_UNCONFIRMED',
+      traceId: input.traceId,
+    })
+    return view(change)
+  }
   const operationData = 'data' in operation ? operation.data : undefined
   if (operation.state === 'error') {
     change = await completeFailure(req, change, asset.id, {

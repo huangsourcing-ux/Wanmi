@@ -55,6 +55,7 @@ export const ProviderOperations: CollectionConfig = {
         'dns_record_add',
         'dns_record_modify',
         'dns_record_delete',
+        'dns_record_batch_delete',
         'dns_record_pause',
         'domain_management_password',
         'domain_contact_update',

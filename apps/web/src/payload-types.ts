@@ -123,6 +123,7 @@ export interface Config {
     dnsRecordChanges: DnsRecordChange;
     domainManagementEvents: DomainManagementEvent;
     domainAssetSyncEvents: DomainAssetSyncEvent;
+    domainBatchOperationEvents: DomainBatchOperationEvent;
     manualReviews: ManualReview;
     reconciliations: Reconciliation;
     auditLogs: AuditLog;
@@ -209,6 +210,7 @@ export interface Config {
     dnsRecordChanges: DnsRecordChangesSelect<false> | DnsRecordChangesSelect<true>;
     domainManagementEvents: DomainManagementEventsSelect<false> | DomainManagementEventsSelect<true>;
     domainAssetSyncEvents: DomainAssetSyncEventsSelect<false> | DomainAssetSyncEventsSelect<true>;
+    domainBatchOperationEvents: DomainBatchOperationEventsSelect<false> | DomainBatchOperationEventsSelect<true>;
     manualReviews: ManualReviewsSelect<false> | ManualReviewsSelect<true>;
     reconciliations: ReconciliationsSelect<false> | ReconciliationsSelect<true>;
     auditLogs: AuditLogsSelect<false> | AuditLogsSelect<true>;
@@ -789,6 +791,7 @@ export interface ProviderOperation {
     | 'dns_record_add'
     | 'dns_record_modify'
     | 'dns_record_delete'
+    | 'dns_record_batch_delete'
     | 'dns_record_pause'
     | 'domain_management_password'
     | 'domain_contact_update'
@@ -1819,6 +1822,26 @@ export interface DomainAssetSyncEvent {
     | null;
   providerErrorCode?: string | null;
   observedAt: string;
+  traceId?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "domainBatchOperationEvents".
+ */
+export interface DomainBatchOperationEvent {
+  id: number;
+  eventKey: string;
+  batchKey: string;
+  itemKey: string;
+  customer: number | Customer;
+  asset: number | DomainAsset;
+  nameserverChange: number | NameserverChange;
+  operation: 'nameserver_change';
+  event: 'requested' | 'pending_query' | 'confirmed' | 'failed';
+  reasonCode?: string | null;
+  occurredAt: string;
   traceId?: string | null;
   updatedAt: string;
   createdAt: string;
@@ -3802,6 +3825,25 @@ export interface DomainAssetSyncEventsSelect<T extends boolean = true> {
   differences?: T;
   providerErrorCode?: T;
   observedAt?: T;
+  traceId?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "domainBatchOperationEvents_select".
+ */
+export interface DomainBatchOperationEventsSelect<T extends boolean = true> {
+  eventKey?: T;
+  batchKey?: T;
+  itemKey?: T;
+  customer?: T;
+  asset?: T;
+  nameserverChange?: T;
+  operation?: T;
+  event?: T;
+  reasonCode?: T;
+  occurredAt?: T;
   traceId?: T;
   updatedAt?: T;
   createdAt?: T;

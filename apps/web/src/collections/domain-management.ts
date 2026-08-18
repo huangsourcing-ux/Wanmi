@@ -152,3 +152,66 @@ export const DomainAssetSyncEvents: CollectionConfig = {
     { name: 'traceId', type: 'text', access: { read: sensitiveFieldRead }, index: true },
   ],
 }
+
+export const DomainBatchOperationEvents: CollectionConfig = {
+  slug: 'domainBatchOperationEvents',
+  access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
+  admin: {
+    defaultColumns: ['operation', 'event', 'batchKey', 'occurredAt'],
+    group: ADMIN_GROUPS.fulfillment,
+    hidden: systemAdminHidden,
+  },
+  defaultSort: '-occurredAt',
+  hooks: appendOnly('DOMAIN_BATCH_EVENT_APPEND_ONLY', '域名批量操作记录只允许追加'),
+  indexes: [{ fields: ['batchKey', 'occurredAt'] }, { fields: ['customer', 'occurredAt'] }],
+  lockDocuments: false,
+  fields: [
+    {
+      name: 'eventKey',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
+      required: true,
+      unique: true,
+    },
+    { name: 'batchKey', type: 'text', index: true, required: true },
+    {
+      name: 'itemKey',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
+      required: true,
+    },
+    {
+      name: 'customer',
+      type: 'relationship',
+      relationTo: 'customers',
+      index: true,
+      required: true,
+    },
+    {
+      name: 'asset',
+      type: 'relationship',
+      relationTo: 'domainAssets',
+      index: true,
+      required: true,
+    },
+    {
+      name: 'nameserverChange',
+      type: 'relationship',
+      relationTo: 'nameserverChanges',
+      index: true,
+      required: true,
+    },
+    { name: 'operation', type: 'select', options: ['nameserver_change'], required: true },
+    {
+      name: 'event',
+      type: 'select',
+      options: ['requested', 'pending_query', 'confirmed', 'failed'],
+      required: true,
+    },
+    { name: 'reasonCode', type: 'text', access: { read: sensitiveFieldRead }, index: true },
+    { name: 'occurredAt', type: 'date', index: true, required: true },
+    { name: 'traceId', type: 'text', access: { read: sensitiveFieldRead }, index: true },
+  ],
+}

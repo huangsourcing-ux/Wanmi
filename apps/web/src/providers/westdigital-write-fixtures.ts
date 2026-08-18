@@ -49,6 +49,7 @@ function isWriteOperation(operation: WestDigitalWriteTransportRequest['operation
     'dns_record_delete',
     'dns_record_modify',
     'dns_record_pause',
+    'offline_dns_record_delete_submit',
     'domain_contact_update',
     'domain_management_password_modify',
     'domain_template_transfer',
@@ -89,6 +90,7 @@ function createDefaultFixture(): WestDigitalWriteFixtureHandler {
   const records = new Map<string, Record<string, string>>()
   const managementPasswords = new Map<string, string>()
   const templateIds = new Map<string, string>()
+  const offlineTasks = new Map<string, { domainAscii: string; taskSku: string }>()
   let nextRecordId = 900_001
   return (input): WestDigitalWriteTransportResponse => {
     const clientid = `fixture-${input.requestId}`
@@ -225,6 +227,70 @@ function createDefaultFixture(): WestDigitalWriteFixtureHandler {
             total: items.length,
           },
           result: 200,
+        },
+        status: 200,
+      }
+    }
+    if (input.operation === 'offline_dns_record_delete_submit') {
+      const taskSku = `TASK-${input.requestId}`
+      offlineTasks.set(taskSku, {
+        domainAscii: input.body.data!.split('|', 1)[0]!,
+        taskSku,
+      })
+      return {
+        body: { clientid, code: 200, data: { task_sku: taskSku }, msg: '成功' },
+        status: 200,
+      }
+    }
+    if (input.operation === 'offline_task_list') {
+      const task = offlineTasks.get(input.body.task_sku!)
+      return {
+        body: {
+          clientid,
+          code: 200,
+          data: {
+            data: task
+              ? [
+                  {
+                    task_act: 'dodelreall',
+                    task_sku: task.taskSku,
+                    task_state: 1,
+                    task_type: 'dns_record',
+                  },
+                ]
+              : [],
+            page: 1,
+            pageSize: 10,
+            totalCount: task ? 1 : 0,
+          },
+          msg: '成功',
+        },
+        status: 200,
+      }
+    }
+    if (input.operation === 'offline_task_record_list') {
+      const task = offlineTasks.get(input.body.task_sku!)
+      return {
+        body: {
+          clientid,
+          code: 200,
+          data: {
+            data: task
+              ? [
+                  {
+                    act: 'dodelreall',
+                    record_ident: task.domainAscii,
+                    record_result: '队列中',
+                    record_state: 6,
+                  },
+                ]
+              : [],
+            page: 1,
+            pageSize: 10,
+            stat: task ? [{ num: '1', record_state: '6' }] : [],
+            totalCount: task ? 1 : 0,
+          },
+          msg: '成功',
         },
         status: 200,
       }
