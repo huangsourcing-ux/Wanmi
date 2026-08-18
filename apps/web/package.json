@@ -28,7 +28,7 @@
     "start:e2e": "cross-env HOSTNAME=127.0.0.1 PORT=3100 NODE_OPTIONS=--no-deprecation next start",
     "test": "vitest run --config vitest.config.mts tests/unit",
     "test:e2e": "playwright test --config playwright.config.ts",
-    "test:integration": "vitest run --config vitest.config.mts tests/integration",
+    "test:integration": "vitest run --config vitest.config.mts tests/integration --exclude tests/integration/d9b1-wallet-ledger.integration.test.ts && vitest run --config vitest.config.mts tests/integration/d9b1-wallet-ledger.integration.test.ts",
     "typecheck": "tsc --noEmit",
     "verify-generated": "node scripts/verify-generated.mjs",
     "verify:cloud:oss": "tsx scripts/verify-real-oss.ts",

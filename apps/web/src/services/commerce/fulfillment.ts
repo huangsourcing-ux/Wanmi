@@ -13,6 +13,10 @@ import {
   type WestDigitalWriteOperationInput,
 } from '@/services/providers/westdigital-operations'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
+import {
+  recordAutomaticRenewalOrderSkip,
+  revalidateAutomaticRenewalOrder,
+} from '@/services/domains/automatic-renewals'
 
 import { captureBalancePaymentForFulfillment } from './balance-payments'
 import { transitionOrder } from './order-state'
@@ -50,11 +54,15 @@ export type FulfillmentDependencies = {
 
 type OrderRecord = {
   amountMinor: number
+  automaticRenewalAttemptKey?: null | string
+  automaticRenewalMandate?: null | number | string | { id: number | string }
+  automaticRenewalRulesVersion?: null | string
   currency: 'CNY'
   customer: number | string | { id: number | string }
   domainAsset?: null | number | string | { id: number | string }
   domainAscii: string
   id: number | string
+  orderNumber: string
   quote: number | string | { id: number | string }
   quoteSnapshot: unknown
   realnameTemplate: number | string | { id: number | string }
@@ -656,18 +664,63 @@ async function runRenewalFulfillment(
   input: FulfillmentInput,
   dependencies: FulfillmentDependencies,
 ) {
+  const abandonAutomaticRenewal = async (error: unknown) => {
+    await recordAutomaticRenewalOrderSkip(req, order, error, `${input.traceId}:automatic-mandate`)
+    await requestAutomaticRegistrationFailureRefund(req, {
+      evidence: {
+        mandateId: String(relationId(order.automaticRenewalMandate!)),
+        reasonCode:
+          error instanceof AppError ? error.code : 'AUTOMATIC_RENEWAL_REVALIDATION_FAILED',
+      },
+      note: '自动续费任务执行前授权或域名状态已失效，未提交上游并释放全部余额冻结。',
+      orderId: order.id,
+      traceId: input.traceId,
+    })
+    const refundedOrder = await req.payload.findByID({
+      collection: 'orders',
+      depth: 0,
+      id: order.id,
+      overrideAccess: true,
+      req,
+    })
+    return { idempotentReplay: false, status: refundedOrder.status as 'refunded' }
+  }
+  if (order.status === 'paid' && order.automaticRenewalMandate) {
+    try {
+      await transaction(req, () =>
+        revalidateAutomaticRenewalOrder(req, order, {
+          traceId: `${input.traceId}:automatic-mandate:initial`,
+          writeProvider: dependencies.write,
+        }),
+      )
+    } catch (error) {
+      return abandonAutomaticRenewal(error)
+    }
+  }
   const checked = await renewalPreflight(req, order, dependencies.preflight, input.traceId)
   if (checked.state !== 'ready') return { idempotentReplay: false, status: checked.state }
   if (order.status === 'paid') {
-    await transitionOrder(req, order.id, 'fulfilling', {
-      actorType: 'system',
-      evidence: {
-        assetOwnership: true,
-        balanceChecked: true,
-        frozenRenewalQuote: true,
-      },
-      reasonCode: 'renewal.preflight_passed',
-    })
+    try {
+      await transaction(req, async () => {
+        await revalidateAutomaticRenewalOrder(req, order, {
+          traceId: `${input.traceId}:automatic-mandate`,
+          writeProvider: dependencies.write,
+        })
+        await transitionOrder(req, order.id, 'fulfilling', {
+          actorType: 'system',
+          evidence: {
+            assetOwnership: true,
+            automaticRenewalMandateRevalidated: Boolean(order.automaticRenewalMandate),
+            balanceChecked: true,
+            frozenRenewalQuote: true,
+          },
+          reasonCode: 'renewal.preflight_passed',
+        })
+      })
+    } catch (error) {
+      if (!order.automaticRenewalMandate) throw error
+      return abandonAutomaticRenewal(error)
+    }
     order = { ...order, status: 'fulfilling' }
   }
   const renewal = await ensureRenewal(req, order, checked.asset, checked.snapshot.years)

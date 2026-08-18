@@ -19,6 +19,7 @@ import {
   type NameserverChangeJobInput,
 } from '@/services/domains/nameserver-changes'
 import { runConfiguredDomainExpiryReminders } from '@/services/domains/expiry-reminders'
+import { runConfiguredAutomaticRenewals } from '@/services/domains/automatic-renewals'
 import { runConfiguredDomainAssetSynchronization } from '@/services/domains/domain-assets'
 import { runOperationsMonitoring } from '@/services/operations/monitoring'
 import { recordCommerceWorkerHeartbeat } from '@/services/operations/worker-heartbeat'
@@ -168,6 +169,22 @@ export const commerceWorkerHeartbeat: WorkflowConfig = {
   },
 }
 
+export const automaticRenewalScheduling: WorkflowConfig = {
+  slug: 'automaticRenewalScheduling',
+  concurrency: {
+    exclusive: true,
+    key: () => 'commerce:automatic-renewal-scheduling',
+    supersedes: true,
+  },
+  inputSchema: [],
+  queue: 'commerce',
+  retries: 0,
+  schedule: [{ cron: '0 10 * * * *', queue: 'commerce' }],
+  handler: async ({ req }) => {
+    await runConfiguredAutomaticRenewals(req)
+  },
+}
+
 export const nameserverChange: WorkflowConfig<NameserverChangeJobInput> = {
   slug: 'nameserverChange',
   concurrency: {
@@ -313,6 +330,7 @@ export const workflows = [
   domainAssetSynchronization,
   walletLedgerConsistencyCheck,
   commerceFulfillment,
+  automaticRenewalScheduling,
   commerceWorkerHeartbeat,
   nameserverChange,
   wechatRefund,

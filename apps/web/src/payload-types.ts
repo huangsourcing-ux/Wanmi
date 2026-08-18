@@ -125,6 +125,8 @@ export interface Config {
     domainManagementEvents: DomainManagementEvent;
     domainAssetSyncEvents: DomainAssetSyncEvent;
     domainBatchOperationEvents: DomainBatchOperationEvent;
+    renewalMandates: RenewalMandate;
+    automaticRenewalEvents: AutomaticRenewalEvent;
     manualReviews: ManualReview;
     reconciliations: Reconciliation;
     auditLogs: AuditLog;
@@ -213,6 +215,8 @@ export interface Config {
     domainManagementEvents: DomainManagementEventsSelect<false> | DomainManagementEventsSelect<true>;
     domainAssetSyncEvents: DomainAssetSyncEventsSelect<false> | DomainAssetSyncEventsSelect<true>;
     domainBatchOperationEvents: DomainBatchOperationEventsSelect<false> | DomainBatchOperationEventsSelect<true>;
+    renewalMandates: RenewalMandatesSelect<false> | RenewalMandatesSelect<true>;
+    automaticRenewalEvents: AutomaticRenewalEventsSelect<false> | AutomaticRenewalEventsSelect<true>;
     manualReviews: ManualReviewsSelect<false> | ManualReviewsSelect<true>;
     reconciliations: ReconciliationsSelect<false> | ReconciliationsSelect<true>;
     auditLogs: AuditLogsSelect<false> | AuditLogsSelect<true>;
@@ -259,6 +263,7 @@ export interface Config {
       domainAssetSynchronization: WorkflowDomainAssetSynchronization;
       walletLedgerConsistencyCheck: WorkflowWalletLedgerConsistencyCheck;
       commerceFulfillment: WorkflowCommerceFulfillment;
+      automaticRenewalScheduling: WorkflowAutomaticRenewalScheduling;
       commerceWorkerHeartbeat: WorkflowCommerceWorkerHeartbeat;
       nameserverChange: WorkflowNameserverChange;
       wechatRefund: WorkflowWechatRefund;
@@ -463,6 +468,7 @@ export interface StepUpGrant {
     | 'realname_change'
     | 'domain_management_password'
     | 'balance_spend'
+    | 'renewal_mandate_change'
     | 'account_deletion';
   tokenHash: string;
   expiresAt: string;
@@ -566,6 +572,10 @@ export interface Order {
   quote: number | Quote;
   realnameTemplate: number | RealnameTemplate;
   domainAscii: string;
+  automaticRenewalMandate?: (number | null) | RenewalMandate;
+  automaticRenewalAttemptKey?: string | null;
+  automaticRenewalRulesVersion?: string | null;
+  balanceHoldTransactionKey?: string | null;
   status:
     | 'pending_payment'
     | 'paid'
@@ -725,6 +735,32 @@ export interface Quote {
   currency: 'CNY';
   quotedAt: string;
   expiresAt: string;
+  createdTraceId: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "renewalMandates".
+ */
+export interface RenewalMandate {
+  id: number;
+  mandateKey: string;
+  customer: number | Customer;
+  asset: number | DomainAsset;
+  domainAsciiSnapshot: string;
+  scope: 'renew_one_year';
+  maxDebitFen: number;
+  currency: 'CNY';
+  authorizedAt: string;
+  validUntil: string;
+  rulesVersion: string;
+  revision: number;
+  eventType: 'authorized' | 'revoked';
+  revokedAt?: string | null;
+  previousMandate?: (number | null) | RenewalMandate;
+  stepUpGrantId: string;
+  previewDigest: string;
   createdTraceId: string;
   updatedAt: string;
   createdAt: string;
@@ -993,6 +1029,7 @@ export interface SmsChallenge {
         | 'realname_change'
         | 'domain_management_password'
         | 'balance_spend'
+        | 'renewal_mandate_change'
         | 'account_deletion'
       )
     | null;
@@ -1719,8 +1756,18 @@ export interface DomainExpiryReminder {
   customer: number | Customer;
   asset: number | DomainAsset;
   channel: 'in_app' | 'sms';
+  noticeType:
+    | 'expiry'
+    | 'automatic_renewal_enabled'
+    | 'automatic_renewal_due'
+    | 'automatic_renewal_balance_insufficient'
+    | 'automatic_renewal_price_changed'
+    | 'automatic_renewal_blocked';
   thresholdDays: number;
   expiresAtSnapshot: string;
+  mandate?: (number | null) | RenewalMandate;
+  amountFen?: number | null;
+  authorizedMaxAmountFen?: number | null;
   status: 'pending' | 'sending' | 'delivered' | 'failed' | 'unknown';
   attemptedAt?: string | null;
   deliveredAt?: string | null;
@@ -1905,6 +1952,40 @@ export interface DomainBatchOperationEvent {
   nameserverChange: number | NameserverChange;
   operation: 'nameserver_change';
   event: 'requested' | 'pending_query' | 'confirmed' | 'failed';
+  reasonCode?: string | null;
+  occurredAt: string;
+  traceId?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "automaticRenewalEvents".
+ */
+export interface AutomaticRenewalEvent {
+  id: number;
+  eventKey: string;
+  customer: number | Customer;
+  asset: number | DomainAsset;
+  mandate: number | RenewalMandate;
+  attemptKey?: string | null;
+  attemptSlotDays?: number | null;
+  expiresAtSnapshot: string;
+  eventType:
+    | 'attempt_claimed'
+    | 'balance_insufficient'
+    | 'price_changed'
+    | 'order_queued'
+    | 'skipped_invalid_mandate'
+    | 'skipped_account_restricted'
+    | 'skipped_identity_cooldown'
+    | 'skipped_not_owned'
+    | 'skipped_domain_status'
+    | 'skipped_job_revalidation';
+  amountFen?: number | null;
+  authorizedMaxAmountFen?: number | null;
+  availableBalanceFen?: number | null;
+  order?: (number | null) | Order;
   reasonCode?: string | null;
   occurredAt: string;
   traceId?: string | null;
@@ -2463,6 +2544,7 @@ export interface PayloadJob {
         | 'domainAssetSynchronization'
         | 'walletLedgerConsistencyCheck'
         | 'commerceFulfillment'
+        | 'automaticRenewalScheduling'
         | 'commerceWorkerHeartbeat'
         | 'nameserverChange'
         | 'wechatRefund'
@@ -3515,6 +3597,10 @@ export interface OrdersSelect<T extends boolean = true> {
   quote?: T;
   realnameTemplate?: T;
   domainAscii?: T;
+  automaticRenewalMandate?: T;
+  automaticRenewalAttemptKey?: T;
+  automaticRenewalRulesVersion?: T;
+  balanceHoldTransactionKey?: T;
   status?: T;
   amountMinor?: T;
   currency?: T;
@@ -3808,8 +3894,12 @@ export interface DomainExpiryRemindersSelect<T extends boolean = true> {
   customer?: T;
   asset?: T;
   channel?: T;
+  noticeType?: T;
   thresholdDays?: T;
   expiresAtSnapshot?: T;
+  mandate?: T;
+  amountFen?: T;
+  authorizedMaxAmountFen?: T;
   status?: T;
   attemptedAt?: T;
   deliveredAt?: T;
@@ -3940,6 +4030,54 @@ export interface DomainBatchOperationEventsSelect<T extends boolean = true> {
   nameserverChange?: T;
   operation?: T;
   event?: T;
+  reasonCode?: T;
+  occurredAt?: T;
+  traceId?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "renewalMandates_select".
+ */
+export interface RenewalMandatesSelect<T extends boolean = true> {
+  mandateKey?: T;
+  customer?: T;
+  asset?: T;
+  domainAsciiSnapshot?: T;
+  scope?: T;
+  maxDebitFen?: T;
+  currency?: T;
+  authorizedAt?: T;
+  validUntil?: T;
+  rulesVersion?: T;
+  revision?: T;
+  eventType?: T;
+  revokedAt?: T;
+  previousMandate?: T;
+  stepUpGrantId?: T;
+  previewDigest?: T;
+  createdTraceId?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "automaticRenewalEvents_select".
+ */
+export interface AutomaticRenewalEventsSelect<T extends boolean = true> {
+  eventKey?: T;
+  customer?: T;
+  asset?: T;
+  mandate?: T;
+  attemptKey?: T;
+  attemptSlotDays?: T;
+  expiresAtSnapshot?: T;
+  eventType?: T;
+  amountFen?: T;
+  authorizedMaxAmountFen?: T;
+  availableBalanceFen?: T;
+  order?: T;
   reasonCode?: T;
   occurredAt?: T;
   traceId?: T;
@@ -4493,6 +4631,13 @@ export interface WorkflowCommerceFulfillment {
     salesStopReviewId?: number | null;
     traceId: string;
   };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WorkflowAutomaticRenewalScheduling".
+ */
+export interface WorkflowAutomaticRenewalScheduling {
+  input?: unknown;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema

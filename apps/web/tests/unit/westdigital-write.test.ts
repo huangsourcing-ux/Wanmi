@@ -107,6 +107,45 @@ describe('WestDigital write adapter fixtures', () => {
     })
   })
 
+  it.each([
+    ['ok', 'eligible'],
+    ['clientTransferProhibited,ok', 'eligible'],
+    ['autoRenewPeriod', 'expired_or_redemption'],
+    ['pendingRenew', 'pending'],
+    ['serverRenewProhibited', 'registry_restricted'],
+    ['unexpectedStatus', 'unknown'],
+  ] as const)(
+    'maps documented EPP status %s to %s through the GET contract',
+    async (status, state) => {
+      const transport = new FixtureWestDigitalWriteTransport((input) => ({
+        body: {
+          clientid: `fixture-${input.requestId}`,
+          data: { domain: input.body.domain, status },
+          result: 200,
+        },
+        status: 200,
+      }))
+      const provider = new WestDigitalWriteAdapter({ transport })
+
+      await expect(
+        provider.queryRenewalEligibility({
+          domainAscii: 'wanmi-test.com',
+          traceId: `trace-epp-${state}`,
+        }),
+      ).resolves.toMatchObject({
+        data: { domainAscii: 'wanmi-test.com', state },
+        ok: true,
+      })
+      expect(transport.requests).toHaveLength(1)
+      expect(transport.requests[0]).toMatchObject({
+        body: { act: 'geteppstatus', domain: 'wanmi-test.com' },
+        method: 'GET',
+        operation: 'renewal_eligibility_query',
+        path: '/v2/domain/',
+      })
+    },
+  )
+
   it('maps the registrar field observed in the real domain-detail response', async () => {
     const transport = {
       execute: vi.fn().mockResolvedValue({

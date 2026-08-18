@@ -170,6 +170,22 @@ export const auditEventDefinitions = {
     actorTypes: ['system'],
     targetType: 'domain-expiry-reminder',
   },
+  'domain.renewal_mandate.authorized': {
+    actorTypes: ['customer'],
+    targetType: 'renewal-mandate',
+  },
+  'domain.renewal_mandate.revoked': {
+    actorTypes: ['customer'],
+    targetType: 'renewal-mandate',
+  },
+  'domain.automatic_renewal.skipped': {
+    actorTypes: ['system'],
+    targetType: 'domain-asset',
+  },
+  'domain.automatic_renewal.queued': {
+    actorTypes: ['system'],
+    targetType: 'order',
+  },
   'domain.nameserver.change_recorded': {
     actorTypes: ['admin', 'customer', 'system'],
     targetType: 'nameserver-change',

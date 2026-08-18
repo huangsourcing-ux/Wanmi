@@ -356,3 +356,120 @@ export async function createCustomerOrder(
     throw error
   }
 }
+
+export async function createSystemAutomaticRenewalOrder(
+  req: PayloadRequest,
+  input: {
+    attemptKey: string
+    balanceHoldTransactionKey: string
+    customer: CustomerIdentity
+    mandateId: number | string
+    quoteRef: string
+    rulesVersion: string
+    traceId: string
+  },
+  options: {
+    now?: () => number
+    orderNumber?: () => string
+    rules?: Readonly<Record<string, PricingRule>>
+  } = {},
+) {
+  if (req.user) {
+    throw new AppError(
+      'AUTOMATIC_RENEWAL_SYSTEM_CONTEXT_REQUIRED',
+      '自动续费订单只能由无人值守系统任务创建',
+      403,
+    )
+  }
+  const startedTransaction = await initTransaction(req)
+  try {
+    await assertCustomerAccountCapability(req, input.customer.id, 'purchase')
+    await assertCustomerAccountCapability(req, input.customer.id, 'balance_spend')
+    const quote = await getUsableCustomerQuote({
+      customer: input.customer,
+      now: options.now,
+      quoteRef: input.quoteRef,
+      store: new PayloadCustomerQuoteStore(req, input.customer),
+    })
+    if (quote.operation !== 'renewal' || !quote.domainAssetId || !quote.assetExpiresAt) {
+      throw new AppError('AUTOMATIC_RENEWAL_QUOTE_INVALID', '自动续费报价快照无效', 409)
+    }
+    const assets = await req.payload.find({
+      collection: 'domainAssets',
+      depth: 0,
+      limit: 1,
+      overrideAccess: false,
+      req,
+      user: input.customer,
+      where: {
+        and: [{ id: { equals: quote.domainAssetId } }, { customer: { equals: input.customer.id } }],
+      },
+    })
+    const asset = assets.docs[0]
+    if (!asset) throw new AppError('DOMAIN_ASSET_NOT_FOUND', '未找到可续费的域名资产', 404)
+    const assetCustomer = typeof asset.customer === 'object' ? asset.customer.id : asset.customer
+    const assetTemplate =
+      typeof asset.realnameTemplate === 'object'
+        ? asset.realnameTemplate.id
+        : asset.realnameTemplate
+    if (
+      String(assetCustomer) !== String(input.customer.id) ||
+      asset.domainAscii !== quote.domainAscii ||
+      asset.status !== 'active' ||
+      asset.expiresAt !== quote.assetExpiresAt
+    ) {
+      throw new AppError('DOMAIN_ASSET_CHANGED', '域名资产状态已变化，自动续费已放弃', 409)
+    }
+    const rules = options.rules ?? (await loadEnabledPricingRules(req.payload, req))
+    assertQuoteAmountAndRuleUsableForOrder(quote, { rules })
+    await assertTldSalesOpen(req, quote.tld)
+    const observedAt = new Date((options.now ?? Date.now)()).toISOString()
+    const order = await req.payload.create({
+      collection: 'orders',
+      data: {
+        amountMinor: quote.userPriceMinor,
+        automaticRenewalAttemptKey: input.attemptKey,
+        automaticRenewalMandate: input.mandateId as never,
+        automaticRenewalRulesVersion: input.rulesVersion,
+        balanceHoldTransactionKey: input.balanceHoldTransactionKey,
+        currency: 'CNY',
+        customer: input.customer.id,
+        domainAsset: quote.domainAssetId,
+        domainAscii: quote.domainAscii,
+        operation: 'renewal',
+        orderNumber: (options.orderNumber ?? (() => `WM-AUTO-${randomUUID()}`))(),
+        quote: quote.quoteId,
+        quoteSnapshot: quoteSnapshot(quote, {
+          observedAt,
+          requestId: `${input.traceId}-automatic-owned-asset-revalidated`,
+        }),
+        realnameTemplate: Number(assetTemplate),
+        status: 'pending_payment',
+      },
+      overrideAccess: true,
+      req,
+    })
+    await req.payload.create({
+      collection: 'orderEvents',
+      data: {
+        actorType: 'system',
+        customer: input.customer.id,
+        evidence: {
+          automaticRenewalAttemptKey: input.attemptKey,
+          mandateId: String(input.mandateId),
+          rulesVersion: input.rulesVersion,
+        },
+        order: order.id,
+        reasonCode: 'automatic_renewal.order_created',
+        toStatus: 'pending_payment',
+      },
+      overrideAccess: true,
+      req,
+    })
+    if (startedTransaction) await commitTransaction(req)
+    return { order, quote }
+  } catch (error) {
+    if (startedTransaction) await killTransaction(req)
+    throw error
+  }
+}

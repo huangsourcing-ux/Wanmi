@@ -27,6 +27,7 @@ export class FixtureWestDigitalWriteTransport implements WestDigitalWriteTranspo
   ): Promise<WestDigitalWriteTransportResponse> {
     this.requests.push({
       body: { ...input.body },
+      ...(input.method ? { method: input.method } : {}),
       operation: input.operation,
       path: input.path,
       requestId: input.requestId,
@@ -167,6 +168,16 @@ function createDefaultFixture(): WestDigitalWriteFixtureHandler {
             c_sysid: Number(templateIds.get(input.body.domain!) ?? '1664777'),
             domain: input.body.domain,
           },
+          result: 200,
+        },
+        status: 200,
+      }
+    }
+    if (input.operation === 'renewal_eligibility_query') {
+      return {
+        body: {
+          clientid,
+          data: { domain: input.body.domain, status: 'ok' },
           result: 200,
         },
         status: 200,

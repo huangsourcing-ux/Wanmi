@@ -22,6 +22,7 @@ type ResolvedAddress = { address: string; family: 4 | 6 }
 
 export type WestDigitalHttpRequest = {
   body: Readonly<Record<string, string>>
+  method?: 'GET' | 'POST'
   path: '/v2/audit/' | '/v2/domain/' | '/v2/domain/query/' | '/v2/info/'
   requestId: string
   signal: AbortSignal
@@ -141,8 +142,9 @@ async function resolvePublicAddress(
 
 function pinnedRequest(input: {
   address: ResolvedAddress
-  body: Buffer
+  body?: Buffer
   maxResponseBytes: number
+  method: 'GET' | 'POST'
   path: string
   requestId: string
   signal: AbortSignal
@@ -159,15 +161,19 @@ function pinnedRequest(input: {
       {
         headers: {
           accept: 'application/json',
-          'content-length': String(input.body.byteLength),
-          'content-type': 'application/x-www-form-urlencoded;charset=GB2312',
+          ...(input.body
+            ? {
+                'content-length': String(input.body.byteLength),
+                'content-type': 'application/x-www-form-urlencoded;charset=GB2312',
+              }
+            : {}),
           'x-request-id': input.requestId,
         },
         hostname: WESTDIGITAL_HOSTNAME,
         lookup: (_hostname, _options, callback) =>
           callback(null, input.address.address, input.address.family),
         maxHeaderSize: 16_384,
-        method: 'POST',
+        method: input.method,
         path: input.path,
         port: 443,
         protocol: 'https:',
@@ -264,16 +270,21 @@ export async function executeWestDigitalHttpRequest(
       .digest('hex'),
     username: options.username,
   })
+  const method = request.method ?? 'POST'
+  const requestBody = method === 'POST' ? body : undefined
+  const requestPath = method === 'GET' ? `${path}?${body.toString('ascii')}` : path
 
   if (options.fetchImpl) {
-    const response = await options.fetchImpl(`${WESTDIGITAL_ORIGIN}${path}`, {
-      body,
+    const response = await options.fetchImpl(`${WESTDIGITAL_ORIGIN}${requestPath}`, {
+      ...(requestBody ? { body: requestBody } : {}),
       headers: {
         accept: 'application/json',
-        'content-type': 'application/x-www-form-urlencoded;charset=GB2312',
+        ...(requestBody
+          ? { 'content-type': 'application/x-www-form-urlencoded;charset=GB2312' }
+          : {}),
         'x-request-id': request.requestId,
       },
-      method: 'POST',
+      method,
       redirect: 'error',
       signal: request.signal,
     })
@@ -291,9 +302,10 @@ export async function executeWestDigitalHttpRequest(
   )
   return pinnedRequest({
     address,
-    body,
+    ...(requestBody ? { body: requestBody } : {}),
     maxResponseBytes: options.maxResponseBytes,
-    path,
+    method,
+    path: requestPath,
     requestId: request.requestId,
     signal: request.signal,
   })

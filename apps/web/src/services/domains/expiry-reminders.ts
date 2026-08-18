@@ -33,6 +33,14 @@ type ReminderRecord = {
   status: 'delivered' | 'failed' | 'pending' | 'sending' | 'unknown'
 }
 
+export type DomainReminderNoticeType =
+  | 'expiry'
+  | 'automatic_renewal_enabled'
+  | 'automatic_renewal_due'
+  | 'automatic_renewal_balance_insufficient'
+  | 'automatic_renewal_price_changed'
+  | 'automatic_renewal_blocked'
+
 export type DomainExpiryReminderDependencies = {
   now?: () => Date
   provider: SmsProvider
@@ -108,7 +116,7 @@ function dueThreshold(expiresAt: string, now: Date, thresholds: number[]): numbe
   return thresholds.find((threshold) => remainingDays <= threshold)
 }
 
-function key(
+function expiryKey(
   assetId: number | string,
   expiresAt: string,
   thresholdDays: number,
@@ -118,6 +126,21 @@ function key(
     .update(`${assetId}:${new Date(expiresAt).toISOString()}:${thresholdDays}:${channel}`)
     .digest('hex')
   return `domain-expiry:${digest}`
+}
+
+function automaticRenewalKey(input: {
+  assetId: number | string
+  dedupeKey: string
+  expiresAt: string
+  noticeType: Exclude<DomainReminderNoticeType, 'expiry'>
+  channel: 'in_app' | 'sms'
+}): string {
+  const digest = createHash('sha256')
+    .update(
+      `${input.assetId}:${new Date(input.expiresAt).toISOString()}:${input.noticeType}:${input.dedupeKey}:${input.channel}`,
+    )
+    .digest('hex')
+  return `automatic-renewal-notice:${digest}`
 }
 
 async function findReminder(req: PayloadRequest, reminderKey: string) {
@@ -135,14 +158,29 @@ async function findReminder(req: PayloadRequest, reminderKey: string) {
 async function prepareReminder(
   req: PayloadRequest,
   input: {
+    amountFen?: number
     asset: AssetRecord
+    authorizedMaxAmountFen?: number
     channel: 'in_app' | 'sms'
     customerId: number | string
+    dedupeKey?: string
+    mandateId?: number | string
+    noticeType?: DomainReminderNoticeType
     thresholdDays: number
     traceId: string
   },
 ): Promise<{ created: boolean; reminder: ReminderRecord }> {
-  const reminderKey = key(input.asset.id, input.asset.expiresAt, input.thresholdDays, input.channel)
+  const noticeType = input.noticeType ?? 'expiry'
+  const reminderKey =
+    noticeType === 'expiry'
+      ? expiryKey(input.asset.id, input.asset.expiresAt, input.thresholdDays, input.channel)
+      : automaticRenewalKey({
+          assetId: input.asset.id,
+          channel: input.channel,
+          dedupeKey: input.dedupeKey ?? `${input.mandateId ?? 'none'}:${noticeType}`,
+          expiresAt: input.asset.expiresAt,
+          noticeType,
+        })
   const existing = await findReminder(req, reminderKey)
   if (existing) return { created: false, reminder: existing }
   try {
@@ -151,11 +189,15 @@ async function prepareReminder(
         collection: 'domainExpiryReminders',
         data: {
           asset: input.asset.id as never,
+          amountFen: input.amountFen,
+          authorizedMaxAmountFen: input.authorizedMaxAmountFen,
           channel: input.channel,
           createdTraceId: input.traceId,
           customer: input.customerId as never,
           deliveredAt: input.channel === 'in_app' ? new Date().toISOString() : undefined,
           expiresAtSnapshot: input.asset.expiresAt,
+          mandate: input.mandateId as never,
+          noticeType,
           reminderKey,
           status: input.channel === 'in_app' ? 'delivered' : 'pending',
           thresholdDays: input.thresholdDays,
@@ -169,6 +211,7 @@ async function prepareReminder(
           actor: { type: 'system' },
           metadata: {
             channel: input.channel,
+            noticeType,
             outcome: 'delivered',
             thresholdDays: input.thresholdDays,
           },
@@ -182,6 +225,84 @@ async function prepareReminder(
     const raced = await findReminder(req, reminderKey)
     if (raced) return { created: false, reminder: raced }
     throw error
+  }
+}
+
+export async function sendAutomaticRenewalReminder(
+  req: PayloadRequest,
+  input: {
+    amountFen?: number
+    asset: Pick<AssetRecord, 'domainAscii' | 'expiresAt' | 'id'>
+    authorizedMaxAmountFen?: number
+    customerId: number | string
+    daysRemaining: number
+    dedupeKey?: string
+    mandateId: number | string
+    noticeType: Exclude<DomainReminderNoticeType, 'expiry'>
+    provider?: SmsProvider
+    traceId: string
+  },
+) {
+  const asset = (await req.payload.findByID({
+    collection: 'domainAssets',
+    depth: 0,
+    id: input.asset.id,
+    overrideAccess: true,
+    req,
+  })) as unknown as AssetRecord
+  if (
+    asset.domainAscii !== input.asset.domainAscii ||
+    asset.expiresAt !== input.asset.expiresAt ||
+    String(relationId(asset.customer)) !== String(input.customerId)
+  ) {
+    throw new AppError(
+      'AUTOMATIC_RENEWAL_NOTICE_ASSET_CHANGED',
+      '自动续费提醒的域名资产已变化',
+      409,
+    )
+  }
+  const customer = (await req.payload.findByID({
+    collection: 'customers',
+    depth: 0,
+    id: input.customerId,
+    overrideAccess: true,
+    req,
+  })) as CustomerRecord
+  const channels = reminderPreferences(asset, configuredDomainExpiryThresholds()).channels
+  const outcomes: Array<'delivered' | 'failed' | 'skipped' | 'unknown'> = []
+  for (const channel of channels) {
+    const prepared = await prepareReminder(req, {
+      amountFen: input.amountFen,
+      asset,
+      authorizedMaxAmountFen: input.authorizedMaxAmountFen,
+      channel,
+      customerId: input.customerId,
+      dedupeKey: input.dedupeKey,
+      mandateId: input.mandateId,
+      noticeType: input.noticeType,
+      thresholdDays: input.daysRemaining,
+      traceId: input.traceId,
+    })
+    if (channel === 'in_app') {
+      outcomes.push(prepared.created ? 'delivered' : 'skipped')
+      continue
+    }
+    outcomes.push(
+      await sendSmsReminder(req, {
+        asset,
+        customer,
+        provider: input.provider ?? createSmsProvider(),
+        reminder: prepared.reminder,
+        thresholdDays: input.daysRemaining,
+        traceId: input.traceId,
+      }),
+    )
+  }
+  return {
+    delivered: outcomes.filter((outcome) => outcome === 'delivered').length,
+    failed: outcomes.filter((outcome) => outcome === 'failed').length,
+    skipped: outcomes.filter((outcome) => outcome === 'skipped').length,
+    unknown: outcomes.filter((outcome) => outcome === 'unknown').length,
   }
 }
 
