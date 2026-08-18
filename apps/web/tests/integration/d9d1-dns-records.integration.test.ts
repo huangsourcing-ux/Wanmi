@@ -23,8 +23,10 @@ import {
   listCustomerDnsRecords,
   modifyCustomerDnsRecord,
   previewCustomerDnsRecordBatchDelete,
+  queryCustomerDnsRecordBatchDelete,
   setCustomerDnsRecordPaused,
 } from '@/services/domains/dns-records'
+import { executeWestDigitalWriteOperation } from '@/services/providers/westdigital-operations'
 import { requestCustomerNameserverChange } from '@/services/domains/nameserver-changes'
 
 import { realnameTemplateFixture } from '../fixtures/realname'
@@ -131,8 +133,13 @@ function hash(value: string): number {
 function statefulProvider(
   initial: FixtureRecord[] = [],
   beforeRequest?: (input: WestDigitalWriteTransportRequest) => Promise<void> | void,
+  options: {
+    offlineOutcomes?: Record<string, 'failed' | 'pending' | 'succeeded'>
+    ownership?: 'not_owned' | 'owned'
+  } = {},
 ) {
   const records = new Map(initial.map((record) => [record.id, { ...record }]))
+  const offlineTasks = new Map<string, { domainAscii: string; recordId: string; taskSku: string }>()
   let nextId = Math.max(700, ...initial.map((record) => Number(record.id))) + 1
   const transport = new FixtureWestDigitalWriteTransport(async (input) => {
     await beforeRequest?.(input)
@@ -173,6 +180,9 @@ function statefulProvider(
       return { body: { clientid, result: 200 }, status: 200 }
     }
     if (input.operation === 'asset_query') {
+      if (options.ownership === 'not_owned') {
+        return { body: { clientid, result: 404 }, status: 200 }
+      }
       return {
         body: {
           clientid,
@@ -190,6 +200,89 @@ function statefulProvider(
             registrars: 'west',
           },
           result: 200,
+        },
+        status: 200,
+      }
+    }
+    if (input.operation === 'offline_dns_record_delete_submit') {
+      const [domainAscii, host, type, value, line] = input.body.data!.split('|')
+      const record = [...records.values()].find(
+        (item) =>
+          item.host === (host || '@') &&
+          item.type === type &&
+          item.value === value &&
+          (
+            {
+              '': '默认',
+              LCNC: '联通',
+              LEDU: '教育网',
+              LFOR: '境外',
+              LMOB: '移动',
+              LSEO: '搜索引擎',
+              LTEL: '电信',
+            } as const
+          )[item.line] === line,
+      )
+      if (!domainAscii || !record) {
+        return { body: { clientid, code: 400, msg: '解析记录不存在' }, status: 200 }
+      }
+      const taskSku = `TASK-${input.requestId}`
+      offlineTasks.set(taskSku, { domainAscii, recordId: record.id, taskSku })
+      return {
+        body: { clientid, code: 200, data: { task_sku: taskSku }, msg: '成功' },
+        status: 200,
+      }
+    }
+    if (input.operation === 'offline_task_list') {
+      const task = offlineTasks.get(input.body.task_sku!)
+      const outcome = task ? options.offlineOutcomes?.[task.recordId] : undefined
+      return {
+        body: {
+          clientid,
+          code: 200,
+          data: {
+            data: task
+              ? [
+                  {
+                    task_act: 'dodelreall',
+                    task_sku: task.taskSku,
+                    task_state: outcome === 'failed' ? 3 : 1,
+                    task_type: 'dns_record',
+                  },
+                ]
+              : [],
+          },
+          msg: '成功',
+        },
+        status: 200,
+      }
+    }
+    if (input.operation === 'offline_task_record_list') {
+      const task = offlineTasks.get(input.body.task_sku!)
+      const outcome = task ? (options.offlineOutcomes?.[task.recordId] ?? 'succeeded') : undefined
+      if (task && outcome === 'succeeded') records.delete(task.recordId)
+      return {
+        body: {
+          clientid,
+          code: 200,
+          data: {
+            data: task
+              ? [
+                  {
+                    act: 'dodelreall',
+                    record_ident: task.domainAscii,
+                    record_result:
+                      outcome === 'succeeded'
+                        ? '删除成功'
+                        : outcome === 'failed'
+                          ? '记录不存在'
+                          : '队列中',
+                    record_state: outcome === 'succeeded' ? 3 : outcome === 'failed' ? 4 : 6,
+                  },
+                ]
+              : [],
+          },
+          msg: '成功',
         },
         status: 200,
       }
@@ -1413,7 +1506,7 @@ describe('D9-D-1 DNS record management', () => {
     expect(changes.totalDocs).toBe(8)
   })
 
-  it('requires step-up and a bound preview before batch deletion, then deletes exactly previewed records', async () => {
+  it('requires step-up and a bound preview, then keeps accepted offline deletions pending until queried', async () => {
     const { asset, customer, req } = await createFixture('batch-delete')
     const { provider, records, transport } = statefulProvider([
       {
@@ -1525,25 +1618,44 @@ describe('D9-D-1 DNS record management', () => {
       ),
     ).rejects.toMatchObject({ code: 'STEP_UP_GRANT_INVALID', status: 403 })
     expect(transport.writeCount).toBe(0)
+    const accepted = await deleteCustomerDnsRecordBatch(
+      req,
+      asset.id,
+      { ...grant, previewToken: preview.data.previewToken, recordIds: ['91', '92'] },
+      {
+        customer: customerIdentity(customer.id),
+        provider,
+        traceId: `${fixturePrefix}-batch-delete`,
+      },
+    )
+    expect(accepted).toMatchObject({
+      data: {
+        batchKey: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        items: [
+          { providerTaskKey: expect.any(String), status: 'pending_query' },
+          { providerTaskKey: expect.any(String), status: 'pending_query' },
+        ],
+      },
+      state: 'partial',
+    })
+    expect(transport.writeCount).toBe(2)
+    expect(records.size).toBe(2)
+    if (!('data' in accepted)) throw new Error('Expected accepted batch result')
     await expect(
-      deleteCustomerDnsRecordBatch(
-        req,
-        asset.id,
-        { ...grant, previewToken: preview.data.previewToken, recordIds: ['91', '92'] },
-        {
-          customer: customerIdentity(customer.id),
-          provider,
-          traceId: `${fixturePrefix}-batch-delete`,
-        },
-      ),
+      queryCustomerDnsRecordBatchDelete(req, asset.id, accepted.data.batchKey, {
+        customer: customerIdentity(customer.id),
+        provider,
+        traceId: `${fixturePrefix}-batch-query`,
+      }),
     ).resolves.toMatchObject({
       data: { items: [{ status: 'succeeded' }, { status: 'succeeded' }] },
+      state: 'ready',
     })
     expect(transport.writeCount).toBe(2)
     expect(records.size).toBe(0)
   })
 
-  it('rejects a stale batch preview before any provider write', async () => {
+  it('rejects preview drift when one selected record is modified', async () => {
     const { asset, customer, req } = await createFixture('batch-stale')
     const { provider, records, transport } = statefulProvider([
       {
@@ -1599,6 +1711,264 @@ describe('D9-D-1 DNS record management', () => {
     ).rejects.toMatchObject({ code: 'DNS_RECORD_PREVIEW_STALE', status: 409 })
     expect(transport.writeCount).toBe(0)
     expect(records.size).toBe(2)
+  })
+
+  it('rejects preview drift when the execution target set adds one record', async () => {
+    const { asset, customer, req } = await createFixture('batch-drift-add')
+    const { provider, transport } = statefulProvider([
+      {
+        host: 'one',
+        id: '181',
+        line: '',
+        paused: false,
+        priority: 10,
+        ttl: 600,
+        type: 'A',
+        value: '192.0.2.181',
+      },
+      {
+        host: 'two',
+        id: '182',
+        line: '',
+        paused: false,
+        priority: 10,
+        ttl: 600,
+        type: 'A',
+        value: '192.0.2.182',
+      },
+      {
+        host: 'three',
+        id: '183',
+        line: '',
+        paused: false,
+        priority: 10,
+        ttl: 600,
+        type: 'A',
+        value: '192.0.2.183',
+      },
+    ])
+    const options = {
+      customer: customerIdentity(customer.id),
+      provider,
+      traceId: `${fixturePrefix}-drift-add`,
+    }
+    const preview = await previewCustomerDnsRecordBatchDelete(
+      req,
+      asset.id,
+      { recordIds: ['181', '182'] },
+      options,
+    )
+    if (!('data' in preview)) throw new Error('Expected add-drift preview')
+    const grant = await issueStepUpGrantFixture(
+      payload,
+      req,
+      Number(customer.id),
+      'dns_bulk_delete',
+    )
+    await expect(
+      deleteCustomerDnsRecordBatch(
+        req,
+        asset.id,
+        { ...grant, previewToken: preview.data.previewToken, recordIds: ['181', '182', '183'] },
+        options,
+      ),
+    ).rejects.toMatchObject({ code: 'DNS_RECORD_PREVIEW_INVALID', status: 409 })
+    expect(transport.writeCount).toBe(0)
+  })
+
+  it('rejects preview drift when the execution target set removes one record', async () => {
+    const { asset, customer, req } = await createFixture('batch-drift-remove')
+    const { provider, transport } = statefulProvider([
+      {
+        host: 'one',
+        id: '191',
+        line: '',
+        paused: false,
+        priority: 10,
+        ttl: 600,
+        type: 'A',
+        value: '192.0.2.191',
+      },
+      {
+        host: 'two',
+        id: '192',
+        line: '',
+        paused: false,
+        priority: 10,
+        ttl: 600,
+        type: 'A',
+        value: '192.0.2.192',
+      },
+      {
+        host: 'three',
+        id: '193',
+        line: '',
+        paused: false,
+        priority: 10,
+        ttl: 600,
+        type: 'A',
+        value: '192.0.2.193',
+      },
+    ])
+    const options = {
+      customer: customerIdentity(customer.id),
+      provider,
+      traceId: `${fixturePrefix}-drift-remove`,
+    }
+    const preview = await previewCustomerDnsRecordBatchDelete(
+      req,
+      asset.id,
+      { recordIds: ['191', '192', '193'] },
+      options,
+    )
+    if (!('data' in preview)) throw new Error('Expected remove-drift preview')
+    const grant = await issueStepUpGrantFixture(
+      payload,
+      req,
+      Number(customer.id),
+      'dns_bulk_delete',
+    )
+    await expect(
+      deleteCustomerDnsRecordBatch(
+        req,
+        asset.id,
+        { ...grant, previewToken: preview.data.previewToken, recordIds: ['191', '192'] },
+        options,
+      ),
+    ).rejects.toMatchObject({ code: 'DNS_RECORD_PREVIEW_INVALID', status: 409 })
+    expect(transport.writeCount).toBe(0)
+  })
+
+  it('rejects a preview token against another domain owned by the same customer', async () => {
+    const { asset, customer, req, template } = await createFixture('batch-other-domain')
+    const otherAsset = await payload.create({
+      collection: 'domainAssets',
+      data: {
+        customer: customer.id,
+        domainAscii: `other-${randomUUID().slice(0, 8)}.example`,
+        expiresAt: '2028-08-17T04:00:00.000Z',
+        lastSyncedAt: '2026-08-17T04:00:00.000Z',
+        nameservers: ['ns1.before.example', 'ns2.before.example'],
+        realnameTemplate: template.id,
+        registeredAt: '2026-08-17T04:00:00.000Z',
+        registrar: 'west',
+        status: 'active',
+        syncReviewStatus: 'none',
+        syncVersion: 0,
+        upstreamOwnershipStatus: 'unknown',
+      },
+      overrideAccess: true,
+    })
+    assetIds.push(otherAsset.id)
+    const { provider, transport } = statefulProvider([
+      {
+        host: 'one',
+        id: '201',
+        line: '',
+        paused: false,
+        priority: 10,
+        ttl: 600,
+        type: 'A',
+        value: '192.0.2.201',
+      },
+      {
+        host: 'two',
+        id: '202',
+        line: '',
+        paused: false,
+        priority: 10,
+        ttl: 600,
+        type: 'A',
+        value: '192.0.2.202',
+      },
+    ])
+    const preview = await previewCustomerDnsRecordBatchDelete(
+      req,
+      asset.id,
+      { recordIds: ['201', '202'] },
+      {
+        customer: customerIdentity(customer.id),
+        provider,
+        traceId: `${fixturePrefix}-other-domain-preview`,
+      },
+    )
+    if (!('data' in preview)) throw new Error('Expected other-domain preview')
+    const grant = await issueStepUpGrantFixture(
+      payload,
+      req,
+      Number(customer.id),
+      'dns_bulk_delete',
+    )
+    await expect(
+      deleteCustomerDnsRecordBatch(
+        req,
+        otherAsset.id,
+        { ...grant, previewToken: preview.data.previewToken, recordIds: ['201', '202'] },
+        {
+          customer: customerIdentity(customer.id),
+          provider,
+          traceId: `${fixturePrefix}-other-domain-delete`,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'DNS_RECORD_PREVIEW_INVALID', status: 409 })
+    expect(transport.writeCount).toBe(0)
+  })
+
+  it('rejects a preview token issued to another customer', async () => {
+    const owner = await createFixture('batch-token-owner')
+    const other = await createFixture('batch-token-other')
+    const { provider, transport } = statefulProvider([
+      {
+        host: 'one',
+        id: '211',
+        line: '',
+        paused: false,
+        priority: 10,
+        ttl: 600,
+        type: 'A',
+        value: '192.0.2.211',
+      },
+      {
+        host: 'two',
+        id: '212',
+        line: '',
+        paused: false,
+        priority: 10,
+        ttl: 600,
+        type: 'A',
+        value: '192.0.2.212',
+      },
+    ])
+    const preview = await previewCustomerDnsRecordBatchDelete(
+      owner.req,
+      owner.asset.id,
+      { recordIds: ['211', '212'] },
+      {
+        customer: customerIdentity(owner.customer.id),
+        provider,
+        traceId: `${fixturePrefix}-other-user-preview`,
+      },
+    )
+    if (!('data' in preview)) throw new Error('Expected other-user preview')
+    const grant = await issueStepUpGrantFixture(
+      payload,
+      other.req,
+      Number(other.customer.id),
+      'dns_bulk_delete',
+    )
+    await expect(
+      deleteCustomerDnsRecordBatch(
+        other.req,
+        other.asset.id,
+        { ...grant, previewToken: preview.data.previewToken, recordIds: ['211', '212'] },
+        {
+          customer: customerIdentity(other.customer.id),
+          provider,
+          traceId: `${fixturePrefix}-other-user-delete`,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'DNS_RECORD_PREVIEW_INVALID', status: 409 })
+    expect(transport.writeCount).toBe(0)
   })
 
   it('binds batch preview signatures, version, asset, expiry, ids, and record digest', async () => {
@@ -1659,6 +2029,12 @@ describe('D9-D-1 DNS record management', () => {
         value.assetId = String(Number(asset.id) + 1)
       }),
       resignPreviewToken(preview.data.previewToken, (value) => {
+        value.customerId = String(Number(customer.id) + 1)
+      }),
+      resignPreviewToken(preview.data.previewToken, (value) => {
+        value.domainAscii = 'other.example'
+      }),
+      resignPreviewToken(preview.data.previewToken, (value) => {
         value.expiresAt = '2026-08-17T00:00:00.000Z'
       }),
       resignPreviewToken(preview.data.previewToken, (value) => {
@@ -1669,9 +2045,6 @@ describe('D9-D-1 DNS record management', () => {
       }),
       resignPreviewToken(preview.data.previewToken, (value) => {
         value.recordIds = '161,162'
-      }),
-      resignPreviewToken(preview.data.previewToken, (value) => {
-        delete value.recordDigest
       }),
     ]
     for (const [index, previewToken] of tokens.entries()) {
@@ -1689,6 +2062,461 @@ describe('D9-D-1 DNS record management', () => {
       ).rejects.toMatchObject({ code: 'DNS_RECORD_PREVIEW_INVALID', status: 409 })
     }
     expect(transport.writeCount).toBe(0)
+  })
+
+  it('replays completed batch items by their item keys without another offline submission', async () => {
+    const { asset, customer, req } = await createFixture('batch-item-idempotency')
+    const { provider, transport } = statefulProvider([
+      {
+        host: 'one',
+        id: '221',
+        line: '',
+        paused: false,
+        priority: 10,
+        ttl: 600,
+        type: 'A',
+        value: '192.0.2.221',
+      },
+      {
+        host: 'two',
+        id: '222',
+        line: '',
+        paused: false,
+        priority: 10,
+        ttl: 600,
+        type: 'A',
+        value: '192.0.2.222',
+      },
+    ])
+    const options = {
+      customer: customerIdentity(customer.id),
+      provider,
+      traceId: `${fixturePrefix}-item-idempotency`,
+    }
+    const preview = await previewCustomerDnsRecordBatchDelete(
+      req,
+      asset.id,
+      { recordIds: ['221', '222'] },
+      options,
+    )
+    if (!('data' in preview)) throw new Error('Expected idempotency preview')
+    const firstGrant = await issueStepUpGrantFixture(
+      payload,
+      req,
+      Number(customer.id),
+      'dns_bulk_delete',
+    )
+    const first = await deleteCustomerDnsRecordBatch(
+      req,
+      asset.id,
+      { ...firstGrant, previewToken: preview.data.previewToken, recordIds: ['221', '222'] },
+      options,
+    )
+    expect(first).toMatchObject({
+      data: { items: [{ status: 'pending_query' }, { status: 'pending_query' }] },
+      state: 'partial',
+    })
+    const unknown = await payload.find({
+      collection: 'providerOperations',
+      limit: 20,
+      overrideAccess: true,
+      where: {
+        and: [
+          { operation: { equals: 'dns_record_batch_delete' } },
+          { status: { equals: 'unknown' } },
+          { targetId: { equals: String(asset.id) } },
+        ],
+      },
+    })
+    const prematureSuccess = await payload.find({
+      collection: 'providerOperations',
+      limit: 20,
+      overrideAccess: true,
+      where: {
+        and: [
+          { operation: { equals: 'dns_record_batch_delete' } },
+          { status: { equals: 'succeeded' } },
+          { targetId: { equals: String(asset.id) } },
+        ],
+      },
+    })
+    expect(unknown.totalDocs).toBe(2)
+    expect(prematureSuccess.totalDocs).toBe(0)
+
+    const secondGrant = await issueStepUpGrantFixture(
+      payload,
+      req,
+      Number(customer.id),
+      'dns_bulk_delete',
+    )
+    await expect(
+      deleteCustomerDnsRecordBatch(
+        req,
+        asset.id,
+        { ...secondGrant, previewToken: preview.data.previewToken, recordIds: ['221', '222'] },
+        options,
+      ),
+    ).resolves.toMatchObject({
+      data: {
+        items: [
+          { idempotentReplay: true, status: 'succeeded' },
+          { idempotentReplay: true, status: 'succeeded' },
+        ],
+      },
+      state: 'ready',
+    })
+    const thirdGrant = await issueStepUpGrantFixture(
+      payload,
+      req,
+      Number(customer.id),
+      'dns_bulk_delete',
+    )
+    await expect(
+      deleteCustomerDnsRecordBatch(
+        req,
+        asset.id,
+        { ...thirdGrant, previewToken: preview.data.previewToken, recordIds: ['221', '222'] },
+        options,
+      ),
+    ).resolves.toMatchObject({ state: 'ready' })
+    expect(
+      transport.requests.filter(
+        (request) => request.operation === 'offline_dns_record_delete_submit',
+      ),
+    ).toHaveLength(2)
+  })
+
+  it('returns six-state partial with per-item success and explicit failure reasons', async () => {
+    const { asset, customer, req } = await createFixture('batch-partial')
+    const { provider, transport } = statefulProvider(
+      [
+        {
+          host: 'one',
+          id: '231',
+          line: '',
+          paused: false,
+          priority: 10,
+          ttl: 600,
+          type: 'A',
+          value: '192.0.2.231',
+        },
+        {
+          host: 'two',
+          id: '232',
+          line: '',
+          paused: false,
+          priority: 10,
+          ttl: 600,
+          type: 'A',
+          value: '192.0.2.232',
+        },
+      ],
+      undefined,
+      { offlineOutcomes: { '231': 'succeeded', '232': 'failed' } },
+    )
+    const options = {
+      customer: customerIdentity(customer.id),
+      provider,
+      traceId: `${fixturePrefix}-batch-partial`,
+    }
+    const preview = await previewCustomerDnsRecordBatchDelete(
+      req,
+      asset.id,
+      { recordIds: ['231', '232'] },
+      options,
+    )
+    if (!('data' in preview)) throw new Error('Expected partial preview')
+    const grant = await issueStepUpGrantFixture(
+      payload,
+      req,
+      Number(customer.id),
+      'dns_bulk_delete',
+    )
+    const submitted = await deleteCustomerDnsRecordBatch(
+      req,
+      asset.id,
+      { ...grant, previewToken: preview.data.previewToken, recordIds: ['231', '232'] },
+      options,
+    )
+    if (!('data' in submitted)) throw new Error('Expected submitted partial batch')
+    const queried = await queryCustomerDnsRecordBatchDelete(
+      req,
+      asset.id,
+      submitted.data.batchKey,
+      options,
+    )
+    expect(queried).toMatchObject({
+      data: {
+        items: [
+          { providerRecordId: '231', status: 'succeeded' },
+          {
+            providerRecordId: '232',
+            reasonCode: 'WESTDIGITAL_OPERATION_FAILED',
+            reasonMessage: expect.any(String),
+            status: 'failed',
+          },
+        ],
+      },
+      state: 'partial',
+    })
+    expect(
+      transport.requests.filter(
+        (request) => request.operation === 'offline_dns_record_delete_submit',
+      ),
+    ).toHaveLength(2)
+  })
+
+  it('keeps documented queued offline states pending_query after status polling', async () => {
+    const { asset, customer, req } = await createFixture('batch-still-pending')
+    const { provider, transport } = statefulProvider(
+      [
+        {
+          host: 'one',
+          id: '233',
+          line: '',
+          paused: false,
+          priority: 10,
+          ttl: 600,
+          type: 'A',
+          value: '192.0.2.233',
+        },
+        {
+          host: 'two',
+          id: '234',
+          line: '',
+          paused: false,
+          priority: 10,
+          ttl: 600,
+          type: 'A',
+          value: '192.0.2.234',
+        },
+      ],
+      undefined,
+      { offlineOutcomes: { '233': 'pending', '234': 'pending' } },
+    )
+    const options = {
+      customer: customerIdentity(customer.id),
+      provider,
+      traceId: `${fixturePrefix}-still-pending`,
+    }
+    const preview = await previewCustomerDnsRecordBatchDelete(
+      req,
+      asset.id,
+      { recordIds: ['233', '234'] },
+      options,
+    )
+    if (!('data' in preview)) throw new Error('Expected pending preview')
+    const stepUp = await issueStepUpGrantFixture(
+      payload,
+      req,
+      Number(customer.id),
+      'dns_bulk_delete',
+    )
+    const submitted = await deleteCustomerDnsRecordBatch(
+      req,
+      asset.id,
+      { ...stepUp, previewToken: preview.data.previewToken, recordIds: ['233', '234'] },
+      options,
+    )
+    if (!('data' in submitted)) throw new Error('Expected pending submission')
+    await expect(
+      queryCustomerDnsRecordBatchDelete(req, asset.id, submitted.data.batchKey, options),
+    ).resolves.toMatchObject({
+      data: { items: [{ status: 'pending_query' }, { status: 'pending_query' }] },
+      state: 'partial',
+    })
+    const pending = await payload.find({
+      collection: 'providerOperations',
+      limit: 20,
+      overrideAccess: true,
+      where: {
+        and: [
+          { operation: { equals: 'dns_record_batch_delete' } },
+          { status: { equals: 'unknown' } },
+          { targetId: { equals: String(asset.id) } },
+        ],
+      },
+    })
+    expect(pending.totalDocs).toBe(2)
+    expect(
+      transport.requests.filter(
+        (request) => request.operation === 'offline_dns_record_delete_submit',
+      ),
+    ).toHaveLength(2)
+  })
+
+  it('applies D9-D-2 upstream ownership blocking to each offline batch item', async () => {
+    const { asset, customer, req } = await createFixture('batch-upstream-ownership')
+    const { provider, transport } = statefulProvider(
+      [
+        {
+          host: 'one',
+          id: '241',
+          line: '',
+          paused: false,
+          priority: 10,
+          ttl: 600,
+          type: 'A',
+          value: '192.0.2.241',
+        },
+        {
+          host: 'two',
+          id: '242',
+          line: '',
+          paused: false,
+          priority: 10,
+          ttl: 600,
+          type: 'A',
+          value: '192.0.2.242',
+        },
+      ],
+      undefined,
+      { ownership: 'not_owned' },
+    )
+    const options = {
+      customer: customerIdentity(customer.id),
+      provider,
+      traceId: `${fixturePrefix}-batch-upstream-ownership`,
+    }
+    const preview = await previewCustomerDnsRecordBatchDelete(
+      req,
+      asset.id,
+      { recordIds: ['241', '242'] },
+      options,
+    )
+    if (!('data' in preview)) throw new Error('Expected ownership preview')
+    const grant = await issueStepUpGrantFixture(
+      payload,
+      req,
+      Number(customer.id),
+      'dns_bulk_delete',
+    )
+    await expect(
+      deleteCustomerDnsRecordBatch(
+        req,
+        asset.id,
+        { ...grant, previewToken: preview.data.previewToken, recordIds: ['241', '242'] },
+        options,
+      ),
+    ).rejects.toMatchObject({ code: 'DOMAIN_UPSTREAM_ASSET_NOT_OWNED', status: 409 })
+    expect(
+      transport.requests.filter(
+        (request) => request.operation === 'offline_dns_record_delete_submit',
+      ),
+    ).toHaveLength(0)
+  })
+
+  it('submits each item exactly once across N concurrent submissions of the same batch', async () => {
+    const { asset, customer, req } = await createFixture('batch-concurrent')
+    const { provider, transport } = statefulProvider([
+      {
+        host: 'one',
+        id: '251',
+        line: '',
+        paused: false,
+        priority: 10,
+        ttl: 600,
+        type: 'A',
+        value: '192.0.2.251',
+      },
+      {
+        host: 'two',
+        id: '252',
+        line: '',
+        paused: false,
+        priority: 10,
+        ttl: 600,
+        type: 'A',
+        value: '192.0.2.252',
+      },
+    ])
+    const options = {
+      customer: customerIdentity(customer.id),
+      provider,
+      traceId: `${fixturePrefix}-batch-concurrent`,
+    }
+    const preview = await previewCustomerDnsRecordBatchDelete(
+      req,
+      asset.id,
+      { recordIds: ['251', '252'] },
+      options,
+    )
+    if (!('data' in preview)) throw new Error('Expected concurrent preview')
+    const grants = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        issueStepUpGrantFixture(payload, req, Number(customer.id), 'dns_bulk_delete'),
+      ),
+    )
+    const requests = await Promise.all(
+      Array.from({ length: 5 }, (_, index) => request(customer, `batch-concurrent-${index}`)),
+    )
+    const attempts = await Promise.allSettled(
+      requests.map((concurrentReq, index) =>
+        deleteCustomerDnsRecordBatch(
+          concurrentReq,
+          asset.id,
+          {
+            ...grants[index]!,
+            previewToken: preview.data.previewToken,
+            recordIds: ['251', '252'],
+          },
+          { ...options, traceId: `${fixturePrefix}-batch-concurrent-${index}` },
+        ),
+      ),
+    )
+    expect(attempts.some((attempt) => attempt.status === 'fulfilled')).toBe(true)
+    expect(
+      transport.requests.filter(
+        (request) => request.operation === 'offline_dns_record_delete_submit',
+      ),
+    ).toHaveLength(2)
+  })
+
+  it('atomically submits one offline task for N concurrent executions of the same item', async () => {
+    const { asset, customer } = await createFixture('batch-item-concurrent')
+    const record: FixtureRecord = {
+      host: 'one',
+      id: '261',
+      line: '',
+      paused: false,
+      priority: 10,
+      ttl: 600,
+      type: 'A',
+      value: '192.0.2.61',
+    }
+    const { provider, transport } = statefulProvider([record])
+    const requests = await Promise.all(
+      Array.from({ length: 5 }, (_, index) => request(customer, `item-concurrent-${index}`)),
+    )
+    await Promise.all(
+      requests.map((concurrentReq, index) =>
+        executeWestDigitalWriteOperation(
+          concurrentReq,
+          {
+            actor: { id: customer.id, type: 'customer' },
+            domainAscii: asset.domainAscii,
+            operation: 'dns_record_batch_delete',
+            providerRecordId: record.id,
+            record: {
+              host: record.host,
+              lineCode: record.line,
+              priority: record.priority,
+              ttl: record.ttl,
+              type: record.type,
+              value: record.value,
+            },
+            targetId: asset.id,
+            traceId: `${fixturePrefix}-item-concurrent-${index}`,
+          },
+          provider,
+        ),
+      ),
+    )
+    expect(
+      transport.requests.filter(
+        (request) => request.operation === 'offline_dns_record_delete_submit',
+      ),
+    ).toHaveLength(1)
   })
 
   it('enforces the configurable per-domain mutation rate before another provider write', async () => {
@@ -2004,6 +2832,9 @@ describe('D9-D-1 DNS record management', () => {
       ),
     ).rejects.toMatchObject({ code: 'ACCOUNT_DOMAIN_WRITE_DISABLED' })
     await expect(
+      queryCustomerDnsRecordBatchDelete(req, asset.id, 'a'.repeat(64), options),
+    ).rejects.toMatchObject({ code: 'ACCOUNT_DOMAIN_WRITE_DISABLED' })
+    await expect(
       deleteCustomerDnsRecord(req, asset.id, '111', { idempotencyKey: randomUUID() }, options),
     ).rejects.toMatchObject({ code: 'ACCOUNT_DOMAIN_WRITE_DISABLED' })
     await expect(
@@ -2101,8 +2932,9 @@ describe('D9-D-1 DNS record management', () => {
         },
         options,
       ),
+      queryCustomerDnsRecordBatchDelete(owner.req, other.asset.id, 'a'.repeat(64), options),
     ])
-    expect(attempts).toHaveLength(8)
+    expect(attempts).toHaveLength(9)
     expect(
       attempts.every(
         (result) =>

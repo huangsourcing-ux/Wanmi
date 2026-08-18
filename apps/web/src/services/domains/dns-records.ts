@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto'
 import { sql } from '@payloadcms/db-postgres'
 import { commitTransaction, initTransaction, killTransaction, type PayloadRequest } from 'payload'
 
-import { hmac, safeEqualHex } from '@/lib/crypto'
 import { getEnv } from '@/lib/env'
 import { AppError, toProblemDetails } from '@/lib/errors'
 import type { ProviderResult } from '@/lib/domain'
@@ -43,6 +42,7 @@ import {
 } from '@/services/providers/westdigital-operations'
 
 import { findOwnedDomainAsset } from './domain-assets'
+import { decodeBoundChangePreview, signBoundChangePreview } from './change-preview'
 
 const DNS_MUTATION_LEASE_SECONDS = 600
 
@@ -61,9 +61,14 @@ type AssetRecord = Awaited<ReturnType<typeof findOwnedDomainAsset>> & {
 }
 
 type ChangeEventRecord = {
+  asset?: number | string | { id: number | string }
+  batchKey?: string
   beforeRecord?: WestDigitalDnsRecord
+  customer?: number | string | { id: number | string }
+  event?: 'confirmed' | 'failed' | 'pending_query' | 'requested'
   id: number | string
   operation: 'add' | 'delete' | 'modify' | 'pause' | 'resume'
+  operationKey?: string
   providerRecordId?: string
   requestedRecord?: WestDigitalDnsRecordInput
 }
@@ -548,6 +553,12 @@ function operationRecordId(operation: ProviderOperationRecord): string | undefin
   return typeof value === 'string' ? value : undefined
 }
 
+function operationTaskKey(operation: ProviderOperationRecord): string | undefined {
+  if (!operation.safeResult || typeof operation.safeResult !== 'object') return undefined
+  const value = (operation.safeResult as { providerTaskKey?: unknown }).providerTaskKey
+  return typeof value === 'string' ? value : undefined
+}
+
 function operationStatus(operation: ProviderOperationRecord): DnsRecordMutationView['status'] {
   if (operation.status === 'succeeded') return 'succeeded'
   if (operation.status === 'failed') return 'failed'
@@ -622,6 +633,9 @@ async function executeMutation(
     operationId: String(operation.id),
     operationKey,
     providerRecordId,
+    providerTaskKey: operationTaskKey(operation),
+    reasonCode: 'problem' in executed ? executed.problem.code : undefined,
+    reasonMessage: 'problem' in executed ? executed.problem.message : undefined,
     status,
   })
   if (status === 'succeeded') {
@@ -1036,6 +1050,8 @@ function recordsDigest(records: WestDigitalDnsRecord[]): string {
 
 type PreviewPayload = {
   assetId: string
+  customerId: string
+  domainAscii: string
   expiresAt: string
   recordDigest: string
   recordIds: string[]
@@ -1043,39 +1059,31 @@ type PreviewPayload = {
 }
 
 function signPreview(payload: PreviewPayload): string {
-  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url')
-  return `${encoded}.${hmac(encoded, getEnv().SESSION_PEPPER)}`
+  return signBoundChangePreview(payload)
 }
 
 function verifyPreview(
   token: string,
   input: {
     assetId: number | string
+    customerId: number | string
+    domainAscii: string
     recordIds: string[]
   },
 ): PreviewPayload {
-  const [encoded = '', signature = '', extra] = token.split('.')
-  if (
-    extra ||
-    !/^[a-f0-9]{64}$/iu.test(signature) ||
-    !safeEqualHex(hmac(encoded, getEnv().SESSION_PEPPER), signature)
-  ) {
-    throw new AppError('DNS_RECORD_PREVIEW_INVALID', '批量删除预览无效或已被修改', 409)
-  }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as unknown
-  } catch {
-    throw new AppError('DNS_RECORD_PREVIEW_INVALID', '批量删除预览无效或已被修改', 409)
-  }
+  const parsed = decodeBoundChangePreview(token, {
+    code: 'DNS_RECORD_PREVIEW_INVALID',
+    message: '批量删除预览无效或已被修改',
+  })
   const payload = parsed as Partial<PreviewPayload>
   if (
     payload.version !== 1 ||
     payload.assetId !== String(input.assetId) ||
+    payload.customerId !== String(input.customerId) ||
+    payload.domainAscii !== input.domainAscii ||
     !payload.expiresAt ||
     new Date(payload.expiresAt).getTime() <= Date.now() ||
-    JSON.stringify(payload.recordIds) !== JSON.stringify(input.recordIds) ||
-    typeof payload.recordDigest !== 'string'
+    JSON.stringify(payload.recordIds) !== JSON.stringify(input.recordIds)
   ) {
     throw new AppError('DNS_RECORD_PREVIEW_INVALID', '批量删除预览无效或已过期', 409)
   }
@@ -1114,6 +1122,8 @@ export async function previewCustomerDnsRecordBatchDelete(
   ).toISOString()
   const previewToken = signPreview({
     assetId: String(asset.id),
+    customerId: String(options.customer.id),
+    domainAscii: asset.domainAscii,
     expiresAt,
     recordDigest: recordsDigest(records),
     recordIds,
@@ -1127,6 +1137,48 @@ export async function previewCustomerDnsRecordBatchDelete(
     },
     state: 'ready',
   })
+}
+
+async function findBatchRequestedIntents(
+  req: PayloadRequest,
+  input: {
+    assetId: number | string
+    batchKey: string
+    customerId: number | string
+  },
+): Promise<Map<string, ChangeEventRecord>> {
+  const found = await req.payload.find({
+    collection: 'dnsRecordChanges',
+    depth: 0,
+    limit: 20,
+    overrideAccess: true,
+    req,
+    where: {
+      and: [
+        { asset: { equals: input.assetId } },
+        { batchKey: { equals: input.batchKey } },
+        { customer: { equals: input.customerId } },
+        { event: { equals: 'requested' } },
+        { operation: { equals: 'delete' } },
+      ],
+    },
+  })
+  const intents = found.docs as unknown as ChangeEventRecord[]
+  const byRecordId = new Map<string, ChangeEventRecord>()
+  for (const intent of intents) {
+    if (!intent.providerRecordId || !intent.beforeRecord || !intent.requestedRecord) {
+      throw new AppError(
+        'DNS_RECORD_OPERATION_INTENT_MISSING',
+        '批量删除任务的原始意图缺失，禁止重新提交',
+        503,
+      )
+    }
+    if (byRecordId.has(intent.providerRecordId)) {
+      throw new AppError('DNS_RECORD_OPERATION_INTENT_MISMATCH', '批量删除任务意图重复', 409)
+    }
+    byRecordId.set(intent.providerRecordId, intent)
+  }
+  return byRecordId
 }
 
 export async function deleteCustomerDnsRecordBatch(
@@ -1154,13 +1206,32 @@ export async function deleteCustomerDnsRecordBatch(
   })
   const preview = verifyPreview(input.previewToken, {
     assetId: asset.id,
+    customerId: options.customer.id,
+    domainAscii: asset.domainAscii,
     recordIds,
   })
   const batchKey = createHash('sha256').update(input.previewToken).digest('hex')
   const leaseKey = `dns-record-batch-delete:${asset.id}:${batchKey}`
 
   return withMutationLease(req, { asset, changeDelta: recordIds.length, leaseKey }, async () => {
-    const records = await loadRecordsForPreview(asset, recordIds, options.provider, options.traceId)
+    const replayIntents = await findBatchRequestedIntents(req, {
+      assetId: asset.id,
+      batchKey,
+      customerId: options.customer.id,
+    })
+    const records = await Promise.all(
+      recordIds.map((recordId, index) => {
+        const replay = replayIntents.get(recordId)
+        return replay
+          ? replay.beforeRecord!
+          : requireProviderRecord(
+              asset,
+              recordId,
+              options.provider,
+              `${options.traceId}-record-${index + 1}`,
+            )
+      }),
+    )
     if (recordsDigest(records) !== preview.recordDigest) {
       throw new AppError('DNS_RECORD_PREVIEW_STALE', 'DNS 解析记录已变化，请重新预览', 409)
     }
@@ -1178,7 +1249,7 @@ export async function deleteCustomerDnsRecordBatch(
       const writeInput: WestDigitalWriteOperationInput = {
         actor: { id: options.customer.id, type: 'customer' },
         domainAscii: asset.domainAscii,
-        operation: 'dns_record_delete',
+        operation: 'dns_record_batch_delete',
         providerRecordId: before.id,
         record: requestedRecord,
         targetId: asset.id,
@@ -1200,7 +1271,7 @@ export async function deleteCustomerDnsRecordBatch(
     }
     if (results.every((result) => result.status === 'succeeded')) {
       return dnsRecordBatchDeleteResultSchema.parse({
-        data: { items: results },
+        data: { batchKey, items: results },
         meta: {
           dataSource: getEnv().WESTDIGITAL_MODE === 'live' ? 'westdigital' : 'westdigital-fixture',
           traceId: options.traceId,
@@ -1209,7 +1280,7 @@ export async function deleteCustomerDnsRecordBatch(
       })
     }
     return dnsRecordBatchDeleteResultSchema.parse({
-      data: { items: results },
+      data: { batchKey, items: results },
       meta: {
         dataSource: getEnv().WESTDIGITAL_MODE === 'live' ? 'westdigital' : 'westdigital-fixture',
         traceId: options.traceId,
@@ -1226,6 +1297,131 @@ export async function deleteCustomerDnsRecordBatch(
         ),
       state: 'partial',
     })
+  })
+}
+
+export async function queryCustomerDnsRecordBatchDelete(
+  req: PayloadRequest,
+  assetId: number | string,
+  batchKey: string,
+  options: {
+    customer: CustomerIdentity
+    provider: WestDigitalManagedProvider
+    traceId: string
+  },
+) {
+  await assertCustomerAccountCapability(req, options.customer.id, 'domain_write')
+  const asset = (await findOwnedDomainAsset(req, assetId, options.customer)) as AssetRecord
+  const normalizedBatchKey = batchKey.toLowerCase()
+  if (!/^[a-f0-9]{64}$/u.test(normalizedBatchKey)) {
+    throw new AppError('DNS_RECORD_BATCH_KEY_INVALID', '批量任务标识无效', 400)
+  }
+  const found = await req.payload.find({
+    collection: 'dnsRecordChanges',
+    depth: 0,
+    limit: 20,
+    overrideAccess: false,
+    req,
+    sort: 'providerRecordId',
+    user: options.customer as never,
+    where: {
+      and: [
+        { asset: { equals: asset.id } },
+        { batchKey: { equals: normalizedBatchKey } },
+        { customer: { equals: options.customer.id } },
+        { event: { equals: 'requested' } },
+        { operation: { equals: 'delete' } },
+      ],
+    },
+  })
+  const intents = await Promise.all(
+    found.docs.map(
+      async (visible) =>
+        (await req.payload.findByID({
+          collection: 'dnsRecordChanges',
+          depth: 0,
+          id: visible.id,
+          overrideAccess: true,
+          req,
+        })) as unknown as ChangeEventRecord,
+    ),
+  )
+  if (intents.length < 2) {
+    throw new AppError('DNS_RECORD_BATCH_NOT_FOUND', '未找到可查询的批量删除任务', 404)
+  }
+  const results: DnsRecordMutationView[] = []
+  const problems = []
+  for (const [index, intent] of intents.entries()) {
+    if (
+      String(typeof intent.asset === 'object' ? intent.asset.id : intent.asset) !==
+        String(asset.id) ||
+      String(typeof intent.customer === 'object' ? intent.customer.id : intent.customer) !==
+        String(options.customer.id) ||
+      intent.batchKey !== normalizedBatchKey ||
+      intent.event !== 'requested' ||
+      intent.operation !== 'delete' ||
+      !intent.providerRecordId ||
+      !intent.requestedRecord ||
+      !intent.operationKey
+    ) {
+      throw new AppError(
+        'DNS_RECORD_OPERATION_INTENT_MISSING',
+        '批量删除任务的原始意图缺失，禁止重新提交',
+        503,
+      )
+    }
+    const writeInput: WestDigitalWriteOperationInput = {
+      actor: { id: options.customer.id, type: 'customer' },
+      domainAscii: asset.domainAscii,
+      operation: 'dns_record_batch_delete',
+      providerRecordId: intent.providerRecordId,
+      record: intent.requestedRecord,
+      targetId: asset.id,
+      traceId: `${options.traceId}-query-${index + 1}`,
+    }
+    if (generateWestDigitalOperationKey(writeInput) !== intent.operationKey) {
+      throw new AppError(
+        'DNS_RECORD_OPERATION_INTENT_MISMATCH',
+        '批量删除任务意图与 Provider 操作不一致',
+        409,
+      )
+    }
+    const result = await executeMutation(req, {
+      asset,
+      batchKey: normalizedBatchKey,
+      beforeRecord: intent.beforeRecord,
+      customerId: options.customer.id,
+      operation: 'delete',
+      provider: options.provider,
+      requestedRecord: intent.requestedRecord,
+      traceId: `${options.traceId}-query-${index + 1}`,
+      writeInput,
+    })
+    if ('data' in result) results.push(result.data)
+    if ('problem' in result) problems.push(result.problem)
+  }
+  const data = { batchKey: normalizedBatchKey, items: results }
+  const meta = {
+    dataSource: getEnv().WESTDIGITAL_MODE === 'live' ? 'westdigital' : 'westdigital-fixture',
+    traceId: options.traceId,
+  }
+  if (results.every((item) => item.status === 'succeeded')) {
+    return dnsRecordBatchDeleteResultSchema.parse({ data, meta, state: 'ready' })
+  }
+  return dnsRecordBatchDeleteResultSchema.parse({
+    data,
+    meta,
+    problem:
+      problems[0] ??
+      toProblemDetails(
+        new AppError(
+          'DNS_RECORD_BATCH_PENDING_QUERY',
+          '批量删除仍有失败或待查询条目；禁止重新提交上游写入',
+          503,
+        ),
+        options.traceId,
+      ),
+    state: 'partial',
   })
 }
 

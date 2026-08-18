@@ -99,6 +99,13 @@
       "reason": "新增域名管理与资产同步追加式记录、上游归属和同步状态、管理互斥列及 provider/Job 枚举；旧代码可忽略新增结构，新代码仅在迁移完成后启用域名管理和同步。",
       "rollback": "retain"
     },
+    "20260818_010559_d9d3_offline_batch_operations": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增批量 Name Server 追加式事件表与 DNS 离线批量删除 provider 操作枚举；旧代码可忽略新增结构，新代码仅在迁移完成后启用离线任务和批量入口。",
+      "rollback": "retain"
+    },
     "20260818_032334_d9b2_wallet_top_up_orders": {
       "newCodeCompatibleBeforeUp": true,
       "oldCodeCompatible": true,

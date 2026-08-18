@@ -6,6 +6,7 @@ export type WestDigitalGuardedWrite =
       domainAscii: string
       operation:
         | 'dns_record_add'
+        | 'dns_record_batch_delete'
         | 'dns_record_delete'
         | 'dns_record_modify'
         | 'dns_record_pause'

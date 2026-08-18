@@ -271,6 +271,14 @@ export type WestDigitalDnsRecordPage = {
   total: number
 }
 
+export type WestDigitalOfflineTaskState = {
+  providerTaskKey: string
+  reason?: string
+  recordState: 0 | 1 | 2 | 3 | 4 | 5 | 6
+  state: 'failed' | 'pending' | 'succeeded'
+  taskState: 0 | 1 | 2 | 3
+}
+
 export interface WestDigitalDnsProvider extends HealthAwareProvider {
   addDnsRecord(input: {
     domainAscii: string
@@ -283,6 +291,16 @@ export interface WestDigitalDnsProvider extends HealthAwareProvider {
     record: WestDigitalDnsRecordInput
     traceId: string
   }): Promise<ProviderResult<WestDigitalWriteConfirmation>>
+  queryOfflineDnsRecordDelete(input: {
+    domainAscii: string
+    providerTaskKey: string
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalOfflineTaskState>>
+  submitOfflineDnsRecordDelete(input: {
+    domainAscii: string
+    record: WestDigitalDnsRecordInput
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalWriteConfirmation & { providerTaskKey: string }>>
   modifyDnsRecord(input: {
     domainAscii: string
     providerRecordId: string

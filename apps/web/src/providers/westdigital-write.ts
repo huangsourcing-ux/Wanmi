@@ -13,11 +13,13 @@ import type {
   WestDigitalDnsRecordInput,
   WestDigitalDnsRecordPage,
   WestDigitalManagedProvider,
+  WestDigitalOfflineTaskState,
   WestDigitalRealnameProfile,
   WestDigitalRealnameReviewState,
   WestDigitalWriteConfirmation,
 } from './types'
 import { managedDnsRecordTypeSchema, westDigitalDnsLineCodeSchema } from '@/schemas/dns-management'
+import { westDigitalDnsLineLabel } from '@/providers/westdigital-dns'
 
 export type WestDigitalWriteTransportOperation =
   | 'asset_query'
@@ -32,6 +34,9 @@ export type WestDigitalWriteTransportOperation =
   | 'dns_record_modify'
   | 'dns_record_pause'
   | 'dns_record_query'
+  | 'offline_dns_record_delete_submit'
+  | 'offline_task_list'
+  | 'offline_task_record_list'
   | 'nameserver'
   | 'realname_create'
   | 'realname_query'
@@ -41,7 +46,12 @@ export type WestDigitalWriteTransportOperation =
 export type WestDigitalWriteTransportRequest = {
   body: Readonly<Record<string, string>>
   operation: WestDigitalWriteTransportOperation
-  path: '/v2/audit/' | '/v2/domain/'
+  path:
+    | '/v2/audit/'
+    | '/v2/domain/'
+    | '/v2/offline-task/add-dns-record-task'
+    | '/v2/offline-task/task-list'
+    | '/v2/offline-task/task-record-list'
   requestId: string
   signal: AbortSignal
   traceId: string
@@ -81,6 +91,47 @@ const envelopeSchema = z
     result: resultCodeSchema,
   })
   .passthrough()
+const offlineEnvelopeSchema = z
+  .object({
+    clientid: z.union([z.string(), z.number()]).transform(String).optional(),
+    code: resultCodeSchema,
+    data: z.unknown().optional(),
+    msg: z.string().optional(),
+  })
+  .passthrough()
+const offlineTaskKeyDataSchema = z
+  .object({ task_sku: z.string().trim().min(1).max(128) })
+  .passthrough()
+const offlineTaskStateSchema = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)])
+const offlineRecordStateSchema = z.union([
+  z.literal(0),
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+  z.literal(4),
+  z.literal(5),
+  z.literal(6),
+])
+const offlineTaskListDataSchema = z.object({
+  data: z.array(
+    z.object({
+      task_act: z.string(),
+      task_sku: z.string(),
+      task_state: offlineTaskStateSchema,
+      task_type: z.string(),
+    }),
+  ),
+})
+const offlineTaskRecordListDataSchema = z.object({
+  data: z.array(
+    z.object({
+      act: z.string(),
+      record_ident: z.string(),
+      record_result: z.string().max(1_024).optional(),
+      record_state: offlineRecordStateSchema,
+    }),
+  ),
+})
 
 const templateCreateDataSchema = z.object({
   c_sysid: z.union([z.string(), z.number()]).transform(String),
@@ -487,6 +538,103 @@ export class WestDigitalWriteAdapter implements WestDigitalManagedProvider {
     })
   }
 
+  async submitOfflineDnsRecordDelete(input: {
+    domainAscii: string
+    record: WestDigitalDnsRecordInput
+    traceId: string
+  }) {
+    const domainAscii = asciiDomain(input.domainAscii)
+    const record = this.dnsRecordInput(input.record)
+    const values = [
+      domainAscii,
+      record.host === '@' ? '' : record.host,
+      record.type,
+      record.value,
+      westDigitalDnsLineLabel(record.lineCode),
+    ]
+    if (values.some((value) => /[|\r\n]/u.test(value))) {
+      throw new Error('Offline DNS record fields cannot contain delimiters')
+    }
+    return this.requestOffline({
+      body: { act: 'dodelreall', data: values.join('|') },
+      input,
+      operation: 'offline_dns_record_delete_submit',
+      parse: (envelope) => ({
+        providerClientId: envelope.clientid!,
+        providerTaskKey: offlineTaskKeyDataSchema.parse(envelope.data).task_sku,
+        state: 'accepted' as const,
+      }),
+      path: '/v2/offline-task/add-dns-record-task',
+      write: true,
+    })
+  }
+
+  async queryOfflineDnsRecordDelete(input: {
+    domainAscii: string
+    providerTaskKey: string
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalOfflineTaskState>> {
+    const domainAscii = asciiDomain(input.domainAscii)
+    const providerTaskKey = z.string().trim().min(1).max(128).parse(input.providerTaskKey)
+    const task = await this.requestOffline({
+      body: { page: '1', pageSize: '10', task_sku: providerTaskKey },
+      input,
+      operation: 'offline_task_list',
+      parse: (envelope) => {
+        const tasks = offlineTaskListDataSchema
+          .parse(envelope.data)
+          .data.filter((item) => item.task_sku === providerTaskKey)
+        if (
+          tasks.length !== 1 ||
+          tasks[0]?.task_act !== 'dodelreall' ||
+          tasks[0]?.task_type !== 'dns_record'
+        ) {
+          throw new Error('Offline task identity mismatch')
+        }
+        return tasks[0]
+      },
+      path: '/v2/offline-task/task-list',
+      write: false,
+    })
+    if (!task.ok) return task
+
+    const record = await this.requestOffline({
+      body: { ident: domainAscii, page: '1', pageSize: '10', task_sku: providerTaskKey },
+      input,
+      operation: 'offline_task_record_list',
+      parse: (envelope) => {
+        const records = offlineTaskRecordListDataSchema
+          .parse(envelope.data)
+          .data.filter((item) => item.record_ident === domainAscii && item.act === 'dodelreall')
+        if (records.length !== 1) throw new Error('Offline task record identity mismatch')
+        return records[0]!
+      },
+      path: '/v2/offline-task/task-record-list',
+      write: false,
+    })
+    if (!record.ok) return record
+
+    const state =
+      record.data.record_state === 3
+        ? 'succeeded'
+        : task.data.task_state === 3 ||
+            record.data.record_state === 4 ||
+            record.data.record_state === 5
+          ? 'failed'
+          : 'pending'
+    return success(
+      {
+        providerTaskKey,
+        reason: record.data.record_result,
+        recordState: record.data.record_state,
+        state,
+        taskState: task.data.task_state,
+      },
+      record.observedAt,
+      record.requestId,
+    )
+  }
+
   private dnsRecordInput(record: WestDigitalDnsRecordInput): WestDigitalDnsRecordInput {
     return {
       host: z.string().max(253).parse(record.host),
@@ -767,6 +915,88 @@ export class WestDigitalWriteAdapter implements WestDigitalManagedProvider {
                 ? 'WESTDIGITAL_QUERY_TIMEOUT'
                 : 'WESTDIGITAL_QUERY_UNAVAILABLE'
       return failure(code, '西部数码请求未能安全完成', observedAt(), requestId, {
+        retryable:
+          transportError.submission === 'not_submitted' && RETRYABLE_NOT_SUBMITTED_CODES.has(code),
+        statusKnown: transportError.submission === 'not_submitted',
+      })
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  private async requestOffline<T>(input: {
+    body: Readonly<Record<string, string>>
+    input: { traceId: string }
+    operation: 'offline_dns_record_delete_submit' | 'offline_task_list' | 'offline_task_record_list'
+    parse: (envelope: z.infer<typeof offlineEnvelopeSchema>) => T
+    path:
+      | '/v2/offline-task/add-dns-record-task'
+      | '/v2/offline-task/task-list'
+      | '/v2/offline-task/task-record-list'
+    write: boolean
+  }): Promise<ProviderResult<T>> {
+    const requestId = this.requestIdFactory()
+    const observedAt = () => this.now().toISOString()
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs)
+    try {
+      const response = await this.options.transport.execute({
+        body: input.body,
+        operation: input.operation,
+        path: input.path,
+        requestId,
+        signal: controller.signal,
+        traceId: input.input.traceId,
+      })
+      if (response.status !== 200) {
+        return failure(
+          input.write ? 'WESTDIGITAL_WRITE_STATUS_UNKNOWN' : 'WESTDIGITAL_QUERY_UNAVAILABLE',
+          '西部数码离线任务返回非预期 HTTP 状态',
+          observedAt(),
+          requestId,
+          { retryable: false, statusKnown: !input.write },
+        )
+      }
+      const envelope = offlineEnvelopeSchema.safeParse(response.body)
+      if (!envelope.success || envelope.data.code !== 200 || !envelope.data.clientid) {
+        return failure(
+          'WESTDIGITAL_EXPLICIT_REJECTION',
+          '西部数码明确拒绝离线任务操作',
+          observedAt(),
+          requestId,
+          { retryable: false, statusKnown: true },
+        )
+      }
+      try {
+        return success(input.parse(envelope.data), observedAt(), requestId)
+      } catch {
+        return failure(
+          input.write ? 'WESTDIGITAL_WRITE_STATUS_UNKNOWN' : 'WESTDIGITAL_INVALID_RESPONSE',
+          '西部数码离线任务响应无法安全确认',
+          observedAt(),
+          requestId,
+          { retryable: false, statusKnown: !input.write },
+        )
+      }
+    } catch (error) {
+      const transportError =
+        error instanceof WestDigitalWriteTransportError
+          ? error
+          : new WestDigitalWriteTransportError(
+              controller.signal.aborted ? 'TIMEOUT' : 'UNAVAILABLE',
+              input.write ? 'unknown' : 'not_submitted',
+            )
+      const code =
+        transportError.submission === 'unknown'
+          ? 'WESTDIGITAL_WRITE_STATUS_UNKNOWN'
+          : transportError.code === 'RATE_LIMITED'
+            ? 'WESTDIGITAL_RATE_LIMITED'
+            : transportError.code === 'TEMPORARILY_UNAVAILABLE'
+              ? 'WESTDIGITAL_TEMPORARILY_UNAVAILABLE'
+              : transportError.code === 'TIMEOUT'
+                ? 'WESTDIGITAL_QUERY_TIMEOUT'
+                : 'WESTDIGITAL_QUERY_UNAVAILABLE'
+      return failure(code, '西部数码离线任务请求未能安全完成', observedAt(), requestId, {
         retryable:
           transportError.submission === 'not_submitted' && RETRYABLE_NOT_SUBMITTED_CODES.has(code),
         statusKnown: transportError.submission === 'not_submitted',
