@@ -33,11 +33,13 @@ import {
 } from './domain-management'
 import {
   DomainAssets,
+  AutomaticRenewalEvents,
   DomainExpiryReminders,
   NameserverChanges,
   ProviderOperations,
   ProviderWriteBudgetDebits,
   ProviderWriteBudgets,
+  RenewalMandates,
   Renewals,
 } from './fulfillment'
 import {
@@ -128,6 +130,8 @@ export const collections: CollectionConfig[] = [
   DomainManagementEvents,
   DomainAssetSyncEvents,
   DomainBatchOperationEvents,
+  RenewalMandates,
+  AutomaticRenewalEvents,
   ManualReviews,
   Reconciliations,
   AuditLogs,

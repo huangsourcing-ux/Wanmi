@@ -31,6 +31,7 @@ export type BalancePaymentOrder = {
   paidAt?: null | string
   paymentChannel?: 'balance' | 'h5' | 'native' | null
   paymentExpiresAt?: null | string
+  balanceHoldTransactionKey?: null | string
   quoteSnapshot?: unknown
   status: string
 }
@@ -177,7 +178,8 @@ export async function loadBalancePaymentHold(
   transactionKey: string
 }> {
   const expectedAmount = orderAmountFen(order)
-  const transactionKey = balancePaymentTransactionKey(order.id)
+  const transactionKey =
+    order.balanceHoldTransactionKey?.trim() || balancePaymentTransactionKey(order.id)
   const found = await req.payload.find({
     collection: 'walletTransactions',
     depth: 0,

@@ -8,6 +8,7 @@ import {
   systemAdminOnly,
 } from '@/access/roles'
 import { ADMIN_GROUPS } from '@/lib/admin-navigation'
+import { AppError } from '@/lib/errors'
 
 const nonnegativeSafeInteger = (name: string, defaultValue?: number): Field => ({
   name,
@@ -19,6 +20,19 @@ const nonnegativeSafeInteger = (name: string, defaultValue?: number): Field => (
     value !== null && value !== undefined && Number.isSafeInteger(value) && value >= 0
       ? true
       : '字段必须是非负安全整数',
+})
+
+const appendOnly = (code: string, message: string) => ({
+  beforeChange: [
+    ({ operation }: { operation: string }) => {
+      if (operation === 'update') throw new AppError(code, message, 409)
+    },
+  ],
+  beforeDelete: [
+    () => {
+      throw new AppError(code, message, 409)
+    },
+  ],
 })
 
 export const ProviderOperations: CollectionConfig = {
@@ -242,7 +256,12 @@ export const DomainExpiryReminders: CollectionConfig = {
   access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
   admin: { group: ADMIN_GROUPS.fulfillment, hidden: systemAdminHidden },
   defaultSort: '-createdAt',
-  indexes: [{ fields: ['asset', 'expiresAtSnapshot'] }],
+  indexes: [
+    { fields: ['asset', 'expiresAtSnapshot'] },
+    {
+      fields: ['asset', 'noticeType', 'expiresAtSnapshot'],
+    },
+  ],
   fields: [
     {
       name: 'reminderKey',
@@ -267,8 +286,31 @@ export const DomainExpiryReminders: CollectionConfig = {
       required: true,
     },
     { name: 'channel', type: 'select', options: ['in_app', 'sms'], required: true },
-    { name: 'thresholdDays', type: 'number', min: 0, max: 365, required: true },
+    {
+      name: 'noticeType',
+      type: 'select',
+      defaultValue: 'expiry',
+      options: [
+        'expiry',
+        'automatic_renewal_enabled',
+        'automatic_renewal_due',
+        'automatic_renewal_balance_insufficient',
+        'automatic_renewal_price_changed',
+        'automatic_renewal_blocked',
+      ],
+      required: true,
+    },
+    { name: 'thresholdDays', type: 'number', min: 0, max: 3_650, required: true },
     { name: 'expiresAtSnapshot', type: 'date', index: true, required: true },
+    {
+      name: 'mandate',
+      type: 'relationship',
+      relationTo: 'renewalMandates',
+      access: { read: sensitiveFieldRead },
+      index: true,
+    },
+    { name: 'amountFen', type: 'number', min: 1, access: { read: sensitiveFieldRead } },
+    { name: 'authorizedMaxAmountFen', type: 'number', min: 1 },
     {
       name: 'status',
       type: 'select',
@@ -299,6 +341,123 @@ export const DomainExpiryReminders: CollectionConfig = {
       index: true,
       required: true,
     },
+  ],
+}
+
+export const RenewalMandates: CollectionConfig = {
+  slug: 'renewalMandates',
+  access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
+  admin: { group: ADMIN_GROUPS.fulfillment, hidden: systemAdminHidden },
+  defaultSort: '-revision',
+  hooks: appendOnly('RENEWAL_MANDATE_APPEND_ONLY', '自动续费授权记录只允许追加'),
+  indexes: [
+    {
+      fields: ['asset', 'revision'],
+      unique: true,
+    },
+    {
+      fields: ['customer', 'authorizedAt'],
+    },
+  ],
+  lockDocuments: false,
+  fields: [
+    { name: 'mandateKey', type: 'text', index: true, required: true },
+    {
+      name: 'customer',
+      type: 'relationship',
+      relationTo: 'customers',
+      index: true,
+      required: true,
+    },
+    {
+      name: 'asset',
+      type: 'relationship',
+      relationTo: 'domainAssets',
+      index: true,
+      required: true,
+    },
+    { name: 'domainAsciiSnapshot', type: 'text', index: true, required: true },
+    { name: 'scope', type: 'select', options: ['renew_one_year'], required: true },
+    { name: 'maxDebitFen', type: 'number', min: 1, required: true },
+    { name: 'currency', type: 'select', options: ['CNY'], required: true },
+    { name: 'authorizedAt', type: 'date', index: true, required: true },
+    { name: 'validUntil', type: 'date', index: true, required: true },
+    { name: 'rulesVersion', type: 'text', required: true },
+    { name: 'revision', type: 'number', min: 1, required: true },
+    { name: 'eventType', type: 'select', options: ['authorized', 'revoked'], required: true },
+    { name: 'revokedAt', type: 'date', index: true },
+    { name: 'previousMandate', type: 'relationship', relationTo: 'renewalMandates' },
+    { name: 'stepUpGrantId', type: 'text', access: { read: sensitiveFieldRead }, required: true },
+    { name: 'previewDigest', type: 'text', access: { read: sensitiveFieldRead }, required: true },
+    { name: 'createdTraceId', type: 'text', access: { read: sensitiveFieldRead }, required: true },
+  ],
+}
+
+export const AutomaticRenewalEvents: CollectionConfig = {
+  slug: 'automaticRenewalEvents',
+  access: { create: deny, delete: deny, read: ownOrSystem('customer'), update: deny },
+  admin: { group: ADMIN_GROUPS.fulfillment, hidden: systemAdminHidden },
+  defaultSort: '-occurredAt',
+  hooks: appendOnly('AUTOMATIC_RENEWAL_EVENT_APPEND_ONLY', '自动续费执行记录只允许追加'),
+  indexes: [
+    {
+      fields: ['asset', 'expiresAtSnapshot'],
+    },
+    {
+      fields: ['customer', 'occurredAt'],
+    },
+  ],
+  lockDocuments: false,
+  fields: [
+    { name: 'eventKey', type: 'text', index: true, required: true, unique: true },
+    {
+      name: 'customer',
+      type: 'relationship',
+      relationTo: 'customers',
+      index: true,
+      required: true,
+    },
+    {
+      name: 'asset',
+      type: 'relationship',
+      relationTo: 'domainAssets',
+      index: true,
+      required: true,
+    },
+    {
+      name: 'mandate',
+      type: 'relationship',
+      relationTo: 'renewalMandates',
+      index: true,
+      required: true,
+    },
+    { name: 'attemptKey', type: 'text', access: { read: sensitiveFieldRead }, index: true },
+    { name: 'attemptSlotDays', type: 'number', min: 0, max: 365 },
+    { name: 'expiresAtSnapshot', type: 'date', index: true, required: true },
+    {
+      name: 'eventType',
+      type: 'select',
+      options: [
+        'attempt_claimed',
+        'balance_insufficient',
+        'price_changed',
+        'order_queued',
+        'skipped_invalid_mandate',
+        'skipped_account_restricted',
+        'skipped_identity_cooldown',
+        'skipped_not_owned',
+        'skipped_domain_status',
+        'skipped_job_revalidation',
+      ],
+      required: true,
+    },
+    { name: 'amountFen', type: 'number', min: 1, access: { read: sensitiveFieldRead } },
+    { name: 'authorizedMaxAmountFen', type: 'number', min: 1 },
+    { name: 'availableBalanceFen', type: 'number', min: 0 },
+    { name: 'order', type: 'relationship', relationTo: 'orders', index: true },
+    { name: 'reasonCode', type: 'text', access: { read: sensitiveFieldRead }, index: true },
+    { name: 'occurredAt', type: 'date', index: true, required: true },
+    { name: 'traceId', type: 'text', access: { read: sensitiveFieldRead }, index: true },
   ],
 }
 

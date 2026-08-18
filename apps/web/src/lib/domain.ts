@@ -91,12 +91,17 @@ export const STEP_UP_PURPOSES = [
   'realname_change',
   'domain_management_password',
   'balance_spend',
+  'renewal_mandate_change',
   'account_deletion',
 ] as const
 
 export type StepUpPurpose = (typeof STEP_UP_PURPOSES)[number]
 
-export const ONE_TIME_STEP_UP_PURPOSES = ['realname_change', 'account_deletion'] as const
+export const ONE_TIME_STEP_UP_PURPOSES = [
+  'realname_change',
+  'renewal_mandate_change',
+  'account_deletion',
+] as const
 
 export const ACCOUNT_CLOSURE_BLOCKERS = [
   'closure_cooldown_active',

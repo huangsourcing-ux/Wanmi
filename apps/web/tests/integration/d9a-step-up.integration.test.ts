@@ -259,7 +259,7 @@ describe('D9-A A4 SMS step-up grants', () => {
     },
   )
 
-  it('enumerates every risk-table purpose and limits one-time grants to the two exceptions', () => {
+  it('enumerates every risk-table purpose and limits one-time grants to the three exceptions', () => {
     expect(STEP_UP_PURPOSES).toEqual([
       'dns_record_change',
       'nameserver_change',
@@ -269,9 +269,14 @@ describe('D9-A A4 SMS step-up grants', () => {
       'realname_change',
       'domain_management_password',
       'balance_spend',
+      'renewal_mandate_change',
       'account_deletion',
     ])
-    expect(ONE_TIME_STEP_UP_PURPOSES).toEqual(['realname_change', 'account_deletion'])
+    expect(ONE_TIME_STEP_UP_PURPOSES).toEqual([
+      'realname_change',
+      'renewal_mandate_change',
+      'account_deletion',
+    ])
     expect(STEP_UP_PURPOSES.filter(isOneTimeStepUpPurpose)).toEqual(ONE_TIME_STEP_UP_PURPOSES)
   })
 

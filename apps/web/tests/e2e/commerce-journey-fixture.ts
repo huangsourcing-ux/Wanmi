@@ -111,6 +111,11 @@ function writeProvider(options: {
         `${commerceFixturePrefix}-realname-create`,
       ),
     health: async () => mockSuccess({ healthy: true }, `${commerceFixturePrefix}-write-health`),
+    queryRenewalEligibility: async () =>
+      mockSuccess(
+        { domainAscii: options.asset.domainAscii, state: 'eligible', statusCodes: ['ok'] },
+        `${commerceFixturePrefix}-renewal-eligibility`,
+      ),
     queryAsset: async () =>
       mockSuccess(
         { ...options.asset, nameservers: [...options.asset.nameservers] },

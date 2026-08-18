@@ -238,6 +238,12 @@ export type WestDigitalDomainAsset = {
   status: 'active' | 'expired' | 'pending' | 'unknown'
 }
 
+export type WestDigitalRenewalEligibility = {
+  domainAscii: string
+  state: 'eligible' | 'expired_or_redemption' | 'pending' | 'registry_restricted' | 'unknown'
+  statusCodes: string[]
+}
+
 export type WestDigitalDomainContactType = 'admin_id' | 'bill_id' | 'dom_id' | 'tech_id'
 
 export type WestDigitalDomainInformation = {
@@ -339,6 +345,10 @@ export interface WestDigitalWriteProvider extends HealthAwareProvider {
     domainAscii: string
     traceId: string
   }): Promise<ProviderResult<WestDigitalDomainAsset>>
+  queryRenewalEligibility(input: {
+    domainAscii: string
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalRenewalEligibility>>
   queryRealname(input: {
     providerTemplateId: string
     traceId: string

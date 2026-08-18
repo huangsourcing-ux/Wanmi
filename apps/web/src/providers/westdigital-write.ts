@@ -16,6 +16,7 @@ import type {
   WestDigitalOfflineTaskState,
   WestDigitalRealnameProfile,
   WestDigitalRealnameReviewState,
+  WestDigitalRenewalEligibility,
   WestDigitalWriteConfirmation,
 } from './types'
 import { managedDnsRecordTypeSchema, westDigitalDnsLineCodeSchema } from '@/schemas/dns-management'
@@ -41,11 +42,13 @@ export type WestDigitalWriteTransportOperation =
   | 'nameserver'
   | 'realname_create'
   | 'realname_query'
+  | 'renewal_eligibility_query'
   | 'register'
   | 'renew'
 
 export type WestDigitalWriteTransportRequest = {
   body: Readonly<Record<string, string>>
+  method?: 'GET' | 'POST'
   operation: WestDigitalWriteTransportOperation
   path:
     | '/v2/audit/'
@@ -167,6 +170,12 @@ const domainInformationDataSchema = z
     domain: z.string().min(1),
   })
   .passthrough()
+const renewalEligibilityDataSchema = z
+  .object({
+    domain: z.string().min(1),
+    status: z.string().min(1).max(1_024),
+  })
+  .passthrough()
 const domainManagementPasswordDataSchema = z.object({
   domainpwd: z.string().min(1).max(128),
 })
@@ -261,6 +270,37 @@ function reviewState(
     return 'rejected'
   if (/待|审核|未实名|未传图片/u.test(label) || data.r_status === 0 || data.c_status === 0)
     return 'pending'
+  return 'unknown'
+}
+
+const RENEWAL_RESTRICTED_CODES = new Set(['serverrenewprohibited', 'clientrenewprohibited'])
+const RENEWAL_REDEMPTION_CODES = new Set([
+  'autorenewperiod',
+  'renewperiod',
+  'transferperiod',
+  'pendingrestore',
+])
+const RENEWAL_PENDING_CODES = new Set(['pendingrenew', 'pendingdelete', 'pendingtransfer'])
+const RENEWAL_BENIGN_CODES = new Set([
+  'ok',
+  'clientdeleteprohibited',
+  'clienthold',
+  'clienttransferprohibited',
+  'clientupdateprohibited',
+  'serverdeleteprohibited',
+  'serverhold',
+  'servertransferprohibited',
+  'serverupdateprohibited',
+])
+
+function renewalEligibilityState(statusCodes: string[]): WestDigitalRenewalEligibility['state'] {
+  const normalized = statusCodes.map((value) => value.toLowerCase())
+  if (normalized.some((value) => RENEWAL_RESTRICTED_CODES.has(value))) return 'registry_restricted'
+  if (normalized.some((value) => RENEWAL_REDEMPTION_CODES.has(value)))
+    return 'expired_or_redemption'
+  if (normalized.some((value) => RENEWAL_PENDING_CODES.has(value))) return 'pending'
+  if (normalized.length > 0 && normalized.every((value) => RENEWAL_BENIGN_CODES.has(value)))
+    return 'eligible'
   return 'unknown'
 }
 
@@ -694,6 +734,35 @@ export class WestDigitalWriteAdapter implements WestDigitalManagedProvider {
     })
   }
 
+  async queryRenewalEligibility(input: {
+    domainAscii: string
+    traceId: string
+  }): Promise<ProviderResult<WestDigitalRenewalEligibility>> {
+    const expected = asciiDomain(input.domainAscii)
+    return this.request({
+      body: { act: 'geteppstatus', domain: expected },
+      input,
+      method: 'GET',
+      operation: 'renewal_eligibility_query',
+      parse: (envelope) => {
+        const data = renewalEligibilityDataSchema.parse(envelope.data)
+        if (asciiDomain(data.domain) !== expected)
+          throw new Error('Mismatched renewal status domain')
+        const statusCodes = data.status
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean)
+        return {
+          domainAscii: expected,
+          state: renewalEligibilityState(statusCodes),
+          statusCodes,
+        }
+      },
+      path: '/v2/domain/',
+      write: false,
+    })
+  }
+
   async getDomainManagementPassword(input: { domainAscii: string; traceId: string }) {
     return this.request({
       body: { act: 'getpwd', domain: asciiDomain(input.domainAscii) },
@@ -851,6 +920,7 @@ export class WestDigitalWriteAdapter implements WestDigitalManagedProvider {
   private async request<T>(input: {
     body: Readonly<Record<string, string>>
     input: { traceId: string }
+    method?: 'GET' | 'POST'
     operation: WestDigitalWriteTransportOperation
     parse: (envelope: z.infer<typeof envelopeSchema>) => T
     path: '/v2/audit/' | '/v2/domain/'
@@ -864,6 +934,7 @@ export class WestDigitalWriteAdapter implements WestDigitalManagedProvider {
     try {
       const response = await this.options.transport.execute({
         body: input.body,
+        ...(input.method ? { method: input.method } : {}),
         operation: input.operation,
         path: input.path,
         requestId,

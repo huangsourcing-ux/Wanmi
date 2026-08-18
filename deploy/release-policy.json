@@ -126,6 +126,13 @@
       "phase": "expand",
       "reason": "新增域名标签、到期提醒偏好、域名锁状态与追加式变更字段；旧代码可忽略新增结构，新代码必须在迁移完成后启用域名中心写入。",
       "rollback": "retain"
+    },
+    "20260818_121910_d9c2_automatic_renewal": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增自动续费授权与执行事件表、订单授权快照、到期提醒扩展及调度工作流枚举；旧代码可忽略新增结构，新代码必须在迁移完成后启用授权和无人值守执行。",
+      "rollback": "retain"
     }
   }
 }

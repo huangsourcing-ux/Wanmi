@@ -81,6 +81,7 @@ export class LiveWestDigitalTransport
       return await executeWestDigitalHttpRequest(
         {
           body: request.body,
+          ...('method' in request && request.method ? { method: request.method } : {}),
           path: livePath(request.path as StandardWestDigitalInputPath),
           requestId: request.requestId,
           signal: request.signal,
@@ -106,7 +107,8 @@ export class LiveWestDigitalTransport
         request.operation === 'domain_management_password_get' ||
         request.operation === 'offline_task_list' ||
         request.operation === 'offline_task_record_list' ||
-        request.operation === 'realname_query'
+        request.operation === 'realname_query' ||
+        request.operation === 'renewal_eligibility_query'
       ) {
         throw error
       }

@@ -98,6 +98,18 @@ const schema = z
       .string()
       .regex(/^\d{1,3}(?:,\d{1,3})*$/u)
       .default('30,7,1'),
+    AUTOMATIC_RENEWAL_FIRST_ATTEMPT_DAYS: z.coerce.number().int().min(1).max(365).default(7),
+    AUTOMATIC_RENEWAL_RETRY_DAYS: z
+      .string()
+      .regex(/^\d{1,3}(?:,\d{1,3})*$/u)
+      .default('3,1'),
+    AUTOMATIC_RENEWAL_BALANCE_REMINDER_LIMIT: z.coerce.number().int().min(1).max(5).default(2),
+    AUTOMATIC_RENEWAL_MANDATE_MAX_FEN: z.coerce
+      .number()
+      .int()
+      .positive()
+      .safe()
+      .default(100_000_000),
     FIRST_PARTY_EVENT_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(1_000),
     FORM_SUBMISSION_GLOBAL_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(500),
     FORM_SUBMISSION_IP_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(10),

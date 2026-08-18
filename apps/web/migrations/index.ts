@@ -45,6 +45,7 @@ import * as migration_20260818_010559_d9d3_offline_batch_operations from './2026
 import * as migration_20260818_032334_d9b2_wallet_top_up_orders from './20260818_032334_d9b2_wallet_top_up_orders'
 import * as migration_20260818_064923_d9b3_balance_payment_refund from './20260818_064923_d9b3_balance_payment_refund'
 import * as migration_20260818_072324_d9c1_domain_center from './20260818_072324_d9c1_domain_center'
+import * as migration_20260818_121910_d9c2_automatic_renewal from './20260818_121910_d9c2_automatic_renewal'
 
 export const migrations = [
   {
@@ -281,5 +282,10 @@ export const migrations = [
     up: migration_20260818_072324_d9c1_domain_center.up,
     down: migration_20260818_072324_d9c1_domain_center.down,
     name: '20260818_072324_d9c1_domain_center',
+  },
+  {
+    up: migration_20260818_121910_d9c2_automatic_renewal.up,
+    down: migration_20260818_121910_d9c2_automatic_renewal.down,
+    name: '20260818_121910_d9c2_automatic_renewal',
   },
 ]

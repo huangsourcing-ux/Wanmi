@@ -5,6 +5,7 @@ import { createResultSchema } from '@/schemas/api'
 export const domainAssetStatusSchema = z.enum(['active', 'expired', 'pending', 'unknown'])
 export const domainLockStatusSchema = z.enum(['locked', 'unlocked', 'unknown'])
 export const domainExpiryReminderChannelSchema = z.enum(['in_app', 'sms'])
+export const renewalMandateScopeSchema = z.literal('renew_one_year')
 
 const domainTagSchema = z
   .string()
@@ -145,6 +146,61 @@ export const domainLockResultSchema = createResultSchema(
     operationKey: z.string().min(1),
     status: z.enum(['failed', 'succeeded', 'unknown']),
   }),
+)
+
+const renewalMandateStepUpSchema = z.strictObject({
+  confirmed: z.literal(true),
+  deviceId: z.string().min(16).max(128),
+  previewToken: z.string().min(80).max(4_096),
+  stepUpToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
+})
+
+export const renewalMandatePreviewRequestSchema = z.discriminatedUnion('action', [
+  z.strictObject({
+    action: z.literal('authorize'),
+    maxDebitFen: z.number().int().positive(),
+    scope: renewalMandateScopeSchema,
+    validUntil: z.iso.datetime(),
+  }),
+  z.strictObject({ action: z.literal('revoke') }),
+])
+export type RenewalMandatePreviewRequest = z.infer<typeof renewalMandatePreviewRequestSchema>
+
+export const renewalMandateChangeRequestSchema = renewalMandateStepUpSchema
+
+export const renewalMandateViewSchema = z.strictObject({
+  authorizedAt: z.iso.datetime(),
+  currency: z.literal('CNY'),
+  domainAscii: z.string().min(1).max(253),
+  eventType: z.enum(['authorized', 'revoked']),
+  id: z.string().min(1),
+  maxDebitFen: z.number().int().positive().safe(),
+  revision: z.number().int().positive(),
+  revokedAt: z.iso.datetime().optional(),
+  rulesVersion: z.string().min(1).max(64),
+  scope: renewalMandateScopeSchema,
+  validUntil: z.iso.datetime(),
+})
+
+export const renewalMandatePreviewResultSchema = createResultSchema(
+  z.strictObject({
+    action: z.enum(['authorize', 'revoke']),
+    domainAscii: z.string().min(1).max(253),
+    firstAttemptDays: z.number().int().positive().max(365),
+    maxDebitFen: z.number().int().positive().safe().optional(),
+    previewExpiresAt: z.iso.datetime(),
+    previewToken: z.string().min(80),
+    reminderLimit: z.number().int().min(1).max(5),
+    retryDays: z.array(z.number().int().min(0).max(365)).max(10),
+    rulesVersion: z.string().min(1).max(64),
+    scope: renewalMandateScopeSchema.optional(),
+    validUntil: z.iso.datetime().optional(),
+    warning: z.string().min(1).max(500),
+  }),
+)
+
+export const renewalMandateResultSchema = createResultSchema(
+  z.strictObject({ mandate: renewalMandateViewSchema.nullable() }),
 )
 
 export const domainAssetDetailResultSchema = createResultSchema(

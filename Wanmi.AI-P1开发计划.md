@@ -1193,7 +1193,7 @@ capability restrictions` 三个 `WHERE` 谓词（`account-state.ts:310-312`）�
   - **实现与测试证据**：`apps/web/src/services/auth/step-up.ts:40-128` 复用既有
     `smsChallenges` 与 `smsRateLimits` 请求验证码，`:86` 明确调用独立的 `sendStepUpOtp`；
     `apps/web/src/providers/aliyunsms.ts:102-110`、`:277-318` 分别为 mock/live step-up 模板路径，
-    没有新增短信通道或操作密码字段。`apps/web/tests/integration/d9a-step-up.integration.test.ts:154`
+    没有新增短信通道或操作密码字段。`apps/web/tests/integration/d9a-step-up.integration.test.ts:283`
     用例“uses the dedicated step-up SMS template and stores only an HMAC grant for ten minutes”断言
     step-up 只调用专用模板、登录 OTP 不能消费 step-up challenge；
     `apps/web/tests/unit/aliyunsms.test.ts:58` 用例“loads credential, sign, and all template references
@@ -1205,20 +1205,26 @@ capability restrictions` 三个 `WHERE` 谓词（`account-state.ts:310-312`）�
   - **实现与测试证据**：`apps/web/src/collections/identity.ts:515-560` 定义只允许系统访问的
     `stepUpGrants`；`apps/web/src/services/auth/step-up.ts:131-221` 原子消费验证码并只保存 token HMAC、
     device/ip hash 与可配置 10 分钟 TTL，`:248-289` 强制 customer、purpose、device、有效期并按用途
-    选择复用或一次性原子消费。集成测试 `apps/web/tests/integration/d9a-step-up.integration.test.ts:138`
-    用例“enumerates every risk-table purpose and limits one-time grants to the two exceptions”、`:154` 的
-    HMAC/TTL 用例、`:227` 用例“does not let a grant for one purpose authorize a different purpose”、
-    `:251` 用例“reuses a default-purpose grant within its TTL”、`:279` 两个 fresh-grant 用例及 `:307`
+    选择复用或一次性原子消费。集成测试 `apps/web/tests/integration/d9a-step-up.integration.test.ts:262`
+    用例“enumerates every risk-table purpose and limits one-time grants to the three exceptions”、`:283` 的
+    HMAC/TTL 用例、`:356` 用例“does not let a grant for one purpose authorize a different purpose”、
+    `:456` 用例“reuses a default-purpose grant within its TTL”、`:485` 三个 fresh-grant 用例及 `:512`
     并发用例覆盖完整行为；四项变异均被杀死，原文记录于同日开发日志。本切片没有生产验证记录。
-- [ ] **无人值守任务不得依赖 step-up** —— 自动续费等依据用户事先创建的 `renewalMandate`
+- [x] **无人值守任务不得依赖 step-up** —— 自动续费等依据用户事先创建的 `renewalMandate`
       （见 C3）。这是两套不同授权，不可混用；
-  - **证据不足，保持未勾选**：A4 的 purpose 枚举不含自动续费，已避免把本切片 grant 表述为
-    `renewalMandate`；但 C3 mandate 尚未实现，也没有无人值守任务“拒绝 step-up、只接受有效 mandate”
-    的集成测试，不能仅凭枚举缺项推定整条完成。
+  - **D9-C-2 实现与测试证据**：交互式授权入口
+    `apps/web/src/services/domains/renewal-mandates.ts:281` 只在创建/重新授权/撤销 mandate 时消费
+    `renewal_mandate_change` step-up，并要求 HMAC 绑定预览和字面量二次确认；无人值守入口
+    `apps/web/src/services/domains/automatic-renewals.ts:561` 以 system-only 边界和
+    `assertAutomaticRenewalMandateValid`（`:180`）重新读取有效 mandate，不接收 step-up token。集成用例
+    `does not request interactive step-up during unattended execution`（
+    `apps/web/tests/integration/d9c2-automatic-renewals.integration.test.ts:1827`）直接 spy step-up 服务并断言
+    自动执行为零调用；`missing mandate independently skips without any debit`（`:1304`）证明没有 mandate
+    时不会 hold。两个调用点变异均由各自行为断言杀死。
 - [ ] 风险分级（强制要求，不得因「可回滚」而降级）：
   - **部分证据但不足，保持未勾选**：`apps/web/src/lib/domain.ts:30-44` 已为表中需要 step-up 的
     动作建立 purpose 枚举；`apps/web/src/services/auth/step-up.ts:224-245` 和集成用例
-    `apps/web/tests/integration/d9a-step-up.integration.test.ts:377`“blocks every high-risk purpose during
+    `apps/web/tests/integration/d9a-step-up.integration.test.ts:725`“blocks every high-risk purpose during
     the identity-risk cooldown even with a valid grant”证明冷静期会在 grant 有效时仍硬阻断。A3 已把
     Name Server 变更接入 `nameserver_change` grant、显式二次确认与同一冷静期断言，并把账号删除接入
     一次性 `account_deletion` grant；`d9a-account-state.integration.test.ts:304` 验证两者在冷静期持有效
@@ -1227,8 +1233,12 @@ capability restrictions` 三个 `WHERE` 谓词（`account-state.ts:310-312`）�
     管理密码接入 step-up + 当前全部 active 绑定渠道确认，将联系人修改与模板过户接入
     `realname_change` step-up + 二次确认，并由
     `apps/web/tests/integration/d9d2-domain-management.integration.test.ts:406`、`:484`、`:632`、`:2146`
-    逐项验证。但 D9-B 交互式余额消费、关闭域名锁及其通知仍无完整实现/集成测试，故风险表整体不能
-    勾选；下表文字与保护等级保持不变。
+    逐项验证。D9-C-2 又把 mandate 创建/重新授权/撤销接入 `renewal_mandate_change` step-up + HMAC
+    绑定二次确认，并以 `requires bound second confirmation and one-time step-up, records the authorization,
+and sends the enable reminder`（
+    `apps/web/tests/integration/d9c2-automatic-renewals.integration.test.ts:1051`）证明缺任一保护即拒绝。
+    但 D9-B-3 的交互式 `createBalancePayment` 当前只接入 A3 `balance_spend` 能力拦截，仍没有消费
+    `balance_spend` step-up 的实现/集成测试，故风险表整体继续保持未勾选；下表文字与保护等级不变。
 
 | 操作                                       | 保护                               |
 | ------------------------------------------ | ---------------------------------- |
@@ -1715,13 +1725,51 @@ valid channel preferences` 位于 `apps/web/tests/integration/d9c1-domain-center
   访问或修改生产、未发送真实域名/短信请求。未实现或留桩 `renewalMandate`、自动续费执行规则、续费
   提醒或余额不足处理，以下四项保持未勾选；未修改钱包文件。
 
-- [ ] **C3 自动续费授权 `renewalMandate`**：记录域名、授权范围、**用户可接受的最大扣款金额**（必填，
+D9-C-2 证据（2026-08-18，本节剩余四项）：
+
+- mandate 唯一交互入口为 `previewCustomerRenewalMandateChange` 与
+  `changeCustomerRenewalMandate`（`apps/web/src/services/domains/renewal-mandates.ts:197,281`）：HMAC 预览绑定
+  customer、asset、domain、action、scope、最大金额、有效期和规则版本；变更在同一事务以
+  `UPDATE domain_assets ... WHERE id AND customer_id ... RETURNING` 取得资产互斥，消费专用一次性 step-up，
+  再追加不可改写/删除的 revision。`requires bound second confirmation and one-time step-up, records the
+authorization, and sends the enable reminder`（
+  `apps/web/tests/integration/d9c2-automatic-renewals.integration.test.ts:1051`）及 `binds preview to customer,
+asset, action, rules and expiry before consuming step-up`（`:657`）覆盖二次确认、用途隔离和绑定事实；
+  `serializes concurrent mandate authorizations into unique immutable revisions`（`:1236`）覆盖并发 revision。
+- 无人值守执行入口 `runAutomaticRenewalForAsset`（
+  `apps/web/src/services/domains/automatic-renewals.ts:561`）在入队前和 hold 前重新调用
+  `assertAutomaticRenewalMandateValid`（`:180`），D6 履约又由 `revalidateAutomaticRenewalOrder`（`:872`）
+  在通用 preflight 前及 paid→fulfilling 前重新校验 mandate id、规则版本、最新授权上限、账号状态、冷静期、
+  本地域名事实、上游归属和 EPP 状态。无/撤销/过期 mandate 三条独立用例位于
+  `d9c2-automatic-renewals.integration.test.ts:1304`；价格大于上限拒扣并通知、等于上限允许的用例位于
+  `:1351`；任务入队后撤销及两次履约重校验用例位于 `:1924,2002`。
+- 规则由 `automatic-renewal-rules.ts:3-31` 和 `.env.example:92-95` 显式固定首次 7 天、失败重试 3/1 天、
+  同周期余额不足提醒上限 2 次及有限 mandate 部署上限。批处理先按 expiresAt 升序、同日 numeric asset id
+  升序（`automatic-renewals.ts:128`）；用例 `sorts every batch deterministically by expiry and then numeric
+domain asset id`（`:1702`）对同一输入两次直接断言完全相同顺序。expired/redemption/registry restricted
+  三条用例（`:1767`）分别证明不进入普通续费；scheduler 只读取每个资产最新 revision（`:1751`）。
+- 扣款只调用 B-1 `holdWalletBalance`（`automatic-renewals.ts:712`）；不足即整单退出、读取追加账本余额并按
+  周期/次数提醒，不部分扣款、不透支。`insufficient balance never partially debits or overdrafts and emits a
+capped reminder`（`:1607`）断言 available 非负、hold 为 0、提醒到顶停止。订单创建后继续进入既有 D6
+  `commerceFulfillment`，上游写仍在 `fulfillment.ts:740,898` 经过
+  `executeWestDigitalWriteOperation`；`concurrent triggers produce exactly one wallet charge and one idempotent
+D6 upstream renewal`（`:2248`）断言同域并发恰好 1 个 hold/capture/provider renew；撤销先取得资产锁与
+  hold 先取得资产锁的两向用例（`:2364,2430`）证明结果确定且余额不为负。
+- 全部业务判定按调用点变异 104/104，migration/schema/release 判定 130/130，合计 234/234 均由指定
+  `AssertionError` 行为断言杀死；数据来源替换包含 owner Local API、最新 mandate revision、mandate 上限、
+  `eventType`/`revokedAt`/`validUntil`/rules/domain/customer、上游 expiry/EPP 与履约订单快照，fixture 均以独立
+  反相关事实打破等价推断。完整 ID、唯一行为用例与结果见
+  `docs/operations/d9c2-automatic-renewal-mutation-matrix.md:1`。命名 migration
+  `apps/web/migrations/20260818_121910_d9c2_automatic_renewal.ts:3` 已真实执行 UP/DOWN/UP；全程 fixture，
+  `ALLOW_REAL_WESTDIGITAL*` 与 `ALLOW_REAL_WECHATPAY*` 均为 false，无生产写入。
+
+- [x] **C3 自动续费授权 `renewalMandate`**：记录域名、授权范围、**用户可接受的最大扣款金额**（必填，
       不得为空或无限大）、授权时间、规则版本、撤销时间。**自动扣款只能依据有效 mandate**；
-- [ ] 自动续费执行规则须显式定义：首次尝试时间、失败重试时间、余额不足提醒次数、**多域名同时
+- [x] 自动续费执行规则须显式定义：首次尝试时间、失败重试时间、余额不足提醒次数、**多域名同时
       余额不足时的确定性优先级**、续费价格变动通知、已关闭自动续费但任务已入队的处理、域名处于
       过期/赎回/注册局限制状态时的处理；
-- [ ] 启用前与实际续费日前显著提醒用户；
-- [ ] 余额不足只提醒不扣款、绝不透支；复用 D6 既有续费链路与幂等保证。
+- [x] 启用前与实际续费日前显著提醒用户；
+- [x] 余额不足只提醒不扣款、绝不透支；复用 D6 既有续费链路与幂等保证。
 
 ### 16.9 D9-D 域名控制台增强
 
@@ -1987,8 +2035,8 @@ opening-credit-debit-ending mismatch and appends audit evidence` 人为把期末
 
 **D9-C / D9-D**
 
-- [ ] **自动续费只能依据有效 `renewalMandate` 扣款**，超出用户设定最大金额时拒绝并通知；
-- [ ] 多个域名争抢不足余额时结果具有确定性；余额不足只提醒不扣款；
+- [x] **自动续费只能依据有效 `renewalMandate` 扣款**，超出用户设定最大金额时拒绝并通知；
+- [x] 多个域名争抢不足余额时结果具有确定性；余额不足只提醒不扣款；
 - [ ] NS、MX、解锁、管理密码操作未完成 step-up 时 fail-closed；
 - [x] 批量与离线任务不假设同步返回，任务标识可查询，部分失败可见，批量删除有 dry-run 预览；
 - [ ] 注册商不支持某能力时返回明确 capability 错误而非通用失败；

@@ -368,6 +368,31 @@ export const Orders: CollectionConfig = {
     },
     { name: 'domainAscii', type: 'text', index: true, required: true },
     {
+      name: 'automaticRenewalMandate',
+      type: 'relationship',
+      relationTo: 'renewalMandates',
+      access: { read: sensitiveFieldRead },
+      index: true,
+    },
+    {
+      name: 'automaticRenewalAttemptKey',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
+      unique: true,
+    },
+    {
+      name: 'automaticRenewalRulesVersion',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+    },
+    {
+      name: 'balanceHoldTransactionKey',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
+    },
+    {
       name: 'status',
       type: 'select',
       defaultValue: 'pending_payment',
