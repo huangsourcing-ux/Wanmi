@@ -112,6 +112,13 @@
       "phase": "expand",
       "reason": "新增独立钱包充值订单表及支付通知、人工复核的可空关联；旧代码可忽略新增结构，新代码仅在迁移完成后启用充值入账。",
       "rollback": "retain"
+    },
+    "20260818_072324_d9c1_domain_center": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增域名标签、到期提醒偏好、域名锁状态与追加式变更字段；旧代码可忽略新增结构，新代码必须在迁移完成后启用域名中心写入。",
+      "rollback": "retain"
     }
   }
 }

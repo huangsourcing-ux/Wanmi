@@ -15,6 +15,8 @@ type AssetRecord = {
   customer: number | string | { id: number | string }
   domainAscii: string
   expiresAt: string
+  expiryReminderChannels?: null | Array<'in_app' | 'sms'>
+  expiryReminderDays?: null | number[]
   id: number | string
 }
 
@@ -70,10 +72,33 @@ async function database(req: PayloadRequest) {
   return current
 }
 
-function configuredThresholds(): number[] {
+export function configuredDomainExpiryThresholds(): number[] {
   return [...new Set(getEnv().DOMAIN_EXPIRY_REMINDER_DAYS.split(',').map(Number))]
     .filter((value) => Number.isInteger(value) && value >= 0 && value <= 365)
     .sort((left, right) => left - right)
+}
+
+function reminderPreferences(
+  asset: AssetRecord,
+  configured: number[],
+): { channels: Array<'in_app' | 'sms'>; days: number[] } {
+  const finalThreshold = configured[0]
+  const requestedDays = Array.isArray(asset.expiryReminderDays)
+    ? asset.expiryReminderDays
+    : configured
+  const days = [...new Set(requestedDays)]
+    .filter((value) => configured.includes(value))
+    .concat(finalThreshold === undefined ? [] : [finalThreshold])
+  const requestedChannels = Array.isArray(asset.expiryReminderChannels)
+    ? asset.expiryReminderChannels
+    : ['in_app', 'sms']
+  const channels = [...new Set(requestedChannels)].filter(
+    (value): value is 'in_app' | 'sms' => value === 'in_app' || value === 'sms',
+  )
+  return {
+    channels: channels.length ? channels : ['in_app'],
+    days: [...new Set(days)].sort((left, right) => left - right),
+  }
 }
 
 function dueThreshold(expiresAt: string, now: Date, thresholds: number[]): number | undefined {
@@ -284,7 +309,7 @@ export async function runDomainExpiryReminders(
   dependencies: DomainExpiryReminderDependencies,
 ) {
   const now = (dependencies.now ?? (() => new Date()))()
-  const thresholds = dependencies.thresholds ?? configuredThresholds()
+  const thresholds = dependencies.thresholds ?? configuredDomainExpiryThresholds()
   if (!thresholds.length) return { delivered: 0, failed: 0, scanned: 0, skipped: 0, unknown: 0 }
   const maxThreshold = Math.max(...thresholds)
   const assets = await req.payload.find({
@@ -309,7 +334,8 @@ export async function runDomainExpiryReminders(
   const summary = { delivered: 0, failed: 0, scanned: assets.totalDocs, skipped: 0, unknown: 0 }
   for (const document of assets.docs) {
     const asset = document as unknown as AssetRecord
-    const thresholdDays = dueThreshold(asset.expiresAt, now, thresholds)
+    const preferences = reminderPreferences(asset, thresholds)
+    const thresholdDays = dueThreshold(asset.expiresAt, now, preferences.days)
     if (thresholdDays === undefined) continue
     const customer = (await req.payload.findByID({
       collection: 'customers',
@@ -319,29 +345,33 @@ export async function runDomainExpiryReminders(
       req,
     })) as CustomerRecord
     if (customer.status !== 'active' && customer.status !== 'restricted') continue
-    await prepareReminder(req, {
-      asset,
-      channel: 'in_app',
-      customerId: customer.id,
-      thresholdDays,
-      traceId: dependencies.traceId,
-    })
-    const sms = await prepareReminder(req, {
-      asset,
-      channel: 'sms',
-      customerId: customer.id,
-      thresholdDays,
-      traceId: dependencies.traceId,
-    })
-    const outcome = await sendSmsReminder(req, {
-      asset,
-      customer,
-      provider: dependencies.provider,
-      reminder: sms.reminder,
-      thresholdDays,
-      traceId: `${dependencies.traceId}:${asset.id}:${thresholdDays}`,
-    })
-    summary[outcome] += 1
+    if (preferences.channels.includes('in_app')) {
+      await prepareReminder(req, {
+        asset,
+        channel: 'in_app',
+        customerId: customer.id,
+        thresholdDays,
+        traceId: dependencies.traceId,
+      })
+    }
+    if (preferences.channels.includes('sms')) {
+      const sms = await prepareReminder(req, {
+        asset,
+        channel: 'sms',
+        customerId: customer.id,
+        thresholdDays,
+        traceId: dependencies.traceId,
+      })
+      const outcome = await sendSmsReminder(req, {
+        asset,
+        customer,
+        provider: dependencies.provider,
+        reminder: sms.reminder,
+        thresholdDays,
+        traceId: `${dependencies.traceId}:${asset.id}:${thresholdDays}`,
+      })
+      summary[outcome] += 1
+    }
   }
   return summary
 }

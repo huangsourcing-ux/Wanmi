@@ -43,6 +43,7 @@ import * as migration_20260817_065450_d9d1_dns_record_management from './2026081
 import * as migration_20260817_150002_d9d2_domain_management_sync from './20260817_150002_d9d2_domain_management_sync'
 import * as migration_20260818_010559_d9d3_offline_batch_operations from './20260818_010559_d9d3_offline_batch_operations'
 import * as migration_20260818_032334_d9b2_wallet_top_up_orders from './20260818_032334_d9b2_wallet_top_up_orders'
+import * as migration_20260818_072324_d9c1_domain_center from './20260818_072324_d9c1_domain_center'
 
 export const migrations = [
   {
@@ -269,5 +270,10 @@ export const migrations = [
     up: migration_20260818_032334_d9b2_wallet_top_up_orders.up,
     down: migration_20260818_032334_d9b2_wallet_top_up_orders.down,
     name: '20260818_032334_d9b2_wallet_top_up_orders',
+  },
+  {
+    up: migration_20260818_072324_d9c1_domain_center.up,
+    down: migration_20260818_072324_d9c1_domain_center.down,
+    name: '20260818_072324_d9c1_domain_center',
   },
 ]

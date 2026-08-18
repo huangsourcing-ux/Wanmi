@@ -122,6 +122,7 @@ describe('D9-D-2 domain management contract', () => {
       { name: 'asset_sync', supported: true },
       { name: 'certificate_download', supported: true },
       { name: 'contact_information_update', supported: true },
+      { name: 'domain_lock_status', supported: true },
       { name: 'management_password_read', supported: true },
       { name: 'management_password_write', supported: true },
       {
@@ -135,6 +136,7 @@ describe('D9-D-2 domain management contract', () => {
       ['asset_sync', 'DOMAIN_CAPABILITY_ASSET_SYNC_UNSUPPORTED'],
       ['certificate_download', 'DOMAIN_CAPABILITY_CERTIFICATE_DOWNLOAD_UNSUPPORTED'],
       ['contact_information_update', 'DOMAIN_CAPABILITY_CONTACT_INFORMATION_UPDATE_UNSUPPORTED'],
+      ['domain_lock_status', 'DOMAIN_CAPABILITY_DOMAIN_LOCK_STATUS_UNSUPPORTED'],
       ['management_password_read', 'DOMAIN_CAPABILITY_MANAGEMENT_PASSWORD_READ_UNSUPPORTED'],
       ['management_password_write', 'DOMAIN_CAPABILITY_MANAGEMENT_PASSWORD_WRITE_UNSUPPORTED'],
       ['realtime_transfer', 'DOMAIN_CAPABILITY_REALTIME_TRANSFER_UNSUPPORTED'],

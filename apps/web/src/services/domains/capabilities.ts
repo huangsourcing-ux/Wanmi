@@ -4,6 +4,7 @@ export const DOMAIN_CAPABILITY_NAMES = [
   'asset_sync',
   'certificate_download',
   'contact_information_update',
+  'domain_lock_status',
   'management_password_read',
   'management_password_write',
   'realtime_transfer',
@@ -28,6 +29,10 @@ export const WESTDIGITAL_DOMAIN_CAPABILITIES = {
   contact_information_update: {
     supported: true,
     unsupportedCode: 'DOMAIN_CAPABILITY_CONTACT_INFORMATION_UPDATE_UNSUPPORTED',
+  },
+  domain_lock_status: {
+    supported: true,
+    unsupportedCode: 'DOMAIN_CAPABILITY_DOMAIN_LOCK_STATUS_UNSUPPORTED',
   },
   management_password_read: {
     supported: true,
