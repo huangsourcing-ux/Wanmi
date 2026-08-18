@@ -5,7 +5,7 @@ import { createLocalReq, getPayload, type Payload, type PayloadRequest, type Whe
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { mockFailure, mockSuccess } from '@/providers/mock'
-import type { PaymentOrder, PaymentProvider } from '@/providers/types'
+import type { PaymentOrder, PaymentProvider, VerifiedPaymentNotification } from '@/providers/types'
 import { createWechatPayFixture, type WechatPayFixture } from '@/providers/wechatpay'
 import { processWechatPaymentNotification } from '@/services/commerce/payments'
 import { captureWalletHold, holdWalletBalance, readWalletBalance } from '@/services/wallet/ledger'
@@ -194,6 +194,71 @@ function queryProvider(order: PaymentOrder): PaymentProvider {
   } as unknown as PaymentProvider
 }
 
+type QueryOrderInput = Parameters<PaymentProvider['queryOrder']>[0]
+
+function trackedQueryProvider(provider: Pick<PaymentProvider, 'queryOrder'>): {
+  calls: QueryOrderInput[]
+  provider: PaymentProvider
+} {
+  const calls: QueryOrderInput[] = []
+  return {
+    calls,
+    provider: {
+      queryOrder: async (input: QueryOrderInput) => {
+        calls.push(input)
+        return provider.queryOrder(input)
+      },
+    } as unknown as PaymentProvider,
+  }
+}
+
+function verifiedPaidTopUpNotification(
+  topUp: StartedTopUp,
+): Extract<VerifiedPaymentNotification, { verified: true }> {
+  return {
+    amountMinor: topUp.amountFen,
+    currency: 'CNY',
+    merchantOrderNumber: topUp.orderNumber,
+    notificationId: `EV${randomUUID().replaceAll('-', '')}`,
+    paidAt: new Date(now.getTime() + 60_000).toISOString(),
+    transactionId: wechatTransactionId(),
+    verified: true,
+  }
+}
+
+async function expectNotificationObservation(
+  topUp: StartedTopUp,
+  expected: { outcome: string; providerState: string },
+): Promise<void> {
+  expect(await topUpStatus(topUp.orderId)).toBe('payment_pending')
+  expect(await countEntries(topUp.accountId, { entryType: { equals: 'credit' } })).toBe(0)
+  expect(
+    (
+      await payload.count({
+        collection: 'manualReviews',
+        overrideAccess: true,
+        where: { walletTopUpOrder: { equals: topUp.orderId } },
+      })
+    ).totalDocs,
+  ).toBe(0)
+  const observations = await payload.find({
+    collection: 'auditLogs',
+    limit: 1,
+    overrideAccess: true,
+    where: {
+      and: [
+        { action: { equals: 'wallet.top_up.payment_observed' } },
+        { targetId: { equals: String(topUp.orderId) } },
+      ],
+    },
+  })
+  expect(observations.totalDocs).toBe(1)
+  expect(observations.docs[0]?.metadata).toMatchObject({
+    ...expected,
+    source: 'notification',
+  })
+}
+
 beforeAll(async () => {
   payload = await getPayload({ config })
 })
@@ -289,6 +354,78 @@ describe('D9-B-2 wallet top-up credits', () => {
     expect(observations.totalDocs).toBe(1)
     expect(observations.docs[0]?.metadata).toMatchObject({
       outcome: 'not_paid',
+    })
+  })
+
+  it('queries WeChat once and rejects a correct paid notification when the active query is not paid', async () => {
+    const fixture = createWechatPayFixture({ now: () => now })
+    const topUp = await startedTopUp('notification-query-not-paid', fixture)
+    const notification = verifiedPaidTopUpNotification(topUp)
+    const query = trackedQueryProvider(
+      queryProvider({
+        amountMinor: topUp.amountFen,
+        currency: 'CNY',
+        merchantOrderNumber: topUp.orderNumber,
+        paidAt: notification.paidAt,
+        state: 'not_paid',
+        transactionId: notification.transactionId,
+      }),
+    )
+    const traceId = `${prefix}-notification-query-not-paid`
+
+    await processWalletTopUpPaymentNotification(topUp.req, notification, query.provider, traceId)
+
+    expect(notification.amountMinor).toBe(topUp.amountFen)
+    expect(query.calls).toEqual([{ merchantOrderNumber: topUp.orderNumber, traceId }])
+    await expectNotificationObservation(topUp, {
+      outcome: 'not_paid',
+      providerState: 'not_paid',
+    })
+  })
+
+  it('queries WeChat once and rejects a correct paid notification when the active query is unknown', async () => {
+    const fixture = createWechatPayFixture({ now: () => now })
+    const topUp = await startedTopUp('notification-query-unknown', fixture)
+    const notification = verifiedPaidTopUpNotification(topUp)
+    const query = trackedQueryProvider(
+      queryProvider({
+        amountMinor: topUp.amountFen,
+        currency: 'CNY',
+        merchantOrderNumber: topUp.orderNumber,
+        paidAt: notification.paidAt,
+        state: 'unknown',
+        transactionId: notification.transactionId,
+      }),
+    )
+    const traceId = `${prefix}-notification-query-unknown`
+
+    await processWalletTopUpPaymentNotification(topUp.req, notification, query.provider, traceId)
+
+    expect(notification.amountMinor).toBe(topUp.amountFen)
+    expect(query.calls).toEqual([{ merchantOrderNumber: topUp.orderNumber, traceId }])
+    await expectNotificationObservation(topUp, {
+      outcome: 'status_unknown',
+      providerState: 'unknown',
+    })
+  })
+
+  it('queries WeChat once and rejects a correct paid notification when the active query fails', async () => {
+    const fixture = createWechatPayFixture({ now: () => now })
+    const topUp = await startedTopUp('notification-query-failure', fixture)
+    const notification = verifiedPaidTopUpNotification(topUp)
+    const query = trackedQueryProvider({
+      queryOrder: async () =>
+        mockFailure('WECHATPAY_QUERY_TIMEOUT', { retryable: true, statusKnown: false }),
+    })
+    const traceId = `${prefix}-notification-query-failure`
+
+    await processWalletTopUpPaymentNotification(topUp.req, notification, query.provider, traceId)
+
+    expect(notification.amountMinor).toBe(topUp.amountFen)
+    expect(query.calls).toEqual([{ merchantOrderNumber: topUp.orderNumber, traceId }])
+    await expectNotificationObservation(topUp, {
+      outcome: 'status_unknown',
+      providerState: 'unavailable',
     })
   })
 
@@ -445,14 +582,34 @@ describe('D9-B-2 wallet top-up credits', () => {
       transactionId: paid.transactionId,
     })
 
+    const query = trackedQueryProvider(fixture.provider)
     await processWechatPaymentNotification(
       await request('notification-mismatch-provider'),
       { ...notification, traceId: `${prefix}-notification-mismatch-provider` },
-      fixture.provider,
+      {
+        queryOrder: query.provider.queryOrder.bind(query.provider),
+        verifyNotification: fixture.provider.verifyNotification.bind(fixture.provider),
+      } as PaymentProvider,
     )
 
+    expect(query.calls).toHaveLength(1)
     expect(await topUpStatus(topUp.orderId)).toBe('payment_pending')
     expect(await countEntries(topUp.accountId, { entryType: { equals: 'credit' } })).toBe(0)
+    expect(
+      (
+        await payload.count({
+          collection: 'manualReviews',
+          overrideAccess: true,
+          where: {
+            and: [
+              { walletTopUpOrder: { equals: topUp.orderId } },
+              { reasonCode: { equals: 'wallet_top_up.payment_identifier_mismatch' } },
+              { status: { equals: 'open' } },
+            ],
+          },
+        })
+      ).totalDocs,
+    ).toBe(1)
   })
 
   it.each([
@@ -563,16 +720,33 @@ describe('D9-B-2 wallet top-up credits', () => {
         ...override,
       }
 
+      const query = trackedQueryProvider(fixture.provider)
       const result = await processWalletTopUpPaymentNotification(
         await request(`notification-dimension-${String(_dimension)}`),
         notification,
-        fixture.provider,
+        query.provider,
         `${prefix}-notification-dimension-${String(_dimension)}`,
       )
 
+      expect(query.calls).toHaveLength(1)
       expect(result).toMatchObject({ handled: true, idempotentReplay: true })
       expect(await topUpStatus(topUp.orderId)).toBe('payment_pending')
       expect(await countEntries(topUp.accountId, { entryType: { equals: 'credit' } })).toBe(0)
+      expect(
+        (
+          await payload.count({
+            collection: 'manualReviews',
+            overrideAccess: true,
+            where: {
+              and: [
+                { walletTopUpOrder: { equals: topUp.orderId } },
+                { reasonCode: { equals: 'wallet_top_up.payment_identifier_mismatch' } },
+                { status: { equals: 'open' } },
+              ],
+            },
+          })
+        ).totalDocs,
+      ).toBe(1)
     },
   )
 

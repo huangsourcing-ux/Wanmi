@@ -354,6 +354,30 @@ add({
   replacement: '  const walletTopUp = undefined\n',
   test: 'does not credit from a payment notification alone when the active query is not paid',
 })
+add({
+  group: 'notification-query-source',
+  id: 'notification-must-query-provider',
+  search: `  const query = await provider.queryOrder({
+    merchantOrderNumber: topUp.topUpOrderNumber,
+    traceId,
+  })
+`,
+  replacement: `  const query = {
+    data: {
+      amountMinor: notification.amountMinor,
+      currency: notification.currency,
+      merchantOrderNumber: notification.merchantOrderNumber,
+      paidAt: notification.paidAt,
+      state: 'paid' as const,
+      transactionId: notification.transactionId,
+    },
+    observedAt: new Date().toISOString(),
+    ok: true as const,
+    requestId: \`\${traceId}-forged-from-notification\`,
+  }
+`,
+  test: 'queries WeChat once and rejects a correct paid notification when the active query is not paid',
+})
 
 for (const mutation of [
   {

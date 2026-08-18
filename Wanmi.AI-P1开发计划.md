@@ -1528,10 +1528,25 @@ database accept one global WeChat transaction across N different accounts`。
 funding source before creating an order`、`removes an unconsumed credited top-up when an original refund is
 confirmed`、`rejects an unconditional original refund after the credited balance was consumed`、`serializes
 credit and original-refund marking to one refunded nonnegative result`。
-- 全部 149 个服务/调用点、SQL、migration 与发布元数据删除/短路变异及唯一行为用例见
-  `docs/operations/d9b2-wallet-top-up-mutation-matrix.md`，结果 149/149；D9-B-2 聚焦 57/57，D5 支付通知与
-  D9-B-1 账本合并回归 105/105。余额支付、完整退款流程、第四 ledger 对账、资金规则、审批工作流和
+- 全部 150 个服务/调用点、SQL、migration 与发布元数据删除/短路变异及唯一行为用例见
+  `docs/operations/d9b2-wallet-top-up-mutation-matrix.md`，结果 150/150；D9-B-2 聚焦 60/60，D5 支付通知与
+  D9-B-1 账本合并回归 114/114。余额支付、完整退款流程、第四 ledger 对账、资金规则、审批工作流和
   角色调整均未实现或留桩，B2 第六项及 B3～B5 保持未勾选。
+
+D9-B-2 主动查单审核补测（2026-08-18）：
+
+- `apps/web/tests/integration/d9b2-wallet-top-ups.integration.test.ts:360-431` 新增三条独立通知用例：通知
+  均声称支付成功且金额与充值单完全相同，服务端主动查单分别返回 `not_paid`、`unknown` 和失败/超时；
+  每条精确断言 `queryOrder` 调用一次及 merchant/trace 参数、充值单保持 `payment_pending`、目标账户
+  credit 为 0、人工复核为 0，并用 `not_paid`、`status_unknown/unknown`、
+  `status_unknown/unavailable` observation 区分真实阻断原因。
+- `apps/web/scripts/mutate-d9b2-wallet-top-up-decisions.mjs:358-379` 将通知路径的
+  `provider.queryOrder(...)` 整段替换为由通知字段伪造的 paid 结果；第一条新增用例独立失败原文为
+  `RAW_FAILURE AssertionError: expected [] to deeply equal [ { …(2) } ]`。恢复实现后新增用例 3/3、D9-B-2
+  integration 51/51 通过。
+- 通知/查单相关 26 个变异全部由指定行为断言杀死；既有通知金额不一致用例又增加实际查询次数和精确
+  `payment_identifier_mismatch` 人工复核断言，防止由金额 CAS 或 `payment_amount_mismatch` 以错误原因
+  通过。逐用例承重点与反混淆说明见 `docs/operations/d9b2-wallet-top-up-mutation-matrix.md` 第 1.1 节。
 
 #### B2 余额账本与三态余额
 
