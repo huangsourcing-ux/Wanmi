@@ -126,6 +126,22 @@ export const auditEventDefinitions = {
     actorTypes: ['system'],
     targetType: 'wallet-ledger',
   },
+  'wallet.balance_payment.captured': {
+    actorTypes: ['system'],
+    targetType: 'order',
+  },
+  'wallet.balance_payment.held': {
+    actorTypes: ['customer'],
+    targetType: 'order',
+  },
+  'wallet.balance_refund.completed': {
+    actorTypes: ['admin', 'system'],
+    targetType: 'order',
+  },
+  'wallet.balance_refund.blocked': {
+    actorTypes: ['system'],
+    targetType: 'order',
+  },
   'wallet.top_up.created': {
     actorTypes: ['customer'],
     targetType: 'wallet-top-up-order',

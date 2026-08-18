@@ -384,7 +384,7 @@ export const Orders: CollectionConfig = {
       index: true,
       unique: true,
     },
-    { name: 'paymentChannel', type: 'select', options: ['native', 'h5'] },
+    { name: 'paymentChannel', type: 'select', options: ['native', 'h5', 'balance'] },
     { name: 'paymentExpiresAt', type: 'date' },
     {
       name: 'paymentStatusPolledAt',

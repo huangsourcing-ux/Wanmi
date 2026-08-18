@@ -25,6 +25,7 @@
     "20260817_150002_d9d2_domain_management_sync",
     "20260818_010559_d9d3_offline_batch_operations",
     "20260818_032334_d9b2_wallet_top_up_orders",
+    "20260818_064923_d9b3_balance_payment_refund",
     "20260818_072324_d9c1_domain_center"
   ],
   "rollback": {

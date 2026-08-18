@@ -8,8 +8,8 @@ import { AppError } from '@/lib/errors'
 import type { PaymentOrder, PaymentProvider, VerifiedPaymentNotification } from '@/providers/types'
 import {
   paymentSessionResultSchema,
-  type PaymentCreateRequest,
   type PaymentSessionResult,
+  type WechatPaymentCreateRequest,
 } from '@/schemas/payments'
 import { walletTopUpOrderResultSchema, type WalletTopUpOrderResult } from '@/schemas/wallet'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
@@ -515,7 +515,7 @@ export async function createWalletTopUpOrder(
 export async function createWalletTopUpPayment(
   req: PayloadRequest,
   orderNumber: string,
-  input: PaymentCreateRequest,
+  input: WechatPaymentCreateRequest,
   options: {
     clientIp?: string
     customer: CustomerIdentity

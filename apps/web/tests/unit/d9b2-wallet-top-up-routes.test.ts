@@ -129,4 +129,27 @@ describe('D9-B-2 wallet top-up routes', () => {
       expect.objectContaining({ customer: context.customer, provider }),
     )
   })
+
+  it('rejects the balance payment channel before the top-up payment service call', async () => {
+    const createPayment = vi.fn()
+    const handlers = createWalletTopUpPaymentRouteHandlers({
+      createPayment,
+      provider,
+      resolveContext: async () => context,
+    })
+    const response = await handlers.POST(
+      new Request(
+        'http://wanmi.test/api/v1/wallet/top-ups/WT123456789012345678901234567890/payments',
+        {
+          body: JSON.stringify({ channel: 'balance' }),
+          headers: { 'content-type': 'application/json' },
+          method: 'POST',
+        },
+      ),
+      routeContext,
+    )
+
+    expect(response.status).toBe(400)
+    expect(createPayment).not.toHaveBeenCalled()
+  })
 })

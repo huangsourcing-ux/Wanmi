@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 
+import { sql } from '@payloadcms/db-postgres'
 import { commitTransaction, initTransaction, killTransaction, type PayloadRequest } from 'payload'
 
 import { hasRole, isActiveAdminUser, isCustomerUser } from '@/access/roles'
@@ -36,7 +37,8 @@ type OrderRecord = {
   id: number | string
   merchantOrderNumber?: null | string
   orderNumber: string
-  paymentChannel?: 'h5' | 'native' | null
+  paidAt?: null | string
+  paymentChannel?: 'balance' | 'h5' | 'native' | null
   paymentExpiresAt?: null | string
   paymentStatusPolledAt?: null | string
   quoteSnapshot?: unknown
@@ -45,6 +47,11 @@ type OrderRecord = {
 
 const PAYMENT_STATUS_POLL_INTERVAL_MS = 3_000
 const PAYMENT_TIMEOUT_BATCH_SIZE = 100
+
+type ReadyPaymentSession = Extract<PaymentSessionResult, { state: 'ready' }>
+type ReadyWechatPaymentSession = ReadyPaymentSession & {
+  data: Extract<ReadyPaymentSession['data'], { channel: 'h5' | 'native' }>
+}
 
 type NotificationInput = {
   body: string
@@ -147,10 +154,65 @@ function merchantOrderNumber(): string {
   return `WM${randomBytes(15).toString('hex')}`
 }
 
+async function paymentDatabase(req: PayloadRequest) {
+  const transactionId = await req.transactionID
+  const session = transactionId ? req.payload.db.sessions?.[transactionId] : undefined
+  const database = session?.db as
+    | {
+        execute(
+          statement: ReturnType<typeof sql>,
+        ): Promise<{ rows?: Array<{ id: number | string }> }>
+      }
+    | undefined
+  if (!database) {
+    throw new AppError('PAYMENT_CREATE_CLAIM_UNAVAILABLE', '无法原子选择支付方式', 503)
+  }
+  return database
+}
+
+function mixedPaymentError(): AppError {
+  return new AppError('MIXED_PAYMENT_CHANNELS_FORBIDDEN', '同一订单不得同时使用余额与微信支付', 409)
+}
+
+export async function claimWechatPaymentChannel(
+  req: PayloadRequest,
+  input: {
+    channel: 'h5' | 'native'
+    expiresAt: string
+    merchantOrderNumber: string
+    orderId: number | string
+  },
+): Promise<boolean> {
+  const startedTransaction = await initTransaction(req)
+  try {
+    const claimed = await (
+      await paymentDatabase(req)
+    ).execute(sql`
+      UPDATE orders
+      SET
+        merchant_order_number = ${input.merchantOrderNumber},
+        payment_channel = ${input.channel},
+        payment_expires_at = ${input.expiresAt}::timestamptz,
+        updated_at = NOW()
+      WHERE id = ${input.orderId}
+        AND status = 'pending_payment'
+        AND merchant_order_number IS NULL
+        AND payment_channel IS NULL
+        AND payment_expires_at IS NULL
+      RETURNING id
+    `)
+    if (startedTransaction) await commitTransaction(req)
+    return claimed.rows?.[0]?.id !== undefined
+  } catch (error) {
+    if (startedTransaction) await killTransaction(req)
+    throw error
+  }
+}
+
 export async function createWechatPayment(
   req: PayloadRequest,
   orderNumber: string,
-  input: PaymentCreateRequest,
+  input: PaymentCreateRequest & { channel: 'h5' | 'native' },
   options: {
     clientIp?: string
     customer: CustomerIdentity
@@ -158,11 +220,12 @@ export async function createWechatPayment(
     provider: PaymentProvider
     traceId: string
   },
-): Promise<Extract<PaymentSessionResult, { state: 'ready' }>> {
+): Promise<ReadyWechatPaymentSession> {
   assertCustomer(req, options.customer)
   await assertCustomerAccountCapability(req, options.customer.id, 'purchase')
   const now = options.now ?? (() => new Date())
   const order = await findCustomerOrder(req, orderNumber, options.customer)
+  if (order.paymentChannel === 'balance') throw mixedPaymentError()
   if (order.status !== 'pending_payment') {
     throw new AppError('ORDER_NOT_PENDING_PAYMENT', '订单当前不可发起支付', 409)
   }
@@ -175,24 +238,21 @@ export async function createWechatPayment(
   }
   const merchantNumber = order.merchantOrderNumber ?? merchantOrderNumber()
   if (!order.merchantOrderNumber) {
-    const updated = await req.payload.update({
-      collection: 'orders',
-      data: {
-        merchantOrderNumber: merchantNumber,
-        paymentChannel: input.channel,
-        paymentExpiresAt: expiresAt,
-      },
-      overrideAccess: true,
-      req,
-      where: {
-        and: [
-          { id: { equals: order.id } },
-          { status: { equals: 'pending_payment' } },
-          { merchantOrderNumber: { exists: false } },
-        ],
-      },
+    const claimed = await claimWechatPaymentChannel(req, {
+      channel: input.channel,
+      expiresAt,
+      merchantOrderNumber: merchantNumber,
+      orderId: order.id,
     })
-    if (!updated.docs.length) {
+    if (!claimed) {
+      const current = (await req.payload.findByID({
+        collection: 'orders',
+        depth: 0,
+        id: order.id,
+        overrideAccess: true,
+        req,
+      })) as unknown as OrderRecord
+      if (current.paymentChannel === 'balance') throw mixedPaymentError()
       throw new AppError('PAYMENT_CREATE_CONFLICT', '支付单正在创建，请重试', 409)
     }
   }
@@ -237,7 +297,7 @@ export async function createWechatPayment(
     data: { ...result.data, merchantOrderNumber: merchantNumber },
     meta: { observedAt: result.observedAt, traceId: options.traceId },
     state: 'ready',
-  }) as Extract<PaymentSessionResult, { state: 'ready' }>
+  }) as ReadyWechatPaymentSession
 }
 
 async function ensureOpenManualReview(
@@ -891,6 +951,18 @@ export async function queryAndConfirmWechatPayment(
 ): Promise<Extract<PaymentStatusResult, { state: 'ready' }>> {
   assertCustomer(req, options.customer)
   const order = await findCustomerOrder(req, orderNumber, options.customer)
+  if (order.paymentChannel === 'balance') {
+    return paymentStatusResultSchema.parse({
+      data: {
+        amountMinor: order.amountMinor,
+        currency: order.currency,
+        orderNumber: order.orderNumber,
+        status: order.status,
+      },
+      meta: { observedAt: order.paidAt ?? new Date().toISOString(), traceId: options.traceId },
+      state: 'ready',
+    }) as Extract<PaymentStatusResult, { state: 'ready' }>
+  }
   if (!order.merchantOrderNumber) {
     throw new AppError('PAYMENT_NOT_CREATED', '该订单尚未创建微信支付单', 409)
   }
@@ -976,6 +1048,7 @@ export async function runPaymentTimeoutClose(
     where: {
       and: [
         { status: { equals: 'pending_payment' } },
+        { paymentChannel: { not_equals: 'balance' } },
         { merchantOrderNumber: { exists: true } },
         { paymentExpiresAt: { less_than_equal: now.toISOString() } },
         ...(options.orderId === undefined ? [] : [{ id: { equals: options.orderId } }]),

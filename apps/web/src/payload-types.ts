@@ -579,7 +579,7 @@ export interface Order {
   amountMinor: number;
   currency: 'CNY';
   merchantOrderNumber?: string | null;
-  paymentChannel?: ('native' | 'h5') | null;
+  paymentChannel?: ('native' | 'h5' | 'balance') | null;
   paymentExpiresAt?: string | null;
   paymentStatusPolledAt?: string | null;
   quoteSnapshot:

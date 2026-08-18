@@ -11,6 +11,7 @@ import {
   paymentStatusResultSchema,
 } from '@/schemas/payments'
 import { authenticatedCustomerRequest } from '@/services/auth/otp'
+import { createBalancePayment } from '@/services/commerce/balance-payments'
 import { createWechatPayment, queryAndConfirmWechatPayment } from '@/services/commerce/payments'
 
 export const runtime = 'nodejs'
@@ -23,6 +24,8 @@ type Context = {
 }
 
 type Dependencies = {
+  createBalance?: typeof createBalancePayment
+  createWechat?: typeof createWechatPayment
   provider: PaymentProvider
   queryPayment?: typeof queryAndConfirmWechatPayment
   resolveContext: (request: Request) => Promise<Context>
@@ -93,12 +96,28 @@ export function createPaymentRouteHandlers(dependencies: Dependencies) {
         const { orderNumber } = await context.params
         const authenticated = await dependencies.resolveContext(request)
         const input = paymentCreateRequestSchema.parse(await readBody(request))
-        const result = await createWechatPayment(authenticated.req, orderNumber, input, {
-          clientIp: input.channel === 'h5' ? clientIp(request.headers) : undefined,
-          customer: authenticated.customer,
-          provider: dependencies.provider,
-          traceId,
-        })
+        const channel = input.channel
+        const result =
+          channel === 'balance'
+            ? await (dependencies.createBalance ?? createBalancePayment)(
+                authenticated.req,
+                orderNumber,
+                {
+                  customer: authenticated.customer,
+                  traceId,
+                },
+              )
+            : await (dependencies.createWechat ?? createWechatPayment)(
+                authenticated.req,
+                orderNumber,
+                { channel },
+                {
+                  clientIp: channel === 'h5' ? clientIp(request.headers) : undefined,
+                  customer: authenticated.customer,
+                  provider: dependencies.provider,
+                  traceId,
+                },
+              )
         return successResponse(result, traceId, { status: 201 })
       } catch (error) {
         const problem = toProblemDetails(error, traceId)

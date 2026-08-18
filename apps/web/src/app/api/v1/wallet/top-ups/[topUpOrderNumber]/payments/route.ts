@@ -4,7 +4,7 @@ import { getPayload, type PayloadRequest } from 'payload'
 import { AppError, getTraceId, successResponse, toProblemDetails } from '@/lib/errors'
 import type { PaymentProvider } from '@/providers/types'
 import { getRuntimeWechatPayProvider } from '@/providers/wechatpay'
-import { paymentCreateRequestSchema, paymentSessionResultSchema } from '@/schemas/payments'
+import { paymentSessionResultSchema, wechatPaymentCreateRequestSchema } from '@/schemas/payments'
 import { walletTopUpOrderResultSchema } from '@/schemas/wallet'
 import { clientIp } from '@/services/auth/client-facts'
 import { authenticatedCustomerRequest } from '@/services/auth/otp'
@@ -93,7 +93,7 @@ export function createWalletTopUpPaymentRouteHandlers(dependencies: Dependencies
       try {
         const { topUpOrderNumber } = await context.params
         const authenticated = await dependencies.resolveContext(request)
-        const input = paymentCreateRequestSchema.parse(await readBody(request))
+        const input = wechatPaymentCreateRequestSchema.parse(await readBody(request))
         const result = await (dependencies.createPayment ?? createWalletTopUpPayment)(
           authenticated.req,
           topUpOrderNumber,

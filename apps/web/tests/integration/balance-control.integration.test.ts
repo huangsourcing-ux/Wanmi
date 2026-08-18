@@ -144,6 +144,7 @@ async function createPaidOrder(suffix: string) {
       merchantOrderNumber,
       orderNumber: `${prefix}-${suffix}-${randomUUID()}`,
       paidAt,
+      paymentChannel: 'native',
       quote: quote.id,
       quoteSnapshot: fulfillmentQuoteSnapshotFixture({
         amountMinor: 2_999,

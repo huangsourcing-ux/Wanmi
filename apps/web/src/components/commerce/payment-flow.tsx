@@ -21,7 +21,7 @@ const statusCopy: Record<
   cancelled: { description: '支付单已关闭，请重新报价并创建订单。', title: '订单已取消' },
   fulfilling: { description: '服务端已确认到账，正在处理域名注册。', title: '正在履约' },
   manual_review: { description: '订单需要人工核对，请勿重复支付。', title: '人工复核中' },
-  paid: { description: '服务端已确认微信到账。', title: '支付已确认' },
+  paid: { description: '服务端已确认付款。', title: '支付已确认' },
   pending_payment: {
     description: '尚未收到服务端到账确认，请保留当前页面。',
     title: '等待支付确认',
@@ -162,7 +162,8 @@ export function PaymentFlow({
   }, [orderNumber])
 
   const readySession = session?.state === 'ready' ? session.data : undefined
-  const expired = readySession ? Date.parse(readySession.expiresAt) <= now : false
+  const expired =
+    readySession && 'expiresAt' in readySession ? Date.parse(readySession.expiresAt) <= now : false
   const paymentStatus = statusResult?.state === 'ready' ? statusResult.data : undefined
   const h5Url = useMemo(
     () =>

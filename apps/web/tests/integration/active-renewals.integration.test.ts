@@ -21,6 +21,7 @@ import {
   runCommerceFulfillment,
   type FulfillmentDependencies,
 } from '@/services/commerce/fulfillment'
+import { balancePaymentTransactionKey } from '@/services/commerce/balance-payments'
 import { createCustomerOrder } from '@/services/commerce/order-creation'
 import {
   createCustomerQuote,
@@ -28,6 +29,12 @@ import {
   PayloadCustomerQuoteStore,
 } from '@/services/pricing/customer-quotes'
 import { PayloadPriceSnapshotStore } from '@/services/pricing/price-snapshots'
+import {
+  createWalletAccount,
+  holdWalletBalance,
+  postWalletCredit,
+  readWalletBalance,
+} from '@/services/wallet/ledger'
 
 import { PRICING_RULE_FIXTURES } from '../fixtures/pricing'
 import { realnameTemplateFixture } from '../fixtures/realname'
@@ -196,7 +203,7 @@ function renewalSnapshot(input: {
 
 async function paidRenewal(
   suffix: string,
-  options: { status?: 'fulfilling' | 'paid'; years?: number } = {},
+  options: { balance?: boolean; status?: 'fulfilling' | 'paid'; years?: number } = {},
 ) {
   const owner = await customer(suffix)
   const { asset, domainAscii, template } = await assetFor(owner, suffix)
@@ -264,6 +271,16 @@ async function paidRenewal(
   const orderNumber = `${fixturePrefix}-${suffix}-${randomUUID()}`
   const merchantOrderNumber = `WM${randomUUID().replaceAll('-', '')}`
   const paidAt = new Date().toISOString()
+  let walletAccountId: number | undefined
+  if (options.balance) {
+    const account = await createWalletAccount(await request(`${suffix}-wallet`), owner.id)
+    walletAccountId = Number(account.accountId)
+    await postWalletCredit(await request(`${suffix}-wallet-credit`), {
+      accountId: walletAccountId,
+      amountFen: amountMinor,
+      transactionKey: `${fixturePrefix}:${suffix}:wallet-credit`,
+    })
+  }
   const orderFixture = await findOrCreateUniqueFixture({
     create: () =>
       payload.create({
@@ -274,10 +291,12 @@ async function paidRenewal(
           customer: owner.id,
           domainAsset: asset.id,
           domainAscii,
-          merchantOrderNumber,
           operation: 'renewal',
           orderNumber,
           paidAt,
+          ...(options.balance
+            ? { paymentChannel: 'balance' as const }
+            : { merchantOrderNumber, paymentChannel: 'native' as const }),
           quote: quoteFixture.value.id,
           quoteSnapshot: renewalSnapshot({
             amountMinor,
@@ -304,41 +323,56 @@ async function paidRenewal(
     path: 'orderNumber',
     tableName: 'orders',
   })
-  const notificationId = `PAY-${randomUUID()}`
-  await findOrCreateUniqueFixture({
-    create: () =>
-      payload.create({
-        collection: 'paymentNotifications',
-        data: {
-          amountMinor,
-          confirmationStatus: 'confirmed',
-          currency: 'CNY',
-          merchantOrderNumber,
-          notificationId,
-          order: orderFixture.value.id,
-          paidAt,
-          payloadDigest: '4'.repeat(64),
-          providerRequestId: `${fixturePrefix}-payment-${suffix}`,
-          receivedAt: paidAt,
-          signatureVerified: true,
-          source: 'query',
-          wechatTransactionId: `WX-${randomUUID()}`,
-        },
-        overrideAccess: true,
-      }),
-    find: async () =>
-      (
-        await payload.find({
+  if (options.balance) {
+    await holdWalletBalance(await request(`${suffix}-wallet-hold`), {
+      accountId: walletAccountId!,
+      amountFen: amountMinor,
+      transactionKey: balancePaymentTransactionKey(orderFixture.value.id),
+    })
+  } else {
+    const notificationId = `PAY-${randomUUID()}`
+    await findOrCreateUniqueFixture({
+      create: () =>
+        payload.create({
           collection: 'paymentNotifications',
-          limit: 1,
+          data: {
+            amountMinor,
+            confirmationStatus: 'confirmed',
+            currency: 'CNY',
+            merchantOrderNumber,
+            notificationId,
+            order: orderFixture.value.id,
+            paidAt,
+            payloadDigest: '4'.repeat(64),
+            providerRequestId: `${fixturePrefix}-payment-${suffix}`,
+            receivedAt: paidAt,
+            signatureVerified: true,
+            source: 'query',
+            wechatTransactionId: `WX-${randomUUID()}`,
+          },
           overrideAccess: true,
-          where: { notificationId: { equals: notificationId } },
-        })
-      ).docs[0],
-    path: 'notificationId',
-    tableName: 'payment_notifications',
-  })
-  return { asset, domainAscii, order: orderFixture.value, owner, years }
+        }),
+      find: async () =>
+        (
+          await payload.find({
+            collection: 'paymentNotifications',
+            limit: 1,
+            overrideAccess: true,
+            where: { notificationId: { equals: notificationId } },
+          })
+        ).docs[0],
+      path: 'notificationId',
+      tableName: 'payment_notifications',
+    })
+  }
+  return {
+    asset,
+    domainAscii,
+    order: orderFixture.value,
+    owner,
+    walletAccountId,
+    years,
+  }
 }
 
 function assetResponse(domainAscii: string, expiresAt = renewedExpiresAt) {
@@ -419,6 +453,28 @@ afterAll(async () => {
     await ignorePayloadNotFound(() =>
       payload.delete({ collection: 'orders', id: order.id, overrideAccess: true }),
     )
+  }
+  const fixtureCustomers = await payload.find({
+    collection: 'customers',
+    limit: 200,
+    overrideAccess: true,
+    where: { phone: { contains: fixtureScope } },
+  })
+  const fixtureCustomerIds = fixtureCustomers.docs.map((customer) => Number(customer.id))
+  if (fixtureCustomerIds.length > 0) {
+    await payload.db.pool.query(
+      `DELETE FROM wallet_entries
+       WHERE account_id IN (SELECT id FROM wallet_accounts WHERE customer_id = ANY($1::int[]))`,
+      [fixtureCustomerIds],
+    )
+    await payload.db.pool.query(
+      `DELETE FROM wallet_transactions
+       WHERE account_id IN (SELECT id FROM wallet_accounts WHERE customer_id = ANY($1::int[]))`,
+      [fixtureCustomerIds],
+    )
+    await payload.db.pool.query('DELETE FROM wallet_accounts WHERE customer_id = ANY($1::int[])', [
+      fixtureCustomerIds,
+    ])
   }
   for (const collection of [
     'quotes',
@@ -640,6 +696,41 @@ describe('D6-05 active renewals', () => {
     expect(transport.writeCount).toBe(1)
   })
 
+  it('captures the stored balance hold when a renewal is confirmed', async () => {
+    const fixture = await paidRenewal('balance-capture', { balance: true })
+    const transport = new FixtureWestDigitalWriteTransport((input) =>
+      input.operation === 'renew'
+        ? { body: { clientid: `${fixturePrefix}-balance-capture`, result: 200 }, status: 200 }
+        : assetResponse(fixture.domainAscii),
+    )
+    const result = await runCommerceFulfillment(
+      await request('balance-capture'),
+      {
+        operationKey: `commerce-fulfillment:${fixture.order.id}`,
+        orderId: Number(fixture.order.id),
+        traceId: `${fixturePrefix}-balance-capture`,
+      },
+      dependencies(new WestDigitalWriteAdapter({ transport })),
+    )
+
+    expect(result.status).toBe('succeeded')
+    await expect(
+      readWalletBalance(await request('balance-capture-read'), fixture.walletAccountId!),
+    ).resolves.toEqual({ availableBalance: 0n, heldBalance: 0n, postedBalance: 0n })
+    const captures = await payload.find({
+      collection: 'walletEntries',
+      overrideAccess: true,
+      where: {
+        and: [
+          { account: { equals: fixture.walletAccountId } },
+          { entryType: { equals: 'capture' } },
+          { amountFen: { equals: 3_998 } },
+        ],
+      },
+    })
+    expect(captures.totalDocs).toBe(1)
+  })
+
   it('recovers after provider confirmation but before asset persistence without renewing twice', async () => {
     const fixture = await paidRenewal('restart')
     let assetQueries = 0
@@ -737,6 +828,48 @@ describe('D6-05 active renewals', () => {
         })
       ).expiresAt,
     ).toBe(originalExpiresAt)
+  })
+
+  it('releases the stored balance hold when renewal failure is explicit', async () => {
+    const fixture = await paidRenewal('balance-release', { balance: true })
+    const transport = new FixtureWestDigitalWriteTransport((input) =>
+      input.operation === 'asset_query'
+        ? assetResponse(fixture.domainAscii)
+        : {
+            body: { clientid: `${fixturePrefix}-balance-release`, result: 500 },
+            status: 200,
+          },
+    )
+    const result = await runCommerceFulfillment(
+      await request('balance-release'),
+      {
+        operationKey: `commerce-fulfillment:${fixture.order.id}`,
+        orderId: Number(fixture.order.id),
+        traceId: `${fixturePrefix}-balance-release`,
+      },
+      dependencies(new WestDigitalWriteAdapter({ transport })),
+    )
+
+    expect(result.status).toBe('refunded')
+    await expect(
+      readWalletBalance(await request('balance-release-read'), fixture.walletAccountId!),
+    ).resolves.toEqual({
+      availableBalance: 3_998n,
+      heldBalance: 0n,
+      postedBalance: 3_998n,
+    })
+    const releases = await payload.find({
+      collection: 'walletEntries',
+      overrideAccess: true,
+      where: {
+        and: [
+          { account: { equals: fixture.walletAccountId } },
+          { entryType: { equals: 'release' } },
+          { amountFen: { equals: 3_998 } },
+        ],
+      },
+    })
+    expect(releases.totalDocs).toBe(1)
   })
 
   it('moves a post-submission timeout to manual review and only queries on replay', async () => {

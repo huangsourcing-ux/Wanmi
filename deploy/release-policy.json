@@ -113,6 +113,13 @@
       "reason": "新增独立钱包充值订单表及支付通知、人工复核的可空关联；旧代码可忽略新增结构，新代码仅在迁移完成后启用充值入账。",
       "rollback": "retain"
     },
+    "20260818_064923_d9b3_balance_payment_refund": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "只为订单支付渠道枚举追加 balance；迁移前新代码对余额支付失败关闭，旧代码可读取既有订单并忽略新渠道，新代码仅在迁移完成后开放余额支付。",
+      "rollback": "retain"
+    },
     "20260818_072324_d9c1_domain_center": {
       "newCodeCompatibleBeforeUp": true,
       "oldCodeCompatible": true,
