@@ -35,7 +35,28 @@ import {
   updateNotificationPreference,
 } from '@/services/notifications/outbox'
 
+const cryptoFixture = vi.hoisted(() => ({
+  nextRandomUUID: undefined as string | undefined,
+}))
+
+vi.mock('node:crypto', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:crypto')>()
+  return {
+    ...actual,
+    randomUUID: (...args: Parameters<typeof actual.randomUUID>) => {
+      const nextRandomUUID = cryptoFixture.nextRandomUUID
+      if (nextRandomUUID) {
+        cryptoFixture.nextRandomUUID = undefined
+        return nextRandomUUID as ReturnType<typeof actual.randomUUID>
+      }
+      return actual.randomUUID(...args)
+    },
+  }
+})
+
 const prefix = `d9b5-${randomUUID().slice(0, 8)}`
+const phoneLikeSubmittedRequestKey = '00000000-0000-4000-8000-13012345678a'
+const phoneLikeExecutedRequestKey = '11111111-1111-4111-8111-13012345678b'
 const adminIds: number[] = []
 const customerIds: number[] = []
 const identityIds: number[] = []
@@ -625,13 +646,74 @@ describe('D9-B-5 high-risk approval workflow', () => {
     },
   )
 
-  it('keeps a phone-like internal request UUID out of notification text and commits execution', async () => {
+  it('keeps a phone-like internal request UUID out of submitted notification text and commits creation', async () => {
+    await setPolicy({ cooldownSeconds: 5, requiresDifferentApprover: true })
+    let created!: Awaited<ReturnType<typeof createApproval>>
+    try {
+      cryptoFixture.nextRandomUUID = phoneLikeSubmittedRequestKey
+      const creation = createApproval(
+        'large_balance_adjustment',
+        'phone-like-request-key-submitted',
+      )
+      await expect(creation).resolves.toMatchObject({
+        requestKey: phoneLikeSubmittedRequestKey,
+        status: 'pending_approval',
+      })
+      created = await creation
+    } finally {
+      cryptoFixture.nextRandomUUID = undefined
+    }
+
+    await expect(
+      payload.findByID({
+        collection: 'adminApprovalRequests',
+        depth: 0,
+        id: created.id,
+        overrideAccess: true,
+      }),
+    ).resolves.toMatchObject({
+      requestKey: phoneLikeSubmittedRequestKey,
+      status: 'pending_approval',
+    })
+    const outbox = await payload.find({
+      collection: 'notificationOutboxEvents',
+      limit: 2,
+      overrideAccess: true,
+      where: {
+        and: [
+          { customer: { equals: customer.id } },
+          {
+            eventKey: { equals: `admin-approval:${phoneLikeSubmittedRequestKey}:requested` },
+          },
+          { notificationType: { equals: 'admin_high_risk_operation_submitted' } },
+        ],
+      },
+    })
+    expect(outbox.totalDocs).toBe(1)
+    expect(outbox.docs[0]).toMatchObject({
+      bodySnapshot: `大额余额调整已于 ${created.createdAt} 提交。冷静期为 ${created.cooldownSeconds} 秒；如非本人授权，请立即联系人工支持。`,
+      eventKey: `admin-approval:${phoneLikeSubmittedRequestKey}:requested`,
+      subjectSnapshot: '高风险操作已提交',
+      templateKey: 'admin-high-risk-operation-submitted',
+      templateVersion: 1,
+    })
+    expect(outbox.docs[0]?.bodySnapshot).not.toContain(phoneLikeSubmittedRequestKey)
+    expect(outbox.docs[0]?.bodySnapshot).not.toContain('13012345678')
+    expect(outbox.docs[0]?.subjectSnapshot).not.toContain(phoneLikeSubmittedRequestKey)
+    expect(outbox.docs[0]?.subjectSnapshot).not.toContain('13012345678')
+    expect(
+      await countWhere('adminAccessEvents', {
+        and: [{ approvalRequest: { equals: created.id } }, { eventType: { equals: 'requested' } }],
+      }),
+    ).toBe(1)
+  })
+
+  it('keeps a phone-like internal request UUID out of executed notification text and commits execution', async () => {
     await setPolicy({ cooldownSeconds: 5, requiresDifferentApprover: true })
     const created = await createApproval('large_balance_adjustment', 'phone-like-request-key')
-    const phoneLikeRequestKey = '00000000-0000-4000-8000-13012345678a'
     await payload.db.pool.query(
       'UPDATE admin_approval_requests SET request_key = $1 WHERE id = $2',
-      [phoneLikeRequestKey, created.id],
+      [phoneLikeExecutedRequestKey, created.id],
     )
     await approve(created.id)
     let effects = 0
@@ -659,7 +741,7 @@ describe('D9-B-5 high-risk approval workflow', () => {
         id: created.id,
         overrideAccess: true,
       }),
-    ).resolves.toMatchObject({ requestKey: phoneLikeRequestKey, status: 'executed' })
+    ).resolves.toMatchObject({ requestKey: phoneLikeExecutedRequestKey, status: 'executed' })
     const outbox = await payload.find({
       collection: 'notificationOutboxEvents',
       limit: 2,
@@ -667,7 +749,9 @@ describe('D9-B-5 high-risk approval workflow', () => {
       where: {
         and: [
           { customer: { equals: customer.id } },
-          { eventKey: { equals: `admin-approval:${phoneLikeRequestKey}:executed` } },
+          {
+            eventKey: { equals: `admin-approval:${phoneLikeExecutedRequestKey}:executed` },
+          },
           { notificationType: { equals: 'admin_high_risk_operation_executed' } },
         ],
       },
@@ -675,13 +759,15 @@ describe('D9-B-5 high-risk approval workflow', () => {
     expect(outbox.totalDocs).toBe(1)
     expect(outbox.docs[0]).toMatchObject({
       bodySnapshot: '大额余额调整已执行。如非本人授权，请立即联系人工支持。',
-      eventKey: `admin-approval:${phoneLikeRequestKey}:executed`,
+      eventKey: `admin-approval:${phoneLikeExecutedRequestKey}:executed`,
       subjectSnapshot: '高风险操作已执行',
       templateKey: 'admin-high-risk-operation-executed',
       templateVersion: 2,
     })
-    expect(outbox.docs[0]?.bodySnapshot).not.toContain(phoneLikeRequestKey)
+    expect(outbox.docs[0]?.bodySnapshot).not.toContain(phoneLikeExecutedRequestKey)
     expect(outbox.docs[0]?.bodySnapshot).not.toContain('13012345678')
+    expect(outbox.docs[0]?.subjectSnapshot).not.toContain(phoneLikeExecutedRequestKey)
+    expect(outbox.docs[0]?.subjectSnapshot).not.toContain('13012345678')
     expect(
       await countWhere('adminAccessEvents', {
         and: [{ approvalRequest: { equals: created.id } }, { eventType: { equals: 'executed' } }],

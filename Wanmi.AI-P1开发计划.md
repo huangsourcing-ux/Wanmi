@@ -2101,12 +2101,15 @@ D9-B-5 通知内部标识缺陷修复证据（2026-08-19）：
   `body` / `subject` 的每一项动态插值来源见
   `docs/operations/d9b5-notification-user-visible-identifiers-audit.md`；没有订单号、交易号、hash 前缀、UUID、
   自由输入或 provider 标识进入用户可见文本，`sanitize-sensitive-data.ts` 保持零 diff。
-- 独立用例 `keeps a phone-like internal request UUID out of notification text and commits execution`（
-  `apps/web/tests/integration/d9b5-admin-approvals-notifications.integration.test.ts:628`）把 request key 固定为
-  `00000000-0000-4000-8000-13012345678a`，断言 effect 恰好一次、审批最终 `executed`、通知恰好一条、
-  `eventKey` 保留 UUID、正文/主题不含 UUID 且执行访问事件恰好一条。恢复态 1/1 通过；把旧 UUID 插值回正文
-  后，同一用例以 `NOTIFICATION_SENSITIVE_CONTENT_FORBIDDEN` 失败；再次恢复后 1/1 通过。
-- 最终代码状态完整运行 `make check` 退出 0：838/838 unit、710/710 主 integration、37/37 wallet-ledger
+- 两个 enqueue 调用点由两个独立用例一一保护：`keeps a phone-like internal request UUID out of submitted
+notification text and commits creation` 与 `keeps a phone-like internal request UUID out of executed
+notification text and commits execution`（
+  `apps/web/tests/integration/d9b5-admin-approvals-notifications.integration.test.ts:649`、`:711`）。二者分别注入含
+  `13012345678` 的不同 request key，断言审批事务提交、对应通知/访问事件恰好一条、`eventKey` 保留 UUID，
+  而正文/主题不含 UUID。提交与执行调用点分别回插 UUID 的两轮变异均精确为对应用例失败、另一条通过，错误码
+  `NOTIFICATION_SENSITIVE_CONTENT_FORBIDDEN`；两处恢复后 2/2 通过。新增 enqueue 调用点必须同步新增专属
+  确定性回归，规则与原始报错见审计文档。
+- 最终代码状态完整运行 `make check` 退出 0：838/838 unit、711/711 主 integration、37/37 wallet-ledger
   integration，以及完整迁移、构建、镜像和安全门禁均通过。只修复 B-5 通知模板与回归，不改 B-6、生产或
   真实闸门。
 

@@ -35,31 +35,58 @@ rg -n "enqueueTransactionalSecurityNotification\(" apps/web/src --glob '*.ts'
 `admin-approval:<requestKey>:requested` 与 `admin-approval:<requestKey>:executed` 保持原有幂等身份；审批关系、
 访问事件与审计路径同样不变。
 
+调用点与回归必须保持一一对应：每新增一个生产
+`enqueueTransactionalSecurityNotification` 调用点，必须在同一变更中为该调用点新增一条确定性回归，注入
+含 `13012345678` 的内部标识并断言领域事务成功、通知恰好一条且用户可见 `body` / `subject` 不含该标识；
+同时更新本表。只覆盖 outbox 的通用敏感扫描，不算覆盖具体调用点。当前生产调用点 2 个，专属回归 2 条。
+
 ## 确定性回归与变异
 
-集成用例
-`keeps a phone-like internal request UUID out of notification text and commits execution` 将已创建审批的
-`requestKey` 精确改为 `00000000-0000-4000-8000-13012345678a`。其中 `13012345678` 必然命中既有
-`chineseMobile` 正则。恢复实现必须同时满足：
+两个集成用例分别保护两个调用点，两个 request key 都含有必然命中既有 `chineseMobile` 正则的
+`13012345678`：
 
-- 高风险操作执行成功且持久化为 `executed`；
-- 领域执行 effect 恰好一次；
-- 执行通知恰好一条，`eventKey` 仍包含完整内部 UUID；
-- `bodySnapshot` / `subjectSnapshot` 不含 UUID 或手机号样式片段；
-- 执行访问事件恰好一条。
+- `keeps a phone-like internal request UUID out of submitted notification text and commits creation`：在
+  request key 生成点一次性注入 `00000000-0000-4000-8000-13012345678a`，断言审批持久化为
+  `pending_approval`，提交通知与 requested 访问事件各恰好一条，`eventKey` 保留 UUID，而
+  `bodySnapshot` / `subjectSnapshot` 不含 UUID 或手机号片段；
+- `keeps a phone-like internal request UUID out of executed notification text and commits execution`：把已创建
+  审批的 request key 精确改为 `11111111-1111-4111-8111-13012345678b`，断言领域 effect 恰好一次、审批
+  持久化为 `executed`，执行通知与 executed 访问事件各恰好一条，`eventKey` 保留 UUID，而
+  `bodySnapshot` / `subjectSnapshot` 不含 UUID 或手机号片段。
 
-变异只把旧的 `记录号：${claimed.approval.requestKey}` 重新插回执行正文，并只运行上述用例。进程退出 1，
-原始承重报错为：
+同一命令同时运行这两条回归。第一轮只把 `${requestKey}` 插入提交正文，结果精确为提交用例失败、执行用例
+通过（`1 failed | 1 passed`），原始承重报错为：
 
 ```text
+FAIL ... > keeps a phone-like internal request UUID out of submitted notification text and commits creation
 AssertionError: promise rejected "AppError: 通知正文不得包含完整手机号、证件或凭据 { …(3) }" instead of resolving
 Caused by: AppError: 通知正文不得包含完整手机号、证件或凭据
+❯ assertImmutableSafeContent src/services/notifications/outbox.ts:91:11
+❯ enqueueTransactionalSecurityNotification src/services/notifications/outbox.ts:162:3
+❯ src/services/admin/approvals.ts:259:11
 Serialized Error: { code: 'NOTIFICATION_SENSITIVE_CONTENT_FORBIDDEN', status: 400, options: {} }
+Tests  1 failed | 1 passed | 52 skipped (54)
 ```
 
-栈明确经过 `assertImmutableSafeContent` → `enqueueTransactionalSecurityNotification` →
-`executeAdminApprovalRequest`，证明测试不是由源码文本、编译或环境错误杀死。恢复安全正文后，同一隔离库、同一
-测试命令再次 1/1 通过。
+恢复提交正文后，第二轮只把 `${claimed.approval.requestKey}` 插入执行正文，结果精确为提交用例通过、执行用例
+失败（`1 failed | 1 passed`），原始承重报错为：
+
+```text
+FAIL ... > keeps a phone-like internal request UUID out of executed notification text and commits execution
+AssertionError: promise rejected "AppError: 通知正文不得包含完整手机号、证件或凭据 { …(3) }" instead of resolving
+Caused by: AppError: 通知正文不得包含完整手机号、证件或凭据
+❯ assertImmutableSafeContent src/services/notifications/outbox.ts:91:11
+❯ enqueueTransactionalSecurityNotification src/services/notifications/outbox.ts:162:3
+❯ src/services/admin/approvals.ts:475:13
+❯ transaction src/services/admin/approvals.ts:79:20
+❯ Module.executeAdminApprovalRequest src/services/admin/approvals.ts:446:20
+Serialized Error: { code: 'NOTIFICATION_SENSITIVE_CONTENT_FORBIDDEN', status: 400, options: {} }
+Tests  1 failed | 1 passed | 52 skipped (54)
+```
+
+两轮栈均明确经过 `assertImmutableSafeContent` → `enqueueTransactionalSecurityNotification` → 对应 enqueue
+调用点，证明各用例独立杀死各自调用点的变异，不是由源码文本、编译或环境错误杀死。恢复两处安全正文后，同一
+隔离库、同一命令 2/2 通过。
 
 ## 验证记录
 
@@ -67,12 +94,12 @@ Serialized Error: { code: 'NOTIFICATION_SENSITIVE_CONTENT_FORBIDDEN', status: 40
   `ADMIN_APPROVAL_POLICY_UNAVAILABLE` 停止，没有执行用例，也没有修改共享数据库。随后创建精确命名的一次性
   fixture 库；首次迁移又因未注入测试用 `REALNAME_DOCUMENT_MASTER_KEYS` 在应用启动前停止。补入 32-byte
   fixture key 后，迁移和用例才开始执行。这两次均为环境前置失败，不计作代码通过。
-- 恢复态的确定性回归先 1/1 通过；回插 UUID 的单点变异以
-  `NOTIFICATION_SENSITIVE_CONTENT_FORBIDDEN` 失败；恢复代码后同一用例再次 1/1 通过。D9-B-5 单元 8/8、RBAC
-  冻结目录 55/55，合计 63/63；完整 D9-B-5 集成文件 53/53。
+- 补测恢复态 2/2 通过；提交与执行两处分别回插 UUID 后，各自都精确为对应 1 条失败、另一条通过，并以
+  `NOTIFICATION_SENSITIVE_CONTENT_FORBIDDEN` 杀死；恢复两处后再次 2/2 通过。补测前已通过的 D9-B-5
+  单元 8/8、RBAC 冻结目录 55/55 与完整集成 53/53 证据保持有效；本轮新增后集成文件总数为 54 条。
 - 最终代码状态在一次性数据库、Homebrew OpenSSL 3、全部真实微信支付/退款/西部数码/provider 写闸显式
-  `false` 下完整运行一次 `make check`，退出 0：115 文件 838/838 单元、43 文件 710/710 主集成、1 文件
-  37/37 wallet-ledger 集成（集成合计 747/747），以及生成物/schema drift、全部 migration 往返、Nginx、运维、
-  rebuild/release、lint、TypeScript strict、Next.js 宿主构建、linux/amd64 同镜像、依赖审计、工作树与完整 229
+  `false` 下完整运行一次 `make check`，退出 0：115 文件 838/838 单元、43 文件 711/711 主集成、1 文件
+  37/37 wallet-ledger 集成（集成合计 748/748），以及生成物/schema drift、全部 migration 往返、Nginx、运维、
+  rebuild/release、lint、TypeScript strict、Next.js 宿主构建、linux/amd64 同镜像、依赖审计、工作树与完整 230
   commits Gitleaks、Trivy 全部通过。构建改写的 `next-env.d.ts` 已恢复。
 - `apps/web/src/security/sanitize-sensitive-data.ts` 保持零 diff；修复没有放宽任何敏感扫描规则。
