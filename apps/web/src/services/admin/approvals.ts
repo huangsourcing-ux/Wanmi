@@ -473,14 +473,14 @@ export async function executeAdminApprovalRequest<T>(
         suffix: claimed.claimKey,
       })
       await enqueueTransactionalSecurityNotification(req, {
-        body: `${OPERATION_LABELS[input.expectedOperationType]}已执行。记录号：${claimed.approval.requestKey}。如非本人授权，请立即联系人工支持。`,
+        body: `${OPERATION_LABELS[input.expectedOperationType]}已执行。如非本人授权，请立即联系人工支持。`,
         customerId: Number(relationId(claimed.approval.customer)),
         domainEventType: 'admin.high_risk_operation.executed',
         eventKey: `admin-approval:${claimed.approval.requestKey}:executed`,
         notificationType: 'admin_high_risk_operation_executed',
         subject: '高风险操作已执行',
         templateKey: 'admin-high-risk-operation-executed',
-        templateVersion: 1,
+        templateVersion: 2,
         traceId: getTraceId(req.headers),
       })
       await recordAuditEvent(req, {

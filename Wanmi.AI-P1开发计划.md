@@ -2122,6 +2122,25 @@ while allowing marketing preferences`（integration `:1829`）证明直调接口
 access-event, and audit outputs`（integration `:1871`）直接断言序列化列表、日志和审计文本均不含完整
   手机号或证件内容。第 3 项反滥用监控保持未勾选，未实现或留桩。
 
+D9-B-5 通知内部标识缺陷修复证据（2026-08-19）：
+
+- 执行通知正文已移除内部 `requestKey`，但审批记录、`eventKey`、访问事件幂等后缀和审计关联保持不变；
+  用户可见模板版本升为 2，见 `apps/web/src/services/admin/approvals.ts:475`。全仓两个生产 enqueue 调用点及
+  `body` / `subject` 的每一项动态插值来源见
+  `docs/operations/d9b5-notification-user-visible-identifiers-audit.md`；没有订单号、交易号、hash 前缀、UUID、
+  自由输入或 provider 标识进入用户可见文本，`sanitize-sensitive-data.ts` 保持零 diff。
+- 两个 enqueue 调用点由两个独立用例一一保护：`keeps a phone-like internal request UUID out of submitted
+notification text and commits creation` 与 `keeps a phone-like internal request UUID out of executed
+notification text and commits execution`（
+  `apps/web/tests/integration/d9b5-admin-approvals-notifications.integration.test.ts:649`、`:711`）。二者分别注入含
+  `13012345678` 的不同 request key，断言审批事务提交、对应通知/访问事件恰好一条、`eventKey` 保留 UUID，
+  而正文/主题不含 UUID。提交与执行调用点分别回插 UUID 的两轮变异均精确为对应用例失败、另一条通过，错误码
+  `NOTIFICATION_SENSITIVE_CONTENT_FORBIDDEN`；两处恢复后 2/2 通过。新增 enqueue 调用点必须同步新增专属
+  确定性回归，规则与原始报错见审计文档。
+- 最终代码状态完整运行 `make check` 退出 0：838/838 unit、711/711 主 integration、37/37 wallet-ledger
+  integration，以及完整迁移、构建、镜像和安全门禁均通过。只修复 B-5 通知模板与回归，不改 B-6、生产或
+  真实闸门。
+
 ### 16.14 退出条件（按阶段）
 
 **D9-A**
