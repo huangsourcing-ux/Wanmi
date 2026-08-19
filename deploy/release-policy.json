@@ -140,6 +140,13 @@
       "phase": "expand",
       "reason": "新增版本化钱包资金规则、充值退款与争议追回证据、充值退款目标及 recovery 账本枚举；旧代码可忽略新增结构，新代码必须在迁移完成后启用 D9-B-4 资金场景。",
       "rollback": "retain"
+    },
+    "20260819_065615_d9b5_admin_approvals_notifications": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增后台高风险操作审批、访问事件与事务性通知 outbox 结构，并为管理员追加可选操作范围；旧代码可忽略新增结构，新代码必须在迁移完成后启用 D9-B-5 工作流。",
+      "rollback": "retain"
     }
   }
 }

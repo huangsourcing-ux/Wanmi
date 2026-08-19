@@ -286,6 +286,18 @@ export async function transitionCustomerAccount(
 ): Promise<CustomerAccountStateView> {
   const expectedRestrictions = restrictionsForInput(input.expectedRestrictions)
   const restrictions = restrictionsForInput(input.restrictions)
+  const isAdminUnfreeze =
+    input.actor.type === 'admin' &&
+    ['restricted', 'suspended'].includes(input.expectedStatus) &&
+    input.status === 'active'
+  const approvalMarker = req.context.adminApprovalExecution
+  if (
+    isAdminUnfreeze &&
+    approvalMarker !== `high_risk_account_unfreeze:${input.customerId}` &&
+    !(typeof approvalMarker === 'string' && approvalMarker.startsWith('account_recovery:'))
+  ) {
+    throw new AppError('ADMIN_APPROVAL_REQUIRED', '高风险账户解冻必须经过审批与冷静延迟', 409)
+  }
   assertStateRestrictionInvariant(input.expectedStatus, expectedRestrictions)
   assertStateRestrictionInvariant(input.status, restrictions)
   assertTransitionAllowed(input.expectedStatus, input.status, expectedRestrictions, restrictions)

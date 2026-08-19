@@ -51,6 +51,7 @@ export async function ensureAnchorSystemAdmin(payload: Payload): Promise<Admin> 
         context: { adminAccountOperation: 'bootstrap' },
         data: {
           email: ANCHOR_SYSTEM_ADMIN_EMAIL,
+          operationalScopes: ['funds_operations', 'system_configuration'],
           password: ANCHOR_SYSTEM_ADMIN_PASSWORD,
           roles: ['system_admin'],
           status: 'active',

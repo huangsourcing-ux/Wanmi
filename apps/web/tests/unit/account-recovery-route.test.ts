@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  createApproval: vi.fn(),
   createLocalReq: vi.fn(),
-  decide: vi.fn(),
   getPayload: vi.fn(),
   submit: vi.fn(),
   systemAdminRequest: vi.fn(),
@@ -15,8 +15,11 @@ vi.mock('payload', async (importOriginal) => ({
 }))
 
 vi.mock('@/services/auth/account-recovery', () => ({
-  decideAccountRecovery: mocks.decide,
   submitAccountRecoveryRequest: mocks.submit,
+}))
+
+vi.mock('@/services/admin/approvals', () => ({
+  createAdminApprovalRequest: mocks.createApproval,
 }))
 
 vi.mock('@/services/auth/admin-session', () => ({
@@ -54,7 +57,17 @@ beforeEach(() => {
   mocks.getPayload.mockReset().mockResolvedValue({})
   mocks.createLocalReq.mockReset().mockResolvedValue({ headers: new Headers(), payload: {} })
   mocks.systemAdminRequest.mockReset().mockResolvedValue({
-    req: { headers: new Headers(), payload: {}, user: { id: 7 } },
+    req: {
+      headers: new Headers(),
+      payload: {
+        findByID: vi.fn().mockResolvedValue({
+          customer: 9,
+          reasonCode: 'customer_account_recovery',
+          status: 'open',
+        }),
+      },
+      user: { id: 7 },
+    },
     user: { id: 7 },
   })
   mocks.submit.mockReset().mockResolvedValue({
@@ -62,14 +75,10 @@ beforeEach(() => {
     status: 'manual_review',
     submittedAt: '2026-08-16T15:00:00.000Z',
   })
-  mocks.decide.mockReset().mockResolvedValue({
-    conclusion: 'approved',
-    cooldownEndsAt: '2026-08-17T15:00:00.000Z',
-    cooldownStartedAt: '2026-08-16T15:00:00.000Z',
-    customerId: 9,
-    decidedAt: '2026-08-16T15:00:00.000Z',
-    reviewId: 42,
-    revokedSessionCount: 2,
+  mocks.createApproval.mockReset().mockResolvedValue({
+    id: 19,
+    operationType: 'account_recovery',
+    status: 'pending_approval',
   })
 })
 
@@ -173,7 +182,7 @@ describe('D9-A A5 public account-recovery route', () => {
   })
 })
 
-describe('D9-A A5 system-admin recovery decision route', () => {
+describe('D9-A A5 system-admin recovery approval initiation route', () => {
   const validDecision = { conclusion: 'approved', note: '证据已由人工逐项核验' } as const
 
   it('routes a valid decision through the system-admin gate', async () => {
@@ -184,11 +193,17 @@ describe('D9-A A5 system-admin recovery decision route', () => {
       ),
       decisionContext(),
     )
-    expect(response.status).toBe(200)
+    expect(response.status).toBe(201)
     expect(mocks.systemAdminRequest).toHaveBeenCalledOnce()
-    expect(mocks.decide).toHaveBeenCalledWith(
+    expect(mocks.createApproval).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ decision: validDecision, reviewId: 42, reviewerId: 7 }),
+      expect.objectContaining({
+        customerId: 9,
+        decision: 'approved',
+        operationType: 'account_recovery',
+        reasonNote: validDecision.note,
+        reviewId: 42,
+      }),
     )
   })
 
@@ -204,7 +219,7 @@ describe('D9-A A5 system-admin recovery decision route', () => {
       decisionContext(),
     )
     expect(response.status).toBe(403)
-    expect(mocks.decide).not.toHaveBeenCalled()
+    expect(mocks.createApproval).not.toHaveBeenCalled()
   })
 
   it('rejects invalid review ids before authentication', async () => {

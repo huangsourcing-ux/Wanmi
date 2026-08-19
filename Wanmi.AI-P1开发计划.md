@@ -859,6 +859,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-18 | v3.4 域名管理密码保护措辞对齐         | A4 管理密码档位对齐既有实现：step-up、active 绑定渠道存在性校验、事后向全部 active 渠道告知并逐 provider 记录 outcome；不实施执行前渠道确认                                                          | 逐项复核 A4 9/9 行实现与既有行为用例；跨文档新基线/标签/上一基线链路一致；仅运行 `make check-docs`                                                                                                                                                          | 负责人明确接受会话被盗时只能事后获知、不能执行前阻断；不改实现、其他风险档、产品范围或上线门槛，不部署、不生产写入                                                                    |
 | 2026-08-17 | D9-B-1 钱包账本基础                   | 新增无余额真源字段的三 Collection、追加式 entries、账本推导三态余额、hold/capture/release、原子额度门与一致性 Job；不含充值、消费订单、退款、对账和后台审批                                          | 四类核心并发、账本差异注入、43/43 聚焦用例及 54/54 注销兼容回归；服务/访问/任务 94/94、SQL 20/20、迁移 38/38，合计 152/152 变异被行为断言杀死；最终本地 `make check` 通过，精确 commit CI 结论随 PR 记录                                                    | 只勾选 16.7 B2 前五项和 D9-B 前两个退出条件；B1、B2 第四 ledger、B3～B5 全部保持未勾选；未部署、未生产写入、未开启真实 provider 闸门                                                  |
 | 2026-08-18 | D9-B-3 余额支付与退款双路径           | 订单持久化 `balance` 渠道；余额下单同事务原子 hold 并即时进入已支付；履约成功 capture、明确失败 release、unknown 保持 hold；按持久化渠道分派余额回退或既有微信原路退款，显式拒绝混合支付及双路径互串 | 审核补测后 42/42 D9-B-3、138/138 受影响聚焦回归；支付/capture-release/退款 N 路并发均恰好一次；按调用点 71/71 删除、短路及事实来源替换变异由独立行为断言杀死；最终本地 `make check` 通过 783/783 单元、599/599 集成及完整迁移、构建与安全门禁               | 只完成 16.7 B3 三项及 D9-B 第三退出条件；第四 ledger、资金规则、审批、角色及 B4/B5 不在本切片；B1 复用已合并 D9-B-2，未由本切片改写；全程 fixture，微信真实闸 false，无部署或生产写入 |
+| 2026-08-19 | D9-B-5 高风险审批与通知 outbox        | 两范围复用既有四角色；八类高风险操作三步审批、正数冷静延迟和绑定渠道告警；同事务通知 outbox、独立投递/回执/死信、短信失败站内兜底及服务端脱敏出口                                                    | D9-B-5 聚焦 60/60；批准与执行各 8 路并发恰好一次；应用 53/53、migration 35/35 删除、短路、耦合及来源替换变异被独立行为断言杀死；最终本地 `make check` 通过 838/838 单元、746/746 分层集成及完整迁移、构建、安全门禁                                         | 只完成 16.7 B5 四项、16.13 第 1、2、4 项及对应退出条件；反滥用监控、第四 ledger、E-1 和 B-6 未实现或留桩；全程 fixture，全部真实闸 false，无部署或生产写入                            |
 
 ## 13. 范围追踪矩阵
 
@@ -1718,15 +1719,47 @@ Asia/Shanghai day boundary`、`fails statement export closed when an append-only
 
 #### B5 后台资金操作控制（按单人运营现实收窄）
 
-- [ ] 新增 `adminApprovalRequests`、`adminAccessEvents`：高风险资金操作走「发起 → 审批 → 执行」
+- [x] 新增 `adminApprovalRequests`、`adminAccessEvents`：高风险资金操作走「发起 → 审批 → 执行」
       三步，而非单步完成；
-- [ ] **审批人与发起人不同**为可配置要求，生产默认开启；**当前仅有一名管理员时无法满足，因此
+- [x] **审批人与发起人不同**为可配置要求，生产默认开启；**当前仅有一名管理员时无法满足，因此
       同时强制「冷静延迟 + 告警」** —— 高风险资金操作提交后需经过可配置延迟才可执行，期间向绑定
       渠道告警。单人运营下仍能防止「会话被盗后瞬间提空」；
-- [ ] 适用操作：大额余额调整、原路退款、人工账户找回、身份冲突处理、VIP 欺诈纠错、解冻高风险
+- [x] 适用操作：大额余额调整、原路退款、人工账户找回、身份冲突处理、VIP 欺诈纠错、解冻高风险
       账户、人工处置域名管理凭据、批量影响用户资产的操作；
-- [ ] 后台角色在既有 4 个管理员角色基础上**只增加必要区分**：将「资金操作」与「系统配置」分离，
+- [x] 后台角色在既有 4 个管理员角色基础上**只增加必要区分**：将「资金操作」与「系统配置」分离，
       不引入 8 个空角色。
+
+D9-B-5 审批证据（2026-08-19，仅本段四项）：
+
+- 两个 Collection 及其 service-only/追加式 Hook 见 `apps/web/src/collections/administration.ts:46`、`:122`；
+  发起、决定与执行入口见 `apps/web/src/services/admin/approvals.ts:217`、`:303`、`:429`。行为用例
+  `rejects execution before approval` 和 `runs %s through request, approval, cooldown, and execution` 位于
+  `apps/web/tests/integration/d9b5-admin-approvals-notifications.integration.test.ts:378`、`:594`，分别证明
+  未经审批不可执行及八种操作都经过三步。
+- 生产 migration 以 `requiresDifferentApprover=true`、`cooldownSeconds=900` 初始化策略，见
+  `apps/web/migrations/20260819_065615_d9b5_admin_approvals_notifications.ts:328`；schema 下限为 1 秒，见
+  `apps/web/src/schemas/admin-approvals.ts:17`。执行 CAS 只用数据库 `created_at + cooldown_seconds`，见
+  `apps/web/src/services/admin/approvals.ts:391`。独立用例 `uses the stored server creation time and policy
+snapshot, ignoring client time fields`、`uses request creation time rather than approval time as the cooldown
+clock source`、`allows self-approval only when configured, but still enforces the full cooldown` 和 `rejects
+initiator self-approval when a different approver is required` 位于同一 integration `:394`、`:419`、`:498`、
+  `:526`；0/负数配置由 `rejects a non-positive cooldown configuration` 单独拒绝。
+- 八类冻结枚举见 `apps/web/src/lib/domain.ts:9`；大额调整复用 B-1/B-4、退款复用 D5-04/B-3、账户找回
+  复用 A5、身份冲突复用 A2、解冻复用 A3，见
+  `apps/web/src/services/admin/operation-executors.ts:89`。VIP、域名凭据和批量资产在对应领域 executor
+  未提供安全调用点时由同文件失败关闭，不建立 E2、D9-D 或 B-6 平行状态机；八类逐项三步用例均由
+  integration `:594` 参数化执行，直接绕过账户找回/身份冲突/解冻另由 `blocks direct account-recovery
+and identity-conflict decisions outside approved execution contexts` 与 `blocks direct admin unfreeze outside
+an approved execution context` 拒绝。
+- 既有四个 `ADMIN_ROLES` 未改，只新增 `funds_operations` / `system_configuration` 两个操作范围，见
+  `apps/web/src/lib/domain.ts:5`、`apps/web/src/access/roles.ts:25`；管理员账号与策略配置只接受
+  `system_configuration`，审批发起/决定/执行/列表只接受 `funds_operations`。双向越权用例
+  `separates funds operations from system configuration in both directions` 和真实角色/范围变化用例
+  `requires system-configuration scope for actual administrator role and scope changes` 位于 integration
+  `:858`、`:874`。
+- 全部判定点、A4 逐项 9/9 与 fixture 去相关清单见
+  `docs/operations/d9b5-admin-approval-notification-mutation-matrix.md`；应用 53/53、migration 35/35
+  删除、短路、耦合或来源替换变异均被具名行为断言杀死，并发批准 8 路、执行 8 路均恰好一次。
 
 ---
 
@@ -2030,14 +2063,36 @@ D9-D 的基础解析联调如证明必须先开通付费智能 DNS，应将对�
 
 ### 16.13 横向能力（随各阶段建设）
 
-- [ ] **通知 outbox**：`domain event → transactional outbox → notification job → channel delivery
+- [x] **通知 outbox**：`domain event → transactional outbox → notification job → channel delivery
 → provider receipt`。幂等发送、重试策略、死信队列、投递状态、模板版本、消息内容快照；短信
       失败后站内兜底；高风险安全事件向全部已验证渠道发送；消息正文不可变与已读状态分表；
-- [ ] **交易类通知不可退订**，系统尽力发送、重试并记录投递结果；**外部渠道投递失败不得改变交易
+- [x] **交易类通知不可退订**，系统尽力发送、重试并记录投递结果；**外部渠道投递失败不得改变交易
       与资产状态**（不承诺必达）；微信服务号可作为后续通知渠道；
 - [ ] 反滥用监控：短信请求速率、注册速率、邀请增长速率、米币赚取速率、余额异常变动；沿用 D7-02
       监控设施与 `siteSettings` 阈值方式，指标脱敏；
-- [ ] 后台列表与日志不得展示证件内容或完整手机号（沿用 D4 约束）。
+- [x] 后台列表与日志不得展示证件内容或完整手机号（沿用 D4 约束）。
+
+D9-B-5 通知证据（2026-08-19，仅本节第 1、2、4 项）：
+
+- outbox、delivery、provider receipt、独立 read state 与营销偏好 Collection 见
+  `apps/web/src/collections/notifications.ts:26`、`:72`、`:116`、`:150`、`:176`；同事务落事件/投递见
+  `apps/web/src/services/notifications/outbox.ts:148`，独立 Job 见 `apps/web/src/jobs/config.ts:289`。
+  `rolls the domain write and outbox event back together`、`targets every verified channel and keeps immutable
+content separate from read state` 与 `claims one delivery exactly once across concurrent workers` 位于
+  `apps/web/tests/integration/d9b5-admin-approvals-notifications.integration.test.ts:957`、`:1000`、`:1602`。
+- 投递 CAS、已知可重试错误、unknown/stale lease 死信、provider receipt 与短信失败站内兜底见
+  `apps/web/src/services/notifications/outbox.ts:210`、`:376`、`:340`、`:557`；短信继续复用 A2
+  `sendIdentityChanged`，微信复用服务号 `sendSecurityNotice`，未建第三条通道。用例 `retries known SMS
+failures, dead-letters at the limit, falls back in-app, and never changes business state`（integration `:1071`）
+  直接断言业务/资产状态不变。
+- 交易类型不进入偏好模型，偏好 Collection 只接受营销 enum；服务端入口见
+  `apps/web/src/services/notifications/outbox.ts:621`。用例 `structurally forbids transactional unsubscribe
+while allowing marketing preferences`（integration `:1829`）证明直调接口也不能关闭交易通知。
+- 写入前敏感正文拒绝、审计递归脱敏和管理员 delivery 出口只返回 `recipientMasked`，见
+  `apps/web/src/services/notifications/outbox.ts:89`、`:680` 与
+  `apps/web/src/services/audit/record-audit-event.ts:304`。用例 `masks phone and document values in admin list,
+access-event, and audit outputs`（integration `:1871`）直接断言序列化列表、日志和审计文本均不含完整
+  手机号或证件内容。第 3 项反滥用监控保持未勾选，未实现或留桩。
 
 ### 16.14 退出条件（按阶段）
 
@@ -2076,7 +2131,12 @@ opening-credit-debit-ending mismatch and appends audit evidence` 人为把期末
       并发退款行为用例均证明只产生一种退款事实，见 D9-B-3 证据及
       `docs/operations/d9b3-balance-payment-refund-mutation-matrix.md` M32～M35、M46～M51；
 - [ ] 余额账本作为第四 ledger 参与对账，差异只追加不自动改账；
-- [ ] 后台高风险资金操作在冷静延迟未满时不可执行，发起与审批分离配置生效。
+- [x] 后台高风险资金操作在冷静延迟未满时不可执行，发起与审批分离配置生效；证据见
+      `apps/web/src/services/admin/approvals.ts:303`、`:391`，用例 `rejects execution before approval`、
+      `uses request creation time rather than approval time as the cooldown clock source`、`rejects initiator
+self-approval when a different approver is required` 和 `allows exactly one concurrent approval and one
+concurrent execution`（`apps/web/tests/integration/d9b5-admin-approvals-notifications.integration.test.ts:378`、
+      `:419`、`:526`、`:763`）。
 
 **D9-C / D9-D**
 

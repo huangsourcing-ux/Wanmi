@@ -26,7 +26,11 @@ export interface WechatOfficialProvider {
     openid: string
     traceId: string
   }): Promise<{ requestId: string }>
-  sendSecurityNotice(input: { openid: string; traceId: string }): Promise<{ requestId: string }>
+  sendSecurityNotice(input: {
+    content?: string
+    openid: string
+    traceId: string
+  }): Promise<{ requestId: string }>
 }
 
 function requireWechatOfficialLiveConfiguration(): {
@@ -192,10 +196,10 @@ class LiveWechatOfficialProvider implements WechatOfficialProvider {
     )
   }
 
-  async sendSecurityNotice(input: { openid: string; traceId: string }) {
+  async sendSecurityNotice(input: { content?: string; openid: string; traceId: string }) {
     return this.sendText(
       input.openid,
-      'Wanmi.AI 账号的登录身份刚刚发生变更。如非本人操作，请立即联系人工支持。',
+      input.content ?? 'Wanmi.AI 账号的登录身份刚刚发生变更。如非本人操作，请立即联系人工支持。',
       input.traceId,
     )
   }

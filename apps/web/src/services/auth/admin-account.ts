@@ -9,7 +9,7 @@ import type {
   PayloadRequest,
 } from 'payload'
 
-import { hasRole, isActiveAdminUser } from '@/access/roles'
+import { hasAdminOperationScope, isActiveAdminUser } from '@/access/roles'
 import { AppError } from '@/lib/errors'
 import { adminPasswordSchema } from '@/schemas/auth'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
@@ -17,6 +17,7 @@ import { recordAuditEvent } from '@/services/audit/record-audit-event'
 type AdminShape = {
   email?: string | null
   id: number | string
+  operationalScopes?: string[] | null
   roles?: string[] | null
   sessions?: unknown[] | null
   status?: 'active' | 'disabled' | null
@@ -48,6 +49,31 @@ function isProvisioningOperation(req: PayloadRequest): boolean {
 
 function isActiveSystemAdmin(admin: AdminShape): boolean {
   return admin.status === 'active' && Boolean(admin.roles?.includes('system_admin'))
+}
+
+function assertAdminOperationScopeRole(admin: AdminShape): void {
+  const isSystemAdmin = Boolean(admin.roles?.includes('system_admin'))
+  if (isSystemAdmin && !admin.operationalScopes?.length) {
+    throw new AppError('ADMIN_OPERATION_SCOPE_REQUIRED', '系统管理员至少需要一项运营权限', 400)
+  }
+  if (!isSystemAdmin && admin.operationalScopes?.length) {
+    throw new AppError(
+      'ADMIN_OPERATION_SCOPE_ROLE_INVALID',
+      '非系统管理员不能持有资金或系统配置权限',
+      400,
+    )
+  }
+}
+
+function isSystemConfigurationAdmin(user: unknown): boolean {
+  return hasAdminOperationScope(user, 'system_configuration')
+}
+
+function hasChangedStringSet(next: unknown, previous: string[] | null | undefined): boolean {
+  if (!Array.isArray(next)) return false
+  const normalizedNext = [...next].map(String).sort()
+  const normalizedPrevious = [...(previous ?? [])].map(String).sort()
+  return JSON.stringify(normalizedNext) !== JSON.stringify(normalizedPrevious)
 }
 
 async function assertAnotherActiveSystemAdmin(req: PayloadRequest, admin: AdminShape) {
@@ -103,6 +129,7 @@ export const guardAdminAccountChange: CollectionBeforeChangeHook = async ({
         403,
       )
     }
+    assertAdminOperationScopeRole(data as AdminShape)
     return data
   }
 
@@ -110,7 +137,11 @@ export const guardAdminAccountChange: CollectionBeforeChangeHook = async ({
   const changes: string[] = []
   const passwordChanged = typeof data.password === 'string'
   const emailChanged = typeof data.email === 'string' && data.email !== previous.email
-  const rolesChanged = Array.isArray(data.roles)
+  const rolesChanged = hasChangedStringSet(data.roles, previous.roles)
+  const operationalScopesChanged = hasChangedStringSet(
+    data.operationalScopes,
+    previous.operationalScopes,
+  )
   const statusChanged = typeof data.status === 'string' && data.status !== previous.status
 
   if (passwordChanged && !isProvisioningOperation(req)) {
@@ -118,22 +149,33 @@ export const guardAdminAccountChange: CollectionBeforeChangeHook = async ({
       throw new AppError('ADMIN_PASSWORD_SELF_ONLY', '管理员只能修改自己的密码', 403)
     }
   }
-  if (emailChanged && !hasRole(req.user, ['system_admin'])) {
+  if (emailChanged && !isSystemConfigurationAdmin(req.user)) {
     throw new AppError('ADMIN_ACCOUNT_MANAGEMENT_FORBIDDEN', '仅系统管理员可修改账号邮箱', 403)
+  }
+  if (
+    (rolesChanged || operationalScopesChanged || statusChanged) &&
+    !isSystemConfigurationAdmin(req.user)
+  ) {
+    throw new AppError('ADMIN_SYSTEM_CONFIGURATION_SCOPE_REQUIRED', '需要系统配置权限', 403)
   }
 
   const next: AdminShape = {
     ...previous,
+    operationalScopes: operationalScopesChanged
+      ? (data.operationalScopes as string[])
+      : previous.operationalScopes,
     roles: rolesChanged ? (data.roles as string[]) : previous.roles,
     status: statusChanged ? (data.status as 'active' | 'disabled') : previous.status,
   }
   if (isActiveSystemAdmin(previous) && !isActiveSystemAdmin(next)) {
     await assertAnotherActiveSystemAdmin(req, previous)
   }
+  assertAdminOperationScopeRole(next)
 
   if (passwordChanged) changes.push('password')
   if (emailChanged) changes.push('email')
   if (rolesChanged) changes.push('roles')
+  if (operationalScopesChanged) changes.push('operationalScopes')
   if (statusChanged) changes.push('status')
   context.adminSecurityChanges = changes
   return data

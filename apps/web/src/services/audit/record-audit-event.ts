@@ -21,6 +21,10 @@ export const auditEventDefinitions = {
     actorTypes: ['customer', 'system'],
     targetType: 'customer-identity',
   },
+  'customer.identity_collision.decided': {
+    actorTypes: ['admin'],
+    targetType: 'customer-identity',
+  },
   'customer.account_state.changed': {
     actorTypes: ['admin', 'customer', 'system'],
     targetType: 'customer',
@@ -91,6 +95,31 @@ export const auditEventDefinitions = {
   'admin.mfa.reset_completed': { actorTypes: ['admin'], targetType: 'admin' },
   'admin.session.revoked': { actorTypes: ['admin'], targetType: 'admin-session' },
   'admin.sessions.revoked_all': { actorTypes: ['admin'], targetType: 'admin-session' },
+  'admin.approval_policy.updated': { actorTypes: ['admin'], targetType: 'site-setting' },
+  'admin.high_risk_operation.requested': {
+    actorTypes: ['admin'],
+    targetType: 'admin-approval-request',
+  },
+  'admin.high_risk_operation.approved': {
+    actorTypes: ['admin'],
+    targetType: 'admin-approval-request',
+  },
+  'admin.high_risk_operation.rejected': {
+    actorTypes: ['admin'],
+    targetType: 'admin-approval-request',
+  },
+  'admin.high_risk_operation.execution_claimed': {
+    actorTypes: ['admin'],
+    targetType: 'admin-approval-request',
+  },
+  'admin.high_risk_operation.executed': {
+    actorTypes: ['admin'],
+    targetType: 'admin-approval-request',
+  },
+  'admin.high_risk_operation.failed': {
+    actorTypes: ['admin'],
+    targetType: 'admin-approval-request',
+  },
   'content.publish.schedule_cancelled': { actorTypes: ['admin'], targetType: 'content' },
   'content.publish.scheduled': { actorTypes: ['admin'], targetType: 'content' },
   'content.revision.published': { actorTypes: ['admin'], targetType: 'content' },

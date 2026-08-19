@@ -110,7 +110,15 @@ async function findOrCreateAdmin(
       payload.create({
         collection: 'admins',
         context: { adminAccountOperation: 'bootstrap' },
-        data: { email, password, roles, status },
+        data: {
+          email,
+          operationalScopes: roles.includes('system_admin')
+            ? ['funds_operations', 'system_configuration']
+            : [],
+          password,
+          roles,
+          status,
+        },
         overrideAccess: true,
       }),
     find: async () => {

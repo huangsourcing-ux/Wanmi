@@ -47,6 +47,7 @@ beforeAll(async () => {
     context: { adminAccountOperation: 'bootstrap' },
     data: {
       email: `${fixturePrefix}@example.test`,
+      operationalScopes: ['funds_operations', 'system_configuration'],
       password: `D4-lifecycle-${randomUUID()}`,
       roles: ['system_admin'],
       status: 'active',

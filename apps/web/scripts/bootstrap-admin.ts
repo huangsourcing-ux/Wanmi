@@ -37,7 +37,13 @@ async function main() {
     const admin = await payload.create({
       collection: 'admins',
       context: { adminAccountOperation: 'bootstrap', suppressAdminAccountAudit: true },
-      data: { email, password, roles: ['system_admin'], status: 'active' },
+      data: {
+        email,
+        operationalScopes: ['funds_operations', 'system_configuration'],
+        password,
+        roles: ['system_admin'],
+        status: 'active',
+      },
       overrideAccess: true,
       req,
     })

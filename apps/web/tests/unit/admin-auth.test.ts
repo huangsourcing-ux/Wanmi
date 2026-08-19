@@ -13,7 +13,7 @@ vi.mock('payload', async (importOriginal) => {
   }
 })
 
-import { isActiveAdminUser } from '@/access/roles'
+import { hasAdminOperationScope, isActiveAdminUser } from '@/access/roles'
 import {
   blockAdminDefaultAuthOperations,
   guardAdminAccountChange,
@@ -138,6 +138,24 @@ describe('administrator authentication contracts', () => {
     ).toBe(false)
   })
 
+  it('adds only the funds-versus-configuration dimension to active system admins', () => {
+    const funds = {
+      collection: 'admins',
+      id: 1,
+      operationalScopes: ['funds_operations'],
+      roles: ['system_admin'],
+      status: 'active',
+    }
+    expect(hasAdminOperationScope(funds, 'funds_operations')).toBe(true)
+    expect(hasAdminOperationScope(funds, 'system_configuration')).toBe(false)
+    expect(
+      hasAdminOperationScope(
+        { ...funds, operationalScopes: ['system_configuration'], roles: ['analyst'] },
+        'system_configuration',
+      ),
+    ).toBe(false)
+  })
+
   it('blocks default Payload auth operations below the proxy layer', () => {
     for (const operation of ['forgotPassword', 'refresh', 'resetPassword', 'unlock', 'login']) {
       expect(() =>
@@ -195,11 +213,22 @@ describe('administrator authentication contracts', () => {
       guardAdminAccountChange({
         data: { status: 'disabled' },
         operation: 'update',
-        originalDoc: { id: 1, roles: ['system_admin'], status: 'active' },
+        originalDoc: {
+          id: 1,
+          operationalScopes: ['funds_operations', 'system_configuration'],
+          roles: ['system_admin'],
+          status: 'active',
+        },
         req: {
           context: {},
           payload: { count: vi.fn().mockResolvedValue({ totalDocs: 1 }) },
-          user: { collection: 'admins', id: 1, roles: ['system_admin'], status: 'active' },
+          user: {
+            collection: 'admins',
+            id: 1,
+            operationalScopes: ['funds_operations', 'system_configuration'],
+            roles: ['system_admin'],
+            status: 'active',
+          },
         },
       } as never),
     ).rejects.toThrow(/最后一个/)

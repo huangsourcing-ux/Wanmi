@@ -1,5 +1,6 @@
 import type { CollectionConfig } from 'payload'
 
+import { AdminAccessEvents, AdminApprovalRequests } from './administration'
 import { AdCreatives, AdMedia, AdPlacements, AdSchedules, Advertisers } from './advertising'
 import {
   OrderEvents,
@@ -69,6 +70,13 @@ import {
   ToolObservabilityBuckets,
   UserFeedback,
 } from './operations'
+import {
+  NotificationDeliveries,
+  NotificationMarketingPreferences,
+  NotificationOutboxEvents,
+  NotificationProviderReceipts,
+  NotificationReadStates,
+} from './notifications'
 import { RealnameDocuments, RealnameTemplates } from './realname'
 import {
   WalletAccounts,
@@ -80,6 +88,8 @@ import {
 
 export const collections: CollectionConfig[] = [
   Admins,
+  AdminApprovalRequests,
+  AdminAccessEvents,
   AdminMfaCredentials,
   AdminInvitations,
   Customers,
@@ -146,5 +156,10 @@ export const collections: CollectionConfig[] = [
   ToolObservabilityBuckets,
   UserFeedback,
   CustomerSecurityEvents,
+  NotificationOutboxEvents,
+  NotificationDeliveries,
+  NotificationProviderReceipts,
+  NotificationReadStates,
+  NotificationMarketingPreferences,
   PriceSnapshots,
 ]

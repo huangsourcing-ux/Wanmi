@@ -2,6 +2,7 @@ import type { CollectionConfig } from 'payload'
 
 import {
   ACCOUNT_CLOSURE_BLOCKERS,
+  ADMIN_OPERATION_SCOPES,
   ADMIN_ROLES,
   CONSENT_TYPES,
   CUSTOMER_ACCOUNT_STATUSES,
@@ -14,7 +15,7 @@ import {
   adminSelfOrSystem,
   customerSelfOrSystemFieldRead,
   deny,
-  hasRole,
+  hasAdminOperationScope,
   ownOrSystem,
   sensitiveFieldRead,
   systemAdminHidden,
@@ -52,18 +53,28 @@ export const Admins: CollectionConfig = {
   },
   fields: [
     {
+      name: 'operationalScopes',
+      type: 'select',
+      hasMany: true,
+      options: [...ADMIN_OPERATION_SCOPES],
+      saveToJWT: true,
+      access: {
+        update: ({ req }) => hasAdminOperationScope(req.user, 'system_configuration'),
+      },
+    },
+    {
       name: 'roles',
       type: 'select',
       hasMany: true,
       options: [...ADMIN_ROLES],
       required: true,
       saveToJWT: true,
-      access: { update: ({ req }) => hasRole(req.user, ['system_admin']) },
+      access: { update: ({ req }) => hasAdminOperationScope(req.user, 'system_configuration') },
     },
     {
       name: 'status',
       type: 'select',
-      access: { update: ({ req }) => hasRole(req.user, ['system_admin']) },
+      access: { update: ({ req }) => hasAdminOperationScope(req.user, 'system_configuration') },
       defaultValue: 'active',
       options: ['active', 'disabled'],
       required: true,

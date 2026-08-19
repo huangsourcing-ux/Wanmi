@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  createApproval: vi.fn(),
   getPayload: vi.fn(),
   revoke: vi.fn(),
   systemAdminRequest: vi.fn(),
@@ -19,6 +20,10 @@ vi.mock('@/services/auth/admin-session', () => ({
 vi.mock('@/services/auth/account-state', () => ({
   revokeCustomerSessionsForSecurityEvent: mocks.revoke,
   transitionCustomerAccount: mocks.transition,
+}))
+
+vi.mock('@/services/admin/approvals', () => ({
+  createAdminApprovalRequest: mocks.createApproval,
 }))
 
 import { POST } from '@/app/api/v1/admin/customers/[customerId]/account-security/route'
@@ -59,6 +64,11 @@ beforeEach(() => {
     user: { id: 7 },
   })
   mocks.revoke.mockReset().mockResolvedValue({ revokedCount: 2 })
+  mocks.createApproval.mockReset().mockResolvedValue({
+    id: 19,
+    operationType: 'high_risk_account_unfreeze',
+    status: 'pending_approval',
+  })
   mocks.transition.mockReset().mockResolvedValue({
     capabilityRestrictions: ['purchase_disabled'],
     changedAt: '2026-08-16T08:00:00.000Z',
@@ -155,6 +165,35 @@ describe('D9-A A3 admin account-security route', () => {
       }),
     )
     expect(mocks.revoke).not.toHaveBeenCalled()
+  })
+
+  it('initiates approval instead of directly unfreezing a high-risk account', async () => {
+    const response = await POST(
+      request(
+        JSON.stringify({
+          action: 'change_state',
+          evidence,
+          expectedRestrictions: ['login_disabled'],
+          expectedStatus: 'suspended',
+          reason: 'manual security review completed',
+          restrictions: [],
+          status: 'active',
+        }),
+      ),
+      context(),
+    )
+    expect(response.status).toBe(201)
+    expect(mocks.createApproval).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        customerId: 42,
+        evidenceReference: evidence.reference,
+        expectedRestrictions: ['login_disabled'],
+        expectedStatus: 'suspended',
+        operationType: 'high_risk_account_unfreeze',
+      }),
+    )
+    expect(mocks.transition).not.toHaveBeenCalled()
   })
 
   it('rejects duplicate restrictions and unexpected fields before authentication', async () => {

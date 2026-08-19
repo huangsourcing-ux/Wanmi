@@ -12,6 +12,7 @@ import {
   revokeCustomerSessionsForSecurityEvent,
   transitionCustomerAccount,
 } from '@/services/auth/account-state'
+import { createAdminApprovalRequest } from '@/services/admin/approvals'
 import { systemAdminRequest } from '@/services/auth/admin-session'
 
 const customerIdSchema = z.coerce.number().int().positive()
@@ -52,6 +53,20 @@ export async function POST(request: Request, context: { params: Promise<{ custom
         reason: input.reason,
       })
       return successResponse(customerSessionSecurityResponseSchema.parse(result), traceId)
+    }
+    if (
+      input.status === 'active' &&
+      (input.expectedStatus === 'restricted' || input.expectedStatus === 'suspended')
+    ) {
+      const approval = await createAdminApprovalRequest(req, {
+        customerId,
+        evidenceReference: input.evidence.reference,
+        expectedRestrictions: input.expectedRestrictions,
+        expectedStatus: input.expectedStatus,
+        operationType: 'high_risk_account_unfreeze',
+        reasonNote: input.reason,
+      })
+      return successResponse(approval, traceId, { status: 201 })
     }
     const result = await transitionCustomerAccount(req, {
       actor,
