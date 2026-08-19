@@ -14,6 +14,7 @@ import type {
 import { createSmsProvider } from '@/providers/aliyunsms'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
 import type { AuditActor } from '@/services/audit/record-audit-event'
+import { accountRestrictions } from '@/services/auth/account-state'
 import { assertIdentityRiskCooldownInactive } from '@/services/auth/step-up'
 import {
   claimBalancePaymentChannel,
@@ -30,6 +31,7 @@ import { loadEnabledPricingRules } from '@/services/pricing/price-rules'
 import { PayloadPriceSnapshotStore } from '@/services/pricing/price-snapshots'
 import { assertWestDigitalDomainOwnership } from '@/services/providers/westdigital-operations'
 import { holdWalletBalance, readWalletBalance } from '@/services/wallet/ledger'
+import { assertSingleSpendLimit, loadWalletFundsPolicy } from '@/services/wallet/policy'
 
 import {
   automaticRenewalAttemptSlot,
@@ -227,9 +229,17 @@ export async function assertAutomaticRenewalMandateValid(
     throw new AppError('AUTOMATIC_RENEWAL_ASSET_INVALID', '域名资产已变化或当前不可普通续费', 409)
   }
   const customer = await loadCustomer(req, customerId)
-  if (customer.status !== 'active') {
+  const policy = await loadWalletFundsPolicy(req)
+  const restrictions = accountRestrictions(customer)
+  const emergencyRenewalAllowed =
+    policy.allowRestrictedAccountEmergencyRenewal &&
+    customer.status === 'restricted' &&
+    restrictions.length === 1 &&
+    restrictions[0] === 'balance_spend_disabled'
+  if (customer.status !== 'active' && !emergencyRenewalAllowed) {
     throw new AppError('AUTOMATIC_RENEWAL_ACCOUNT_RESTRICTED', '账号受限，自动续费已放弃', 403)
   }
+  if (input.amountFen !== undefined) assertSingleSpendLimit(policy, input.amountFen)
   await assertIdentityRiskCooldownInactive(req, customer.id)
   return { asset, customer, mandate }
 }

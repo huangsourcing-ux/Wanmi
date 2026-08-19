@@ -1680,11 +1680,41 @@ of rejecting`。完整矩阵、原始差异和 A4 全表审计见
 
 #### B4 退款与资金规则（不可提现 ≠ 不可退款）
 
-- [ ] 必须定义并实现：重复充值原路退款；平台未提供服务时退款；账号关闭时未消费余额处理；平台
+- [x] 必须定义并实现：重复充值原路退款；平台未提供服务时退款；账号关闭时未消费余额处理；平台
       停止运营时余额处理；充值后发生支付退款或争议时的处理；
-- [ ] 基础规则须写入文档并可配置：P1 仅人民币；余额是否过期；单次充值最小/最大；单日与单月充值
-      上限；账户余额上限；单笔消费上限；争议或异常退款后是否允许负余额及其后果；账户冻结时能否
-      用于紧急续费；财务日切时区；账单导出与期初期末计算方式。
+- [x] 基础规则须写入文档并可配置：P1 仅人民币；余额是否过期；单次充值上限；账户余额上限；
+      单笔消费上限；争议或异常退款后是否允许负余额及其后果；受限账户能否用于紧急续费；财务日切
+      时区；账单导出与期初期末计算方式。
+
+D9-B-4 证据（2026-08-18，仅本段两项）：
+
+- 重复充值和账号关闭退款统一复用 `requestWalletTopUpOriginalRefund`，见
+  `apps/web/src/services/commerce/refunds.ts:306-447`；重复充值逐字段证据、平台未提供服务的 B-3/D5-04
+  分派、A6 active request 与未消费来源映射见
+  `apps/web/src/services/wallet/fund-scenarios.ts:90-270`。行为用例：`refunds a duplicate top-up once under
+concurrent requests and uses the existing WeChat refund path once`、`routes no-service refunds only from
+paymentChannel and always uses the frozen order amount`、`blocks closure on positive balance and permits
+continuation only after the original refund succeeds`。平台停止运营只定义逐账户处置顺序与责任，不提供
+  批量工具，见 `docs/operations/d9b4-wallet-funds-policy.md` 第 4 节。
+- 支付退款/争议以充值单 CAS、独立 B-1 credit 事实和追加 recovery entry 追回，负余额后立即复用 A3
+  `balance_spend_disabled`、`ManualReviews` 与审计，见
+  `apps/web/src/services/wallet/fund-scenarios.ts:331-465`、
+  `apps/web/src/services/wallet/ledger.ts:536-650`。行为用例：`recovers a consumed disputed top-up into a
+negative balance and immediately disables balance spending`、`never lets ordinary concurrent deductions create
+a negative balance`、`serializes a payment recovery against N normal spends with one recovery and an exact ledger
+equation`。
+- 九项规则由版本化 `walletPolicyVersions` 与 singleton head 承载；active `system_admin` 变更使用同事务
+  `UPDATE ... WHERE current_version ... RETURNING` 并追加审计，运行时三项上限分别接入充值、确认入账、
+  交互式余额支付和受控紧急续费，见 `apps/web/src/services/wallet/policy.ts:68-214`。CNY、never、
+  `Asia/Shanghai` 与账单公式由 schema 和数据库 enum 固定；上海日切 owner-scoped 导出和完整性校验见
+  `apps/web/src/services/wallet/statements.ts:44-199`。行为用例：`rejects non-CNY, single top-up,
+account-balance and single-spend limits independently`、`exports opening and closing balances at the fixed
+Asia/Shanghai day boundary`、`fails statement export closed when an append-only ledger snapshot is corrupted`。
+- A4 每种操作逐项落档、事实来源去相关、并发和计数限定见
+  `docs/operations/d9b4-wallet-funds-policy.md`、
+  `docs/operations/d9b4-wallet-funds-mutation-matrix.md`。应用 107/107、migration/发布 93/93，合计 200/200
+  删除、短路或来源替换变异均由指定行为断言杀死。第四 ledger 对账、B-5 审批/角色、通知 outbox 和
+  停运批量退款入口均未实现或留桩。
 
 #### B5 后台资金操作控制（按单人运营现实收窄）
 

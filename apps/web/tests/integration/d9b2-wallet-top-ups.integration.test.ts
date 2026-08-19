@@ -1551,7 +1551,8 @@ describe('D9-B-2 wallet top-up credits', () => {
     const finalDecoy = await startedTopUp('refund-final-scope-decoy', fixture)
     await payload.db.pool.query(
       `UPDATE wallet_top_up_orders
-       SET status = 'refund_pending', original_refund_number = $2, updated_at = NOW()
+       SET status = 'refund_pending', original_refund_number = $2,
+           refunded_amount_fen = amount_fen, updated_at = NOW()
        WHERE id = $1`,
       [finalDecoy.orderId, `WR${randomUUID().replaceAll('-', '')}`],
     )

@@ -21,7 +21,14 @@ import {
   createWalletAccount,
   holdWalletBalance,
   postWalletCredit,
+  readWalletBalance,
 } from './ledger'
+import {
+  assertAccountBalanceLimit,
+  assertSingleTopUpLimit,
+  assertWalletCurrency,
+  loadWalletFundsPolicy,
+} from './policy'
 
 const MAX_SAFE_MONEY = BigInt(Number.MAX_SAFE_INTEGER)
 const TOP_UP_PAYMENT_TTL_MS = 30 * 60 * 1_000
@@ -402,6 +409,7 @@ async function applyPaymentQuery(
 
   return transaction(req, async () => {
     await assertTopUpCapability(req, topUp.customer)
+    const policy = await loadWalletFundsPolicy(req)
     const db = await database(req)
     const confirmed = await db.execute(sql`
       UPDATE wallet_top_up_orders
@@ -430,6 +438,7 @@ async function applyPaymentQuery(
     const credit = await postWalletCredit(req, {
       accountId: topUp.account,
       amountFen: BigInt(paid.amountMinor),
+      maximumPostedBalanceFen: policy.accountBalanceLimitFen,
       transactionKey: topUp.ledgerTransactionKey,
     })
     if (credit.status !== 'posted') throw topUpUnavailable('充值入账结果无效')
@@ -459,17 +468,22 @@ async function applyPaymentQuery(
 
 export async function createWalletTopUpOrder(
   req: PayloadRequest,
-  input: { amountFen: bigint | number; fundingSource: string },
+  input: { amountFen: bigint | number; currency?: string; fundingSource: string },
   options: { customer: CustomerIdentity },
 ): Promise<Extract<WalletTopUpOrderResult, { state: 'ready' }>> {
   assertCustomer(req, options.customer)
   if (input.fundingSource !== 'wechat') {
     throw new AppError('WALLET_TOP_UP_BALANCE_FORBIDDEN', '余额不能用于余额充值', 409)
   }
+  assertWalletCurrency(input.currency ?? 'CNY')
   const amount = positiveAmount(input.amountFen)
   return transaction(req, async () => {
     await assertTopUpCapability(req, options.customer.id)
+    const policy = await loadWalletFundsPolicy(req)
+    assertSingleTopUpLimit(policy, amount)
     const account = await createWalletAccount(req, options.customer.id)
+    const balance = await readWalletBalance(req, account.accountId)
+    assertAccountBalanceLimit(policy, balance.postedBalance, amount)
     const orderNumber = topUpOrderNumber()
     const transactionKey = ledgerKey(orderNumber)
     const inserted = await (
@@ -676,6 +690,7 @@ export async function markWalletTopUpOriginalRefunded(
       SET
         status = 'refund_pending',
         original_refund_number = ${refundNumber},
+        refunded_amount_fen = amount_fen,
         updated_at = NOW()
       WHERE id = ${topUp.id}
         AND status IN ('payment_pending', 'provider_confirmed', 'credited')

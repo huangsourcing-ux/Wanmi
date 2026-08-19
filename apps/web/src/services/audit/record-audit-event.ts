@@ -162,6 +162,22 @@ export const auditEventDefinitions = {
     actorTypes: ['provider'],
     targetType: 'wallet-top-up-order',
   },
+  'wallet.policy.updated': {
+    actorTypes: ['admin'],
+    targetType: 'wallet-policy-version',
+  },
+  'wallet.statement.exported': {
+    actorTypes: ['customer'],
+    targetType: 'wallet-account',
+  },
+  'wallet.top_up.original_refund_requested': {
+    actorTypes: ['system'],
+    targetType: 'wallet-top-up-order',
+  },
+  'wallet.top_up.payment_recovered': {
+    actorTypes: ['system'],
+    targetType: 'wallet-top-up-order',
+  },
   'domain.asset.synced': {
     actorTypes: ['customer', 'system'],
     targetType: 'domain-asset',

@@ -51,7 +51,7 @@ export const ProviderOperations: CollectionConfig = {
     {
       name: 'targetType',
       type: 'select',
-      options: ['order', 'realname_template', 'domain'],
+      options: ['order', 'realname_template', 'domain', 'wallet_top_up'],
       required: true,
     },
     { name: 'targetId', type: 'text', index: true, required: true },

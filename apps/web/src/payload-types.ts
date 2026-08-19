@@ -114,6 +114,7 @@ export interface Config {
     walletTransactions: WalletTransaction;
     walletEntries: WalletEntry;
     walletTopUpOrders: WalletTopUpOrder;
+    walletPolicyVersions: WalletPolicyVersion;
     providerOperations: ProviderOperation;
     providerWriteBudgets: ProviderWriteBudget;
     providerWriteBudgetDebits: ProviderWriteBudgetDebit;
@@ -204,6 +205,7 @@ export interface Config {
     walletTransactions: WalletTransactionsSelect<false> | WalletTransactionsSelect<true>;
     walletEntries: WalletEntriesSelect<false> | WalletEntriesSelect<true>;
     walletTopUpOrders: WalletTopUpOrdersSelect<false> | WalletTopUpOrdersSelect<true>;
+    walletPolicyVersions: WalletPolicyVersionsSelect<false> | WalletPolicyVersionsSelect<true>;
     providerOperations: ProviderOperationsSelect<false> | ProviderOperationsSelect<true>;
     providerWriteBudgets: ProviderWriteBudgetsSelect<false> | ProviderWriteBudgetsSelect<true>;
     providerWriteBudgetDebits: ProviderWriteBudgetDebitsSelect<false> | ProviderWriteBudgetDebitsSelect<true>;
@@ -817,6 +819,10 @@ export interface WalletTopUpOrder {
   providerConfirmedAt?: string | null;
   creditedAt?: string | null;
   refundedAt?: string | null;
+  refundedAmountFen?: number | null;
+  paymentRecoveryKey?: string | null;
+  paymentRecoveryType?: ('provider_refund' | 'dispute') | null;
+  paymentRecoveredAt?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -867,7 +873,7 @@ export interface ProviderOperation {
   operationKey: string;
   order?: (number | null) | Order;
   realnameTemplate?: (number | null) | RealnameTemplate;
-  targetType: 'order' | 'realname_template' | 'domain';
+  targetType: 'order' | 'realname_template' | 'domain' | 'wallet_top_up';
   targetId: string;
   provider: 'westdigital' | 'wechatpay';
   operation:
@@ -1670,12 +1676,14 @@ export interface RefundNotification {
 export interface Refund {
   id: number;
   refundNumber: string;
-  order: number | Order;
+  order?: (number | null) | Order;
+  walletTopUpOrder?: (number | null) | WalletTopUpOrder;
   amountMinor: number;
   currency: 'CNY';
   status: 'pending' | 'submitted' | 'succeeded' | 'failed' | 'unknown';
   providerRefundId?: string | null;
   failureCategory?: ('balance_insufficient' | 'disputed' | 'provider_rejected' | 'unknown') | null;
+  reasonCode?: string | null;
   submittedAt?: string | null;
   lastCheckedAt?: string | null;
   refundedAt?: string | null;
@@ -1692,7 +1700,7 @@ export interface WalletTransaction {
   transactionKey: string;
   customer: number | Customer;
   account: number | WalletAccount;
-  type: 'credit' | 'hold';
+  type: 'credit' | 'hold' | 'recovery';
   status: 'posted' | 'held' | 'captured' | 'released';
   amountFen: number;
   resolvedAt?: string | null;
@@ -1709,11 +1717,34 @@ export interface WalletEntry {
   customer: number | Customer;
   account: number | WalletAccount;
   transaction: number | WalletTransaction;
-  entryType: 'credit' | 'hold' | 'capture' | 'release';
+  entryType: 'credit' | 'hold' | 'capture' | 'release' | 'recovery';
   amountFen: number;
   ledgerSequence: number;
   postedBalanceAfterFen: number;
   heldBalanceAfterFen: number;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "walletPolicyVersions".
+ */
+export interface WalletPolicyVersion {
+  id: number;
+  version: number;
+  schemaVersion: number;
+  currency: 'CNY';
+  balanceExpiration: 'never';
+  singleTopUpLimitFen: number;
+  accountBalanceLimitFen: number;
+  singleSpendLimitFen: number;
+  allowNegativeBalanceRecovery: boolean;
+  allowRestrictedAccountEmergencyRenewal: boolean;
+  financialDayCutTimezone: 'Asia/Shanghai';
+  statementCalculation: 'ledger_entries_start_inclusive_end_exclusive';
+  changedBy: string;
+  changeNote: string;
+  effectiveAt: string;
   updatedAt: string;
   createdAt: string;
 }
@@ -3722,11 +3753,13 @@ export interface RefundNotificationsSelect<T extends boolean = true> {
 export interface RefundsSelect<T extends boolean = true> {
   refundNumber?: T;
   order?: T;
+  walletTopUpOrder?: T;
   amountMinor?: T;
   currency?: T;
   status?: T;
   providerRefundId?: T;
   failureCategory?: T;
+  reasonCode?: T;
   submittedAt?: T;
   lastCheckedAt?: T;
   refundedAt?: T;
@@ -3798,6 +3831,32 @@ export interface WalletTopUpOrdersSelect<T extends boolean = true> {
   providerConfirmedAt?: T;
   creditedAt?: T;
   refundedAt?: T;
+  refundedAmountFen?: T;
+  paymentRecoveryKey?: T;
+  paymentRecoveryType?: T;
+  paymentRecoveredAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "walletPolicyVersions_select".
+ */
+export interface WalletPolicyVersionsSelect<T extends boolean = true> {
+  version?: T;
+  schemaVersion?: T;
+  currency?: T;
+  balanceExpiration?: T;
+  singleTopUpLimitFen?: T;
+  accountBalanceLimitFen?: T;
+  singleSpendLimitFen?: T;
+  allowNegativeBalanceRecovery?: T;
+  allowRestrictedAccountEmergencyRenewal?: T;
+  financialDayCutTimezone?: T;
+  statementCalculation?: T;
+  changedBy?: T;
+  changeNote?: T;
+  effectiveAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }

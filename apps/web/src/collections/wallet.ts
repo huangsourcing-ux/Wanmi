@@ -1,6 +1,6 @@
 import type { CollectionConfig, Field } from 'payload'
 
-import { deny, ownOrSystem, systemAdminHidden } from '@/access/roles'
+import { deny, ownOrSystem, systemAdminHidden, systemAdminOnly } from '@/access/roles'
 import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 import { AppError } from '@/lib/errors'
 
@@ -38,6 +38,18 @@ const positiveSafeInteger = (name: string): Field => ({
     value !== null && value !== undefined && Number.isSafeInteger(value) && value > 0
       ? true
       : '字段必须是正安全整数',
+})
+
+const signedSafeInteger = (name: string): Field => ({
+  name,
+  type: 'number',
+  max: Number.MAX_SAFE_INTEGER,
+  min: Number.MIN_SAFE_INTEGER,
+  required: true,
+  validate: (value: null | number | undefined) =>
+    value !== null && value !== undefined && Number.isSafeInteger(value)
+      ? true
+      : '字段必须是安全整数',
 })
 
 export const WalletAccounts: CollectionConfig = {
@@ -81,7 +93,7 @@ export const WalletTransactions: CollectionConfig = {
       index: true,
       required: true,
     },
-    { name: 'type', type: 'select', options: ['credit', 'hold'], required: true },
+    { name: 'type', type: 'select', options: ['credit', 'hold', 'recovery'], required: true },
     {
       name: 'status',
       type: 'select',
@@ -144,12 +156,12 @@ export const WalletEntries: CollectionConfig = {
     {
       name: 'entryType',
       type: 'select',
-      options: ['credit', 'hold', 'capture', 'release'],
+      options: ['credit', 'hold', 'capture', 'release', 'recovery'],
       required: true,
     },
     positiveSafeInteger('amountFen'),
     positiveSafeInteger('ledgerSequence'),
-    nonnegativeSafeInteger('postedBalanceAfterFen'),
+    signedSafeInteger('postedBalanceAfterFen'),
     nonnegativeSafeInteger('heldBalanceAfterFen'),
   ],
 }
@@ -221,5 +233,74 @@ export const WalletTopUpOrders: CollectionConfig = {
     { name: 'providerConfirmedAt', type: 'date' },
     { name: 'creditedAt', type: 'date' },
     { name: 'refundedAt', type: 'date' },
+    { name: 'refundedAmountFen', type: 'number', min: 1, max: Number.MAX_SAFE_INTEGER },
+    { name: 'paymentRecoveryKey', type: 'text', index: true, unique: true },
+    { name: 'paymentRecoveryType', type: 'select', options: ['provider_refund', 'dispute'] },
+    { name: 'paymentRecoveredAt', type: 'date' },
+  ],
+}
+
+export const WalletPolicyVersions: CollectionConfig = {
+  slug: 'walletPolicyVersions',
+  access: { create: deny, delete: deny, read: systemAdminOnly, update: deny },
+  admin: {
+    defaultColumns: ['version', 'currency', 'effectiveAt', 'changedBy'],
+    group: ADMIN_GROUPS.commerce,
+    hidden: systemAdminHidden,
+    useAsTitle: 'version',
+  },
+  defaultSort: '-version',
+  hooks: {
+    beforeChange: [
+      ({ operation }) => {
+        if (operation === 'update') {
+          throw new AppError('WALLET_POLICY_APPEND_ONLY', '钱包资金规则版本只允许追加', 409)
+        }
+      },
+    ],
+    beforeDelete: [
+      () => {
+        throw new AppError('WALLET_POLICY_APPEND_ONLY', '钱包资金规则版本不得删除', 409)
+      },
+    ],
+  },
+  lockDocuments: false,
+  fields: [
+    {
+      name: 'version',
+      type: 'number',
+      index: true,
+      max: Number.MAX_SAFE_INTEGER,
+      min: 1,
+      required: true,
+      unique: true,
+      validate: (value: null | number | undefined) =>
+        value !== null && value !== undefined && Number.isSafeInteger(value) && value > 0
+          ? true
+          : '字段必须是正安全整数',
+    },
+    { name: 'schemaVersion', type: 'number', defaultValue: 1, max: 1, min: 1, required: true },
+    { name: 'currency', type: 'select', options: ['CNY'], required: true },
+    { name: 'balanceExpiration', type: 'select', options: ['never'], required: true },
+    positiveSafeInteger('singleTopUpLimitFen'),
+    positiveSafeInteger('accountBalanceLimitFen'),
+    positiveSafeInteger('singleSpendLimitFen'),
+    { name: 'allowNegativeBalanceRecovery', type: 'checkbox', required: true },
+    { name: 'allowRestrictedAccountEmergencyRenewal', type: 'checkbox', required: true },
+    {
+      name: 'financialDayCutTimezone',
+      type: 'select',
+      options: ['Asia/Shanghai'],
+      required: true,
+    },
+    {
+      name: 'statementCalculation',
+      type: 'select',
+      options: ['ledger_entries_start_inclusive_end_exclusive'],
+      required: true,
+    },
+    { name: 'changedBy', type: 'text', required: true },
+    { name: 'changeNote', type: 'textarea', required: true },
+    { name: 'effectiveAt', type: 'date', index: true, required: true },
   ],
 }

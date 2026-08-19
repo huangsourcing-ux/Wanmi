@@ -108,6 +108,13 @@ async function refundOrReconciliationIssue(
         AND refunds.status <> 'succeeded'
       UNION ALL
       SELECT 1
+      FROM refunds
+      INNER JOIN wallet_top_up_orders
+        ON wallet_top_up_orders.id = refunds.wallet_top_up_order_id
+      WHERE wallet_top_up_orders.customer_id = ${customerId}
+        AND refunds.status <> 'succeeded'
+      UNION ALL
+      SELECT 1
       FROM reconciliations
       INNER JOIN orders
         ON reconciliations.record_key = 'order:' || orders.order_number

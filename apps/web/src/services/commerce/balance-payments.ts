@@ -12,6 +12,7 @@ import {
   holdWalletBalance,
   type WalletMutationResult,
 } from '@/services/wallet/ledger'
+import { assertSingleSpendLimit, loadWalletFundsPolicy } from '@/services/wallet/policy'
 
 import { enqueueCommerceFulfillment } from './fulfillment'
 import { transitionOrder } from './order-state'
@@ -247,6 +248,8 @@ export async function createBalancePayment(
     if (Date.parse(quoteExpiry(order)) <= now().getTime()) {
       throw new AppError('QUOTE_EXPIRED', '报价已过期，请重新获取报价并下单', 409)
     }
+    const policy = await loadWalletFundsPolicy(req)
+    assertSingleSpendLimit(policy, orderAmountFen(order))
 
     const paidAt = now().toISOString()
     const claimed = await claimBalancePaymentChannel(req, { orderId: order.id, paidAt })
