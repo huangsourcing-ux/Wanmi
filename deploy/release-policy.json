@@ -147,6 +147,13 @@
       "phase": "expand",
       "reason": "新增后台高风险操作审批、访问事件与事务性通知 outbox 结构，并为管理员追加可选操作范围；旧代码可忽略新增结构，新代码必须在迁移完成后启用 D9-B-5 工作流。",
       "rollback": "retain"
+    },
+    "20260819_104757_d9b6_wallet_reconciliation": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "为既有对账枚举追加 wallet 第四 ledger，为钱包账户追加带默认值的缓存快照，并为人工复核追加可空关联；旧代码可忽略新增结构，新代码必须在迁移完成后才读取新列和写入新枚举值。",
+      "rollback": "retain"
     }
   }
 }

@@ -1496,7 +1496,10 @@ function verifyWechatPaymentSchema(stage, paymentChannels = 'native,h5,balance')
   }
 }
 
-function verifyWechatRefundReconciliationSchema(stage) {
+function verifyWechatRefundReconciliationSchema(
+  stage,
+  reconciliationLedgers = 'wechat_funds,westdigital_prepaid,internal_orders,wallet_balance',
+) {
   const columns = postgres(
     [
       'psql',
@@ -1576,10 +1579,7 @@ function verifyWechatRefundReconciliationSchema(stage) {
     ],
     { capture: true },
   ).trim()
-  if (
-    enums !==
-    'confirmed,mismatch,failed,rejected,unknown:wechat_funds,westdigital_prepaid,internal_orders:true'
-  ) {
+  if (enums !== `confirmed,mismatch,failed,rejected,unknown:${reconciliationLedgers}:true`) {
     throw new Error(`D5-04 enums invalid after ${stage}: ${enums}`)
   }
 }
@@ -3097,7 +3097,10 @@ try {
      )`,
   ])
   run('pnpm', ['--filter', '@wanmi/web', 'migrate'])
-  verifyWechatRefundReconciliationSchema('D5-04 migration round trip')
+  verifyWechatRefundReconciliationSchema(
+    'D5-04 migration round trip',
+    'wechat_funds,westdigital_prepaid,internal_orders',
+  )
   const legacyReconciliation = postgres(
     [
       'psql',

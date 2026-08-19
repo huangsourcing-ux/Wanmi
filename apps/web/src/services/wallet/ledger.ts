@@ -233,10 +233,15 @@ function assertMatchingTransaction(
 async function incrementLedgerVersion(
   database: WalletDatabase,
   account: LockedWalletAccount,
+  balance: { heldBalance: bigint; postedBalance: bigint },
 ): Promise<bigint> {
   const updated = await database.execute(sql`
     UPDATE wallet_accounts
-    SET ledger_version = ledger_version + 1, updated_at = NOW()
+    SET
+      ledger_version = ledger_version + 1,
+      posted_balance_cache_fen = ${balance.postedBalance.toString()},
+      held_balance_cache_fen = ${balance.heldBalance.toString()},
+      updated_at = NOW()
     WHERE id = ${account.accountId}
     RETURNING ledger_version
   `)
@@ -252,7 +257,11 @@ async function reserveLedgerVersion(
 ): Promise<bigint> {
   const updated = await database.execute(sql`
     UPDATE wallet_accounts
-    SET ledger_version = ledger_version + 1, updated_at = NOW()
+    SET
+      ledger_version = ledger_version + 1,
+      posted_balance_cache_fen = ${account.postedBalance.toString()},
+      held_balance_cache_fen = ${(account.heldBalance + delta).toString()},
+      updated_at = NOW()
     WHERE id = ${account.accountId}
       AND ${delta.toString()} <= (
         SELECT COALESCE(SUM(
@@ -370,12 +379,14 @@ export async function createWalletAccount(
     const database = await walletDatabase(req)
     const created = await database.execute(sql`
       INSERT INTO wallet_accounts (
-        customer_id,
-        currency,
-        ledger_version,
-        updated_at,
-        created_at
-      ) VALUES (${customerId}, 'CNY', 0, NOW(), NOW())
+      customer_id,
+      currency,
+      ledger_version,
+      posted_balance_cache_fen,
+      held_balance_cache_fen,
+      updated_at,
+      created_at
+      ) VALUES (${customerId}, 'CNY', 0, 0, 0, NOW(), NOW())
       ON CONFLICT (customer_id, currency) DO NOTHING
       RETURNING id
     `)
@@ -508,7 +519,11 @@ export async function postWalletCredit(
         409,
       )
     }
-    const ledgerSequence = await incrementLedgerVersion(database, account)
+    const postedBalance = account.postedBalance + amount
+    const ledgerSequence = await incrementLedgerVersion(database, account, {
+      heldBalance: account.heldBalance,
+      postedBalance,
+    })
     const transactionId = await insertTransaction(database, {
       account,
       amountFen: amount,
@@ -516,7 +531,6 @@ export async function postWalletCredit(
       status: 'posted',
       type: 'credit',
     })
-    const postedBalance = account.postedBalance + amount
     await appendEntry(database, {
       account,
       amountFen: amount,
@@ -572,7 +586,11 @@ export async function recoverWalletBalance(
         409,
       )
     }
-    const ledgerSequence = await incrementLedgerVersion(database, account)
+    const postedBalance = account.postedBalance - amount
+    const ledgerSequence = await incrementLedgerVersion(database, account, {
+      heldBalance: account.heldBalance,
+      postedBalance,
+    })
     const transactionId = await insertTransaction(database, {
       account,
       amountFen: amount,
@@ -580,7 +598,6 @@ export async function recoverWalletBalance(
       status: 'posted',
       type: 'recovery',
     })
-    const postedBalance = account.postedBalance - amount
     await appendEntry(database, {
       account,
       amountFen: amount,
@@ -718,10 +735,13 @@ async function settleWalletHold(
     if (String(account.customerId) !== String(claimed.customer_id)) throw walletUnavailable()
     const amount = databaseInteger(claimed.amount_fen)
     if (amount > account.heldBalance) throw walletUnavailable()
-    const ledgerSequence = await incrementLedgerVersion(database, account)
     const captured = input.targetStatus === 'captured'
     const postedBalance = captured ? account.postedBalance - amount : account.postedBalance
     const heldBalance = account.heldBalance - amount
+    const ledgerSequence = await incrementLedgerVersion(database, account, {
+      heldBalance,
+      postedBalance,
+    })
     await appendEntry(database, {
       account,
       amountFen: amount,
