@@ -47,6 +47,7 @@ import { submitRealnameTemplate, syncRealnameTemplateStatus } from '@/services/r
 
 import { fulfillmentQuoteSnapshotFixture } from '../fixtures/commerce'
 import { approvedRealnameProviderFixture, realnameTemplateFixture } from '../fixtures/realname'
+import { issueStepUpGrantFixture } from '../fixtures/step-up'
 
 const prefix = `d9b3-${randomUUID().slice(0, 8)}`
 const amountMinor = 2_999
@@ -195,12 +196,51 @@ async function createFixture(
   return { accountId, customer, domainAscii, order, quote, template }
 }
 
+async function paymentGrant(
+  fixture: Fixture,
+  suffix: string,
+  purpose: 'balance_spend' | 'dns_record_change' = 'balance_spend',
+) {
+  const req = await customerRequest(fixture.customer, suffix)
+  const grant = await issueStepUpGrantFixture(payload, req, fixture.customer.id, purpose)
+  return { grant, req }
+}
+
 async function pay(fixture: Fixture, suffix: string) {
-  return createBalancePayment(
-    await customerRequest(fixture.customer, suffix),
-    fixture.order.orderNumber,
-    { customer: fixture.customer, traceId: `${prefix}-${suffix}` },
-  )
+  const { grant, req } = await paymentGrant(fixture, suffix)
+  return createBalancePayment(req, fixture.order.orderNumber, {
+    customer: fixture.customer,
+    ...grant,
+    traceId: `${prefix}-${suffix}`,
+  })
+}
+
+async function expectBalancePaymentUnchanged(fixture: Fixture) {
+  await expect(
+    readWalletBalance(await systemRequest(`${fixture.order.id}-unchanged`), fixture.accountId),
+  ).resolves.toEqual({
+    availableBalance: BigInt(amountMinor),
+    heldBalance: 0n,
+    postedBalance: BigInt(amountMinor),
+  })
+  const order = await payload.findByID({
+    collection: 'orders',
+    id: fixture.order.id,
+    overrideAccess: true,
+  })
+  expect(order).toMatchObject({ paymentChannel: null, status: 'pending_payment' })
+  const holds = await payload.count({
+    collection: 'walletTransactions',
+    overrideAccess: true,
+    where: {
+      and: [
+        { account: { equals: fixture.accountId } },
+        { transactionKey: { equals: balancePaymentTransactionKey(fixture.order.id) } },
+        { type: { equals: 'hold' } },
+      ],
+    },
+  })
+  expect(holds.totalDocs).toBe(0)
 }
 
 async function completeBalanceRefund(fixture: Fixture, suffix: string) {
@@ -477,6 +517,9 @@ afterEach(async () => {
   await payload.db.pool.query('DELETE FROM realname_templates WHERE customer_id = ANY($1::int[])', [
     customerIds,
   ])
+  await payload.db.pool.query('DELETE FROM step_up_grants WHERE customer_id = ANY($1::int[])', [
+    customerIds,
+  ])
   await payload.db.pool.query('DELETE FROM customers WHERE id = ANY($1::int[])', [customerIds])
   customerIds = []
   orderIds = []
@@ -513,7 +556,12 @@ describe('D9-B-3 balance payment and channel-bound refunds', () => {
       createBalancePayment(
         await customerRequest(stranger.customer, 'identity-spoof'),
         owner.order.orderNumber,
-        { customer: owner.customer, traceId: `${prefix}-identity-spoof` },
+        {
+          customer: owner.customer,
+          deviceId: 'identity-spoof-device-0001',
+          stepUpToken: 'a'.repeat(43),
+          traceId: `${prefix}-identity-spoof`,
+        },
       ),
     ).rejects.toMatchObject({ code: 'CUSTOMER_AUTH_REQUIRED' })
   })
@@ -521,12 +569,13 @@ describe('D9-B-3 balance payment and channel-bound refunds', () => {
   it('does not let one customer select balance payment for another customer order', async () => {
     const owner = await createFixture('cross-customer-owner')
     const stranger = await createFixture('cross-customer-stranger')
+    const { grant, req } = await paymentGrant(stranger, 'cross-customer-pay')
     await expect(
-      createBalancePayment(
-        await customerRequest(stranger.customer, 'cross-customer-pay'),
-        owner.order.orderNumber,
-        { customer: stranger.customer, traceId: `${prefix}-cross-customer-pay` },
-      ),
+      createBalancePayment(req, owner.order.orderNumber, {
+        customer: stranger.customer,
+        ...grant,
+        traceId: `${prefix}-cross-customer-pay`,
+      }),
     ).rejects.toMatchObject({ code: 'ORDER_NOT_FOUND' })
     const holds = await payload.count({
       collection: 'walletTransactions',
@@ -534,6 +583,70 @@ describe('D9-B-3 balance payment and channel-bound refunds', () => {
       where: { transactionKey: { equals: balancePaymentTransactionKey(owner.order.id) } },
     })
     expect(holds.totalDocs).toBe(0)
+  })
+
+  it('rejects a missing balance_spend step-up grant without changing balance or order state', async () => {
+    const fixture = await createFixture('step-up-missing')
+    await expect(
+      createBalancePayment(
+        await customerRequest(fixture.customer, 'step-up-missing-pay'),
+        fixture.order.orderNumber,
+        {
+          customer: fixture.customer,
+          deviceId: 'balance-step-up-missing-device',
+          stepUpToken: 'm'.repeat(43),
+          traceId: `${prefix}-step-up-missing-pay`,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'STEP_UP_GRANT_INVALID' })
+    await expectBalancePaymentUnchanged(fixture)
+  })
+
+  it('rejects a dns_record_change grant for balance spend without changing balance or order state', async () => {
+    const fixture = await createFixture('step-up-purpose')
+    const { grant, req } = await paymentGrant(fixture, 'step-up-purpose-pay', 'dns_record_change')
+    await expect(
+      createBalancePayment(req, fixture.order.orderNumber, {
+        customer: fixture.customer,
+        ...grant,
+        traceId: `${prefix}-step-up-purpose-pay`,
+      }),
+    ).rejects.toMatchObject({ code: 'STEP_UP_GRANT_INVALID' })
+    await expectBalancePaymentUnchanged(fixture)
+  })
+
+  it('accepts a matching balance_spend grant bound to the submitted device and token', async () => {
+    const fixture = await createFixture('step-up-bound-facts')
+    const { grant, req } = await paymentGrant(fixture, 'step-up-bound-facts-pay')
+    await expect(
+      createBalancePayment(req, fixture.order.orderNumber, {
+        customer: fixture.customer,
+        ...grant,
+        traceId: `${prefix}-step-up-bound-facts-pay`,
+      }),
+    ).resolves.toMatchObject({
+      data: { channel: 'balance', status: 'paid' },
+      state: 'ready',
+    })
+  })
+
+  it('rejects balance spend during identity-risk cooldown with a valid grant and unchanged funds', async () => {
+    const fixture = await createFixture('step-up-cooldown')
+    const { grant, req } = await paymentGrant(fixture, 'step-up-cooldown-pay')
+    await payload.update({
+      collection: 'customers',
+      data: { identityRiskCooldownStartedAt: new Date().toISOString() },
+      id: fixture.customer.id,
+      overrideAccess: true,
+    })
+    await expect(
+      createBalancePayment(req, fixture.order.orderNumber, {
+        customer: fixture.customer,
+        ...grant,
+        traceId: `${prefix}-step-up-cooldown-pay`,
+      }),
+    ).rejects.toMatchObject({ code: 'STEP_UP_IDENTITY_RISK_COOLDOWN_ACTIVE' })
+    await expectBalancePaymentUnchanged(fixture)
   })
 
   it('selects only the authenticated customer wallet when another CNY wallet exists', async () => {

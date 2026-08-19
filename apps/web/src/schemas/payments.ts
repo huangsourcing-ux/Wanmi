@@ -4,9 +4,15 @@ import { createResultSchema } from '@/schemas/api'
 
 const moneyMinorSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 
-export const paymentCreateRequestSchema = z.strictObject({
-  channel: z.enum(['native', 'h5', 'balance']),
-})
+export const paymentCreateRequestSchema = z.discriminatedUnion('channel', [
+  z.strictObject({ channel: z.literal('native') }),
+  z.strictObject({ channel: z.literal('h5') }),
+  z.strictObject({
+    channel: z.literal('balance'),
+    deviceId: z.string().min(16).max(128),
+    stepUpToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
+  }),
+])
 
 export const wechatPaymentCreateRequestSchema = z.strictObject({
   channel: z.enum(['native', 'h5']),

@@ -1222,23 +1222,27 @@ capability restrictions` 三个 `WHERE` 谓词（`account-state.ts:310-312`）�
     自动执行为零调用；`missing mandate independently skips without any debit`（`:1304`）证明没有 mandate
     时不会 hold。两个调用点变异均由各自行为断言杀死。
 - [ ] 风险分级（强制要求，不得因「可回滚」而降级）：
-  - **部分证据但不足，保持未勾选**：`apps/web/src/lib/domain.ts:30-44` 已为表中需要 step-up 的
+  - **全表复核后仍有一项不足，保持未勾选**：`apps/web/src/lib/domain.ts:30-44` 已为表中需要 step-up 的
     动作建立 purpose 枚举；`apps/web/src/services/auth/step-up.ts:224-245` 和集成用例
     `apps/web/tests/integration/d9a-step-up.integration.test.ts:725`“blocks every high-risk purpose during
     the identity-risk cooldown even with a valid grant”证明冷静期会在 grant 有效时仍硬阻断。A3 已把
     Name Server 变更接入 `nameserver_change` grant、显式二次确认与同一冷静期断言，并把账号删除接入
     一次性 `account_deletion` grant；`d9a-account-state.integration.test.ts:304` 验证两者在冷静期持有效
     grant 仍拒绝。D9-D-1 已覆盖 DNS 高风险档和批量删除预览；D9-D-2 又在
-    `apps/web/src/services/domains/domain-management.ts:275-355`、`:378-542`、`:616-635` 将获取/修改
-    管理密码接入 step-up + 当前全部 active 绑定渠道确认，将联系人修改与模板过户接入
+    `apps/web/src/services/domains/domain-management.ts:319-339`、`:648-663` 将获取/修改
+    管理密码接入 step-up 并要求至少一个 active 绑定渠道，将联系人修改与模板过户接入
     `realname_change` step-up + 二次确认，并由
     `apps/web/tests/integration/d9d2-domain-management.integration.test.ts:406`、`:484`、`:632`、`:2146`
     逐项验证。D9-C-2 又把 mandate 创建/重新授权/撤销接入 `renewal_mandate_change` step-up + HMAC
     绑定二次确认，并以 `requires bound second confirmation and one-time step-up, records the authorization,
 and sends the enable reminder`（
     `apps/web/tests/integration/d9c2-automatic-renewals.integration.test.ts:1051`）证明缺任一保护即拒绝。
-    但 D9-B-3 的交互式 `createBalancePayment` 当前只接入 A3 `balance_spend` 能力拦截，仍没有消费
-    `balance_spend` step-up 的实现/集成测试，故风险表整体继续保持未勾选；下表文字与保护等级不变。
+    D9-B-3 补正已在 `apps/web/src/services/commerce/balance-payments.ts:217-240` 让交互式余额支付固定消费
+    `balance_spend` grant，并由 missing grant、wrong-purpose grant、cooldown 与 C-2 自动续费零 step-up
+    四条独立行为用例验证。逐行复核同时确认一个既有缺口：管理密码路径当前只检查 active 绑定渠道
+    **存在**并在执行后调用通知，没有绑定渠道 confirmation challenge/token、确认事实或执行前确认判定，
+    因此不满足表中的“绑定渠道确认”。完整逐行证据、9/9 补正变异和原始失败见
+    `docs/operations/d9b3-balance-step-up-correction.md`；风险表整体继续保持未勾选，下表保护等级不变。
 
 | 操作                                       | 保护                               |
 | ------------------------------------------ | ---------------------------------- |
@@ -1662,6 +1666,24 @@ top-up payment service call` 杀死订单/充值 schema 串用变异；恢复源
   0：788/788 单元、618/618 PostgreSQL/MinIO 集成及 migration、lint、TypeScript strict、Next.js、
   linux/amd64 镜像、依赖/秘密扫描全部通过。主线 D9-C-1 的累计 schema snapshot 已机械同步 `balance` enum，
   生产服务文件仍无补测 diff。第四 ledger 对账、资金规则配置、审批工作流和角色调整均未由本切片实现。
+
+D9-B-3 交互式余额消费 step-up 补正证据（2026-08-18）：
+
+- `paymentCreateRequestSchema` 只在 `channel='balance'` 时要求格式化 `deviceId` 与 opaque
+  `stepUpToken`；支付路由只把这两个字段转交交互式 `createBalancePayment`。服务在任何订单认领或 wallet
+  hold 前调用 `authorizeStepUpGrant`，purpose 固定为 `balance_spend`；其内部同事务复用
+  `assertIdentityRiskCooldownInactive`。自动续费不调用该入口，C-2 用例 `does not request interactive
+step-up during unattended execution` 继续直接断言 step-up 服务零调用。
+- `apps/web/tests/integration/d9b3-balance-payments.integration.test.ts` 的 `rejects a missing
+balance_spend step-up grant without changing balance or order state`、`rejects a dns_record_change grant for
+balance spend without changing balance or order state`、`rejects balance spend during identity-risk cooldown
+with a valid grant and unchanged funds` 三条分别验证缺 grant、purpose 错配和冷静期；每条都断言 scoped
+  hold 为 0、available/held/posted 精确值及订单仍为 pending/null。matching grant 另有独立成功用例。
+- 补正新增 9 个 API/路由/service 判定与事实来源变异，9/9 均由具名行为断言杀死；删除 authorizer 调用、
+  把 purpose 改为 `dns_record_change` 两个审核指定变异都得到 `AssertionError: promise resolved ... instead
+of rejecting`。完整矩阵、原始差异和 A4 全表审计见
+  `docs/operations/d9b3-balance-step-up-correction.md`。审计另发现管理密码路径缺“绑定渠道确认”，故 A4
+  风险分级总项不补勾；本补正没有扩大到该既有缺口。
 
 #### B4 退款与资金规则（不可提现 ≠ 不可退款）
 

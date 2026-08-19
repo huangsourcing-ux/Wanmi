@@ -104,6 +104,8 @@ export function createPaymentRouteHandlers(dependencies: Dependencies) {
                 orderNumber,
                 {
                   customer: authenticated.customer,
+                  deviceId: input.deviceId,
+                  stepUpToken: input.stepUpToken,
                   traceId,
                 },
               )
