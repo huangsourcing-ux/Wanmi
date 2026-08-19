@@ -9,6 +9,7 @@ import {
 } from '@/access/roles'
 import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 import { ORDER_STATUSES } from '@/lib/domain'
+import { AppError } from '@/lib/errors'
 import {
   auditPriceRuleChange,
   auditPriceRuleDelete,
@@ -579,6 +580,18 @@ export const Refunds: CollectionConfig = {
     hidden: systemAdminHidden,
     useAsTitle: 'refundNumber',
   },
+  hooks: {
+    beforeChange: [
+      ({ data, originalDoc }) => {
+        const order = data.order ?? originalDoc?.order
+        const walletTopUpOrder = data.walletTopUpOrder ?? originalDoc?.walletTopUpOrder
+        if (Boolean(order) === Boolean(walletTopUpOrder)) {
+          throw new AppError('REFUND_TARGET_INVALID', '退款必须且只能关联一个订单或钱包充值单', 409)
+        }
+        return data
+      },
+    ],
+  },
   fields: [
     { name: 'refundNumber', type: 'text', index: true, required: true, unique: true },
     {
@@ -586,7 +599,13 @@ export const Refunds: CollectionConfig = {
       type: 'relationship',
       relationTo: 'orders',
       index: true,
-      required: true,
+      unique: true,
+    },
+    {
+      name: 'walletTopUpOrder',
+      type: 'relationship',
+      relationTo: 'walletTopUpOrders',
+      index: true,
       unique: true,
     },
     { ...integerMoney },
@@ -603,6 +622,7 @@ export const Refunds: CollectionConfig = {
       type: 'select',
       options: ['balance_insufficient', 'disputed', 'provider_rejected', 'unknown'],
     },
+    { name: 'reasonCode', type: 'text', index: true },
     { name: 'submittedAt', type: 'date' },
     { name: 'lastCheckedAt', type: 'date' },
     { name: 'refundedAt', type: 'date' },

@@ -7,6 +7,7 @@ const positiveFenSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGE
 
 export const walletTopUpCreateRequestSchema = z.strictObject({
   amountFen: positiveFenSchema,
+  currency: z.literal('CNY').default('CNY'),
   fundingSource: z.literal('wechat'),
 })
 

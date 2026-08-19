@@ -133,6 +133,13 @@
       "phase": "expand",
       "reason": "新增自动续费授权与执行事件表、订单授权快照、到期提醒扩展及调度工作流枚举；旧代码可忽略新增结构，新代码必须在迁移完成后启用授权和无人值守执行。",
       "rollback": "retain"
+    },
+    "20260819_012641_d9b4_wallet_funds_policy": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增版本化钱包资金规则、充值退款与争议追回证据、充值退款目标及 recovery 账本枚举；旧代码可忽略新增结构，新代码必须在迁移完成后启用 D9-B-4 资金场景。",
+      "rollback": "retain"
     }
   }
 }

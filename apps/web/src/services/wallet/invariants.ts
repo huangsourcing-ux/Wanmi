@@ -129,6 +129,7 @@ export async function inspectWalletLedgerInvariants(
       }
 
       if (row.entry_type === 'credit') state.postedBalance += amount
+      else if (row.entry_type === 'recovery') state.postedBalance -= amount
       else if (row.entry_type === 'hold') state.heldBalance += amount
       else if (row.entry_type === 'capture') {
         state.postedBalance -= amount
@@ -197,13 +198,15 @@ export async function inspectWalletLedgerInvariants(
       const expectedEntryTypes =
         row.type === 'credit' && row.status === 'posted'
           ? ['credit']
-          : row.type === 'hold' && row.status === 'held'
-            ? ['hold']
-            : row.type === 'hold' && row.status === 'captured'
-              ? ['hold', 'capture']
-              : row.type === 'hold' && row.status === 'released'
-                ? ['hold', 'release']
-                : undefined
+          : row.type === 'recovery' && row.status === 'posted'
+            ? ['recovery']
+            : row.type === 'hold' && row.status === 'held'
+              ? ['hold']
+              : row.type === 'hold' && row.status === 'captured'
+                ? ['hold', 'capture']
+                : row.type === 'hold' && row.status === 'released'
+                  ? ['hold', 'release']
+                  : undefined
       if (
         !expectedEntryTypes ||
         entryTypes.length !== expectedEntryTypes.length ||

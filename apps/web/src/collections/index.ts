@@ -70,7 +70,13 @@ import {
   UserFeedback,
 } from './operations'
 import { RealnameDocuments, RealnameTemplates } from './realname'
-import { WalletAccounts, WalletEntries, WalletTopUpOrders, WalletTransactions } from './wallet'
+import {
+  WalletAccounts,
+  WalletEntries,
+  WalletPolicyVersions,
+  WalletTopUpOrders,
+  WalletTransactions,
+} from './wallet'
 
 export const collections: CollectionConfig[] = [
   Admins,
@@ -119,6 +125,7 @@ export const collections: CollectionConfig[] = [
   WalletTransactions,
   WalletEntries,
   WalletTopUpOrders,
+  WalletPolicyVersions,
   ProviderOperations,
   ProviderWriteBudgets,
   ProviderWriteBudgetDebits,

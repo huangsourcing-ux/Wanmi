@@ -14,8 +14,10 @@ import {
 } from '@/providers/westdigital-write-fixtures'
 import { WestDigitalWriteAdapter } from '@/providers/westdigital-write'
 import * as stepUpService from '@/services/auth/step-up'
+import { inAuthTransaction } from '@/services/auth/atomic'
 import { runCommerceFulfillment } from '@/services/commerce/fulfillment'
 import {
+  assertAutomaticRenewalMandateValid,
   runAutomaticRenewalForAsset,
   runAutomaticRenewals,
   sortAutomaticRenewalCandidates,
@@ -32,6 +34,7 @@ import {
   type RenewalMandateRecord,
 } from '@/services/domains/renewal-mandates'
 import { createWalletAccount, postWalletCredit, readWalletBalance } from '@/services/wallet/ledger'
+import * as walletPolicyService from '@/services/wallet/policy'
 
 import { realnameTemplateFixture } from '../fixtures/realname'
 import { issueStepUpGrantFixture } from '../fixtures/step-up'
@@ -1894,6 +1897,54 @@ describe('D9-C-2 unattended automatic renewal decisions', () => {
       ).resolves.toBe(0)
     },
   )
+
+  it('allows emergency renewal only when policy is enabled and balance_spend_disabled is the sole restriction', async () => {
+    const owner = await fixture('emergency-balance-spend', { balanceFen: 10_000 })
+    await seedMandate(owner)
+    await payload.db.pool.query(
+      `UPDATE customers
+       SET status = 'restricted', capability_restrictions = '["balance_spend_disabled"]'::jsonb
+       WHERE id = $1`,
+      [owner.customer.id],
+    )
+    const currentPolicy = await walletPolicyService.loadWalletFundsPolicy(
+      await request('emergency-policy-read'),
+    )
+    const policy = vi.spyOn(walletPolicyService, 'loadWalletFundsPolicy').mockResolvedValue({
+      ...currentPolicy,
+      allowRestrictedAccountEmergencyRenewal: true,
+    })
+    const soleRestrictionReq = await request('emergency-sole-restriction')
+    await expect(
+      inAuthTransaction(soleRestrictionReq, () =>
+        assertAutomaticRenewalMandateValid(soleRestrictionReq, {
+          amountFen: 3_500n,
+          assetId: owner.asset.id,
+          now,
+          rules,
+        }),
+      ),
+    ).resolves.toMatchObject({ asset: { id: owner.asset.id } })
+
+    await payload.db.pool.query(
+      `UPDATE customers
+       SET capability_restrictions = '["balance_spend_disabled", "purchase_disabled"]'::jsonb
+       WHERE id = $1`,
+      [owner.customer.id],
+    )
+    const extraRestrictionReq = await request('emergency-extra-restriction')
+    await expect(
+      inAuthTransaction(extraRestrictionReq, () =>
+        assertAutomaticRenewalMandateValid(extraRestrictionReq, {
+          amountFen: 3_500n,
+          assetId: owner.asset.id,
+          now,
+          rules,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'AUTOMATIC_RENEWAL_ACCOUNT_RESTRICTED' })
+    policy.mockRestore()
+  })
 
   it('blocks automatic debit during identity-risk cooldown', async () => {
     const owner = await fixture('cooldown', { balanceFen: 10_000, cooldown: true })

@@ -105,7 +105,7 @@ async function derivedBalance(
       COALESCE(SUM(
         CASE
           WHEN entry_type = 'credit' THEN amount_fen
-          WHEN entry_type = 'capture' THEN -amount_fen
+          WHEN entry_type IN ('capture', 'recovery') THEN -amount_fen
           ELSE 0
         END
       ), 0) AS posted_balance,
@@ -212,7 +212,7 @@ function assertMatchingTransaction(
     accountId: number | string
     amountFen: bigint
     customerId: number | string
-    type: 'credit' | 'hold'
+    type: 'credit' | 'hold' | 'recovery'
   },
 ): { status: WalletTransactionStatus; transactionId: number | string } {
   const status = row.status
@@ -260,6 +260,7 @@ async function reserveLedgerVersion(
             WHEN entry_type = 'credit' THEN amount_fen
             WHEN entry_type = 'hold' THEN -amount_fen
             WHEN entry_type = 'release' THEN amount_fen
+            WHEN entry_type = 'recovery' THEN -amount_fen
             ELSE 0
           END
         ), 0)
@@ -285,7 +286,7 @@ async function insertTransaction(
     amountFen: bigint
     key: string
     status: 'held' | 'posted'
-    type: 'credit' | 'hold'
+    type: 'credit' | 'hold' | 'recovery'
   },
 ): Promise<number | string> {
   const inserted = await database.execute(sql`
@@ -321,7 +322,7 @@ async function appendEntry(
   input: {
     account: LockedWalletAccount
     amountFen: bigint
-    entryType: 'capture' | 'credit' | 'hold' | 'release'
+    entryType: 'capture' | 'credit' | 'hold' | 'recovery' | 'release'
     heldBalanceAfter: bigint
     key: string
     ledgerSequence: bigint
@@ -404,6 +405,42 @@ export async function readWalletBalance(
   })
 }
 
+export async function assertPostedWalletCredit(
+  req: PayloadRequest,
+  input: {
+    accountId: number | string
+    amountFen: bigint | number
+    customerId: number | string
+    transactionKey: string
+  },
+): Promise<void> {
+  const amount = amountFen(input.amountFen)
+  const key = transactionKey(input.transactionKey)
+  const found = await req.payload.find({
+    collection: 'walletTransactions',
+    depth: 0,
+    limit: 2,
+    overrideAccess: true,
+    req,
+    where: { transactionKey: { equals: key } },
+  })
+  const transaction = found.docs[0]
+  const account = transaction?.account
+  const customer = transaction?.customer
+  if (
+    found.docs.length !== 1 ||
+    !transaction ||
+    transaction.type !== 'credit' ||
+    transaction.status !== 'posted' ||
+    String(typeof account === 'object' ? account.id : account) !== String(input.accountId) ||
+    String(typeof customer === 'object' ? customer.id : customer) !== String(input.customerId) ||
+    !Number.isSafeInteger(transaction.amountFen) ||
+    BigInt(transaction.amountFen) !== amount
+  ) {
+    throw new AppError('WALLET_CREDIT_FACT_MISMATCH', '充值单与追加式钱包入账事实不一致', 409)
+  }
+}
+
 export async function hasPositiveWalletAvailableBalance(
   req: PayloadRequest,
   customerId: number | string,
@@ -433,9 +470,18 @@ export async function hasPositiveWalletAvailableBalance(
 
 export async function postWalletCredit(
   req: PayloadRequest,
-  input: { accountId: number | string; amountFen: bigint | number; transactionKey: string },
+  input: {
+    accountId: number | string
+    amountFen: bigint | number
+    maximumPostedBalanceFen?: bigint | number
+    transactionKey: string
+  },
 ): Promise<WalletMutationResult> {
   const amount = amountFen(input.amountFen)
+  const maximumPostedBalance =
+    input.maximumPostedBalanceFen === undefined
+      ? undefined
+      : amountFen(input.maximumPostedBalanceFen)
   const key = transactionKey(input.transactionKey)
   return inWalletTransaction(req, async () => {
     const database = await walletDatabase(req)
@@ -452,6 +498,16 @@ export async function postWalletCredit(
       return { applied: false, balance: balanceOf(account), ...matched }
     }
 
+    if (
+      maximumPostedBalance !== undefined &&
+      account.postedBalance + amount > maximumPostedBalance
+    ) {
+      throw new AppError(
+        'WALLET_ACCOUNT_BALANCE_LIMIT_EXCEEDED',
+        '入账后余额将超过账户余额上限',
+        409,
+      )
+    }
     const ledgerSequence = await incrementLedgerVersion(database, account)
     const transactionId = await insertTransaction(database, {
       account,
@@ -465,6 +521,70 @@ export async function postWalletCredit(
       account,
       amountFen: amount,
       entryType: 'credit',
+      heldBalanceAfter: account.heldBalance,
+      key,
+      ledgerSequence,
+      postedBalanceAfter: postedBalance,
+      transactionId,
+    })
+    return {
+      applied: true,
+      balance: {
+        availableBalance: postedBalance - account.heldBalance,
+        heldBalance: account.heldBalance,
+        postedBalance,
+      },
+      status: 'posted',
+      transactionId,
+    }
+  })
+}
+
+export async function recoverWalletBalance(
+  req: PayloadRequest,
+  input: {
+    accountId: number | string
+    allowNegativeBalance: boolean
+    amountFen: bigint | number
+    transactionKey: string
+  },
+): Promise<WalletMutationResult> {
+  const amount = amountFen(input.amountFen)
+  const key = transactionKey(input.transactionKey)
+  return inWalletTransaction(req, async () => {
+    const database = await walletDatabase(req)
+    const account = await lockWalletAccount(database, input.accountId)
+    const existing = await existingTransaction(database, key)
+    if (existing) {
+      const matched = assertMatchingTransaction(existing, {
+        accountId: account.accountId,
+        amountFen: amount,
+        customerId: account.customerId,
+        type: 'recovery',
+      })
+      if (matched.status !== 'posted') throw walletUnavailable()
+      return { applied: false, balance: balanceOf(account), ...matched }
+    }
+    if (!input.allowNegativeBalance && amount > account.availableBalance) {
+      throw new AppError(
+        'WALLET_NEGATIVE_RECOVERY_DISABLED',
+        '资金规则不允许争议追回形成负余额，已停止自动处理',
+        409,
+      )
+    }
+    const ledgerSequence = await incrementLedgerVersion(database, account)
+    const transactionId = await insertTransaction(database, {
+      account,
+      amountFen: amount,
+      key,
+      status: 'posted',
+      type: 'recovery',
+    })
+    const postedBalance = account.postedBalance - amount
+    await appendEntry(database, {
+      account,
+      amountFen: amount,
+      entryType: 'recovery',
       heldBalanceAfter: account.heldBalance,
       key,
       ledgerSequence,
