@@ -31,7 +31,9 @@ const created: Array<{
   collection: 'auditLogs' | 'reconciliations' | 'toolObservabilityBuckets'
   id: number | string
 }> = []
-const windowEndMs = Math.ceil((Date.now() + 60_000) / 3_600_000) * 3_600_000
+const monitoringFixtureNow = '2026-08-19T04:30:00.000Z'
+const monitoringFixtureNowMs = Date.parse(monitoringFixtureNow)
+const windowEndMs = Math.ceil((monitoringFixtureNowMs + 60_000) / 3_600_000) * 3_600_000
 const windowStart = new Date(windowEndMs - 3_600_000).toISOString()
 const windowEnd = new Date(windowEndMs).toISOString()
 const monitoringNow = new Date(windowEndMs + 5 * 60_000)
@@ -205,6 +207,7 @@ beforeAll(async () => {
         action,
         actorId: `admin-${index}`,
         actorType: 'admin',
+        createdAt: monitoringFixtureNow,
         targetId: `document-${index}`,
         targetType: 'realname-document',
         traceId: `${fixturePrefix}-document-${index}`,
@@ -370,12 +373,14 @@ describe('D7 operations monitoring persistence', () => {
       expect.arrayContaining([
         expect.objectContaining({
           access: 'view',
+          accessedAt: monitoringFixtureNow,
           actorId: 'admin-0',
           actorType: 'admin',
           documentId: 'document-0',
         }),
         expect.objectContaining({
           access: 'download',
+          accessedAt: monitoringFixtureNow,
           actorId: 'admin-1',
           actorType: 'admin',
           documentId: 'document-1',
