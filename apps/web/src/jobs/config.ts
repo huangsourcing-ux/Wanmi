@@ -24,6 +24,7 @@ import { runConfiguredDomainAssetSynchronization } from '@/services/domains/doma
 import { runOperationsMonitoring } from '@/services/operations/monitoring'
 import { recordCommerceWorkerHeartbeat } from '@/services/operations/worker-heartbeat'
 import { runWalletLedgerConsistencyCheck } from '@/services/wallet/invariants'
+import { runNotificationDeliveries } from '@/services/notifications/outbox'
 
 const probeInput = [{ name: 'traceId', type: 'text', required: true }] as const
 
@@ -285,6 +286,22 @@ export const walletLedgerConsistencyCheck: WorkflowConfig = {
   },
 }
 
+export const notificationDelivery: WorkflowConfig = {
+  slug: 'notificationDelivery',
+  concurrency: {
+    exclusive: true,
+    key: () => 'notifications:transactional-outbox-delivery',
+    supersedes: true,
+  },
+  inputSchema: [],
+  queue: 'background',
+  retries: 0,
+  schedule: [{ cron: '*/15 * * * * *', queue: 'background' }],
+  handler: async ({ req }) => {
+    await runNotificationDeliveries(req)
+  },
+}
+
 export const wechatRefund: WorkflowConfig<{ refundId: number; traceId: string }> = {
   slug: 'wechatRefund',
   concurrency: ({ input }) => `wechat-refund:${input.refundId}`,
@@ -329,6 +346,7 @@ export const workflows = [
   domainExpiryReminders,
   domainAssetSynchronization,
   walletLedgerConsistencyCheck,
+  notificationDelivery,
   commerceFulfillment,
   automaticRenewalScheduling,
   commerceWorkerHeartbeat,

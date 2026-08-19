@@ -321,6 +321,9 @@ export async function decideAccountRecovery(
   reviewId: number
   revokedSessionCount: number
 }> {
+  if (req.context.adminApprovalExecution !== `account_recovery:${input.reviewId}`) {
+    throw new AppError('ADMIN_APPROVAL_REQUIRED', '人工账户找回必须经过高风险审批工作流', 409)
+  }
   const reviewerId = systemAdminReviewerId(req, input.reviewerId)
   const result = await inAuthTransaction(req, async () => {
     const database = await authTransactionDatabase(req)

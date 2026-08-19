@@ -298,7 +298,9 @@ async function decide(
   conclusion: 'approved' | 'rejected',
   suffix: string = randomUUID(),
 ) {
-  return decideAccountRecovery(await requestFor(reviewerUser(), suffix), {
+  const req = await requestFor(reviewerUser(), suffix)
+  req.context.adminApprovalExecution = `account_recovery:${reviewId}`
+  return decideAccountRecovery(req, {
     decision: { conclusion, note: `A5 manual review ${suffix}` },
     reviewId,
     reviewerId: reviewer.id,
@@ -313,6 +315,7 @@ beforeAll(async () => {
     context: { adminAccountOperation: 'bootstrap' },
     data: {
       email: `d9a-a5-${randomUUID()}@example.test`,
+      operationalScopes: ['funds_operations', 'system_configuration'],
       password: `D9A-A5-reviewer-${randomUUID()}`,
       roles: ['system_admin'],
       status: 'active',
@@ -595,8 +598,10 @@ describe('D9-A A5 account recovery', () => {
       reviewerUser({ id: reviewer.id + 1 }),
       reviewerUser({ status: 'disabled' }),
     ]) {
+      const req = await requestFor(user)
+      req.context.adminApprovalExecution = `account_recovery:${review.id}`
       await expect(
-        decideAccountRecovery(await requestFor(user), {
+        decideAccountRecovery(req, {
           decision: { conclusion: 'approved', note: 'unauthorized A5 review' },
           reviewId: Number(review.id),
           reviewerId: reviewer.id,
@@ -605,21 +610,20 @@ describe('D9-A A5 account recovery', () => {
       ).rejects.toMatchObject({ code: 'ACCOUNT_RECOVERY_REVIEW_FORBIDDEN' })
     }
     for (const invalidReviewerId of ['not-a-number', 0, 1.5]) {
+      const req = await requestFor({
+        collection: 'admins',
+        id: invalidReviewerId,
+        roles: ['system_admin'],
+        status: 'active',
+      })
+      req.context.adminApprovalExecution = `account_recovery:${review.id}`
       await expect(
-        decideAccountRecovery(
-          await requestFor({
-            collection: 'admins',
-            id: invalidReviewerId,
-            roles: ['system_admin'],
-            status: 'active',
-          }),
-          {
-            decision: { conclusion: 'approved', note: 'invalid reviewer identifier' },
-            reviewId: Number(review.id),
-            reviewerId: invalidReviewerId,
-            traceId: randomUUID(),
-          },
-        ),
+        decideAccountRecovery(req, {
+          decision: { conclusion: 'approved', note: 'invalid reviewer identifier' },
+          reviewId: Number(review.id),
+          reviewerId: invalidReviewerId,
+          traceId: randomUUID(),
+        }),
       ).rejects.toMatchObject({ code: 'ACCOUNT_RECOVERY_REVIEW_FORBIDDEN' })
     }
     const stored = await payload.findByID({

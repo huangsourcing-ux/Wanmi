@@ -64,6 +64,8 @@ async function createAdminFixture(
     context: { adminAccountOperation: 'bootstrap' },
     data: {
       email: `${fixturePrefix}-${suffix}@example.test`,
+      operationalScopes:
+        role === 'system_admin' ? ['funds_operations', 'system_configuration'] : [],
       password,
       roles: [role],
       status: 'active',

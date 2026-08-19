@@ -471,6 +471,7 @@ beforeAll(async () => {
     context: { adminAccountOperation: 'bootstrap' },
     data: {
       email: `${prefix}@example.test`,
+      operationalScopes: ['funds_operations', 'system_configuration'],
       password: 'D9A-A6-Test-Administrator-Password!',
       roles: ['system_admin'],
       status: 'active',

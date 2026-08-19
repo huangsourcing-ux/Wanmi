@@ -274,6 +274,7 @@ describe('D4 real-name templates', () => {
       context: { adminAccountOperation: 'bootstrap' },
       data: {
         email: `${fixturePrefix}-reviewer@example.test`,
+        operationalScopes: ['funds_operations', 'system_configuration'],
         password: `${fixturePrefix}-review-password`,
         roles: ['system_admin'],
         status: 'active',

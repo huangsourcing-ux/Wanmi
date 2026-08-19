@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { sql } from '@payloadcms/db-postgres'
 import type { PayloadRequest } from 'payload'
 
+import { hasRole } from '@/access/roles'
 import { decryptSecret, encryptSecret, hmac, randomOpaqueToken } from '@/lib/crypto'
 import { getEnv } from '@/lib/env'
 import { AppError } from '@/lib/errors'
@@ -76,6 +77,12 @@ export type IdentityAuthenticationResult =
 function identityEncryptionKey(): string {
   const env = getEnv()
   return env.CUSTOMER_IDENTITY_ENCRYPTION_KEY ?? env.TOTP_ENCRYPTION_KEY
+}
+
+export function decryptCustomerIdentityIdentifier(
+  identity: Pick<IdentityRecord, 'identifierEncrypted'>,
+): string {
+  return decryptSecret(identity.identifierEncrypted, identityEncryptionKey())
 }
 
 export function identityProviderInstance(provider: IdentityProvider): string {
@@ -783,6 +790,68 @@ export async function notifyFormerCustomerIdentities(
       requestId,
     })
   }
+}
+
+export async function decideCustomerIdentityCollision(
+  req: PayloadRequest,
+  input: {
+    customerId: number
+    note: string
+    resolution: 'keep_existing_binding' | 'reject_claim'
+    reviewId: number
+    reviewerId: number | string
+  },
+): Promise<{ identityId: number; resolution: typeof input.resolution; reviewId: number }> {
+  if (req.context.adminApprovalExecution !== `identity_conflict_resolution:${input.reviewId}`) {
+    throw new AppError('ADMIN_APPROVAL_REQUIRED', '身份冲突处理必须经过高风险审批工作流', 409)
+  }
+  if (!hasRole(req.user, ['system_admin']) || String(req.user?.id) !== String(input.reviewerId)) {
+    throw new AppError('IDENTITY_COLLISION_REVIEW_FORBIDDEN', '仅系统管理员可处理身份冲突', 403)
+  }
+  return inAuthTransaction(req, async () => {
+    const resolvedAt = new Date().toISOString()
+    const claimed = await (
+      await authTransactionDatabase(req)
+    ).execute(sql`
+      UPDATE manual_reviews
+      SET
+        status = 'resolved',
+        resolution_note = ${input.note},
+        resolved_by_id = ${input.reviewerId},
+        resolved_at = ${resolvedAt},
+        updated_at = NOW()
+      WHERE id = ${input.reviewId}
+        AND customer_id = ${input.customerId}
+        AND reason_code = 'customer_identity_collision'
+        AND status = 'open'
+        AND customer_identity_id IS NOT NULL
+      RETURNING id, customer_identity_id
+    `)
+    const row = claimed.rows?.[0]
+    if (!row?.customer_identity_id) {
+      throw new AppError(
+        'IDENTITY_COLLISION_DECISION_CONFLICT',
+        '身份冲突复核已处理或证据不完整',
+        409,
+      )
+    }
+    const identityId = Number(row.customer_identity_id)
+    if (!Number.isSafeInteger(identityId) || identityId <= 0) {
+      throw new AppError('IDENTITY_COLLISION_EVIDENCE_INVALID', '身份冲突证据无效', 409)
+    }
+    await recordCustomerSecurityEvent(req, input.customerId, 'identity_collision', {
+      identityId,
+      resolution: input.resolution,
+      reviewId: input.reviewId,
+    })
+    await recordAuditEvent(req, {
+      action: 'customer.identity_collision.decided',
+      actor: { id: input.reviewerId, type: 'admin' },
+      metadata: { resolution: input.resolution, reviewId: input.reviewId },
+      targetId: identityId,
+    })
+    return { identityId, resolution: input.resolution, reviewId: input.reviewId }
+  })
 }
 
 export async function bindVerifiedIdentity(

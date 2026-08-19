@@ -39,6 +39,10 @@ import {
   guardBalanceControlSettingDelete,
 } from '@/services/commerce/balance-control'
 import { AppError } from '@/lib/errors'
+import {
+  guardApprovalPolicySettingChange,
+  guardApprovalPolicySettingDelete,
+} from '@/services/admin/approval-policy'
 import { sanitizeRichText } from '@/services/content/rich-text'
 import {
   CONTENT_WORKFLOW_CONTEXT,
@@ -122,14 +126,14 @@ const relatedTldPagesField: Field = {
   relationTo: 'tldPages',
 }
 
-const relatedContentJoinFields = (
-  on: 'relatedTldPages' | 'relatedTools',
-): Field[] =>
-  ([
-    ['relatedArticles', 'articles'],
-    ['relatedTopics', 'topics'],
-    ['relatedHelpPages', 'helpPages'],
-  ] as const).map(([name, collection]) => ({
+const relatedContentJoinFields = (on: 'relatedTldPages' | 'relatedTools'): Field[] =>
+  (
+    [
+      ['relatedArticles', 'articles'],
+      ['relatedTopics', 'topics'],
+      ['relatedHelpPages', 'helpPages'],
+    ] as const
+  ).map(([name, collection]) => ({
     name,
     type: 'join',
     access: {
@@ -386,8 +390,8 @@ export const SiteSettings: CollectionConfig = {
   },
   admin: { group: ADMIN_GROUPS.content, hidden: systemAdminHidden, useAsTitle: 'key' },
   hooks: {
-    beforeChange: [guardBalanceControlSettingChange],
-    beforeDelete: [guardBalanceControlSettingDelete],
+    beforeChange: [guardBalanceControlSettingChange, guardApprovalPolicySettingChange],
+    beforeDelete: [guardBalanceControlSettingDelete, guardApprovalPolicySettingDelete],
   },
   fields: [
     { name: 'key', type: 'text', index: true, required: true, unique: true },

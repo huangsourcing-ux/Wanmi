@@ -67,6 +67,7 @@ beforeAll(async () => {
         context: { adminAccountOperation: 'bootstrap' },
         data: {
           email: `${fixture}@example.test`,
+          operationalScopes: [],
           password: `D3-${randomUUID()}-safe-password`,
           roles: ['content_editor'],
           status: 'active',

@@ -69,6 +69,8 @@ export interface Config {
   blocks: {};
   collections: {
     admins: Admin;
+    adminApprovalRequests: AdminApprovalRequest;
+    adminAccessEvents: AdminAccessEvent;
     adminMfaCredentials: AdminMfaCredential;
     adminInvitations: AdminInvitation;
     customers: Customer;
@@ -135,6 +137,11 @@ export interface Config {
     toolObservabilityBuckets: ToolObservabilityBucket;
     userFeedback: UserFeedback;
     customerSecurityEvents: CustomerSecurityEvent;
+    notificationOutboxEvents: NotificationOutboxEvent;
+    notificationDeliveries: NotificationDelivery;
+    notificationProviderReceipts: NotificationProviderReceipt;
+    notificationReadStates: NotificationReadState;
+    notificationMarketingPreferences: NotificationMarketingPreference;
     priceSnapshots: PriceSnapshot;
     redirects: Redirect;
     forms: Form;
@@ -160,6 +167,8 @@ export interface Config {
   };
   collectionsSelect: {
     admins: AdminsSelect<false> | AdminsSelect<true>;
+    adminApprovalRequests: AdminApprovalRequestsSelect<false> | AdminApprovalRequestsSelect<true>;
+    adminAccessEvents: AdminAccessEventsSelect<false> | AdminAccessEventsSelect<true>;
     adminMfaCredentials: AdminMfaCredentialsSelect<false> | AdminMfaCredentialsSelect<true>;
     adminInvitations: AdminInvitationsSelect<false> | AdminInvitationsSelect<true>;
     customers: CustomersSelect<false> | CustomersSelect<true>;
@@ -226,6 +235,11 @@ export interface Config {
     toolObservabilityBuckets: ToolObservabilityBucketsSelect<false> | ToolObservabilityBucketsSelect<true>;
     userFeedback: UserFeedbackSelect<false> | UserFeedbackSelect<true>;
     customerSecurityEvents: CustomerSecurityEventsSelect<false> | CustomerSecurityEventsSelect<true>;
+    notificationOutboxEvents: NotificationOutboxEventsSelect<false> | NotificationOutboxEventsSelect<true>;
+    notificationDeliveries: NotificationDeliveriesSelect<false> | NotificationDeliveriesSelect<true>;
+    notificationProviderReceipts: NotificationProviderReceiptsSelect<false> | NotificationProviderReceiptsSelect<true>;
+    notificationReadStates: NotificationReadStatesSelect<false> | NotificationReadStatesSelect<true>;
+    notificationMarketingPreferences: NotificationMarketingPreferencesSelect<false> | NotificationMarketingPreferencesSelect<true>;
     priceSnapshots: PriceSnapshotsSelect<false> | PriceSnapshotsSelect<true>;
     redirects: RedirectsSelect<false> | RedirectsSelect<true>;
     forms: FormsSelect<false> | FormsSelect<true>;
@@ -264,6 +278,7 @@ export interface Config {
       domainExpiryReminders: WorkflowDomainExpiryReminders;
       domainAssetSynchronization: WorkflowDomainAssetSynchronization;
       walletLedgerConsistencyCheck: WorkflowWalletLedgerConsistencyCheck;
+      notificationDelivery: WorkflowNotificationDelivery;
       commerceFulfillment: WorkflowCommerceFulfillment;
       automaticRenewalScheduling: WorkflowAutomaticRenewalScheduling;
       commerceWorkerHeartbeat: WorkflowCommerceWorkerHeartbeat;
@@ -313,6 +328,7 @@ export interface CustomerAuthOperations {
  */
 export interface Admin {
   id: number;
+  operationalScopes?: ('funds_operations' | 'system_configuration')[] | null;
   roles: ('content_editor' | 'ad_operator' | 'analyst' | 'system_admin')[];
   status: 'active' | 'disabled';
   updatedAt: string;
@@ -336,37 +352,46 @@ export interface Admin {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "adminMfaCredentials".
+ * via the `definition` "adminApprovalRequests".
  */
-export interface AdminMfaCredential {
+export interface AdminApprovalRequest {
   id: number;
-  admin: number | Admin;
-  secretEncrypted: string;
-  recoveryCodeHashes?: string[] | null;
-  lastUsedStep?: number | null;
-  failedAttempts: number;
-  lockedUntil?: string | null;
-  version: number;
-  configuredAt: string;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "adminInvitations".
- */
-export interface AdminInvitation {
-  id: number;
-  purpose: 'new_admin' | 'mfa_reset';
-  email: string;
-  roles: ('content_editor' | 'ad_operator' | 'analyst' | 'system_admin')[];
-  targetAdmin?: (number | null) | Admin;
-  tokenHash: string;
-  totpSecretEncrypted: string;
-  expiresAt: string;
-  consumedAt?: string | null;
-  revokedAt?: string | null;
-  createdBy: number | Admin;
+  requestKey: string;
+  operationType:
+    | 'large_balance_adjustment'
+    | 'original_refund'
+    | 'account_recovery'
+    | 'identity_conflict_resolution'
+    | 'vip_fraud_correction'
+    | 'high_risk_account_unfreeze'
+    | 'domain_management_credential_disposition'
+    | 'bulk_customer_asset_operation';
+  status: 'pending_approval' | 'approved' | 'executing' | 'executed' | 'rejected' | 'failed';
+  customer: number | Customer;
+  targetType: string;
+  targetId: string;
+  amountFen?: number | null;
+  operationData:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  reasonNote: string;
+  requestedBy: number | Admin;
+  approvedBy?: (number | null) | Admin;
+  executedBy?: (number | null) | Admin;
+  requiresDifferentApprover: boolean;
+  cooldownSeconds: number;
+  approvedAt?: string | null;
+  executionClaimKey?: string | null;
+  executionClaimedAt?: string | null;
+  executedAt?: string | null;
+  failedAt?: string | null;
+  failureCode?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -403,6 +428,65 @@ export interface Customer {
   updatedAt: string;
   createdAt: string;
   collection: 'customers';
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "adminAccessEvents".
+ */
+export interface AdminAccessEvent {
+  id: number;
+  eventKey: string;
+  eventType: 'requested' | 'approved' | 'rejected' | 'execution_claimed' | 'executed' | 'failed';
+  approvalRequest: number | AdminApprovalRequest;
+  actor: number | Admin;
+  metadata?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  traceId: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "adminMfaCredentials".
+ */
+export interface AdminMfaCredential {
+  id: number;
+  admin: number | Admin;
+  secretEncrypted: string;
+  recoveryCodeHashes?: string[] | null;
+  lastUsedStep?: number | null;
+  failedAttempts: number;
+  lockedUntil?: string | null;
+  version: number;
+  configuredAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "adminInvitations".
+ */
+export interface AdminInvitation {
+  id: number;
+  purpose: 'new_admin' | 'mfa_reset';
+  email: string;
+  roles: ('content_editor' | 'ad_operator' | 'analyst' | 'system_admin')[];
+  targetAdmin?: (number | null) | Admin;
+  tokenHash: string;
+  totpSecretEncrypted: string;
+  expiresAt: string;
+  consumedAt?: string | null;
+  revokedAt?: string | null;
+  createdBy: number | Admin;
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -2186,6 +2270,98 @@ export interface CustomerSecurityEvent {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "notificationOutboxEvents".
+ */
+export interface NotificationOutboxEvent {
+  id: number;
+  eventKey: string;
+  domainEventType: string;
+  category: 'transactional' | 'marketing';
+  notificationType:
+    | 'admin_high_risk_operation_submitted'
+    | 'admin_high_risk_operation_executed'
+    | 'product_updates'
+    | 'promotions';
+  customer: number | Customer;
+  templateKey: string;
+  templateVersion: number;
+  subjectSnapshot: string;
+  bodySnapshot: string;
+  messageHash: string;
+  traceId: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "notificationDeliveries".
+ */
+export interface NotificationDelivery {
+  id: number;
+  deliveryKey: string;
+  outboxEvent: number | NotificationOutboxEvent;
+  customer: number | Customer;
+  channel: 'sms' | 'wechat' | 'in_app';
+  recipientEncrypted?: string | null;
+  recipientMasked: string;
+  recipientIdentityHash: string;
+  status: 'pending' | 'sending' | 'sent' | 'delivered' | 'retry_pending' | 'dead_letter';
+  attemptCount: number;
+  maxAttempts: number;
+  nextAttemptAt: string;
+  claimedAt?: string | null;
+  providerRequestId?: string | null;
+  providerMessageId?: string | null;
+  providerCode?: string | null;
+  deliveredAt?: string | null;
+  deadLetteredAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "notificationProviderReceipts".
+ */
+export interface NotificationProviderReceipt {
+  id: number;
+  receiptKey: string;
+  delivery: number | NotificationDelivery;
+  channel: 'sms' | 'wechat' | 'in_app';
+  attemptNumber: number;
+  outcome: 'accepted' | 'delivered' | 'failed' | 'unknown';
+  providerRequestId?: string | null;
+  providerMessageId?: string | null;
+  providerCode?: string | null;
+  observedAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "notificationReadStates".
+ */
+export interface NotificationReadState {
+  id: number;
+  readKey: string;
+  outboxEvent: number | NotificationOutboxEvent;
+  customer: number | Customer;
+  readAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "notificationMarketingPreferences".
+ */
+export interface NotificationMarketingPreference {
+  id: number;
+  customer: number | Customer;
+  enabledMarketingTypes: ('product_updates' | 'promotions')[];
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "priceSnapshots".
  */
 export interface PriceSnapshot {
@@ -2574,6 +2750,7 @@ export interface PayloadJob {
         | 'domainExpiryReminders'
         | 'domainAssetSynchronization'
         | 'walletLedgerConsistencyCheck'
+        | 'notificationDelivery'
         | 'commerceFulfillment'
         | 'automaticRenewalScheduling'
         | 'commerceWorkerHeartbeat'
@@ -2612,6 +2789,14 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'admins';
         value: number | Admin;
+      } | null)
+    | ({
+        relationTo: 'adminApprovalRequests';
+        value: number | AdminApprovalRequest;
+      } | null)
+    | ({
+        relationTo: 'adminAccessEvents';
+        value: number | AdminAccessEvent;
       } | null)
     | ({
         relationTo: 'adminMfaCredentials';
@@ -2818,6 +3003,26 @@ export interface PayloadLockedDocument {
         value: number | CustomerSecurityEvent;
       } | null)
     | ({
+        relationTo: 'notificationOutboxEvents';
+        value: number | NotificationOutboxEvent;
+      } | null)
+    | ({
+        relationTo: 'notificationDeliveries';
+        value: number | NotificationDelivery;
+      } | null)
+    | ({
+        relationTo: 'notificationProviderReceipts';
+        value: number | NotificationProviderReceipt;
+      } | null)
+    | ({
+        relationTo: 'notificationReadStates';
+        value: number | NotificationReadState;
+      } | null)
+    | ({
+        relationTo: 'notificationMarketingPreferences';
+        value: number | NotificationMarketingPreference;
+      } | null)
+    | ({
         relationTo: 'redirects';
         value: number | Redirect;
       } | null)
@@ -2886,6 +3091,7 @@ export interface PayloadMigration {
  * via the `definition` "admins_select".
  */
 export interface AdminsSelect<T extends boolean = true> {
+  operationalScopes?: T;
   roles?: T;
   status?: T;
   updatedAt?: T;
@@ -2904,6 +3110,48 @@ export interface AdminsSelect<T extends boolean = true> {
         createdAt?: T;
         expiresAt?: T;
       };
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "adminApprovalRequests_select".
+ */
+export interface AdminApprovalRequestsSelect<T extends boolean = true> {
+  requestKey?: T;
+  operationType?: T;
+  status?: T;
+  customer?: T;
+  targetType?: T;
+  targetId?: T;
+  amountFen?: T;
+  operationData?: T;
+  reasonNote?: T;
+  requestedBy?: T;
+  approvedBy?: T;
+  executedBy?: T;
+  requiresDifferentApprover?: T;
+  cooldownSeconds?: T;
+  approvedAt?: T;
+  executionClaimKey?: T;
+  executionClaimedAt?: T;
+  executedAt?: T;
+  failedAt?: T;
+  failureCode?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "adminAccessEvents_select".
+ */
+export interface AdminAccessEventsSelect<T extends boolean = true> {
+  eventKey?: T;
+  eventType?: T;
+  approvalRequest?: T;
+  actor?: T;
+  metadata?: T;
+  traceId?: T;
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -4287,6 +4535,89 @@ export interface CustomerSecurityEventsSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "notificationOutboxEvents_select".
+ */
+export interface NotificationOutboxEventsSelect<T extends boolean = true> {
+  eventKey?: T;
+  domainEventType?: T;
+  category?: T;
+  notificationType?: T;
+  customer?: T;
+  templateKey?: T;
+  templateVersion?: T;
+  subjectSnapshot?: T;
+  bodySnapshot?: T;
+  messageHash?: T;
+  traceId?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "notificationDeliveries_select".
+ */
+export interface NotificationDeliveriesSelect<T extends boolean = true> {
+  deliveryKey?: T;
+  outboxEvent?: T;
+  customer?: T;
+  channel?: T;
+  recipientEncrypted?: T;
+  recipientMasked?: T;
+  recipientIdentityHash?: T;
+  status?: T;
+  attemptCount?: T;
+  maxAttempts?: T;
+  nextAttemptAt?: T;
+  claimedAt?: T;
+  providerRequestId?: T;
+  providerMessageId?: T;
+  providerCode?: T;
+  deliveredAt?: T;
+  deadLetteredAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "notificationProviderReceipts_select".
+ */
+export interface NotificationProviderReceiptsSelect<T extends boolean = true> {
+  receiptKey?: T;
+  delivery?: T;
+  channel?: T;
+  attemptNumber?: T;
+  outcome?: T;
+  providerRequestId?: T;
+  providerMessageId?: T;
+  providerCode?: T;
+  observedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "notificationReadStates_select".
+ */
+export interface NotificationReadStatesSelect<T extends boolean = true> {
+  readKey?: T;
+  outboxEvent?: T;
+  customer?: T;
+  readAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "notificationMarketingPreferences_select".
+ */
+export interface NotificationMarketingPreferencesSelect<T extends boolean = true> {
+  customer?: T;
+  enabledMarketingTypes?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "priceSnapshots_select".
  */
 export interface PriceSnapshotsSelect<T extends boolean = true> {
@@ -4677,6 +5008,13 @@ export interface WorkflowDomainAssetSynchronization {
  * via the `definition` "WorkflowWalletLedgerConsistencyCheck".
  */
 export interface WorkflowWalletLedgerConsistencyCheck {
+  input?: unknown;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WorkflowNotificationDelivery".
+ */
+export interface WorkflowNotificationDelivery {
   input?: unknown;
 }
 /**

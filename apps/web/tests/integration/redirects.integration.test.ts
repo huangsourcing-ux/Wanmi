@@ -57,6 +57,8 @@ async function createAdmin(role: Admin['roles'][number]) {
     context: { adminAccountOperation: 'bootstrap' },
     data: {
       email: `${fixturePrefix}-${role}-${randomUUID()}@example.test`,
+      operationalScopes:
+        role === 'system_admin' ? ['funds_operations', 'system_configuration'] : [],
       password: `D1-${randomUUID()}-test-password`,
       roles: [role],
       status: 'active',

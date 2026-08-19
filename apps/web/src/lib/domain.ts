@@ -2,6 +2,34 @@ export const ADMIN_ROLES = ['content_editor', 'ad_operator', 'analyst', 'system_
 
 export type AdminRole = (typeof ADMIN_ROLES)[number]
 
+export const ADMIN_OPERATION_SCOPES = ['funds_operations', 'system_configuration'] as const
+
+export type AdminOperationScope = (typeof ADMIN_OPERATION_SCOPES)[number]
+
+export const ADMIN_HIGH_RISK_OPERATION_TYPES = [
+  'large_balance_adjustment',
+  'original_refund',
+  'account_recovery',
+  'identity_conflict_resolution',
+  'vip_fraud_correction',
+  'high_risk_account_unfreeze',
+  'domain_management_credential_disposition',
+  'bulk_customer_asset_operation',
+] as const
+
+export type AdminHighRiskOperationType = (typeof ADMIN_HIGH_RISK_OPERATION_TYPES)[number]
+
+export const TRANSACTIONAL_NOTIFICATION_TYPES = [
+  'admin_high_risk_operation_submitted',
+  'admin_high_risk_operation_executed',
+] as const
+
+export type TransactionalNotificationType = (typeof TRANSACTIONAL_NOTIFICATION_TYPES)[number]
+
+export const MARKETING_NOTIFICATION_TYPES = ['product_updates', 'promotions'] as const
+
+export type MarketingNotificationType = (typeof MARKETING_NOTIFICATION_TYPES)[number]
+
 export const CONSENT_TYPES = [
   'service_terms',
   'privacy_policy',

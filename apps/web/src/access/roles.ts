@@ -1,10 +1,11 @@
 import type { Access, FieldAccess, Where } from 'payload'
 
-import type { AdminRole } from '@/lib/domain'
+import type { AdminOperationScope, AdminRole } from '@/lib/domain'
 
 type AccessUser = {
   collection?: string
   id: number | string
+  operationalScopes?: AdminOperationScope[] | null
   roles?: AdminRole[] | null
   status?: 'active' | 'disabled' | null
 }
@@ -21,9 +22,18 @@ export const isCustomerUser = (user: unknown): user is AccessUser =>
 export const hasRole = (user: unknown, roles: AdminRole[]): boolean =>
   isActiveAdminUser(user) && Boolean(user.roles?.some((role) => roles.includes(role)))
 
+export const hasAdminOperationScope = (user: unknown, scope: AdminOperationScope): boolean =>
+  hasRole(user, ['system_admin']) &&
+  isActiveAdminUser(user) &&
+  Boolean(user.operationalScopes?.includes(scope))
+
 export const publicRead: Access = () => true
 export const authenticated: Access = ({ req }) => Boolean(req.user)
 export const systemAdminOnly: Access = ({ req }) => hasRole(req.user, ['system_admin'])
+export const fundsOperators: Access = ({ req }) =>
+  hasAdminOperationScope(req.user, 'funds_operations')
+export const systemConfigurationOperators: Access = ({ req }) =>
+  hasAdminOperationScope(req.user, 'system_configuration')
 export const contentManagers: Access = ({ req }) =>
   hasRole(req.user, ['content_editor', 'system_admin'])
 export const adManagers: Access = ({ req }) => hasRole(req.user, ['ad_operator', 'system_admin'])
@@ -60,6 +70,8 @@ export const adManagerFieldRead: FieldAccess = ({ req }) =>
   hasRole(req.user, ['ad_operator', 'system_admin'])
 export const operationalFieldRead: FieldAccess = ({ req }) =>
   hasRole(req.user, ['ad_operator', 'analyst', 'system_admin'])
+export const fundsOperationsFieldRead: FieldAccess = ({ req }) =>
+  hasAdminOperationScope(req.user, 'funds_operations')
 
 export const auditReaders: Access = ({ req }) => {
   if (hasRole(req.user, ['system_admin'])) return true
@@ -81,6 +93,8 @@ export const operationsAdminHidden = hiddenUnlessRoles(['ad_operator', 'analyst'
 export const analystAdminHidden = hiddenUnlessRoles(['analyst'])
 export const auditAdminHidden = hiddenUnlessRoles(['ad_operator'])
 export const systemAdminHidden = hiddenUnlessRoles([])
+export const fundsOperationsAdminHidden = ({ user }: { user: unknown }): boolean =>
+  !hasAdminOperationScope(user, 'funds_operations')
 
 export function ownOrSystem(ownerField: string): Access {
   return ({ req }) => {

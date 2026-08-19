@@ -243,6 +243,9 @@ export async function acceptAdminInvitation(
         },
         data: {
           email: invitation.email,
+          operationalScopes: invitation.roles.includes('system_admin')
+            ? ['funds_operations', 'system_configuration']
+            : [],
           password: input.password,
           roles: invitation.roles,
           status: 'active',
