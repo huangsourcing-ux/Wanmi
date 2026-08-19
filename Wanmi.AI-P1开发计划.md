@@ -1712,7 +1712,7 @@ account-balance and single-spend limits independently`、`exports opening and cl
 Asia/Shanghai day boundary`、`fails statement export closed when an append-only ledger snapshot is corrupted`。
 - A4 每种操作逐项落档、事实来源去相关、并发和计数限定见
   `docs/operations/d9b4-wallet-funds-policy.md`、
-  `docs/operations/d9b4-wallet-funds-mutation-matrix.md`。应用 106/106、migration/发布 93/93，合计 199/199
+  `docs/operations/d9b4-wallet-funds-mutation-matrix.md`。应用 107/107、migration/发布 93/93，合计 200/200
   删除、短路或来源替换变异均由指定行为断言杀死。第四 ledger 对账、B-5 审批/角色、通知 outbox 和
   停运批量退款入口均未实现或留桩。
 

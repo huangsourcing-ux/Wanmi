@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 const webRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const integration = 'tests/integration/d9b4-wallet-funds-policy.integration.test.ts'
+const topUpIntegration = 'tests/integration/d9b2-wallet-top-ups.integration.test.ts'
 const unit = 'tests/unit/d9b4-wallet-funds-policy.test.ts'
 const renewal = 'tests/integration/d9c2-automatic-renewals.integration.test.ts'
 
@@ -307,6 +308,15 @@ add(
   unit,
   'requires every refund fact to target exactly one order kind',
   [edit('        if (Boolean(order) === Boolean(walletTopUpOrder)) {\n', '        if (false) {\n')],
+)
+add(
+  files.topUps,
+  'top-up-refund-coupling',
+  'top-up-original-refund-frozen-amount',
+  'the B-2 original-refund claim binds its refund amount to the frozen top-up amount',
+  topUpIntegration,
+  'makes one original refund number idempotent and rejects a conflicting number',
+  [edit('        refunded_amount_fen = amount_fen,\n', '')],
 )
 
 add(
@@ -1062,6 +1072,8 @@ for (const mutation of selected) {
         env: {
           ...process.env,
           ALLOW_REAL_WECHATPAY: 'false',
+          ALLOW_REAL_WECHATPAY_PAYMENTS: 'false',
+          ALLOW_REAL_WECHATPAY_REFUNDS: 'false',
           ALLOW_REAL_WECHATPAY_WRITES: 'false',
           ALLOW_REAL_WESTDIGITAL_READS: 'false',
           ALLOW_REAL_WESTDIGITAL_WRITES: 'false',

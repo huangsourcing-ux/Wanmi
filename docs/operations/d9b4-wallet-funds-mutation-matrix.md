@@ -13,7 +13,7 @@
 所有子进程显式设置 `ALLOW_REAL_WECHATPAY=false`、`ALLOW_REAL_WECHATPAY_WRITES=false`，并同时关闭真实
 WestDigital 读写；测试 provider 全部使用 fixture。
 
-## 2. 应用判定（106 项）
+## 2. 应用判定（107 项）
 
 | 分组                                     |    数量 | 独立行为承重点                                                                                             |
 | ---------------------------------------- | ------: | ---------------------------------------------------------------------------------------------------------- |
@@ -29,7 +29,8 @@ WestDigital 读写；测试 provider 全部使用 fixture。
 | emergency renewal                        |       3 | 配置开关、唯一限制数量、限制值来源                                                                         |
 | statement owner/boundary/integrity/audit |       9 | customer scope、账户 SQL、上海偏移、366 天、start-inclusive、sequence/snapshot/version、审计               |
 | refund target hook                       |       1 | refund 必须且只能关联 order 或 top-up 一种目标                                                             |
-| **合计**                                 | **106** | **106/106**                                                                                                |
+| B-2 original refund coupling             |       1 | 原路退款 claim 将退款金额绑定充值单冻结金额，满足新增状态证据约束                                          |
+| **合计**                                 | **107** | **107/107**                                                                                                |
 
 关键独立用例：
 
@@ -84,5 +85,5 @@ WestDigital 读写；测试 provider 全部使用 fixture。
 - policy 更新使用 head `UPDATE ... WHERE current_version ... RETURNING`；并发 stale update 不创建第二个
   current 版本。
 
-最终源状态恢复后，应用矩阵 106/106、migration/发布矩阵 93/93，合计 **199/199**。完整代码门禁另以最终
+最终源状态恢复后，应用矩阵 107/107、migration/发布矩阵 93/93，合计 **200/200**。完整代码门禁另以最终
 commit 的 `make check` 和 CI 结论记录，不以变异期间的定向运行替代。

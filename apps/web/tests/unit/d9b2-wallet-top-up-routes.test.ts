@@ -44,7 +44,7 @@ describe('D9-B-2 wallet top-up routes', () => {
     })
     expect(createTopUp).toHaveBeenCalledWith(
       context.req,
-      { amountFen: 10_000, fundingSource: 'wechat' },
+      { amountFen: 10_000, currency: 'CNY', fundingSource: 'wechat' },
       { customer: context.customer },
     )
   })

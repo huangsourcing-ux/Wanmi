@@ -690,6 +690,7 @@ export async function markWalletTopUpOriginalRefunded(
       SET
         status = 'refund_pending',
         original_refund_number = ${refundNumber},
+        refunded_amount_fen = amount_fen,
         updated_at = NOW()
       WHERE id = ${topUp.id}
         AND status IN ('payment_pending', 'provider_confirmed', 'credited')
