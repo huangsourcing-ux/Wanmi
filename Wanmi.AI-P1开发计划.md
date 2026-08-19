@@ -1,10 +1,10 @@
 # Wanmi.AI P1 开发计划
 
-> 文档版本：v3.3（DNS 高风险分级冻结项变更）
+> 文档版本：v3.4（域名管理密码保护措辞对齐）
 >
-> 更新日期：2026-08-17
+> 更新日期：2026-08-18
 >
-> 冻结基线：`P1-BASELINE-2026-08-17.2`；批准标签 `p1-docs-approved-2026-08-17-2`
+> 冻结基线：`P1-BASELINE-2026-08-18.1`；批准标签 `p1-docs-approved-2026-08-18-1`
 >
 > 状态：已批准作为 P1 开发执行计划；生产上线仍需通过独立门槛
 >
@@ -71,7 +71,7 @@ Codex 必须：
 
 ### 0.5 冻结与变更控制
 
-`P1-BASELINE-2026-08-17.2` 冻结 P1 产品范围、固定架构、订单状态与合法迁移、退款规则、实名归属、12～16 周工期口径、生产上线门槛、发布/存储边界、风险匹配的验证治理，以及 `AGENTS.md` 中的并发互斥与 D9 既有能力复用约束。相对上一基线 `P1-BASELINE-2026-08-17.1`（批准标签 `p1-docs-approved-2026-08-17-1`），本次只扩展 A4 DNS 高风险分级，将根域 AAAA 与全部主机 TXT 纳入 step-up + 二次确认；全部主机 MX、根域 A/CNAME 与 NS 的保护等级保持不变。上一基线的并发互斥、D9 复用索引、判定点计数、验证分层、高风险冷静期、`renewalMandate` 独立授权，以及更早基线的全部决定继续有效。开发过程中可以更新本计划的任务勾选、验证证据、阻塞、ADR 和 Runbook；不得借进度更新改变冻结基线。
+`P1-BASELINE-2026-08-18.1` 冻结 P1 产品范围、固定架构、订单状态与合法迁移、退款规则、实名归属、12～16 周工期口径、生产上线门槛、发布/存储边界、风险匹配的验证治理，以及 `AGENTS.md` 中的并发互斥与 D9 既有能力复用约束。相对上一基线 `P1-BASELINE-2026-08-17.2`（批准标签 `p1-docs-approved-2026-08-17-2`），本次只把 A4“获取/修改域名管理密码”的保护等级对齐为既有实现：purpose-bound step-up、至少一个 active 绑定渠道存在性校验，以及操作完成后向全部 active 绑定渠道告知并逐 provider 记录 outcome；不实施执行前的渠道确认。项目负责人于 2026-08-18 明确接受会话被盗时只能事后获知、不能执行前阻断的安全后果。上一基线的 DNS 高风险分级、并发互斥、D9 复用索引、判定点计数、验证分层、高风险冷静期、`renewalMandate` 独立授权，以及更早基线的全部决定继续有效。开发过程中可以更新本计划的任务勾选、验证证据、阻塞、ADR 和 Runbook；不得借进度更新改变冻结基线。
 
 需要改变冻结内容时，必须取得项目负责人明确指令，更新受影响文档版本与变更记录，完成跨文档一致性检查，并建立新的批准标签。D0 验证失败只触发延长、修正假设或重新提交架构决策，不自动解除冻结。
 
@@ -856,6 +856,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 | 2026-08-15 | v3.0 D9-A 短信 step-up 冻结项变更     | step-up 由短信验证码校验产生，不引入独立操作密码及设置/重置流程；风险分级表、高风险冷静期和 `renewalMandate` 独立授权边界不变                                                                        | 跨文档新基线/版本/上一批准标签一致性检查；A4 实现、迁移、用途隔离、原子一次性消费、冷静期与频控测试随同一切片交付                                                                                                                                           | 不改变 A3、A5～A7、D9-B～E 范围；不降低任何高风险动作保护等级，不授权真实短信、生产数据修改或部署                                                                                     |
 | 2026-08-16 | v3.1 验证分层冻结项变更               | 新增文档、快速、集成和完整门禁档位；required CI job 始终触发，可靠确认纯 `.md` 才降至文档档位，否则失败关闭到完整门禁                                                                                | 分类器四类最低输入行为测试、门禁分支定向变异、最终状态本地 `make check` 与精确 commit CI 结论                                                                                                                                                               | 不改业务代码、A3～A7 实现、产品/交易/实名/上线门槛；不部署、不生产写入；`make check-release` 不新增                                                                                   |
 | 2026-08-17 | v3.3 DNS 高风险分级冻结项变更         | A4 高风险档新增根域 AAAA 与全部主机 TXT；复用 `dns_record_change`，保留全部主机 MX、根域 A/CNAME 与 NS 原保护等级                                                                                    | 根域 AAAA 缺 step-up/二次确认、子域 AAAA 普通档、根域/`_acme-challenge` TXT 拒绝、普通子域 A 普通档独立用例；新增 3 项定向变异与最终 `make check`                                                                                                           | 只补正 16.9 第 1 项和冻结风险表；SRV 不升级，16.9 其余六项不实现，不部署、不生产写入、不打开真实 provider 闸门                                                                        |
+| 2026-08-18 | v3.4 域名管理密码保护措辞对齐         | A4 管理密码档位对齐既有实现：step-up、active 绑定渠道存在性校验、事后向全部 active 渠道告知并逐 provider 记录 outcome；不实施执行前渠道确认                                                          | 逐项复核 A4 9/9 行实现与既有行为用例；跨文档新基线/标签/上一基线链路一致；仅运行 `make check-docs`                                                                                                                                                          | 负责人明确接受会话被盗时只能事后获知、不能执行前阻断；不改实现、其他风险档、产品范围或上线门槛，不部署、不生产写入                                                                    |
 | 2026-08-17 | D9-B-1 钱包账本基础                   | 新增无余额真源字段的三 Collection、追加式 entries、账本推导三态余额、hold/capture/release、原子额度门与一致性 Job；不含充值、消费订单、退款、对账和后台审批                                          | 四类核心并发、账本差异注入、43/43 聚焦用例及 54/54 注销兼容回归；服务/访问/任务 94/94、SQL 20/20、迁移 38/38，合计 152/152 变异被行为断言杀死；最终本地 `make check` 通过，精确 commit CI 结论随 PR 记录                                                    | 只勾选 16.7 B2 前五项和 D9-B 前两个退出条件；B1、B2 第四 ledger、B3～B5 全部保持未勾选；未部署、未生产写入、未开启真实 provider 闸门                                                  |
 | 2026-08-18 | D9-B-3 余额支付与退款双路径           | 订单持久化 `balance` 渠道；余额下单同事务原子 hold 并即时进入已支付；履约成功 capture、明确失败 release、unknown 保持 hold；按持久化渠道分派余额回退或既有微信原路退款，显式拒绝混合支付及双路径互串 | 审核补测后 42/42 D9-B-3、138/138 受影响聚焦回归；支付/capture-release/退款 N 路并发均恰好一次；按调用点 71/71 删除、短路及事实来源替换变异由独立行为断言杀死；最终本地 `make check` 通过 783/783 单元、599/599 集成及完整迁移、构建与安全门禁               | 只完成 16.7 B3 三项及 D9-B 第三退出条件；第四 ledger、资金规则、审批、角色及 B4/B5 不在本切片；B1 复用已合并 D9-B-2，未由本切片改写；全程 fixture，微信真实闸 false，无部署或生产写入 |
 
@@ -1221,40 +1222,31 @@ capability restrictions` 三个 `WHERE` 谓词（`account-state.ts:310-312`）�
     `apps/web/tests/integration/d9c2-automatic-renewals.integration.test.ts:1827`）直接 spy step-up 服务并断言
     自动执行为零调用；`missing mandate independently skips without any debit`（`:1304`）证明没有 mandate
     时不会 hold。两个调用点变异均由各自行为断言杀死。
-- [ ] 风险分级（强制要求，不得因「可回滚」而降级）：
-  - **全表复核后仍有一项不足，保持未勾选**：`apps/web/src/lib/domain.ts:30-44` 已为表中需要 step-up 的
-    动作建立 purpose 枚举；`apps/web/src/services/auth/step-up.ts:224-245` 和集成用例
-    `apps/web/tests/integration/d9a-step-up.integration.test.ts:725`“blocks every high-risk purpose during
-    the identity-risk cooldown even with a valid grant”证明冷静期会在 grant 有效时仍硬阻断。A3 已把
-    Name Server 变更接入 `nameserver_change` grant、显式二次确认与同一冷静期断言，并把账号删除接入
-    一次性 `account_deletion` grant；`d9a-account-state.integration.test.ts:304` 验证两者在冷静期持有效
-    grant 仍拒绝。D9-D-1 已覆盖 DNS 高风险档和批量删除预览；D9-D-2 又在
-    `apps/web/src/services/domains/domain-management.ts:319-339`、`:648-663` 将获取/修改
-    管理密码接入 step-up 并要求至少一个 active 绑定渠道，将联系人修改与模板过户接入
-    `realname_change` step-up + 二次确认，并由
-    `apps/web/tests/integration/d9d2-domain-management.integration.test.ts:406`、`:484`、`:632`、`:2146`
-    逐项验证。D9-C-2 又把 mandate 创建/重新授权/撤销接入 `renewal_mandate_change` step-up + HMAC
-    绑定二次确认，并以 `requires bound second confirmation and one-time step-up, records the authorization,
-and sends the enable reminder`（
-    `apps/web/tests/integration/d9c2-automatic-renewals.integration.test.ts:1051`）证明缺任一保护即拒绝。
-    D9-B-3 补正已在 `apps/web/src/services/commerce/balance-payments.ts:217-240` 让交互式余额支付固定消费
-    `balance_spend` grant，并由 missing grant、wrong-purpose grant、cooldown 与 C-2 自动续费零 step-up
-    四条独立行为用例验证。逐行复核同时确认一个既有缺口：管理密码路径当前只检查 active 绑定渠道
-    **存在**并在执行后调用通知，没有绑定渠道 confirmation challenge/token、确认事实或执行前确认判定，
-    因此不满足表中的“绑定渠道确认”。完整逐行证据、9/9 补正变异和原始失败见
-    `docs/operations/d9b3-balance-step-up-correction.md`；风险表整体继续保持未勾选，下表保护等级不变。
+- [x] 风险分级（强制要求，不得因「可回滚」而降级）：
+  - **按 `P1-BASELINE-2026-08-18.1` 逐项复核 9/9 均落到正确档位**：普通子域解析、DNS/NS
+    高风险变更、批量删除、关闭域名锁、实名修改、管理密码读写、交互式余额消费、注销申请和身份风险
+    冷静期均有对应实现与行为证据。管理密码路径在
+    `apps/web/src/services/domains/domain-management.ts:319-339,422-544` 消费
+    `domain_management_password` grant、要求至少一个 active 绑定渠道，并在成功后复用既有通知路径向
+    全部 active provider 告知且逐项记录 outcome；`apps/web/tests/integration/d9d2-domain-management.integration.test.ts:406,484`
+    分别验证缺 step-up/缺 active 渠道时拒绝，以及成功后全渠道告知。该档位按负责人决定不包含执行前
+    渠道确认。其余八行的调用点、测试名与文件行号逐项列于
+    `docs/operations/a4-risk-tier-wording-audit.md`；D9-B-3 的 9/9 定向变异与原始失败继续见
+    `docs/operations/d9b3-balance-step-up-correction.md`。
 
-| 操作                                       | 保护                               |
-| ------------------------------------------ | ---------------------------------- |
-| 添加普通子域解析                           | 当前会话 + 审计                    |
-| 修改根域 A/CNAME/AAAA、全部主机 MX/TXT、NS | step-up + 二次确认                 |
-| 批量删除解析                               | step-up + 变更预览                 |
-| 关闭域名锁                                 | step-up + 通知                     |
-| 修改实名信息                               | step-up + 二次确认                 |
-| 获取/修改域名管理密码                      | step-up + 绑定渠道确认             |
-| 余额消费（交互式）                         | step-up                            |
-| 注销申请                                   | step-up + 冷静期                   |
-| 账号刚完成找回或换绑                       | 冷静期内**禁止**上述全部高风险操作 |
+| 操作                                       | 保护                                                                                      |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| 添加普通子域解析                           | 当前会话 + 审计                                                                           |
+| 修改根域 A/CNAME/AAAA、全部主机 MX/TXT、NS | step-up + 二次确认                                                                        |
+| 批量删除解析                               | step-up + 变更预览                                                                        |
+| 关闭域名锁                                 | step-up + 通知                                                                            |
+| 修改实名信息                               | step-up + 二次确认                                                                        |
+| 获取/修改域名管理密码                      | step-up + 绑定渠道存在性校验 + 事后向全部 active 绑定渠道告知（逐 provider 记录 outcome） |
+| 余额消费（交互式）                         | step-up                                                                                   |
+| 注销申请                                   | step-up + 冷静期                                                                          |
+| 账号刚完成找回或换绑                       | 冷静期内**禁止**上述全部高风险操作                                                        |
+
+说明：获取/修改域名管理密码不实施执行前的渠道确认；会话被盗时用户只能事后获知，不能阻断。此为项目负责人 2026-08-18 明确决定。
 
 理由：NS、MX、TXT 被恶意修改可导致网站劫持、企业邮箱接管、密码重置邮件被截获、域名所有权
 验证被冒用；TXT 的高风险位置多在 `_acme-challenge`、`_dmarc`、`selector._domainkey` 等下划线
@@ -1682,8 +1674,9 @@ with a valid grant and unchanged funds` 三条分别验证缺 grant、purpose �
 - 补正新增 9 个 API/路由/service 判定与事实来源变异，9/9 均由具名行为断言杀死；删除 authorizer 调用、
   把 purpose 改为 `dns_record_change` 两个审核指定变异都得到 `AssertionError: promise resolved ... instead
 of rejecting`。完整矩阵、原始差异和 A4 全表审计见
-  `docs/operations/d9b3-balance-step-up-correction.md`。审计另发现管理密码路径缺“绑定渠道确认”，故 A4
-  风险分级总项不补勾；本补正没有扩大到该既有缺口。
+  `docs/operations/d9b3-balance-step-up-correction.md`。该审计按当时 `P1-BASELINE-2026-08-17.2` 发现管理
+  密码路径不具备执行前“绑定渠道确认”；后续 `P1-BASELINE-2026-08-18.1` 依负责人决定将档位对齐为
+  active 渠道存在性校验与事后逐 provider 告知，因此现按新基线计为满足，代码实现未变。
 
 #### B4 退款与资金规则（不可提现 ≠ 不可退款）
 
@@ -1835,7 +1828,7 @@ D9-D-1 证据（2026-08-17，仅本节第 1 项）：
   DNSSEC、DDNS、常用邮箱解析、域名转入/转出、域名管理密码、域名信息/过户/证书、离线任务、资产同步
   或 capability 扩展；本节其余六项保持未勾选。
 
-- [x] 域名管理密码获取与修改：**step-up + 绑定渠道确认**，明文不进日志、审计元数据与前端缓存；
+- [x] 域名管理密码获取与修改：**step-up + 绑定渠道存在性校验 + 事后向全部 active 绑定渠道告知（逐 provider 记录 outcome）**，不实施执行前渠道确认，明文不进日志、审计元数据与前端缓存；
 - [x] 修改域名信息；过户到本人已通过的实名模板（「模板过户」与「实时过户」差异在联调中确认并
       记录选型理由）；域名证书下载；
 - [x] 对接域名批量任务与**离线任务 API（V2）**：返回任务标识后查询结果，**不假设同步返回**；
