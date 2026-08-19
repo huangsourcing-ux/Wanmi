@@ -5,6 +5,7 @@ import { isCustomerUser } from '@/access/roles'
 import { AppError } from '@/lib/errors'
 import { paymentSessionResultSchema, type PaymentSessionResult } from '@/schemas/payments'
 import { assertCustomerAccountCapability } from '@/services/auth/account-state'
+import { authorizeStepUpGrant } from '@/services/auth/step-up'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
 import {
   captureWalletHold,
@@ -218,7 +219,9 @@ export async function createBalancePayment(
   orderNumber: string,
   options: {
     customer: CustomerIdentity
+    deviceId: string
     now?: () => Date
+    stepUpToken: string
     traceId: string
   },
 ): Promise<Extract<PaymentSessionResult, { state: 'ready' }>> {
@@ -227,6 +230,13 @@ export async function createBalancePayment(
   return transaction(req, async () => {
     await assertCustomerAccountCapability(req, options.customer.id, 'purchase')
     await assertCustomerAccountCapability(req, options.customer.id, 'balance_spend')
+    await authorizeStepUpGrant(req, {
+      customerId: options.customer.id,
+      deviceId: options.deviceId,
+      headers: req.headers,
+      purpose: 'balance_spend',
+      stepUpToken: options.stepUpToken,
+    })
     const order = await findCustomerOrder(req, orderNumber, options.customer)
     if (order.paymentChannel === 'balance') {
       throw new AppError('BALANCE_PAYMENT_ALREADY_SELECTED', '该订单正在进行余额支付', 409)

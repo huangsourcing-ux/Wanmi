@@ -88,7 +88,11 @@ describe('POST /api/v1/orders/:orderNumber/payments', () => {
     }).POST
     const response = await handler(
       new Request('http://wanmi.test/api/v1/orders/WM-ORDER-7/payments', {
-        body: JSON.stringify({ channel: 'balance' }),
+        body: JSON.stringify({
+          channel: 'balance',
+          deviceId: 'balance-device-00000001',
+          stepUpToken: 'a'.repeat(43),
+        }),
         headers: { 'content-type': 'application/json', 'x-request-id': 'trace-balance-route' },
         method: 'POST',
       }),
@@ -102,8 +106,47 @@ describe('POST /api/v1/orders/:orderNumber/payments', () => {
     expect(body.data).not.toHaveProperty('h5Url')
     expect(createBalance).toHaveBeenCalledWith(context.req, 'WM-ORDER-7', {
       customer: context.customer,
+      deviceId: 'balance-device-00000001',
+      stepUpToken: 'a'.repeat(43),
       traceId: 'trace-balance-route',
     })
+    expect(createWechat).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['deviceId', { channel: 'balance', stepUpToken: 'a'.repeat(43) }],
+    ['stepUpToken', { channel: 'balance', deviceId: 'balance-device-00000001' }],
+    [
+      'well-formed stepUpToken',
+      {
+        channel: 'balance',
+        deviceId: 'balance-device-00000001',
+        stepUpToken: 'not-a-valid-token',
+      },
+    ],
+  ])('rejects balance payment without %s before dispatch', async (_label, input) => {
+    const createBalance = vi.fn()
+    const createWechat = vi.fn()
+    const handler = createPaymentRouteHandlers({
+      createBalance,
+      createWechat,
+      provider,
+      resolveContext: async () => context,
+    }).POST
+    const response = await handler(
+      new Request('http://wanmi.test/api/v1/orders/WM-ORDER-7/payments', {
+        body: JSON.stringify(input),
+        headers: { 'content-type': 'application/json', 'x-request-id': 'trace-balance-guard' },
+        method: 'POST',
+      }),
+      routeContext,
+    )
+    expect(response.status).toBe(400)
+    expect(paymentSessionResultSchema.parse(await response.json())).toMatchObject({
+      problem: { code: 'INVALID_REQUEST' },
+      state: 'error',
+    })
+    expect(createBalance).not.toHaveBeenCalled()
     expect(createWechat).not.toHaveBeenCalled()
   })
 })
