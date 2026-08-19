@@ -53,6 +53,19 @@ export const ManualReviews: CollectionConfig = {
       index: true,
     },
     {
+      name: 'walletAccount',
+      type: 'relationship',
+      relationTo: 'walletAccounts',
+      index: true,
+    },
+    {
+      name: 'reconciliation',
+      type: 'relationship',
+      relationTo: 'reconciliations',
+      index: true,
+      unique: true,
+    },
+    {
       name: 'domainAsset',
       type: 'relationship',
       relationTo: 'domainAssets',
@@ -88,13 +101,13 @@ export const Reconciliations: CollectionConfig = {
     {
       name: 'kind',
       type: 'select',
-      options: ['wechat', 'westdigital', 'three_way'],
+      options: ['wechat', 'westdigital', 'three_way', 'wallet'],
       required: true,
     },
     {
       name: 'ledger',
       type: 'select',
-      options: ['wechat_funds', 'westdigital_prepaid', 'internal_orders'],
+      options: ['wechat_funds', 'westdigital_prepaid', 'internal_orders', 'wallet_balance'],
       required: true,
     },
     { name: 'recordKey', type: 'text', index: true, required: true },

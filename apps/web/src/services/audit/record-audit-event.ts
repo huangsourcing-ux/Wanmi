@@ -155,6 +155,14 @@ export const auditEventDefinitions = {
     actorTypes: ['system'],
     targetType: 'wallet-ledger',
   },
+  'wallet.reconciliation.difference_recorded': {
+    actorTypes: ['system'],
+    targetType: 'reconciliation',
+  },
+  'wallet.reconciliation.failed': {
+    actorTypes: ['system'],
+    targetType: 'wallet-ledger',
+  },
   'wallet.balance_payment.captured': {
     actorTypes: ['system'],
     targetType: 'order',

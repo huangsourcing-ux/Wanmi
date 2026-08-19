@@ -13,11 +13,17 @@ function collection(slug: string) {
 }
 
 describe('D9-B-1 wallet collection contracts', () => {
-  it('keeps mutable balance fields out of wallet accounts and derives all three states from entries', () => {
+  it('keeps mutable balances out of wallet truth fields and labels reconciliation snapshots as caches', () => {
     const accountFields = collection('walletAccounts')
       .fields.filter((field) => 'name' in field)
       .map((field) => field.name)
-    expect(accountFields).toEqual(['customer', 'currency', 'ledgerVersion'])
+    expect(accountFields).toEqual([
+      'customer',
+      'currency',
+      'ledgerVersion',
+      'postedBalanceCacheFen',
+      'heldBalanceCacheFen',
+    ])
     expect(accountFields).not.toContain('postedBalance')
     expect(accountFields).not.toContain('heldBalance')
     expect(accountFields).not.toContain('availableBalance')
