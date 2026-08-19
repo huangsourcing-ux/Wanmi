@@ -2,6 +2,11 @@
 
 日期：2026-08-18
 
+> 后续基线说明：本文件的 A4 审计按当时 `P1-BASELINE-2026-08-17.2` 将“绑定渠道确认”理解为执行前
+> 确认，因此如实记录管理密码路径不满足。项目负责人随后以 `P1-BASELINE-2026-08-18.1` 明确把该档位
+> 对齐为 active 渠道存在性校验与事后逐 provider 告知，并接受不能执行前阻断的安全后果。当前 9/9
+> 复核与勾选依据见 `docs/operations/a4-risk-tier-wording-audit.md`；本文件保留上一基线下的历史判断。
+
 ## 范围与边界
 
 本补正只收紧交互式 `createBalancePayment`：支付请求必须携带 device-bound step-up grant，服务固定以
@@ -81,8 +86,8 @@ AssertionError: promise resolved "{ …(3) }" instead of rejecting
 
 ## A4 风险表逐行复核
 
-“正确档位”要求保护语义真实存在，不能把渠道存在或事后通知当成渠道确认。复核结果如下；本补正只实现
-余额消费一行，其他行仅做只读核对。
+本节按当时 `P1-BASELINE-2026-08-17.2` 的“执行前绑定渠道确认”语义记录历史复核；本补正只实现余额
+消费一行，其他行仅做只读核对。后续基线结论见本文开头说明。
 
 | A4 行                                                          | 当前档位                                                                                                                                                                                                                     | 实现与行为证据                                                                                                                                                                                                              | 结论                                                                                                                          |
 | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -96,9 +101,9 @@ AssertionError: promise resolved "{ …(3) }" instead of rejecting
 | 注销申请：step-up + 冷静期                                     | `requestAccountClosure` 消费一次性 `account_deletion` grant 并持久化注销冷静期（`account-closure.ts:334-365`）；grant 内部同时执行身份风险冷静期门                                                                           | `requires a fresh one-time deletion grant for every new closure request`（`d9a-account-closure.integration.test.ts:999`）、`rejects a closure request during the shared identity-risk cooldown`（`:1207`）                  | 正确                                                                                                                          |
 | 刚完成找回或换绑：冷静期禁止上述全部高风险操作                 | 每次 `authorizeStepUpGrant` 都先调用 `assertIdentityRiskCooldownInactive`（`step-up.ts:224-261`）；上述高风险入口均经过对应 grant                                                                                            | 全 purpose 用例 `blocks every high-risk purpose during the identity-risk cooldown even with a valid grant`（`d9a-step-up.integration.test.ts:725`），并有 DNS/NS、unlock、password/realname、balance、closure 各入口回归    | 正确；但不能补足上一行缺失的“绑定渠道确认”                                                                                    |
 
-结论：余额消费缺口已补正；A4 风险表仍有 1 行证据不足，即“获取/修改域名管理密码”的绑定渠道确认。
-因此 A4 风险分级总项必须继续保持未勾选，不能因存在绑定渠道或事后通知而视为完成。本补正没有实现该
-既有缺口。
+历史结论（`P1-BASELINE-2026-08-17.2`）：余额消费缺口已补正；管理密码路径不具备当时表述的执行前
+绑定渠道确认，因此 A4 总项当时保持未勾选。后续 `P1-BASELINE-2026-08-18.1` 改变的是冻结要求措辞，
+不是实现；按新档位 9/9 已满足，见 `docs/operations/a4-risk-tier-wording-audit.md`。
 
 ## 验证记录
 
