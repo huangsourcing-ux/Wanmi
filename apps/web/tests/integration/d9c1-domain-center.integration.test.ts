@@ -289,6 +289,12 @@ afterAll(async () => {
       payload.delete({ collection: 'customerIdentities', id: identityId, overrideAccess: true }),
     )
   }
+  if (assetIds.length) {
+    await payload.db.pool.query(
+      'DELETE FROM domain_expiry_reminders WHERE asset_id = ANY($1::int[])',
+      [assetIds.map(Number)],
+    )
+  }
   for (const assetId of assetIds) {
     await ignorePayloadNotFound(() =>
       payload.delete({ collection: 'domainAssets', id: assetId, overrideAccess: true }),

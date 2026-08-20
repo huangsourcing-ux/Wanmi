@@ -29,7 +29,8 @@
     "20260818_072324_d9c1_domain_center",
     "20260818_121910_d9c2_automatic_renewal",
     "20260819_012641_d9b4_wallet_funds_policy",
-    "20260819_065615_d9b5_admin_approvals_notifications"
+    "20260819_065615_d9b5_admin_approvals_notifications",
+    "20260820_000011_d9e2_points_ledger"
   ],
   "rollback": {
     "database": "retain",

@@ -48,6 +48,7 @@ import * as migration_20260818_072324_d9c1_domain_center from './20260818_072324
 import * as migration_20260818_121910_d9c2_automatic_renewal from './20260818_121910_d9c2_automatic_renewal'
 import * as migration_20260819_012641_d9b4_wallet_funds_policy from './20260819_012641_d9b4_wallet_funds_policy'
 import * as migration_20260819_065615_d9b5_admin_approvals_notifications from './20260819_065615_d9b5_admin_approvals_notifications'
+import * as migration_20260820_000011_d9e2_points_ledger from './20260820_000011_d9e2_points_ledger'
 
 export const migrations = [
   {
@@ -299,5 +300,10 @@ export const migrations = [
     up: migration_20260819_065615_d9b5_admin_approvals_notifications.up,
     down: migration_20260819_065615_d9b5_admin_approvals_notifications.down,
     name: '20260819_065615_d9b5_admin_approvals_notifications',
+  },
+  {
+    up: migration_20260820_000011_d9e2_points_ledger.up,
+    down: migration_20260820_000011_d9e2_points_ledger.down,
+    name: '20260820_000011_d9e2_points_ledger',
   },
 ]

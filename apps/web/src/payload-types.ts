@@ -117,6 +117,12 @@ export interface Config {
     walletEntries: WalletEntry;
     walletTopUpOrders: WalletTopUpOrder;
     walletPolicyVersions: WalletPolicyVersion;
+    pointsAccounts: PointsAccount;
+    pointsBatches: PointsBatch;
+    pointsRedemptions: PointsRedemption;
+    pointsLedger: PointsLedger;
+    pointsConsumptionAllocations: PointsConsumptionAllocation;
+    toolQuotaLedger: ToolQuotaLedger;
     providerOperations: ProviderOperation;
     providerWriteBudgets: ProviderWriteBudget;
     providerWriteBudgetDebits: ProviderWriteBudgetDebit;
@@ -215,6 +221,12 @@ export interface Config {
     walletEntries: WalletEntriesSelect<false> | WalletEntriesSelect<true>;
     walletTopUpOrders: WalletTopUpOrdersSelect<false> | WalletTopUpOrdersSelect<true>;
     walletPolicyVersions: WalletPolicyVersionsSelect<false> | WalletPolicyVersionsSelect<true>;
+    pointsAccounts: PointsAccountsSelect<false> | PointsAccountsSelect<true>;
+    pointsBatches: PointsBatchesSelect<false> | PointsBatchesSelect<true>;
+    pointsRedemptions: PointsRedemptionsSelect<false> | PointsRedemptionsSelect<true>;
+    pointsLedger: PointsLedgerSelect<false> | PointsLedgerSelect<true>;
+    pointsConsumptionAllocations: PointsConsumptionAllocationsSelect<false> | PointsConsumptionAllocationsSelect<true>;
+    toolQuotaLedger: ToolQuotaLedgerSelect<false> | ToolQuotaLedgerSelect<true>;
     providerOperations: ProviderOperationsSelect<false> | ProviderOperationsSelect<true>;
     providerWriteBudgets: ProviderWriteBudgetsSelect<false> | ProviderWriteBudgetsSelect<true>;
     providerWriteBudgetDebits: ProviderWriteBudgetDebitsSelect<false> | ProviderWriteBudgetDebitsSelect<true>;
@@ -278,6 +290,7 @@ export interface Config {
       domainExpiryReminders: WorkflowDomainExpiryReminders;
       domainAssetSynchronization: WorkflowDomainAssetSynchronization;
       walletLedgerConsistencyCheck: WorkflowWalletLedgerConsistencyCheck;
+      pointsExpiration: WorkflowPointsExpiration;
       notificationDelivery: WorkflowNotificationDelivery;
       commerceFulfillment: WorkflowCommerceFulfillment;
       automaticRenewalScheduling: WorkflowAutomaticRenewalScheduling;
@@ -1834,6 +1847,98 @@ export interface WalletPolicyVersion {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pointsAccounts".
+ */
+export interface PointsAccount {
+  id: number;
+  customer: number | Customer;
+  ledgerVersion: number;
+  quotaLedgerVersion: number;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pointsBatches".
+ */
+export interface PointsBatch {
+  id: number;
+  earningKey: string;
+  customer: number | Customer;
+  account: number | PointsAccount;
+  sourceType: 'order_reward';
+  sourceOrder: number | Order;
+  points: number;
+  expiresAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pointsRedemptions".
+ */
+export interface PointsRedemption {
+  id: number;
+  redemptionKey: string;
+  customer: number | Customer;
+  account: number | PointsAccount;
+  target: 'advanced_whois' | 'bulk_query' | 'ai_domain_analysis';
+  pointsCost: number;
+  quotaUnits: number;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pointsLedger".
+ */
+export interface PointsLedger {
+  id: number;
+  entryKey: string;
+  customer: number | Customer;
+  account: number | PointsAccount;
+  batch: number | PointsBatch;
+  redemption?: (number | null) | PointsRedemption;
+  entryType: 'pending' | 'available' | 'held' | 'consumed' | 'expired' | 'reversed';
+  points: number;
+  ledgerSequence: number;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pointsConsumptionAllocations".
+ */
+export interface PointsConsumptionAllocation {
+  id: number;
+  allocationKey: string;
+  customer: number | Customer;
+  account: number | PointsAccount;
+  redemption: number | PointsRedemption;
+  batch: number | PointsBatch;
+  points: number;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "toolQuotaLedger".
+ */
+export interface ToolQuotaLedger {
+  id: number;
+  entryKey: string;
+  customer: number | Customer;
+  account: number | PointsAccount;
+  redemption?: (number | null) | PointsRedemption;
+  target: 'advanced_whois' | 'bulk_query' | 'ai_domain_analysis';
+  entryType: 'grant' | 'consume';
+  quotaUnits: number;
+  ledgerSequence: number;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "providerWriteBudgets".
  */
 export interface ProviderWriteBudget {
@@ -2750,6 +2855,7 @@ export interface PayloadJob {
         | 'domainExpiryReminders'
         | 'domainAssetSynchronization'
         | 'walletLedgerConsistencyCheck'
+        | 'pointsExpiration'
         | 'notificationDelivery'
         | 'commerceFulfillment'
         | 'automaticRenewalScheduling'
@@ -4110,6 +4216,92 @@ export interface WalletPolicyVersionsSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pointsAccounts_select".
+ */
+export interface PointsAccountsSelect<T extends boolean = true> {
+  customer?: T;
+  ledgerVersion?: T;
+  quotaLedgerVersion?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pointsBatches_select".
+ */
+export interface PointsBatchesSelect<T extends boolean = true> {
+  earningKey?: T;
+  customer?: T;
+  account?: T;
+  sourceType?: T;
+  sourceOrder?: T;
+  points?: T;
+  expiresAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pointsRedemptions_select".
+ */
+export interface PointsRedemptionsSelect<T extends boolean = true> {
+  redemptionKey?: T;
+  customer?: T;
+  account?: T;
+  target?: T;
+  pointsCost?: T;
+  quotaUnits?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pointsLedger_select".
+ */
+export interface PointsLedgerSelect<T extends boolean = true> {
+  entryKey?: T;
+  customer?: T;
+  account?: T;
+  batch?: T;
+  redemption?: T;
+  entryType?: T;
+  points?: T;
+  ledgerSequence?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pointsConsumptionAllocations_select".
+ */
+export interface PointsConsumptionAllocationsSelect<T extends boolean = true> {
+  allocationKey?: T;
+  customer?: T;
+  account?: T;
+  redemption?: T;
+  batch?: T;
+  points?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "toolQuotaLedger_select".
+ */
+export interface ToolQuotaLedgerSelect<T extends boolean = true> {
+  entryKey?: T;
+  customer?: T;
+  account?: T;
+  redemption?: T;
+  target?: T;
+  entryType?: T;
+  quotaUnits?: T;
+  ledgerSequence?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "providerOperations_select".
  */
 export interface ProviderOperationsSelect<T extends boolean = true> {
@@ -5008,6 +5200,13 @@ export interface WorkflowDomainAssetSynchronization {
  * via the `definition` "WorkflowWalletLedgerConsistencyCheck".
  */
 export interface WorkflowWalletLedgerConsistencyCheck {
+  input?: unknown;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "WorkflowPointsExpiration".
+ */
+export interface WorkflowPointsExpiration {
   input?: unknown;
 }
 /**

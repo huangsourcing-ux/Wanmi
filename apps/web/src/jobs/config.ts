@@ -25,6 +25,7 @@ import { runOperationsMonitoring } from '@/services/operations/monitoring'
 import { recordCommerceWorkerHeartbeat } from '@/services/operations/worker-heartbeat'
 import { runWalletLedgerConsistencyCheck } from '@/services/wallet/invariants'
 import { runNotificationDeliveries } from '@/services/notifications/outbox'
+import { runPointsExpiration } from '@/services/points/ledger'
 
 const probeInput = [{ name: 'traceId', type: 'text', required: true }] as const
 
@@ -302,6 +303,22 @@ export const notificationDelivery: WorkflowConfig = {
   },
 }
 
+export const pointsExpiration: WorkflowConfig = {
+  slug: 'pointsExpiration',
+  concurrency: {
+    exclusive: true,
+    key: () => 'points:expiration',
+    supersedes: true,
+  },
+  inputSchema: [],
+  queue: 'background',
+  retries: 0,
+  schedule: [{ cron: '0 0 * * * *', queue: 'background' }],
+  handler: async ({ req }) => {
+    await runPointsExpiration(req)
+  },
+}
+
 export const wechatRefund: WorkflowConfig<{ refundId: number; traceId: string }> = {
   slug: 'wechatRefund',
   concurrency: ({ input }) => `wechat-refund:${input.refundId}`,
@@ -346,6 +363,7 @@ export const workflows = [
   domainExpiryReminders,
   domainAssetSynchronization,
   walletLedgerConsistencyCheck,
+  pointsExpiration,
   notificationDelivery,
   commerceFulfillment,
   automaticRenewalScheduling,

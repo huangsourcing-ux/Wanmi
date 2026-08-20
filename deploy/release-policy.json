@@ -147,6 +147,13 @@
       "phase": "expand",
       "reason": "新增后台高风险操作审批、访问事件与事务性通知 outbox 结构，并为管理员追加可选操作范围；旧代码可忽略新增结构，新代码必须在迁移完成后启用 D9-B-5 工作流。",
       "rollback": "retain"
+    },
+    "20260820_000011_d9e2_points_ledger": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增与钱包数据层隔离的米币批次、追加式账本、确定性消费分配、工具额度账本及过期工作流；旧代码可忽略新增结构，新代码必须在迁移完成后启用 D9-E-2 米币操作。",
+      "rollback": "retain"
     }
   }
 }

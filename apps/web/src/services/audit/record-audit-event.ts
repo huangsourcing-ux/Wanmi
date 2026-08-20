@@ -207,6 +207,30 @@ export const auditEventDefinitions = {
     actorTypes: ['system'],
     targetType: 'wallet-top-up-order',
   },
+  'points.reward.pending': {
+    actorTypes: ['system'],
+    targetType: 'points-batch',
+  },
+  'points.reward.available': {
+    actorTypes: ['system'],
+    targetType: 'points-batch',
+  },
+  'points.reward.reversed': {
+    actorTypes: ['system'],
+    targetType: 'points-batch',
+  },
+  'points.redeemed': {
+    actorTypes: ['customer'],
+    targetType: 'points-redemption',
+  },
+  'points.expired': {
+    actorTypes: ['system'],
+    targetType: 'points-batch',
+  },
+  'points.tool_quota.consumed': {
+    actorTypes: ['customer'],
+    targetType: 'points-account',
+  },
   'domain.asset.synced': {
     actorTypes: ['customer', 'system'],
     targetType: 'domain-asset',
