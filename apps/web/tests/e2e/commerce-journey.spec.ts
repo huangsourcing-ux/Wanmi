@@ -75,6 +75,7 @@ async function login(request: APIRequestContext, index: number): Promise<Session
   if (verificationBody.kind === 'registration_required') {
     authenticated = await request.post('/api/v1/auth/register', {
       data: {
+        acceptedDeviceIdentifierNotice: true,
         acceptedPrivacyPolicy: true,
         acceptedServiceTerms: true,
         confirmsAdultOrAuthorizedRepresentative: true,
@@ -167,6 +168,37 @@ async function startPayment(
     },
     state: 'ready',
   })
+}
+
+async function nameserverStepUp(
+  request: APIRequestContext,
+  session: Session,
+  suffix: string,
+): Promise<{ deviceId: string; stepUpToken: string }> {
+  const deviceId = `${commerceFixturePrefix}-${suffix}-device`
+  const headers = {
+    cookie: session.cookie,
+    'x-forwarded-for': '192.0.2.49',
+    'x-request-id': `${commerceFixturePrefix}-${suffix}`,
+  }
+  const requested = await request.post('/api/v1/auth/step-up/request', {
+    data: { captchaVerifyParam, deviceId, purpose: 'nameserver_change' },
+    headers,
+  })
+  expect(requested.status()).toBe(202)
+  const challenge = (await requested.json()) as { challengeId: string }
+  const verified = await request.post('/api/v1/auth/step-up/verify', {
+    data: {
+      challengeId: challenge.challengeId,
+      code: '246810',
+      deviceId,
+      purpose: 'nameserver_change',
+    },
+    headers,
+  })
+  expect(verified.status()).toBe(200)
+  const grant = (await verified.json()) as { stepUpToken: string }
+  return { deviceId, stepUpToken: grant.stepUpToken }
 }
 
 test.describe.serial('D7 M01-M16 customer commerce journey', () => {
@@ -289,23 +321,14 @@ test.describe.serial('D7 M01-M16 customer commerce journey', () => {
     await expect(page.locator('main [data-registrar-disclosure]')).toContainText(
       '实际域名注册服务机构为西部数码',
     )
-    const nameservers = ['ns1.d7-journey.example', 'ns2.d7-journey.example']
-    await page.getByLabel('每行一个，至少两组').fill(nameservers.join('\n'))
-    await page.getByRole('button', { name: '提交变更' }).click()
-    await expect(page.getByText('Name Server 变更已进入 commerce 队列。')).toBeVisible()
-    await expect(page.getByText('状态：pending')).toBeVisible()
-    const change = await fixture.latestNameserverChange(mainAssetId)
-    expect(change).toMatchObject({ requestedNameservers: nameservers, status: 'pending' })
-    const changed = await fixture.runNameserverChange(
-      mainAssetId,
-      Number(change.id),
-      domainAscii,
-      nameservers,
+    await expect(page.getByLabel('当前 Name Server')).toHaveValue(
+      ['ns1.myhostadmin.net', 'ns2.myhostadmin.net'].join('\n'),
     )
-    expect(changed).toMatchObject({ confirmedNameservers: nameservers, status: 'succeeded' })
-    await page.reload()
-    await expect(page.getByText('状态：succeeded')).toBeVisible()
-    await expect(page.getByText(nameservers.join(', '))).toBeVisible()
+    await expect(page.getByLabel('当前 Name Server')).toBeDisabled()
+    await expect(page.getByRole('button', { name: '提交变更' })).toBeDisabled()
+    await expect(
+      page.getByText('Name Server 变更正在升级为需要二次验证的流程，暂不可用。'),
+    ).toBeVisible()
 
     const renewalQuote = await quote(request, owner, 'renewal', {
       assetId: mainAssetId,
@@ -443,9 +466,15 @@ test.describe.serial('D7 M01-M16 customer commerce journey', () => {
     })
     expect(hiddenDetail.status()).toBe(404)
     expect(await hiddenDetail.json()).toMatchObject({ code: 'DOMAIN_ASSET_NOT_FOUND' })
+    const otherNameserverGrant = await nameserverStepUp(request, other, 'cross-customer-step-up')
     const hiddenNameserver = await request.post(`/api/v1/domains/${mainAssetId}/nameservers`, {
-      data: { nameservers: ['ns1.attacker.example', 'ns2.attacker.example'] },
-      headers: { cookie: other.cookie },
+      data: {
+        confirmed: true,
+        deviceId: otherNameserverGrant.deviceId,
+        nameservers: ['ns1.attacker.example', 'ns2.attacker.example'],
+        stepUpToken: otherNameserverGrant.stepUpToken,
+      },
+      headers: { cookie: other.cookie, 'x-forwarded-for': '192.0.2.49' },
     })
     expect(hiddenNameserver.status()).toBe(404)
     expect(await hiddenNameserver.json()).toMatchObject({ code: 'DOMAIN_ASSET_NOT_FOUND' })

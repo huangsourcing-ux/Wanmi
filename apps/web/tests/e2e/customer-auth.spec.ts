@@ -41,6 +41,7 @@ test('customer OTP, all-session logout, deletion, and admin isolation work end t
       expect(authenticated.headers()['set-cookie']).toBeUndefined()
       authenticated = await request.post('/api/v1/auth/register', {
         data: {
+          acceptedDeviceIdentifierNotice: true,
           acceptedPrivacyPolicy: true,
           acceptedServiceTerms: true,
           confirmsAdultOrAuthorizedRepresentative: true,
