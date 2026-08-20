@@ -168,6 +168,13 @@
       "phase": "expand",
       "reason": "新增版本化邀请规则、一次绑定、奖励认领与事件表，为米币来源、支付账户哈希及通知类型扩展结构；既有邀请码与邀请投影原位保留并回填，新代码必须在迁移完成后启用 D9-E-1。",
       "rollback": "retain"
+    },
+    "20260820_090731_d9e3_permanent_vip": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增版本化 VIP 阶梯、累计消费事实、高水位达成/纠错事件与申诉记录，并扩展交易类权益调整通知；旧代码可忽略新增结构，新代码必须在迁移完成后启用 D9-E-3。",
+      "rollback": "retain"
     }
   }
 }

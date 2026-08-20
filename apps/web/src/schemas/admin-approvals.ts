@@ -74,9 +74,16 @@ export const adminApprovalCreateSchema = z.discriminatedUnion('operationType', [
   z
     .object({
       correctionReference: reference,
+      correctionSource: z.enum(['data_correction', 'fraud_reversal']),
       customerId,
       operationType: z.literal('vip_fraud_correction'),
       reasonNote: note,
+      spendReversalFen: z.number().int().nonnegative().safe(),
+      targetTierCode: z
+        .string()
+        .trim()
+        .regex(/^[a-z][a-z0-9_]{1,31}$/u)
+        .nullable(),
     })
     .strict(),
   z

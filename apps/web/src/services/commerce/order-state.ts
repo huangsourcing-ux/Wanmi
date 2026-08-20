@@ -4,6 +4,10 @@ import { sql } from '@payloadcms/db-postgres'
 import type { OrderStatus } from '@/lib/domain'
 import { AppError } from '@/lib/errors'
 import { processInvitationRewardForOrderTransition } from '@/services/invitations/rewards'
+import {
+  recordVipSpendForSucceededOrder,
+  recordVipSpendReversalForRefundedOrder,
+} from '@/services/vip/tiers'
 
 export const ORDER_TRANSITIONS = {
   pending_payment: ['paid', 'manual_review', 'cancelled'],
@@ -121,6 +125,16 @@ export async function transitionOrder(
           typeof evidenceTraceId === 'string' && evidenceTraceId
             ? evidenceTraceId
             : `order-transition:${event.id}:invitation-reward`,
+      })
+    }
+
+    if (to === 'succeeded') {
+      await recordVipSpendForSucceededOrder(req, { eventId: event.id, orderId: order.id })
+    }
+    if (to === 'refunded') {
+      await recordVipSpendReversalForRefundedOrder(req, {
+        eventId: event.id,
+        orderId: order.id,
       })
     }
 

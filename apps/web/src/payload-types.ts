@@ -90,6 +90,11 @@ export interface Config {
     invitationRelationships: InvitationRelationship;
     invitationRewardClaims: InvitationRewardClaim;
     invitationRewardEvents: InvitationRewardEvent;
+    vipTierRuleVersions: VipTierRuleVersion;
+    vipTierRuleLevels: VipTierRuleLevel;
+    vipSpendEntries: VipSpendEntry;
+    vipTierEvents: VipTierEvent;
+    vipTierAppeals: VipTierAppeal;
     articles: Article;
     topics: Topic;
     tldPages: TldPage;
@@ -198,6 +203,11 @@ export interface Config {
     invitationRelationships: InvitationRelationshipsSelect<false> | InvitationRelationshipsSelect<true>;
     invitationRewardClaims: InvitationRewardClaimsSelect<false> | InvitationRewardClaimsSelect<true>;
     invitationRewardEvents: InvitationRewardEventsSelect<false> | InvitationRewardEventsSelect<true>;
+    vipTierRuleVersions: VipTierRuleVersionsSelect<false> | VipTierRuleVersionsSelect<true>;
+    vipTierRuleLevels: VipTierRuleLevelsSelect<false> | VipTierRuleLevelsSelect<true>;
+    vipSpendEntries: VipSpendEntriesSelect<false> | VipSpendEntriesSelect<true>;
+    vipTierEvents: VipTierEventsSelect<false> | VipTierEventsSelect<true>;
+    vipTierAppeals: VipTierAppealsSelect<false> | VipTierAppealsSelect<true>;
     articles: ArticlesSelect<false> | ArticlesSelect<true>;
     topics: TopicsSelect<false> | TopicsSelect<true>;
     tldPages: TldPagesSelect<false> | TldPagesSelect<true>;
@@ -1337,6 +1347,113 @@ export interface PointsAccount {
   customer: number | Customer;
   ledgerVersion: number;
   quotaLedgerVersion: number;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "vipTierRuleVersions".
+ */
+export interface VipTierRuleVersion {
+  id: number;
+  version: number;
+  schemaVersion: number;
+  effectiveAt: string;
+  noticePublishedAt?: string | null;
+  changedBy: string;
+  changeNote: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "vipTierRuleLevels".
+ */
+export interface VipTierRuleLevel {
+  id: number;
+  ruleVersion: number | VipTierRuleVersion;
+  versionNumber: number;
+  tierCode: string;
+  tierRank: number;
+  displayName: string;
+  thresholdFen: number;
+  quotaBenefits:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  serviceContent: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "vipSpendEntries".
+ */
+export interface VipSpendEntry {
+  id: number;
+  entryKey: string;
+  customer?: (number | null) | Customer;
+  sourceOrder?: (number | null) | Order;
+  entryType: 'succeeded_order' | 'order_reversal' | 'data_correction' | 'fraud_reversal';
+  paymentChannel?: ('native' | 'h5' | 'balance') | null;
+  amountFen: number;
+  approvalRequest?: (number | null) | AdminApprovalRequest;
+  reference: string;
+  occurredAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "vipTierEvents".
+ */
+export interface VipTierEvent {
+  id: number;
+  eventKey: string;
+  customer?: (number | null) | Customer;
+  eventType: 'tier_achievement' | 'tier_correction';
+  source: 'natural_achievement' | 'operational_promotion' | 'data_correction' | 'fraud_reversal';
+  triggerOrder?: (number | null) | Order;
+  ruleVersion?: (number | null) | VipTierRuleVersion;
+  ruleVersionNumber: number;
+  tierCode?: string | null;
+  tierRank: number;
+  tierNameSnapshot: string;
+  quotaBenefitsSnapshot:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  serviceContentSnapshot: string;
+  cumulativeSpendFenSnapshot: number;
+  previousTierRank: number;
+  reason: string;
+  approvalRequest?: (number | null) | AdminApprovalRequest;
+  correctionReference?: string | null;
+  occurredAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "vipTierAppeals".
+ */
+export interface VipTierAppeal {
+  id: number;
+  appealKey: string;
+  customer?: (number | null) | Customer;
+  tierEvent: number | VipTierEvent;
+  statement: string;
+  submittedAt: string;
   updatedAt: string;
   createdAt: string;
 }
@@ -2482,6 +2599,7 @@ export interface NotificationOutboxEvent {
     | 'admin_high_risk_operation_submitted'
     | 'admin_high_risk_operation_executed'
     | 'invitation_reward_withheld'
+    | 'vip_benefit_change_advance'
     | 'product_updates'
     | 'promotions';
   customer: number | Customer;
@@ -3708,6 +3826,92 @@ export interface InvitationRewardEventsSelect<T extends boolean = true> {
   signals?: T;
   pointsBatch?: T;
   occurredAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "vipTierRuleVersions_select".
+ */
+export interface VipTierRuleVersionsSelect<T extends boolean = true> {
+  version?: T;
+  schemaVersion?: T;
+  effectiveAt?: T;
+  noticePublishedAt?: T;
+  changedBy?: T;
+  changeNote?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "vipTierRuleLevels_select".
+ */
+export interface VipTierRuleLevelsSelect<T extends boolean = true> {
+  ruleVersion?: T;
+  versionNumber?: T;
+  tierCode?: T;
+  tierRank?: T;
+  displayName?: T;
+  thresholdFen?: T;
+  quotaBenefits?: T;
+  serviceContent?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "vipSpendEntries_select".
+ */
+export interface VipSpendEntriesSelect<T extends boolean = true> {
+  entryKey?: T;
+  customer?: T;
+  sourceOrder?: T;
+  entryType?: T;
+  paymentChannel?: T;
+  amountFen?: T;
+  approvalRequest?: T;
+  reference?: T;
+  occurredAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "vipTierEvents_select".
+ */
+export interface VipTierEventsSelect<T extends boolean = true> {
+  eventKey?: T;
+  customer?: T;
+  eventType?: T;
+  source?: T;
+  triggerOrder?: T;
+  ruleVersion?: T;
+  ruleVersionNumber?: T;
+  tierCode?: T;
+  tierRank?: T;
+  tierNameSnapshot?: T;
+  quotaBenefitsSnapshot?: T;
+  serviceContentSnapshot?: T;
+  cumulativeSpendFenSnapshot?: T;
+  previousTierRank?: T;
+  reason?: T;
+  approvalRequest?: T;
+  correctionReference?: T;
+  occurredAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "vipTierAppeals_select".
+ */
+export interface VipTierAppealsSelect<T extends boolean = true> {
+  appealKey?: T;
+  customer?: T;
+  tierEvent?: T;
+  statement?: T;
+  submittedAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }

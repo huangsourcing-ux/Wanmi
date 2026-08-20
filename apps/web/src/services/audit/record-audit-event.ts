@@ -267,6 +267,26 @@ export const auditEventDefinitions = {
     actorTypes: ['system'],
     targetType: 'invitation-reward-claim',
   },
+  'vip.tier_rule.published': {
+    actorTypes: ['admin'],
+    targetType: 'vip-tier-rule-version',
+  },
+  'vip.tier.achievement_recorded': {
+    actorTypes: ['admin', 'system'],
+    targetType: 'vip-tier-event',
+  },
+  'vip.spend.order_reversed': {
+    actorTypes: ['system'],
+    targetType: 'order',
+  },
+  'vip.tier.correction_recorded': {
+    actorTypes: ['admin'],
+    targetType: 'vip-tier-event',
+  },
+  'vip.tier_correction.appealed': {
+    actorTypes: ['customer'],
+    targetType: 'vip-tier-appeal',
+  },
   'points.redeemed': {
     actorTypes: ['customer'],
     targetType: 'points-redemption',

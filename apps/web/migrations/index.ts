@@ -51,6 +51,7 @@ import * as migration_20260819_065615_d9b5_admin_approvals_notifications from '.
 import * as migration_20260819_104757_d9b6_wallet_reconciliation from './20260819_104757_d9b6_wallet_reconciliation'
 import * as migration_20260820_000011_d9e2_points_ledger from './20260820_000011_d9e2_points_ledger'
 import * as migration_20260820_051725_d9e1_invitations_abuse from './20260820_051725_d9e1_invitations_abuse'
+import * as migration_20260820_090731_d9e3_permanent_vip from './20260820_090731_d9e3_permanent_vip'
 
 export const migrations = [
   {
@@ -317,5 +318,10 @@ export const migrations = [
     up: migration_20260820_051725_d9e1_invitations_abuse.up,
     down: migration_20260820_051725_d9e1_invitations_abuse.down,
     name: '20260820_051725_d9e1_invitations_abuse',
+  },
+  {
+    up: migration_20260820_090731_d9e3_permanent_vip.up,
+    down: migration_20260820_090731_d9e3_permanent_vip.down,
+    name: '20260820_090731_d9e3_permanent_vip',
   },
 ]

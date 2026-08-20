@@ -32,7 +32,8 @@
     "20260819_065615_d9b5_admin_approvals_notifications",
     "20260819_104757_d9b6_wallet_reconciliation",
     "20260820_000011_d9e2_points_ledger",
-    "20260820_051725_d9e1_invitations_abuse"
+    "20260820_051725_d9e1_invitations_abuse",
+    "20260820_090731_d9e3_permanent_vip"
   ],
   "rollback": {
     "database": "retain",

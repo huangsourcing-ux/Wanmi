@@ -93,6 +93,13 @@ import {
 } from './points'
 import { RealnameDocuments, RealnameTemplates } from './realname'
 import {
+  VipSpendEntries,
+  VipTierAppeals,
+  VipTierEvents,
+  VipTierRuleLevels,
+  VipTierRuleVersions,
+} from './vip'
+import {
   WalletAccounts,
   WalletEntries,
   WalletPolicyVersions,
@@ -123,6 +130,11 @@ export const collections: CollectionConfig[] = [
   InvitationRelationships,
   InvitationRewardClaims,
   InvitationRewardEvents,
+  VipTierRuleVersions,
+  VipTierRuleLevels,
+  VipSpendEntries,
+  VipTierEvents,
+  VipTierAppeals,
   Articles,
   Topics,
   TldPages,
