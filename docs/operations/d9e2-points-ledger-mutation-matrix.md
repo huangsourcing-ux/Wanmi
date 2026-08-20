@@ -13,22 +13,58 @@
 | migration、约束、外键、release、down  |          101 | 101/101 | `apps/web/scripts/mutate-d9e2-points-migration.mjs`      |
 | 合计                                  |          234 | 234/234 | 每个变异均出现指定行为 `AssertionError`                  |
 
-恢复全部源码后，D9-E-2 聚焦基线为 2 个文件、40/40 用例通过（集成 33、单元 7）。所有测试数据均为本地 PostgreSQL fixture，没有调用真实 provider、生产环境或任何外部写接口。
+恢复全部源码后，D9-E-2 聚焦基线为 2 个文件、41/41 用例通过（集成 34、单元 7）。所有测试数据均为本地 PostgreSQL fixture，没有调用真实 provider、生产环境或任何外部写接口。
 
 ## 2. 指定独立行为用例
 
-| 要求                 | 独立用例与行为断言                                                                                                                                                                      |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| a. 消耗原子不透支    | `atomically consumes to the exact boundary under N concurrent redemptions without overdraft`：N 路同时消费到边界，只有额度允许的请求成功，按限定 customer/account 的账本重算不为负。    |
-| b. 赚取幂等          | `concurrently earns one pending entry for one earning idempotency key`：N 路同键只留下一个 batch 和一条 pending fact。                                                                  |
-| c. 分配确定性        | `allocates deterministically by earliest expiry and then ascending batch id on replay`：同一 redemption 重放逐条比较 allocation，按 expiry ASC、id ASC 完全一致。                       |
-| d. pending 退款反转  | `reverses a refunded pending reward without ever creating available points`：只追加 reversed，不出现 available。                                                                        |
-| e. 过期只追加        | `expires only by appending an expired entry and leaves every historical row unchanged`：过期前后历史行快照逐字段一致且 delete/update 为零。                                             |
-| f. allocation 可重算 | `recomputes remaining expirable points from cross-batch allocations`：跨批次消费后，以 allocation 重算各批次剩余值并与过期量核对。                                                      |
-| g. 米币与余额无兑换  | `has no points-wallet conversion path in either direction` 和单元用例 `keeps points and wallet isolated in distinct collections and fields`：服务依赖、表、字段和业务入口均无互转路径。 |
-| h. 不影响订单金额    | `does not change an order payable amount when points are redeemed`：兑换前后订单冻结应付金额及支付字段逐项不变。                                                                        |
+| 要求                 | 独立用例与行为断言                                                                                                                                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a. 消耗原子不透支    | `atomically consumes to the exact boundary under N concurrent redemptions without overdraft`：N 路同时消费到边界，只有额度允许的请求成功，按限定 customer/account 的账本重算不为负。                     |
+| b. 赚取幂等          | `concurrently earns one pending entry for one earning idempotency key`：N 路同键只留下一个 batch 和一条 pending fact。                                                                                   |
+| c. 分配确定性        | `allocates equal-expiry spendable batches by ascending id and replays identically`：两个同 expiry 批次以相反物理顺序保存，同一输入在不同 planner 下逐条比较 allocation，按 expiry ASC、id ASC 完全一致。 |
+| d. pending 退款反转  | `reverses a refunded pending reward without ever creating available points`：只追加 reversed，不出现 available。                                                                                         |
+| e. 过期只追加        | `expires only by appending an expired entry and leaves every historical row unchanged`：过期前后历史行快照逐字段一致且 delete/update 为零。                                                              |
+| f. allocation 可重算 | `recomputes remaining expirable points from cross-batch allocations`：跨批次消费后，以 allocation 重算各批次剩余值并与过期量核对。                                                                       |
+| g. 米币与余额无兑换  | `has no points-wallet conversion path in either direction` 和单元用例 `keeps points and wallet isolated in distinct collections and fields`：服务依赖、表、字段和业务入口均无互转路径。                  |
+| h. 不影响订单金额    | `does not change an order payable amount when points are redeemed`：兑换前后订单冻结应付金额及支付字段逐项不变。                                                                                         |
 
 并发用例彼此独立：同 earning key N 路赚取；边界 N 路兑换；N 路消费与 N 路 expiration runner 同时执行；另有 N 路 pending 确认。所有结果均使用带 customer、account、batch、redemption、entry type 或 key 的 `where` 计数，测试 helper 拒绝无 `where` 的计数调用。
+
+### 2.1 三处同过期时间 id 兜底的独立保护
+
+三个 fixture 都建立至少两个 `expires_at` 完全相同、id 不同的批次，并主动打破“id 与物理返回顺序一致”的相关性：批次或 allocation 先以 id 降序执行 `UPDATE`，再断言 `ctid` 顺序确为降序。消费用例还分别强制 sequential 与 index planner；持久分配与过期候选用例截获实际执行的 SQL 并断言对应调用点保留完整二级排序。三条独立用例为：
+
+1. `allocates equal-expiry spendable batches by ascending id and replays identically`：保护 `ledger.ts:805`，逐条比较同一输入两次返回的 batch id 与 points；
+2. `returns persisted equal-expiry allocations by ascending batch id`：保护 `ledger.ts:887`，逐条断言重放分配的返回顺序；
+3. `expires equal-time batches by ascending id and honors the exact batch limit`：保护 `ledger.ts:1470`，`maxBatches: 1` 时只允许较小 id 先过期。
+
+三处删除 `id ASC` 的变异在相同三用例选择器下逐一实跑，执行器同时校验必须严格为对应一条失败、其余两条通过。原始行为报错为：
+
+```text
+MUTATION atomic/spendable-order-id-tiebreak
+RAW_FAILURE AssertionError: spendable batch query must allocate equal expiries by ascending batch id: expected [ { batchId: 339, …(2) }, …(1) ] to deeply equal [ { batchId: 338, …(2) }, …(1) ]
+EXCLUSIVE_FAILURE 1/3
+
+MUTATION atomic/persisted-allocation-order
+RAW_FAILURE AssertionError: persisted allocation query must order equal expiries by ascending batch id: expected '{"decoder":{},"shouldInlineParams":fa…' to contain 'ORDER BY batches.expires_at ASC, allo…'
+EXCLUSIVE_FAILURE 1/3
+
+MUTATION expiration/expiration-order-id-tiebreak
+RAW_FAILURE AssertionError: expiration candidate query must order equal expiries by ascending batch id: expected 'SELECT batches.id\n     FROM points_b…' to contain 'ORDER BY batches.expires_at ASC, batc…'
+EXCLUSIVE_FAILURE 1/3
+```
+
+### 2.2 其它排序与迭代顺序自查
+
+| 生产调用点                                                             | 顺序影响                                                        | 确定性结论                                                                                 |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `ledger.ts:805` 后的 `:823` 批次遍历，以及 `:1158` allocation 写入遍历 | 决定从哪个批次扣减、allocation/held/consumed 的追加顺序         | 上游固定 `expires_at ASC, id ASC`；上述第 1 条独立用例和删除变异保护                       |
+| `ledger.ts:887` 后的 allocation 映射                                   | 决定幂等重放向调用方返回的逐条顺序                              | 固定 `batches.expires_at ASC, allocations.batch_id ASC`；上述第 2 条独立用例和删除变异保护 |
+| `ledger.ts:1470` 后的 `:1476` 过期候选遍历                             | 在 batch limit 下决定先冲销哪个批次                             | 固定 `batches.expires_at ASC, batches.id ASC`；上述第 3 条独立用例和删除变异保护           |
+| `ledger.ts:894` 的 allocation `reduce` 及所有 SQL `SUM`                | 只计算整数总和                                                  | 加法可交换，不产生顺序判定                                                                 |
+| 工具额度发放与扣减                                                     | 单一 account + target 的 ledger/CAS，不在多个权益或批次之间分配 | 没有列表排序、Map/Set/Object 迭代或隐式优先级，因而没有待补 id 兜底                        |
+
+对 `apps/web/src/services/points`、points Collections 和 `jobs/config.ts` 的 `ORDER BY`、`.sort`、`for`、Map/Set/Object 迭代全量检索只得到上述三处生产 `ORDER BY` 与其三个已说明的遍历；其它 `rows[0]` 均来自唯一键查询、聚合或 `INSERT/UPDATE ... RETURNING`，不依赖任意多行返回顺序。未发现其它缺少确定性保护的判定点。
 
 ## 3. 数据来源替换与 fixture 去相关
 
@@ -167,7 +203,7 @@
 | scope      | `earning-key-lookup`                        | earning idempotency lookup uses the requested global key             | rejects every earning idempotency dimension mismatch without another entry                 |
 | scope      | `batch-id-lookup`                           | batch lookup uses the requested batch id                             | scopes locks, balances, allocations, and batch reads to one customer account               |
 | scope      | `batch-lifecycle-id`                        | batch lifecycle facts use the requested batch id                     | lets exactly one of N concurrent confirmations append the available transition             |
-| scope      | `redemption-key-lookup`                     | redemption idempotency lookup uses the requested global key          | allocates deterministically by earliest expiry and then ascending batch id on replay       |
+| scope      | `redemption-key-lookup`                     | redemption idempotency lookup uses the requested global key          | allocates equal-expiry spendable batches by ascending id and replays identically           |
 | scope      | `quota-usage-key-lookup`                    | quota usage idempotency lookup uses the requested global key         | rejects every redemption and quota-use idempotency dimension mismatch                      |
 | source     | `points-derived-allocation-source`          | points balance uses allocation rows rather than consumed entries     | fails closed for every independently corruptible points-balance invariant                  |
 | source     | `points-derived-order-owner-source`         | batch ownership comes from the source order customer field           | fails closed for every independently corruptible points-balance invariant                  |
@@ -187,9 +223,9 @@
 | atomic     | `pending-claim-batch`                       | pending evidence belongs to the target batch                         | lets exactly one of N concurrent confirmations append the available transition             |
 | atomic     | `pending-claim-points`                      | pending evidence amount equals immutable batch points                | lets exactly one of N concurrent confirmations append the available transition             |
 | atomic     | `pending-claim-terminal-exclusion`          | pending transition excludes available or reversed terminal evidence  | lets exactly one of N concurrent confirmations append the available transition             |
-| atomic     | `spendable-order-expiry`                    | allocation orders by earliest expiry                                 | allocates deterministically by earliest expiry and then ascending batch id on replay       |
-| atomic     | `spendable-order-id-tiebreak`               | allocation ties break by ascending batch id                          | allocates deterministically by earliest expiry and then ascending batch id on replay       |
-| atomic     | `persisted-allocation-order`                | replayed allocations use expiry then batch id order                  | allocates deterministically by earliest expiry and then ascending batch id on replay       |
+| atomic     | `spendable-order-expiry`                    | allocation orders by earliest expiry                                 | allocates equal-expiry spendable batches by ascending id and replays identically           |
+| atomic     | `spendable-order-id-tiebreak`               | allocation ties break by ascending batch id                          | allocates equal-expiry spendable batches by ascending id and replays identically           |
+| atomic     | `persisted-allocation-order`                | replayed allocations use expiry then batch id order                  | returns persisted equal-expiry allocations by ascending batch id                           |
 | atomic     | `redemption-reservation-account`            | points reservation UPDATE is scoped to the locked account id         | scopes locks, balances, allocations, and batch reads to one customer account               |
 | atomic     | `redemption-reservation-version-source`     | points reservation compares the expected points version              | atomically consumes to the exact boundary under N concurrent redemptions without overdraft |
 | atomic     | `redemption-reservation-cost-source`        | points reservation ceiling uses the requested points cost            | recomputes remaining expirable points from cross-batch allocations                         |
@@ -330,6 +366,11 @@ node apps/web/scripts/mutate-d9e2-points-migration.mjs --validate
 node apps/web/scripts/mutate-d9e2-points-decisions.mjs
 node apps/web/scripts/mutate-d9e2-points-sql-predicates.mjs
 node apps/web/scripts/mutate-d9e2-points-migration.mjs
+
+node apps/web/scripts/mutate-d9e2-points-sql-predicates.mjs \
+  spendable-order-id-tiebreak \
+  persisted-allocation-order \
+  expiration-order-id-tiebreak
 ```
 
-服务和 SQL 变异命令需使用本地 fixture 数据库及测试主密钥环境；migration 变异器自行创建并清理精确命名的临时数据库。三个执行器都在每个变异后恢复源码，只有非零退出且输出行为 `AssertionError` 才计为 killed。
+服务和 SQL 变异命令需使用本地 fixture 数据库及测试主密钥环境；migration 变异器自行创建并清理精确命名的临时数据库。三个执行器都在每个变异后恢复源码，只有非零退出且输出行为 `AssertionError` 才计为 killed；三处排序兜底还必须同时满足 `EXCLUSIVE_FAILURE 1/3`。
