@@ -467,7 +467,9 @@ beforeAll(async () => {
 afterEach(async () => {
   if (!customerIds.length) return
   await payload.db.pool.query(
-    `DELETE FROM audit_logs WHERE trace_id LIKE $1 OR target_id = ANY($2::text[])`,
+    `DELETE FROM audit_logs
+     WHERE trace_id LIKE $1
+        OR (target_id = ANY($2::text[]) AND action LIKE 'wallet.%')`,
     [`${prefix}-%`, orderIds.map(String)],
   )
   await payload.db.pool.query(

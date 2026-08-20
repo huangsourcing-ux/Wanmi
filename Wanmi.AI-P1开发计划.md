@@ -2021,14 +2021,60 @@ D9-D-3 证据（2026-08-18，仅本节第 4、5 项，至此 D9-D 完成）：
 
 #### E1 米币
 
-- [ ] `pointsLedger` 追加式；**生命周期** `pending → available → held → consumed`，另有
+- [x] `pointsLedger` 追加式；**生命周期** `pending → available → held → consumed`，另有
       `expired`、`reversed`。订单成功但未过奖励确认条件时先入 `pending`，避免退款后追讨；
-- [ ] **批次分配**：不同批次过期时间不同，消费按**最早过期优先**，记录
+  - **实现与行为证据**：`apps/web/src/collections/points.ts:148-198` 定义独立追加式
+    `pointsLedger`，`apps/web/src/services/points/ledger.ts:578-750` 只为成功订单创建 pending 批次，
+    `:751-757`、`:758-764` 分别执行 pending 确认与退款反转。测试
+    `apps/web/tests/integration/d9e2-points-ledger.integration.test.ts:402` 用例“keeps a
+    succeeded-order reward pending and unavailable until confirmation”与 `:609` 用例“reverses a
+    refunded pending reward without ever creating available points”分别证明确认前不可用、pending 退款只
+    追加 reversed 且不产生 available；`apps/web/tests/unit/d9e2-points-collections.test.ts:57` 逐个
+    Collection 调用点验证 update/delete 均被追加式守卫拒绝。
+- [x] **批次分配**：不同批次过期时间不同，消费按**最早过期优先**，记录
       `pointsConsumptionAllocations`，否则跨批次消费后无法可靠重算剩余过期额度；
-- [ ] 赚取幂等（幂等键 + 唯一索引）；消耗原子不透支；过期由 job 追加冲销条目，不改历史条目；
-- [ ] **兑换目标为工具额度类权益**（高级 Whois 查询次数、批量查询额度、AI 域名分析报告次数）；
+  - **实现与确定性证据**：`apps/web/src/services/points/ledger.ts:805` 明确使用
+    `expires_at ASC, id ASC`，`:887` 对持久 allocation 使用 `expires_at ASC, batch_id ASC`，`:998-1030`
+    在同事务追加 allocation，`:1470` 对过期候选使用 `expires_at ASC, id ASC`。测试
+    `apps/web/tests/integration/d9e2-points-ledger.integration.test.ts:678` 用例“allocates
+    equal-expiry spendable batches by ascending id and replays identically”、`:735` 用例“returns persisted
+    equal-expiry allocations by ascending batch id”及 `:1880` 用例“expires equal-time batches by ascending
+    id and honors the exact batch limit”分别保护三处 id 兜底；每条均构造同 expiry、不同 id 且相反物理顺序的
+    批次或 allocation，只删除对应兜底时严格为对应 `1 failed | 2 passed`。`:769` 用例“recomputes
+    remaining expirable points from cross-batch allocations”构造跨批次消费并从 allocation 重算剩余过期额度。
+- [x] 赚取幂等（幂等键 + 唯一索引）；消耗原子不透支；过期由 job 追加冲销条目，不改历史条目；
+  - **幂等、并发与过期证据**：migration
+    `apps/web/migrations/20260820_000011_d9e2_points_ledger.ts:143-184` 固定全局赚取/兑换/entry
+    幂等与账户序列唯一索引；`apps/web/src/services/points/ledger.ts:944-981` 以同事务条件
+    `UPDATE ... RETURNING` 认领扣减，`:1424-1484` 只追加 expired；
+    `apps/web/src/jobs/config.ts:306-319` 使用独占 background key、零重试。测试
+    `apps/web/tests/integration/d9e2-points-ledger.integration.test.ts:446`、`:1765`、`:1804`、`:2000`
+    分别证明 N 路同键只赚取一次、边界并发不透支、过期零改删历史，以及消费与过期 N 路并发结果确定。
+- [x] **兑换目标为工具额度类权益**（高级 Whois 查询次数、批量查询额度、AI 域名分析报告次数）；
       **不含「等级加速」**（与消费驱动的 VIP 冲突）；**不抵扣订单金额**；
-- [ ] 米币与余额严格隔离，不可互换。
+  - **目标与金额隔离证据**：`apps/web/src/collections/points.ts:7` 只允许 `advanced_whois`、
+    `bulk_query`、`ai_domain_analysis`，`apps/web/src/services/points/ledger.ts:1065-1225`、`:1226-1306`
+    分别追加额度发放和使用记录。测试 `apps/web/tests/integration/d9e2-points-ledger.integration.test.ts:2044`
+    用例“grants only approved tool quotas and atomically prevents quota over-consumption”拒绝其他目标并验证
+    额度原子扣减，`:2430` 用例“does not change an order payable amount when points are redeemed”逐项确认
+    订单冻结应付金额及支付字段不变；`apps/web/tests/unit/d9e2-points-collections.test.ts:51` 同时排除
+    `tier_acceleration` 与 `order_discount`。
+- [x] 米币与余额严格隔离，不可互换。
+  - **数据层与入口隔离证据**：`apps/web/src/collections/points.ts:58-275` 与 migration
+    `apps/web/migrations/20260820_000011_d9e2_points_ledger.ts:10-184` 使用六张独立 points/quota 表，
+    不含 fen、currency 或 wallet 外键；`apps/web/tests/unit/d9e2-points-collections.test.ts:34` 用例“keeps
+    points and wallet isolated in distinct collections and fields”检查表/字段隔离，集成测试
+    `apps/web/tests/integration/d9e2-points-ledger.integration.test.ts:2379` 用例“has no points-wallet
+    conversion path in either direction”同时检查服务依赖、数据库对象和双向业务入口均不存在。
+
+  - **全判定点、事实来源与风险分级证据**：
+    `docs/operations/d9e2-points-ledger-mutation-matrix.md:7-14` 按调用点列出服务/Collection/Job
+    81/81、SQL/CAS/来源 52/52、migration/release/down 101/101，合计 234/234 删除、短路、耦合破坏与
+    数据来源替换变异均由指定行为断言杀死；同文档第 2.1 节记录三处删除兜底的原始报错与各自
+    `EXCLUSIVE_FAILURE 1/3`，第 2.2 节逐一审计其它排序和迭代顺序；第 3 节逐字段记录 fixture 去相关，
+    第 4 节逐行对照 A4 九档并确认未新增或降低 step-up 风险档。恢复源码后 D9-E-2 聚焦 41/41，通过
+    最终状态完整 `make check` 的 845/845 单元、745/745 主集成、37/37 独立钱包账本集成与 11/11
+    独立钱包对账集成（集成合计 793/793）。
 
 #### E2 永久 VIP 等级
 

@@ -77,6 +77,14 @@ import {
   NotificationProviderReceipts,
   NotificationReadStates,
 } from './notifications'
+import {
+  PointsAccounts,
+  PointsBatches,
+  PointsConsumptionAllocations,
+  PointsLedger,
+  PointsRedemptions,
+  ToolQuotaLedger,
+} from './points'
 import { RealnameDocuments, RealnameTemplates } from './realname'
 import {
   WalletAccounts,
@@ -136,6 +144,12 @@ export const collections: CollectionConfig[] = [
   WalletEntries,
   WalletTopUpOrders,
   WalletPolicyVersions,
+  PointsAccounts,
+  PointsBatches,
+  PointsRedemptions,
+  PointsLedger,
+  PointsConsumptionAllocations,
+  ToolQuotaLedger,
   ProviderOperations,
   ProviderWriteBudgets,
   ProviderWriteBudgetDebits,
