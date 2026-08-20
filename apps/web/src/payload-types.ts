@@ -614,6 +614,8 @@ export interface ManualReview {
   realnameTemplate?: (number | null) | RealnameTemplate;
   paymentNotification?: (number | null) | PaymentNotification;
   walletTopUpOrder?: (number | null) | WalletTopUpOrder;
+  walletAccount?: (number | null) | WalletAccount;
+  reconciliation?: (number | null) | Reconciliation;
   domainAsset?: (number | null) | DomainAsset;
   nameserverChange?: (number | null) | NameserverChange;
   reasonCode: string;
@@ -932,6 +934,36 @@ export interface WalletAccount {
   customer: number | Customer;
   currency: 'CNY';
   ledgerVersion: number;
+  postedBalanceCacheFen: number;
+  heldBalanceCacheFen: number;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "reconciliations".
+ */
+export interface Reconciliation {
+  id: number;
+  reconciliationKey: string;
+  kind: 'wechat' | 'westdigital' | 'three_way' | 'wallet';
+  ledger: 'wechat_funds' | 'westdigital_prepaid' | 'internal_orders' | 'wallet_balance';
+  recordKey: string;
+  periodStart: string;
+  periodEnd: string;
+  status: 'pending' | 'matched' | 'difference' | 'reviewed';
+  summary:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  differenceMinor: number;
+  currency: 'CNY';
+  traceId: string;
   updatedAt: string;
   createdAt: string;
 }
@@ -2209,34 +2241,6 @@ export interface AutomaticRenewalEvent {
   reasonCode?: string | null;
   occurredAt: string;
   traceId?: string | null;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "reconciliations".
- */
-export interface Reconciliation {
-  id: number;
-  reconciliationKey: string;
-  kind: 'wechat' | 'westdigital' | 'three_way';
-  ledger: 'wechat_funds' | 'westdigital_prepaid' | 'internal_orders';
-  recordKey: string;
-  periodStart: string;
-  periodEnd: string;
-  status: 'pending' | 'matched' | 'difference' | 'reviewed';
-  summary:
-    | {
-        [k: string]: unknown;
-      }
-    | unknown[]
-    | string
-    | number
-    | boolean
-    | null;
-  differenceMinor: number;
-  currency: 'CNY';
-  traceId: string;
   updatedAt: string;
   createdAt: string;
 }
@@ -4129,6 +4133,8 @@ export interface WalletAccountsSelect<T extends boolean = true> {
   customer?: T;
   currency?: T;
   ledgerVersion?: T;
+  postedBalanceCacheFen?: T;
+  heldBalanceCacheFen?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -4594,6 +4600,8 @@ export interface ManualReviewsSelect<T extends boolean = true> {
   realnameTemplate?: T;
   paymentNotification?: T;
   walletTopUpOrder?: T;
+  walletAccount?: T;
+  reconciliation?: T;
   domainAsset?: T;
   nameserverChange?: T;
   reasonCode?: T;

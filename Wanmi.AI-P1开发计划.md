@@ -801,7 +801,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 - [ ] D7 集成、安全与运维
 - [ ] D8 P1 开发整体验收
 - [ ] D9-A 账户与身份（阻塞首次上线与 D8）
-- [ ] D9-B 钱包与对账（不阻塞首次上线与 D8）
+- [x] D9-B 钱包与对账（不阻塞首次上线与 D8）
 - [ ] D9-C 域名用户中心（不阻塞首次上线与 D8）
 - [ ] D9-D 域名控制台增强（不阻塞首次上线与 D8）
 - [ ] D9-E 增长与会员（不阻塞首次上线与 D8）
@@ -1568,7 +1568,7 @@ D9-B-2 主动查单审核补测（2026-08-18）：
       即拒绝，不得透支。**禁止 `payload.update({ where })` 做互斥**（本项目已在 D5
       `transitionOrder`、D6-01、D6-02 三次踩过）；
 - [x] 账本不变量 `期初 + 入账 − 出账 = 期末`，由一致性校验任务验证，差异只追加证据不自动改账；
-- [ ] 余额账本作为**第四个 ledger** 接入 D5-04 对账。
+- [x] 余额账本作为**第四个 ledger** 接入 D5-04 对账。
 
 D9-B-1 证据（2026-08-17，仅本段前五项）：
 
@@ -1599,6 +1599,34 @@ account`、`fails closed when the consistency task cannot query every required l
   `docs/operations/d9b1-wallet-ledger-mutation-matrix.md`：服务/访问/任务 94/94、原子 SQL 20/20、迁移
   38/38，合计 152/152；聚焦恢复后 43/43、D9-A 注销兼容回归 54/54，通过独立迁移行为验证。充值、
   余额支付、退款、第四 ledger 对账、`adminApprovalRequests` 和角色调整均未实现，相关条目保持未勾选。
+
+D9-B-6 证据（2026-08-19，仅本段最后一项）：
+
+- 在既有 `reconciliation.ts` 的 kind/ledger、`reconciliationKey` 和差异升级路径上增加 `wallet` /
+  `wallet_balance`，见 `apps/web/src/services/commerce/reconciliation.ts:104-180`；创建权通过同事务
+  `INSERT ... ON CONFLICT (reconciliation_key) DO NOTHING RETURNING id` 判定，只有创建者写既有
+  `manualReviews` 与 `recordAuditEvent`。行为用例 `replays the same period and business difference with one
+reconciliation and one review`（`apps/web/tests/integration/d9b6-wallet-reconciliation.integration.test.ts:691`）
+  和 `serializes concurrent runs for one period into one difference and one manual review`（`:826`）分别证明
+  重放及同账期 6 路并发都只有一条差异与一条复核，全部计数带账期、ledger、业务键或关联对象 `where`。
+- 四方口径只实现三种有业务关系的映射：充值 credit ↔ `wechat_funds`、余额支付 capture ↔
+  `internal_orders`、B-4 recovery ↔ `wechat_funds` 反向，见
+  `apps/web/src/services/commerce/reconciliation.ts:608-699,742-910`；`westdigital_prepaid` 与余额账本不直接
+  比较。行为用例 `records all four ledgers as matched without manufacturing differences for unmapped
+combinations`（integration `:356`）、充值差异 `:448`、余额支付差异 `:488`、争议追回差异 `:527` 各自独立，
+  都断言差异产生复核但余额、订单、充值/追回事实零变化。
+- `postedBalance` / `heldBalance` 只由全量追加式 `walletEntries` 聚合，再与账户缓存快照比较，见
+  `apps/web/src/services/commerce/reconciliation.ts:565-605,912-956`；用例 `derives balances from walletEntries
+and reports a wallet_accounts cache mismatch without correcting it`（integration `:579`）以不一致缓存证明
+  数据来源替换和禁止自动纠正。上游读取失败只记录 `fundsChanged=false`、`retryable=true` 审计并重试，见
+  service `:512-563`；用例 `records and retries an upstream read failure while leaving wallet and order state
+unchanged`（integration `:781`）独立断言资金与订单状态零变化。
+- migration `apps/web/migrations/20260819_104757_d9b6_wallet_reconciliation.ts:3-70` 扩展既有 enum、缓存快照和
+  复核关联，缓存回填同样从 `wallet_entries` 聚合；存在第四 ledger 事实时 down 失败关闭。完整四方口径、
+  11 个行为用例、A4 风险表 9/9 和逐调用点变异见
+  `docs/operations/d9b6-wallet-reconciliation-mutation-matrix.md`：应用 37/37、migration 21/21 全部由指定
+  行为断言杀死；最终代码状态本地 `make check` 通过 838/838 单元和 757/757 分层集成及完整迁移、构建、
+  依赖/秘密/镜像扫描，全部真实 provider 闸保持 false。
 
 #### B3 余额支付订单
 
@@ -2185,12 +2213,21 @@ opening-credit-debit-ending mismatch and appends audit evidence` 人为把期末
       `WALLET_LEDGER_INVARIANT_VIOLATION` 拒绝并追加恰好 1 条限定账户/trace 的审计；`:1602` 逐项制造并
       检出 sequence、owner、posted、held、version、transaction-entry 和 history 差异。不变量判定变异
       16/16 被单独杀死。
-- [ ] 充值只能由服务端确认的真实支付产生，伪造回调不入账；同一交易号不得入账两个账户；
+- [x] 充值只能由服务端确认的真实支付产生，伪造回调不入账；同一交易号不得入账两个账户；证据：
+      `apps/web/tests/integration/d9b2-wallet-top-ups.integration.test.ts:315` 用例 `does not credit from a payment
+notification alone when the active query is not paid` 断言通知已验签归档但充值状态仍为 `payment_pending`、
+      credit 为 0；`:753` 用例 `lets the database accept one global WeChat transaction across N different
+accounts` 让 6 个账户并发确认同一交易号，恰好 1 个成功、5 个以
+      `WALLET_TOP_UP_WECHAT_TRANSACTION_CONFLICT` 拒绝且全局 credit 总数为 1；
 - [x] 原路退款与余额回退不能同时发生；证据：`requestAutomaticRegistrationFailureRefund` 只按订单持久化的
       `paymentChannel` 分派，直接余额/微信入口与微信退款 Job 都有反向渠道门；交叉路径、诱饵微信信号、同单
       并发退款行为用例均证明只产生一种退款事实，见 D9-B-3 证据及
       `docs/operations/d9b3-balance-payment-refund-mutation-matrix.md` M32～M35、M46～M51；
-- [ ] 余额账本作为第四 ledger 参与对账，差异只追加不自动改账；
+- [x] 余额账本作为第四 ledger 参与对账，差异只追加不自动改账；证据见
+      `apps/web/src/services/commerce/reconciliation.ts:104-180,702-960` 及 D9-B-6 证据；充值、余额支付、争议追回、
+      缓存漂移四类差异用例位于
+      `apps/web/tests/integration/d9b6-wallet-reconciliation.integration.test.ts:448,488,527,579`，每条均断言只新增
+      对账/复核/审计且余额或业务状态零变化；`:826` 证明 6 路并发仍只有一条差异与一条复核；
 - [x] 后台高风险资金操作在冷静延迟未满时不可执行，发起与审批分离配置生效；证据见
       `apps/web/src/services/admin/approvals.ts:303`、`:391`，用例 `rejects execution before approval`、
       `uses request creation time rather than approval time as the cooldown clock source`、`rejects initiator

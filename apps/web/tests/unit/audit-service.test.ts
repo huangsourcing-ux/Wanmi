@@ -110,6 +110,8 @@ describe('shared audit event service', () => {
         'wallet.balance_refund.completed',
         'wallet.ledger_invariant.failed',
         'wallet.policy.updated',
+        'wallet.reconciliation.difference_recorded',
+        'wallet.reconciliation.failed',
         'wallet.statement.exported',
         'wallet.top_up.created',
         'wallet.top_up.credited',

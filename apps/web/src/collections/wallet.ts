@@ -40,9 +40,10 @@ const positiveSafeInteger = (name: string): Field => ({
       : '字段必须是正安全整数',
 })
 
-const signedSafeInteger = (name: string): Field => ({
+const signedSafeInteger = (name: string, defaultValue?: number): Field => ({
   name,
   type: 'number',
+  ...(defaultValue === undefined ? {} : { defaultValue }),
   max: Number.MAX_SAFE_INTEGER,
   min: Number.MIN_SAFE_INTEGER,
   required: true,
@@ -68,6 +69,8 @@ export const WalletAccounts: CollectionConfig = {
     },
     { name: 'currency', type: 'select', options: ['CNY'], required: true },
     nonnegativeSafeInteger('ledgerVersion', 0),
+    signedSafeInteger('postedBalanceCacheFen', 0),
+    nonnegativeSafeInteger('heldBalanceCacheFen', 0),
   ],
 }
 
