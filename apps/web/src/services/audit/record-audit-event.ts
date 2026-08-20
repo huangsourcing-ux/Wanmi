@@ -227,6 +227,46 @@ export const auditEventDefinitions = {
     actorTypes: ['system'],
     targetType: 'points-batch',
   },
+  'points.invitation_reward.pending': {
+    actorTypes: ['system'],
+    targetType: 'points-batch',
+  },
+  'points.invitation_reward.available': {
+    actorTypes: ['system'],
+    targetType: 'points-batch',
+  },
+  'invitation.relationship.bound': {
+    actorTypes: ['customer'],
+    targetType: 'invitation-relationship',
+  },
+  'invitation.relationship.binding_rejected': {
+    actorTypes: ['customer'],
+    targetType: 'customer',
+  },
+  'invitation.code.disabled': {
+    actorTypes: ['customer'],
+    targetType: 'customer',
+  },
+  'invitation.reward_rule.created': {
+    actorTypes: ['admin'],
+    targetType: 'invitation-reward-rule-version',
+  },
+  'invitation.reward.pending': {
+    actorTypes: ['system'],
+    targetType: 'invitation-reward-claim',
+  },
+  'invitation.reward.available': {
+    actorTypes: ['system'],
+    targetType: 'invitation-reward-claim',
+  },
+  'invitation.reward.withheld': {
+    actorTypes: ['system'],
+    targetType: 'invitation-reward-claim',
+  },
+  'invitation.reward.flagged_after_release': {
+    actorTypes: ['system'],
+    targetType: 'invitation-reward-claim',
+  },
   'points.redeemed': {
     actorTypes: ['customer'],
     targetType: 'points-redemption',

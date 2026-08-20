@@ -22,6 +22,7 @@ import {
 import { clientHashes, maskPhone } from '@/services/auth/client-facts'
 import { registrationConsentDocument } from '@/services/auth/registration-consents'
 import { requestOtp, verifyOtp } from '@/services/auth/otp'
+import { INVITATION_CODE_PATTERN } from '@/services/invitations/binding'
 import {
   completeWechatOAuth,
   confirmWechatQr,
@@ -187,6 +188,21 @@ describe('D9-A-1 explicit registration and identity invariants', () => {
       registrationSource: 'phone',
       status: 'active',
     })
+    expect(customer.inviteCode).toMatch(INVITATION_CODE_PATTERN)
+    const invitationRelationships = await payload.find({
+      collection: 'invitationRelationships',
+      depth: 0,
+      overrideAccess: true,
+      where: { inviteeCustomer: { equals: customer.id } },
+    })
+    expect(invitationRelationships.totalDocs).toBe(1)
+    expect(invitationRelationships.docs[0]).toMatchObject({
+      bindSource: 'registration',
+      bindingDeviceHash: clientHashes(requestHeaders, deviceId).deviceHash,
+      inviteeCustomer: customer.id,
+      inviterCustomer: inviter.id,
+    })
+    expect(JSON.stringify(invitationRelationships.docs[0])).not.toContain(deviceId)
     const identities = await payload.find({
       collection: 'customerIdentities',
       depth: 0,

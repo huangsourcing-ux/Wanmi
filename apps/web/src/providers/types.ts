@@ -422,6 +422,7 @@ export type PaymentOrder = {
   currency?: 'CNY'
   merchantOrderNumber: string
   paidAt?: string
+  payerIdentifier?: string
   state: PaymentOrderState
   transactionId?: string
 }
@@ -439,6 +440,7 @@ export type VerifiedPaymentNotification =
       merchantOrderNumber: string
       notificationId: string
       paidAt: string
+      payerIdentifier?: string
       transactionId: string
       verified: true
     }

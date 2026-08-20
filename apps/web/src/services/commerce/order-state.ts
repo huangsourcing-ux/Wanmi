@@ -3,6 +3,7 @@ import { sql } from '@payloadcms/db-postgres'
 
 import type { OrderStatus } from '@/lib/domain'
 import { AppError } from '@/lib/errors'
+import { processInvitationRewardForOrderTransition } from '@/services/invitations/rewards'
 
 export const ORDER_TRANSITIONS = {
   pending_payment: ['paid', 'manual_review', 'cancelled'],
@@ -66,7 +67,9 @@ export async function transitionOrder(
     const session = transactionId ? req.payload.db.sessions?.[transactionId] : undefined
     const database = session?.db as
       | {
-          execute(statement: ReturnType<typeof sql>): Promise<{ rows?: Array<{ id: number | string }> }>
+          execute(
+            statement: ReturnType<typeof sql>,
+          ): Promise<{ rows?: Array<{ id: number | string }> }>
         }
       | undefined
     if (!database) {
@@ -107,6 +110,19 @@ export async function transitionOrder(
       overrideAccess: true,
       req,
     })
+
+    if (to === 'paid' || to === 'fulfilling' || to === 'succeeded') {
+      const evidenceTraceId = details.evidence?.traceId
+      await processInvitationRewardForOrderTransition(req, {
+        eventId: event.id,
+        orderId: order.id,
+        status: to,
+        traceId:
+          typeof evidenceTraceId === 'string' && evidenceTraceId
+            ? evidenceTraceId
+            : `order-transition:${event.id}:invitation-reward`,
+      })
+    }
 
     if (startedTransaction) await commitTransaction(req)
     return { event, order: updated }

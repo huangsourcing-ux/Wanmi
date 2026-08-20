@@ -59,6 +59,13 @@ export const ManualReviews: CollectionConfig = {
       index: true,
     },
     {
+      name: 'invitationRewardClaim',
+      type: 'relationship',
+      relationTo: 'invitationRewardClaims',
+      index: true,
+      unique: true,
+    },
+    {
       name: 'reconciliation',
       type: 'relationship',
       relationTo: 'reconciliations',

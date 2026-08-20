@@ -4,6 +4,8 @@ import config from '@payload-config'
 import { createLocalReq, getPayload, type Payload, type PayloadRequest, type Where } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import { hmac } from '@/lib/crypto'
+import { getEnv } from '@/lib/env'
 import { mockFailure, mockSuccess } from '@/providers/mock'
 import type { PaymentOrder, PaymentProvider, VerifiedPaymentNotification } from '@/providers/types'
 import { createWechatPayFixture, type WechatPayFixture } from '@/providers/wechatpay'
@@ -121,7 +123,7 @@ async function createdTopUp(suffix: string, amountFen = 10_000): Promise<Started
 function setPaid(
   fixture: WechatPayFixture,
   topUp: StartedTopUp,
-  input: { amountFen?: number; transactionId?: string } = {},
+  input: { amountFen?: number; payerIdentifier?: string; transactionId?: string } = {},
 ): { paidAt: string; transactionId: string } {
   const paidAt = new Date(now.getTime() + 60_000).toISOString()
   const transactionId = input.transactionId ?? wechatTransactionId()
@@ -129,6 +131,7 @@ function setPaid(
     amountMinor: input.amountFen ?? topUp.amountFen,
     merchantOrderNumber: topUp.orderNumber,
     paidAt,
+    ...(input.payerIdentifier ? { payerIdentifier: input.payerIdentifier } : {}),
     state: 'paid',
     transactionId,
   })
@@ -795,7 +798,8 @@ describe('D9-B-2 wallet top-up credits', () => {
   it('makes repeated confirmation of one top-up add exactly one ledger credit', async () => {
     const fixture = createWechatPayFixture({ now: () => now })
     const topUp = await startedTopUp('idempotent-credit', fixture)
-    setPaid(fixture, topUp)
+    const payerIdentifier = `${prefix}-idempotent-credit-payer`
+    setPaid(fixture, topUp, { payerIdentifier })
 
     for (let index = 0; index < 3; index += 1) {
       await queryAndConfirmWalletTopUpPayment(topUp.req, topUp.orderNumber, {
@@ -806,6 +810,21 @@ describe('D9-B-2 wallet top-up credits', () => {
     }
 
     expect(await countEntries(topUp.accountId, { entryType: { equals: 'credit' } })).toBe(1)
+    const stored = await payload.findByID({
+      collection: 'walletTopUpOrders',
+      id: topUp.orderId,
+      overrideAccess: true,
+    })
+    expect(stored.payerIdentifierHash).toBe(hmac(payerIdentifier, getEnv().SESSION_PEPPER))
+    expect(JSON.stringify(stored)).not.toContain(payerIdentifier)
+    const customerVisible = await payload.findByID({
+      collection: 'walletTopUpOrders',
+      id: topUp.orderId,
+      overrideAccess: false,
+      req: topUp.req,
+      user: topUp.customer,
+    })
+    expect(customerVisible.payerIdentifierHash).toBeUndefined()
     expect(
       (
         await payload.count({

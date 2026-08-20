@@ -333,6 +333,18 @@ describe('D7 operations monitoring persistence', () => {
     expect(results.filter((result) => result.idempotentReplay)).toHaveLength(4)
     expect(results.filter((result) => !result.idempotentReplay)).toHaveLength(1)
     expect(results.reduce((total, result) => total + result.alertCount, 0)).toBe(1)
+    for (const result of results) {
+      expect(result.snapshot.abuse).toEqual({
+        invitationGrowthCount: expect.any(Number),
+        pointsEarned: expect.any(Number),
+        registrationCount: expect.any(Number),
+        smsRequestCount: expect.any(Number),
+        walletAbsoluteChangeFen: expect.any(Number),
+      })
+      expect(JSON.stringify(result.snapshot)).not.toMatch(
+        /13812345678|deviceId|device-fixture|identityDocument|11010519491231002X|identifierHash/iu,
+      )
+    }
 
     const alerts = await payload.find({
       collection: 'auditLogs',

@@ -31,7 +31,8 @@
     "20260819_012641_d9b4_wallet_funds_policy",
     "20260819_065615_d9b5_admin_approvals_notifications",
     "20260819_104757_d9b6_wallet_reconciliation",
-    "20260820_000011_d9e2_points_ledger"
+    "20260820_000011_d9e2_points_ledger",
+    "20260820_051725_d9e1_invitations_abuse"
   ],
   "rollback": {
     "database": "retain",

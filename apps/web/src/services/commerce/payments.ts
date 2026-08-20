@@ -4,6 +4,8 @@ import { sql } from '@payloadcms/db-postgres'
 import { commitTransaction, initTransaction, killTransaction, type PayloadRequest } from 'payload'
 
 import { hasRole, isActiveAdminUser, isCustomerUser } from '@/access/roles'
+import { hmac } from '@/lib/crypto'
+import { getEnv } from '@/lib/env'
 import { AppError } from '@/lib/errors'
 import type { PaymentOrder, PaymentProvider, VerifiedPaymentNotification } from '@/providers/types'
 import { paymentPayloadDigest } from '@/providers/wechatpay'
@@ -377,6 +379,7 @@ type VerifiedArchive = {
   merchantOrderNumber: string
   notificationId: string
   paidAt: string
+  payerIdentifierHash?: null | string
   payloadDigest: string
   receivedAt: string
   replayCount: number
@@ -392,6 +395,9 @@ async function archiveVerifiedNotification(
   target?: { orderId?: number | string; walletTopUpOrderId?: number | string },
 ): Promise<VerifiedArchive> {
   const assertMatches = (archive: VerifiedArchive): VerifiedArchive => {
+    const payerIdentifierHash = notification.payerIdentifier
+      ? hmac(notification.payerIdentifier, getEnv().SESSION_PEPPER)
+      : undefined
     if (
       archive.payloadDigest !== digest ||
       archive.merchantOrderNumber !== notification.merchantOrderNumber ||
@@ -399,7 +405,8 @@ async function archiveVerifiedNotification(
       archive.amountMinor !== notification.amountMinor ||
       archive.currency !== notification.currency ||
       Date.parse(archive.paidAt) !== Date.parse(notification.paidAt) ||
-      archive.signatureVerified !== true
+      archive.signatureVerified !== true ||
+      (payerIdentifierHash !== undefined && archive.payerIdentifierHash !== payerIdentifierHash)
     ) {
       throw new AppError(
         'PAYMENT_NOTIFICATION_ARCHIVE_CONFLICT',
@@ -428,6 +435,11 @@ async function archiveVerifiedNotification(
         notificationId: notification.notificationId,
         ...(target?.orderId === undefined ? {} : { order: target.orderId as never }),
         paidAt: notification.paidAt,
+        ...(notification.payerIdentifier
+          ? {
+              payerIdentifierHash: hmac(notification.payerIdentifier, getEnv().SESSION_PEPPER),
+            }
+          : {}),
         payloadDigest: digest,
         processingStatus: 'pending',
         receivedAt,
@@ -610,6 +622,11 @@ async function persistAndApplyConfirmation(
           ? {
               merchantOrderNumber: paidQuery.merchantOrderNumber,
               paidAt: paidQuery.paidAt,
+              ...(paidQuery.payerIdentifier
+                ? {
+                    payerIdentifierHash: hmac(paidQuery.payerIdentifier, getEnv().SESSION_PEPPER),
+                  }
+                : {}),
               wechatTransactionId: paidQuery.transactionId,
             }
           : {}),

@@ -31,7 +31,9 @@ type PointsBatch = {
   earningKey: string
   expiresAt: Date
   points: bigint
+  sourceCustomerId: number | string
   sourceOrderId: number | string
+  sourceType: 'invitation_reward' | 'order_reward'
 }
 
 type BatchLifecycle = {
@@ -235,7 +237,9 @@ async function derivedPointsBalance(
             OR batches.customer_id = ${account.customerId})
           AND (batches.account_id <> ${account.accountId}
             OR batches.customer_id <> ${account.customerId}
-            OR orders.customer_id <> ${account.customerId})
+            OR orders.customer_id <> batches.source_customer_id
+            OR (batches.source_type = 'order_reward'
+              AND batches.source_customer_id <> batches.customer_id))
       ), 0) AS invalid_batches,
       COALESCE((
         SELECT COUNT(*)
@@ -397,7 +401,41 @@ async function assertOrderFact(
   }
 }
 
+async function assertOrderTransitionFact(
+  database: PointsDatabase,
+  input: {
+    eventId: number | string
+    orderId: number | string
+    sourceCustomerId: number | string
+    status: 'fulfilling' | 'paid' | 'succeeded'
+  },
+): Promise<void> {
+  const found = await database.execute(sql`
+    SELECT orders.id
+    FROM orders
+    JOIN order_events ON order_events.order_id = orders.id
+    WHERE orders.id = ${input.orderId}
+      AND orders.customer_id = ${input.sourceCustomerId}
+      AND orders.status = ${input.status}
+      AND order_events.id = ${input.eventId}
+      AND order_events.customer_id = ${input.sourceCustomerId}
+      AND order_events.to_status = ${input.status}
+    LIMIT 1
+    FOR SHARE OF orders, order_events
+  `)
+  if (!found.rows?.[0]?.id) {
+    throw new AppError(
+      'POINTS_ORDER_TRANSITION_EVIDENCE_INVALID',
+      '订单状态迁移证据不满足邀请奖励条件',
+      409,
+    )
+  }
+}
+
 function batchFromRow(row: Record<string, unknown>): PointsBatch {
+  if (row.source_type !== 'invitation_reward' && row.source_type !== 'order_reward') {
+    throw pointsUnavailable()
+  }
   return {
     accountId: identifier(row.account_id),
     batchId: identifier(row.id),
@@ -405,7 +443,9 @@ function batchFromRow(row: Record<string, unknown>): PointsBatch {
     earningKey: String(row.earning_key),
     expiresAt: databaseDate(row.expires_at),
     points: databaseInteger(row.points),
+    sourceCustomerId: identifier(row.source_customer_id),
     sourceOrderId: identifier(row.source_order_id),
+    sourceType: row.source_type,
   }
 }
 
@@ -414,7 +454,8 @@ async function loadBatchByEarningKey(
   key: string,
 ): Promise<PointsBatch | undefined> {
   const found = await database.execute(sql`
-    SELECT id, earning_key, customer_id, account_id, source_order_id, points, expires_at
+    SELECT id, earning_key, customer_id, account_id, source_customer_id, source_order_id,
+      source_type, points, expires_at
     FROM points_batches
     WHERE earning_key = ${key}
   `)
@@ -427,7 +468,8 @@ async function loadBatchById(
   batchId: number | string,
 ): Promise<PointsBatch | undefined> {
   const found = await database.execute(sql`
-    SELECT id, earning_key, customer_id, account_id, source_order_id, points, expires_at
+    SELECT id, earning_key, customer_id, account_id, source_customer_id, source_order_id,
+      source_type, points, expires_at
     FROM points_batches
     WHERE id = ${batchId}
   `)
@@ -469,12 +511,16 @@ function assertMatchingBatch(
     accountId: number | string
     expiresAt: Date
     points: bigint
+    sourceCustomerId: number | string
     sourceOrderId: number | string
+    sourceType: 'invitation_reward' | 'order_reward'
   },
 ): void {
   if (
     String(batch.accountId) !== String(input.accountId) ||
+    String(batch.sourceCustomerId) !== String(input.sourceCustomerId) ||
     String(batch.sourceOrderId) !== String(input.sourceOrderId) ||
+    batch.sourceType !== input.sourceType ||
     batch.points !== input.points ||
     batch.expiresAt.getTime() !== input.expiresAt.getTime()
   ) {
@@ -593,7 +639,6 @@ export async function earnPendingOrderReward(
     throw new AppError('POINTS_EXPIRATION_INVALID', '新米币批次的过期时间必须在未来', 400)
   }
   await assertCustomerAccountCapability(req, input.customerId, 'purchase')
-
   return inPointsTransaction(req, async () => {
     const database = await pointsDatabase(req)
     await assertOrderFact(database, {
@@ -609,7 +654,9 @@ export async function earnPendingOrderReward(
         accountId: account.accountId,
         expiresAt,
         points,
+        sourceCustomerId: input.customerId,
         sourceOrderId: input.orderId,
+        sourceType: 'order_reward',
       })
       await batchLifecycle(database, existing)
       return {
@@ -625,6 +672,7 @@ export async function earnPendingOrderReward(
         customer_id,
         account_id,
         source_type,
+        source_customer_id,
         source_order_id,
         points,
         expires_at,
@@ -635,6 +683,7 @@ export async function earnPendingOrderReward(
         ${account.customerId},
         ${account.accountId},
         'order_reward',
+        ${input.customerId},
         ${input.orderId},
         ${points.toString()},
         ${expiresAt.toISOString()},
@@ -652,7 +701,9 @@ export async function earnPendingOrderReward(
         accountId: account.accountId,
         expiresAt,
         points,
+        sourceCustomerId: input.customerId,
         sourceOrderId: input.orderId,
+        sourceType: 'order_reward',
       })
       await batchLifecycle(database, conflicted)
       return {
@@ -682,6 +733,179 @@ export async function earnPendingOrderReward(
       applied: true,
       balance: await derivedPointsBalance(database, { ...account, ledgerVersion: ledgerSequence }),
       batchId,
+    }
+  })
+}
+
+export async function earnPendingInvitationReward(
+  req: PayloadRequest,
+  input: {
+    customerId: number | string
+    earningKey: string
+    expiresAt: string
+    orderId: number | string
+    orderTransitionEventId: number | string
+    points: bigint | number
+    sourceCustomerId: number | string
+    transitionStatus: 'fulfilling' | 'paid' | 'succeeded'
+  },
+): Promise<PointsMutationResult> {
+  const key = idempotencyKey(input.earningKey)
+  const points = positiveInteger(input.points, 'POINTS_AMOUNT_INVALID', '米币数量必须是正整数')
+  const expiresAt = expirationDate(input.expiresAt)
+  if (expiresAt.getTime() <= Date.now()) {
+    throw new AppError('POINTS_EXPIRATION_INVALID', '新米币批次的过期时间必须在未来', 400)
+  }
+  return inPointsTransaction(req, async () => {
+    const database = await pointsDatabase(req)
+    await assertOrderTransitionFact(database, {
+      eventId: input.orderTransitionEventId,
+      orderId: input.orderId,
+      sourceCustomerId: input.sourceCustomerId,
+      status: input.transitionStatus,
+    })
+    await ensurePointsAccount(database, input.customerId)
+    const account = await lockPointsAccountByCustomer(database, input.customerId)
+    const expected = {
+      accountId: account.accountId,
+      expiresAt,
+      points,
+      sourceCustomerId: input.sourceCustomerId,
+      sourceOrderId: input.orderId,
+      sourceType: 'invitation_reward' as const,
+    }
+    const existing = await loadBatchByEarningKey(database, key)
+    if (existing) {
+      assertMatchingBatch(existing, expected)
+      await batchLifecycle(database, existing)
+      return {
+        applied: false,
+        balance: await derivedPointsBalance(database, account),
+        batchId: existing.batchId,
+      }
+    }
+
+    const inserted = await database.execute(sql`
+      INSERT INTO points_batches (
+        earning_key,
+        customer_id,
+        account_id,
+        source_type,
+        source_customer_id,
+        source_order_id,
+        points,
+        expires_at,
+        updated_at,
+        created_at
+      ) VALUES (
+        ${key},
+        ${account.customerId},
+        ${account.accountId},
+        'invitation_reward',
+        ${input.sourceCustomerId},
+        ${input.orderId},
+        ${points.toString()},
+        ${expiresAt.toISOString()},
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT (earning_key) DO NOTHING
+      RETURNING id
+    `)
+    const insertedId = inserted.rows?.[0]?.id
+    if (insertedId === undefined) {
+      const conflicted = await loadBatchByEarningKey(database, key)
+      if (!conflicted) throw pointsUnavailable()
+      assertMatchingBatch(conflicted, expected)
+      await batchLifecycle(database, conflicted)
+      return {
+        applied: false,
+        balance: await derivedPointsBalance(database, account),
+        batchId: conflicted.batchId,
+      }
+    }
+
+    const batchId = identifier(insertedId)
+    const ledgerSequence = await incrementPointsLedgerVersion(database, account)
+    await appendPointsEntry(database, {
+      account,
+      batchId,
+      entryKey: `${key}:pending`,
+      entryType: 'pending',
+      ledgerSequence,
+      points,
+    })
+    await recordAuditEvent(req, {
+      action: 'points.invitation_reward.pending',
+      actor: { type: 'system' },
+      metadata: {
+        orderId: String(input.orderId),
+        sourceCustomerId: String(input.sourceCustomerId),
+        points: points.toString(),
+      },
+      targetId: batchId,
+    })
+    return {
+      applied: true,
+      balance: await derivedPointsBalance(database, { ...account, ledgerVersion: ledgerSequence }),
+      batchId,
+    }
+  })
+}
+
+export async function confirmPendingInvitationReward(
+  req: PayloadRequest,
+  input: { earningKey: string; orderTransitionEventId: number | string },
+): Promise<PointsMutationResult> {
+  const key = idempotencyKey(input.earningKey)
+  return inPointsTransaction(req, async () => {
+    const database = await pointsDatabase(req)
+    const discovered = await loadBatchByEarningKey(database, key)
+    if (!discovered || discovered.sourceType !== 'invitation_reward') {
+      throw new AppError('POINTS_BATCH_NOT_FOUND', '邀请奖励米币批次不存在', 409)
+    }
+    await assertOrderTransitionFact(database, {
+      eventId: input.orderTransitionEventId,
+      orderId: discovered.sourceOrderId,
+      sourceCustomerId: discovered.sourceCustomerId,
+      status: 'succeeded',
+    })
+    const account = await lockPointsAccountByCustomer(database, discovered.customerId)
+    if (String(account.accountId) !== String(discovered.accountId)) throw pointsUnavailable()
+    const lifecycle = await batchLifecycle(database, discovered)
+    if (lifecycle.available === discovered.points) {
+      return {
+        applied: false,
+        balance: await derivedPointsBalance(database, account),
+        batchId: discovered.batchId,
+      }
+    }
+    if (lifecycle.available > 0n || lifecycle.reversed > 0n) {
+      throw new AppError('POINTS_BATCH_ALREADY_TRANSITIONED', '米币批次已按其他结果处理', 409)
+    }
+    const ledgerSequence = await claimPendingTransition(database, account, discovered)
+    await appendPointsEntry(database, {
+      account,
+      batchId: discovered.batchId,
+      entryKey: `${key}:available`,
+      entryType: 'available',
+      ledgerSequence,
+      points: discovered.points,
+    })
+    await recordAuditEvent(req, {
+      action: 'points.invitation_reward.available',
+      actor: { type: 'system' },
+      metadata: {
+        orderId: String(discovered.sourceOrderId),
+        sourceCustomerId: String(discovered.sourceCustomerId),
+        points: discovered.points.toString(),
+      },
+      targetId: discovered.batchId,
+    })
+    return {
+      applied: true,
+      balance: await derivedPointsBalance(database, { ...account, ledgerVersion: ledgerSequence }),
+      batchId: discovered.batchId,
     }
   })
 }

@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto'
-
 import { sql } from '@payloadcms/db-postgres'
 import type { PayloadRequest } from 'payload'
 
@@ -12,6 +10,10 @@ import { createSmsProvider } from '@/providers/aliyunsms'
 import { createWechatOfficialProvider } from '@/providers/wechatofficial'
 import type { CustomerRegistrationInput } from '@/schemas/auth'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
+import {
+  bindInvitationAtRegistration,
+  generateInvitationCode,
+} from '@/services/invitations/binding'
 import { customerNeedsLegacyProfileCompletion } from '@/services/privacy/customer-consents'
 
 import {
@@ -471,28 +473,6 @@ function registrationConsentSource(source: RegistrationSource) {
     : ('wechat_qrcode_registration' as const)
 }
 
-function invitationCode(): string {
-  return randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase()
-}
-
-async function findInviter(
-  req: PayloadRequest,
-  code: string | undefined,
-): Promise<number | undefined> {
-  if (!code) return undefined
-  const result = await req.payload.find({
-    collection: 'customers',
-    depth: 0,
-    limit: 1,
-    overrideAccess: true,
-    req,
-    where: { inviteCode: { equals: code } },
-  })
-  const inviter = result.docs[0]
-  if (!inviter) throw new AppError('INVITATION_CODE_INVALID', '邀请码无效', 400)
-  return inviter.id
-}
-
 async function createIdentityFromIntent(
   req: PayloadRequest,
   customer: Customer,
@@ -617,15 +597,13 @@ export async function registerCustomer(
           providerInstanceId: primary.providerInstanceId,
         })
       }
-      const inviterId = await findInviter(req, input.invitationCode)
       const now = new Date().toISOString()
       const customer = await req.payload.create({
         collection: 'customers',
         data: {
           accountType: 'registered',
           defaultCustomerProfileType: input.defaultCustomerProfileType,
-          inviteCode: invitationCode(),
-          invitedByCustomer: inviterId,
+          inviteCode: generateInvitationCode(),
           phone,
           phoneMasked: maskPhone(phone),
           registrationSource: primary.source,
@@ -635,6 +613,13 @@ export async function registerCustomer(
         overrideAccess: true,
         req,
       })
+      if (input.invitationCode) {
+        await bindInvitationAtRegistration(req, {
+          code: input.invitationCode,
+          deviceHash: hashes.deviceHash,
+          inviteeCustomerId: customer.id,
+        })
+      }
       await createIdentityFromIntent(req, customer, phoneIntent, now)
       if (primary.provider === 'wechat') await createIdentityFromIntent(req, customer, primary, now)
       await createRegistrationConsents(req, customer.id, primary.source, headers, now)

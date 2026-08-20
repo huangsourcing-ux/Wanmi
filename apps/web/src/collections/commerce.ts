@@ -477,6 +477,12 @@ export const PaymentNotifications: CollectionConfig = {
       unique: true,
     },
     {
+      name: 'payerIdentifierHash',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
+    },
+    {
       name: 'merchantOrderNumber',
       type: 'text',
       access: { read: sensitiveFieldRead },
@@ -524,6 +530,12 @@ export const PaymentNotificationArchives: CollectionConfig = {
       type: 'text',
       access: { read: sensitiveFieldRead },
       required: true,
+    },
+    {
+      name: 'payerIdentifierHash',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
     },
     { ...safeInteger('amountMinor') },
     { name: 'currency', type: 'select', options: ['CNY'], required: true },

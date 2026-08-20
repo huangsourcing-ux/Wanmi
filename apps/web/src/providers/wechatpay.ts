@@ -43,6 +43,10 @@ const paymentOrderSchema = z
     appid: z.string().min(1).max(32),
     mchid: z.string().min(1).max(32),
     out_trade_no: merchantOrderNumberSchema,
+    payer: z
+      .object({ openid: z.string().min(1).max(128) })
+      .passthrough()
+      .optional(),
     success_time: z.iso.datetime({ offset: true }).optional(),
     trade_state: z.enum([
       'CLOSED',
@@ -82,6 +86,10 @@ const transactionResourceSchema = z
     appid: z.string().min(1).max(32),
     mchid: z.string().min(1).max(32),
     out_trade_no: merchantOrderNumberSchema,
+    payer: z
+      .object({ openid: z.string().min(1).max(128) })
+      .passthrough()
+      .optional(),
     success_time: z.iso.datetime({ offset: true }),
     trade_state: z.literal('SUCCESS'),
     transaction_id: z.string().min(1).max(32),
@@ -233,6 +241,12 @@ function refundState(value: z.infer<typeof refundOrderSchema>['status']): Refund
   if (value === 'CLOSED') return 'closed'
   if (value === 'ABNORMAL') return 'failed'
   return 'unknown'
+}
+
+export function wechatPaymentPayerIdentifier(input: {
+  payer?: { openid?: string }
+}): string | undefined {
+  return input.payer?.openid
 }
 
 export class WechatPayApiV3Adapter implements PaymentProvider {
@@ -419,12 +433,14 @@ export class WechatPayApiV3Adapter implements PaymentProvider {
     if (parsed.data.appid !== this.options.appId || parsed.data.mchid !== this.options.merchantId) {
       return mockFailure('WECHATPAY_MERCHANT_MISMATCH', { statusKnown: false })
     }
+    const payerIdentifier = wechatPaymentPayerIdentifier(parsed.data)
     return mockSuccess(
       {
         amountMinor: parsed.data.amount.total,
         currency: parsed.data.amount.currency,
         merchantOrderNumber: parsed.data.out_trade_no,
         ...(parsed.data.success_time ? { paidAt: parsed.data.success_time } : {}),
+        ...(payerIdentifier ? { payerIdentifier } : {}),
         state: tradeState(parsed.data.trade_state),
         ...(parsed.data.transaction_id ? { transactionId: parsed.data.transaction_id } : {}),
       },
@@ -535,12 +551,14 @@ export class WechatPayApiV3Adapter implements PaymentProvider {
       ) {
         return { reason: 'invalid_resource', signatureVerified: true, verified: false }
       }
+      const payerIdentifier = wechatPaymentPayerIdentifier(transaction)
       return {
         amountMinor: transaction.amount.total,
         currency: transaction.amount.currency,
         merchantOrderNumber: transaction.out_trade_no,
         notificationId: envelope.id,
         paidAt: transaction.success_time,
+        ...(payerIdentifier ? { payerIdentifier } : {}),
         transactionId: transaction.transaction_id,
         verified: true,
       }
@@ -597,6 +615,7 @@ type FixtureState = {
   channel?: PaymentChannel
   merchantOrderNumber: string
   paidAt?: string
+  payerIdentifier?: string
   state: PaymentOrder['state']
   transactionId?: string
 }
@@ -617,6 +636,7 @@ export type WechatPayFixture = {
       Pick<FixtureState, 'amountMinor' | 'merchantOrderNumber' | 'paidAt' | 'transactionId'>
     > & {
       notificationId?: string
+      payerIdentifier?: string
     },
   ): { body: string; headers: Headers }
   provider: WechatPayApiV3Adapter
@@ -781,6 +801,7 @@ export function createWechatPayFixture(options: { now?: () => Date } = {}): Wech
         mchid: '1900000001',
         out_trade_no: order.merchantOrderNumber,
         ...(order.paidAt ? { success_time: order.paidAt } : {}),
+        ...(order.payerIdentifier ? { payer: { openid: order.payerIdentifier } } : {}),
         trade_state: tradeState,
         ...(order.transactionId ? { transaction_id: order.transactionId } : {}),
       })
@@ -833,6 +854,7 @@ export function createWechatPayFixture(options: { now?: () => Date } = {}): Wech
               appid: 'wx-fixture-app',
               mchid: '1900000001',
               out_trade_no: input.merchantOrderNumber,
+              ...(input.payerIdentifier ? { payer: { openid: input.payerIdentifier } } : {}),
               success_time: input.paidAt,
               trade_state: 'SUCCESS',
               transaction_id: input.transactionId,

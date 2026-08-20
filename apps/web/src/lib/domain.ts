@@ -22,6 +22,7 @@ export type AdminHighRiskOperationType = (typeof ADMIN_HIGH_RISK_OPERATION_TYPES
 export const TRANSACTIONAL_NOTIFICATION_TYPES = [
   'admin_high_risk_operation_submitted',
   'admin_high_risk_operation_executed',
+  'invitation_reward_withheld',
 ] as const
 
 export type TransactionalNotificationType = (typeof TRANSACTIONAL_NOTIFICATION_TYPES)[number]
