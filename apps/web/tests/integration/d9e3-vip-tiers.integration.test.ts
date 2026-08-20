@@ -335,11 +335,26 @@ afterEach(async () => {
   if (customerIds.length === 0) return
   const ids = [...customerIds]
   await payload.db.pool.query(
+    `DELETE FROM notification_provider_receipts
+     WHERE delivery_id IN (
+       SELECT id FROM notification_deliveries WHERE customer_id = ANY($1::int[])
+     )`,
+    [ids],
+  )
+  await payload.db.pool.query(
+    `DELETE FROM notification_read_states WHERE customer_id = ANY($1::int[])`,
+    [ids],
+  )
+  await payload.db.pool.query(
     `DELETE FROM notification_deliveries WHERE customer_id = ANY($1::int[])`,
     [ids],
   )
   await payload.db.pool.query(
     `DELETE FROM notification_outbox_events WHERE customer_id = ANY($1::int[])`,
+    [ids],
+  )
+  await payload.db.pool.query(
+    `DELETE FROM notification_marketing_preferences WHERE customer_id = ANY($1::int[])`,
     [ids],
   )
   await payload.db.pool.query('DELETE FROM vip_tier_appeals WHERE customer_id = ANY($1::int[])', [
@@ -383,12 +398,32 @@ afterEach(async () => {
 })
 
 afterAll(async () => {
+  const fixtureAdminIds = [fundsApprover.id]
+  if (inactiveConfigurationAdmin) fixtureAdminIds.push(inactiveConfigurationAdmin.id)
   await payload.db.pool.query(
     `DELETE FROM vip_tier_rule_levels
      WHERE rule_version_id IN (SELECT id FROM vip_tier_rule_versions WHERE id > $1)`,
     [ruleBaselineId],
   )
   await payload.db.pool.query('DELETE FROM vip_tier_rule_versions WHERE id > $1', [ruleBaselineId])
+  await payload.db.pool.query(
+    `DELETE FROM admin_access_events
+     WHERE actor_id = ANY($1::int[])
+        OR approval_request_id IN (
+          SELECT id FROM admin_approval_requests
+          WHERE requested_by_id = ANY($1::int[])
+             OR approved_by_id = ANY($1::int[])
+             OR executed_by_id = ANY($1::int[])
+        )`,
+    [fixtureAdminIds],
+  )
+  await payload.db.pool.query(
+    `DELETE FROM admin_approval_requests
+     WHERE requested_by_id = ANY($1::int[])
+        OR approved_by_id = ANY($1::int[])
+        OR executed_by_id = ANY($1::int[])`,
+    [fixtureAdminIds],
+  )
   await payload.db.pool.query('DELETE FROM admins WHERE id = $1', [fundsApprover.id])
   if (inactiveConfigurationAdmin) {
     await payload.db.pool.query('DELETE FROM admins WHERE id = $1', [inactiveConfigurationAdmin.id])
@@ -699,10 +734,20 @@ describe('D9-E-3 permanent VIP tiers', () => {
       },
       overrideAccess: true,
     })
+    const isolatedTopUpId = 2_147_483_647
+    const isolated = await payload.db.pool.query(
+      `UPDATE wallet_top_up_orders
+       SET id = $1
+       WHERE id = $2
+         AND NOT EXISTS (SELECT 1 FROM orders WHERE id = $1)
+       RETURNING id`,
+      [isolatedTopUpId, topUp.id],
+    )
+    expect(isolated.rowCount).toBe(1)
     await expect(
       recordVipSpendForSucceededOrder(await request('top-up-excluded'), {
         eventId: `${fixturePrefix}:top-up`,
-        orderId: topUp.id,
+        orderId: isolatedTopUpId,
       }),
     ).rejects.toMatchObject({ code: 'VIP_ORDER_NOT_FOUND' })
     await expect(count('vipSpendEntries', { customer: { equals: customer.id } })).resolves.toBe(0)

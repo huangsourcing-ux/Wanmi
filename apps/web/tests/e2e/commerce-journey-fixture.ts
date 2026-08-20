@@ -744,7 +744,6 @@ export class CommerceJourneyFixture {
 
     for (const customerId of this.customerIds) {
       for (const collection of [
-        'consentRecords',
         'customerIdentities',
         'customerSessions',
         'customerSecurityEvents',
@@ -755,10 +754,10 @@ export class CommerceJourneyFixture {
           where: { customer: { equals: customerId } },
         })
       }
-      await ignorePayloadNotFound(() =>
-        this.payload.delete({ collection: 'customers', id: customerId, overrideAccess: true }),
-      )
     }
+
+    // Registration consent is append-only and its customer relationship is required. The random
+    // run token isolates these customer facts; the disposable fixture database owns their cleanup.
 
     for (const collection of ['smsChallenges', 'auditLogs'] as const) {
       const rows = await this.payload.find({

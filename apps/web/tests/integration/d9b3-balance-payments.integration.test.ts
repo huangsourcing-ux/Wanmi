@@ -522,6 +522,29 @@ afterEach(async () => {
   await payload.db.pool.query('DELETE FROM step_up_grants WHERE customer_id = ANY($1::int[])', [
     customerIds,
   ])
+  await payload.db.pool.query(
+    `DELETE FROM notification_provider_receipts
+     WHERE delivery_id IN (
+       SELECT id FROM notification_deliveries WHERE customer_id = ANY($1::int[])
+     )`,
+    [customerIds],
+  )
+  await payload.db.pool.query(
+    'DELETE FROM notification_read_states WHERE customer_id = ANY($1::int[])',
+    [customerIds],
+  )
+  await payload.db.pool.query(
+    'DELETE FROM notification_deliveries WHERE customer_id = ANY($1::int[])',
+    [customerIds],
+  )
+  await payload.db.pool.query(
+    'DELETE FROM notification_outbox_events WHERE customer_id = ANY($1::int[])',
+    [customerIds],
+  )
+  await payload.db.pool.query(
+    'DELETE FROM notification_marketing_preferences WHERE customer_id = ANY($1::int[])',
+    [customerIds],
+  )
   await payload.db.pool.query('DELETE FROM customers WHERE id = ANY($1::int[])', [customerIds])
   customerIds = []
   orderIds = []

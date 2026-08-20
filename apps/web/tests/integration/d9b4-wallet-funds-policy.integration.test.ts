@@ -106,6 +106,13 @@ function topUpNumber(): string {
   return `WT${randomUUID().replaceAll('-', '').slice(0, 30)}`
 }
 
+function providerRefundId(): string {
+  const digits = [...randomUUID().replaceAll('-', '')]
+    .map((character) => String(Number.parseInt(character, 16) % 10))
+    .join('')
+  return `503${digits.slice(0, 29)}`
+}
+
 async function creditedTopUp(
   suffix: string,
   amountFen: number,
@@ -821,7 +828,7 @@ describe('D9-B-4 wallet funds scenarios and policy', () => {
     observed.fixture.setRefund({
       amountMinor: 500,
       merchantOrderNumber: duplicate.orderNumber,
-      providerRefundId: `503${'0'.repeat(27)}101`,
+      providerRefundId: providerRefundId(),
       refundedAt: now.toISOString(),
       refundNumber: refund.refundNumber,
       state: 'succeeded',
@@ -1485,7 +1492,7 @@ describe('D9-B-4 wallet funds scenarios and policy', () => {
     observed.fixture.setRefund({
       amountMinor: 700,
       merchantOrderNumber: topUp.orderNumber,
-      providerRefundId: `503${'0'.repeat(27)}102`,
+      providerRefundId: providerRefundId(),
       refundedAt: now.toISOString(),
       refundNumber: refund.refundNumber,
       state: 'succeeded',

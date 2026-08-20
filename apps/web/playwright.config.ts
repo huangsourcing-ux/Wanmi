@@ -1,4 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
+import { config as loadEnv } from 'dotenv'
+
+loadEnv({ path: new URL('.env.local', import.meta.url) })
+Object.assign(process.env, { NODE_ENV: 'production' })
 
 export default defineConfig({
   expect: {

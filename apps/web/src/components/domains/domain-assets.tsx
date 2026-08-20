@@ -11,7 +11,6 @@ import { readProblemResponse } from '@/lib/errors'
 import {
   domainAssetDetailResultSchema,
   domainAssetListResultSchema,
-  nameserverChangeResultSchema,
   type DomainAssetDetailResult,
   type DomainAssetListResult,
 } from '@/schemas/domains'
@@ -120,13 +119,10 @@ export function DomainAssetsPanel() {
 export function DomainAssetDetailPanel({ assetId }: { assetId: string }) {
   const [result, setResult] = useState<DomainAssetDetailResult>()
   const [busy, setBusy] = useState(false)
-  const [nameservers, setNameservers] = useState('')
-  const [notice, setNotice] = useState('')
 
   const load = useCallback(async () => {
     const next = await readAssetDetail(assetId)
     setResult(next)
-    if ('data' in next) setNameservers(next.data.asset.nameservers.join('\n'))
   }, [assetId])
 
   useEffect(() => {
@@ -134,7 +130,6 @@ export function DomainAssetDetailPanel({ assetId }: { assetId: string }) {
     void readAssetDetail(assetId).then((next) => {
       if (!active) return
       setResult(next)
-      if ('data' in next) setNameservers(next.data.asset.nameservers.join('\n'))
     })
     return () => {
       active = false
@@ -143,7 +138,6 @@ export function DomainAssetDetailPanel({ assetId }: { assetId: string }) {
 
   async function sync() {
     setBusy(true)
-    setNotice('')
     try {
       const response = await fetch(`/api/v1/domains/${encodeURIComponent(assetId)}/sync`, {
         credentials: 'same-origin',
@@ -154,34 +148,6 @@ export function DomainAssetDetailPanel({ assetId }: { assetId: string }) {
         return
       }
       setResult(domainAssetDetailResultSchema.parse(await response.json()))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function changeNameservers() {
-    setBusy(true)
-    setNotice('')
-    try {
-      const response = await fetch(`/api/v1/domains/${encodeURIComponent(assetId)}/nameservers`, {
-        body: JSON.stringify({
-          nameservers: nameservers
-            .split(/\s+/u)
-            .map((value) => value.trim())
-            .filter(Boolean),
-        }),
-        credentials: 'same-origin',
-        headers: { 'content-type': 'application/json' },
-        method: 'POST',
-      })
-      if (!response.ok) {
-        const problem = await readProblemResponse(response)
-        setNotice(`${problem.title}：${problem.detail}`)
-        return
-      }
-      const queued = nameserverChangeResultSchema.parse(await response.json())
-      if ('data' in queued) setNotice('Name Server 变更已进入 commerce 队列。')
-      await load()
     } finally {
       setBusy(false)
     }
@@ -235,16 +201,18 @@ export function DomainAssetDetailPanel({ assetId }: { assetId: string }) {
         </CardHeader>
         <CardContent className="space-y-4">
           <label className="block text-sm font-medium" htmlFor="domain-nameservers">
-            每行一个，至少两组
+            当前 Name Server
           </label>
           <textarea
             className="min-h-32 w-full rounded-md border bg-background px-3 py-2 font-mono text-sm"
+            disabled
             id="domain-nameservers"
-            onChange={(event) => setNameservers(event.target.value)}
-            value={nameservers}
+            value={asset.nameservers.join('\n')}
           />
-          {notice ? <p aria-live="polite">{notice}</p> : null}
-          <Button disabled={busy} onClick={changeNameservers} type="button">
+          <p className="text-sm text-muted-foreground" role="status">
+            Name Server 变更正在升级为需要二次验证的流程，暂不可用。
+          </p>
+          <Button disabled type="button">
             提交变更
           </Button>
         </CardContent>
