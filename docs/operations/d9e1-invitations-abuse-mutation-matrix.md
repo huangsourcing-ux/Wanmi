@@ -55,8 +55,9 @@ consents` 独立证明：新 customer 邀请码满足 128-bit 格式，关系 so
 - `lets exactly one concurrent binding take effect` 同时提交两个不同 inviter，唯一 invitee 索引与
   `INSERT ... ON CONFLICT (invitee_customer_id) DO NOTHING` 使恰好一路成功、关系恰好一条；不使用
   `payload.update({ where })`。
-- `concurrently triggering one invitee creates exactly one pending reward` 八路处理同一 order event，claim 的
-  invitee 唯一索引、points earning key 唯一索引及 E-2 原子生命周期共同保证 claim=1、pending entry=1。
+- `concurrently triggering one invitee creates exactly one pending reward` 八路处理同一 order event；claim 插入
+  使用无 target 的 `ON CONFLICT DO NOTHING`，让同一事实同时命中 invitee 与 claim key 两个唯一索引时都
+  幂等收敛，再由 points earning key 唯一索引及 E-2 原子生命周期共同保证 claim=1、pending entry=1。
 - 绑定窗口规则和奖励快照两个查询都固定 `effective_at DESC, version DESC`；
   `deterministically selects the highest version when effective times tie` 让两版 `effective_at` 完全相同，分别
   反转两个调用点的主排序和 version 兜底，四个 SQL 变异各自失败。

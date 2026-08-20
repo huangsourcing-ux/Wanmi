@@ -23,6 +23,7 @@ export const TRANSACTIONAL_NOTIFICATION_TYPES = [
   'admin_high_risk_operation_submitted',
   'admin_high_risk_operation_executed',
   'invitation_reward_withheld',
+  'vip_benefit_change_advance',
 ] as const
 
 export type TransactionalNotificationType = (typeof TRANSACTIONAL_NOTIFICATION_TYPES)[number]

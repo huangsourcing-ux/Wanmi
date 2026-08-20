@@ -154,7 +154,7 @@ async function claimFirstEligibleOrder(
     ) AS rule ON true
     WHERE relationship.invitee_customer_id = ${input.inviteeCustomerId}
       AND rule.enabled = true
-    ON CONFLICT (invitee_customer_id) DO NOTHING
+    ON CONFLICT DO NOTHING
     RETURNING id
   `)
   return lockClaimByInvitee(db, input.inviteeCustomerId)

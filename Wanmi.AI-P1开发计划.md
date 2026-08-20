@@ -804,7 +804,7 @@ Codex 在每个开发回合结束时更新本节。外部阻塞写在“阻塞/�
 - [x] D9-B 钱包与对账（不阻塞首次上线与 D8）
 - [ ] D9-C 域名用户中心（不阻塞首次上线与 D8）
 - [ ] D9-D 域名控制台增强（不阻塞首次上线与 D8）
-- [ ] D9-E 增长与会员（不阻塞首次上线与 D8）
+- [x] D9-E 增长与会员（不阻塞首次上线与 D8）
 - [ ] 生产上线硬门槛
 
 依赖：D8 P1 开发整体验收依赖 D9-A；D9-B～D9-E 不阻塞 D8 或首次上线。
@@ -2078,21 +2078,54 @@ D9-D-3 证据（2026-08-18，仅本节第 4、5 项，至此 D9-D 完成）：
 
 #### E2 永久 VIP 等级
 
-- [ ] 等级阶梯与门槛可配置且版本化（沿用 D5-05 可发布 + 审计模式）；
-- [ ] **等级存为「历史最高水位」，不从当前累计额实时重算**；每次达成追加记录并快照规则版本、
+- [x] 等级阶梯与门槛可配置且版本化（沿用 D5-05 可发布 + 审计模式）；
+  - **实现与证据**：`apps/web/src/services/vip/tiers.ts:227-359` 以 system configuration scope、发布时钟、
+    advisory transaction lock、全局 version 与审计追加不可变规则/level；用例 `publishes versioned rules,
+enforces advance notice timing, and exposes current adjustable benefits`（integration `:1330`）和
+    `serializes concurrent rule publications into unique audited versions` 分别保护发布与并发版本唯一。
+- [x] **等级存为「历史最高水位」，不从当前累计额实时重算**；每次达成追加记录并快照规则版本、
       累计额与时间。若实时重算，一笔退款会导致静默降级；
-- [ ] 门槛提高后已达成用户保留原等级；
-- [ ] **累计消费口径（决定 G）**：统计**所有支付渠道**的成功履约订单**冻结应付金额**；**排除**
+  - **高水位与重点数据源替换证据**：`apps/web/src/services/vip/tiers.ts:387-435,458-565,567-638` 将累计事实
+    与等级事件分表，当前等级只从最新追加式事件读取；用例 `keeps the achieved historical high-water tier
+after an ordinary refund reversal`（integration `:400`）在累计归零后仍断言原等级。变异
+    `tier-source-replaced-by-current-spend` 把读取改成按当前累计额筛选时，仅该行为断言失败。
+- [x] 门槛提高后已达成用户保留原等级；
+  - **证据**：用例 `keeps an achieved tier after a later rule raises its threshold`（integration `:428`）绑定
+    达成时规则版本并在新版本提高门槛后仍从历史事件返回 bronze。
+- [x] **累计消费口径（决定 G）**：统计**所有支付渠道**的成功履约订单**冻结应付金额**；**排除**
       充值本身、取消订单、失败订单与已冲销金额。只计入 `succeeded` 订单（既有「注册成功不可
       退款」规则使其天然不可撤销，同时堵住「下单拿等级再退款」套利）；
-- [ ] **等级永久、权益可调**：等级不因门槛调整、普通退款或时间流逝而下降；各等级对应的折扣、
+  - **权威口径证据**：`apps/web/src/services/vip/tiers.ts:529-638` 锁定 commerce order，读取冻结
+    `amount_minor`、权威 `payment_channel` 和 `succeeded`；`order-state.ts:132-139` 只在 succeeded/refunded
+    状态迁移追加累计/冲销事实。充值、取消、失败/退款状态、已冲销分别由 integration `:675`、`:711`、
+    `:723`、`:757` 四条独立用例保护；`:834` 对其它八态逐态排除，`:846` 对 native/h5/balance 三渠道逐条
+    断言冻结金额。所有金额比较用 BigInt。
+- [x] **等级永久、权益可调**：等级不因门槛调整、普通退款或时间流逝而下降；各等级对应的折扣、
       额度与服务内容可随运营调整，**须提前通知**；等级名称调整同理；
-- [ ] **允许纠错性降级**：正常业务退款不降级；但订单重复累计、规则配置错误、数据迁移错误、内部
+  - **权益与通知证据**：`apps/web/src/services/vip/tiers.ts:209-225,261-347,836-886` 把等级身份留在事件，
+    展示权益读取当前规则；名称、额度和服务内容变化至少提前 24 小时，并复用 B-5 transactional outbox 向
+    当前持有人逐一发送。主用例见 integration `:1330`，三个调整维度各有独立 lead-time 用例，持有人确定性
+    顺序见 `:1446`；阈值单独调整不伪装为权益通知。
+- [x] **允许纠错性降级**：正常业务退款不降级；但订单重复累计、规则配置错误、数据迁移错误、内部
       误操作、欺诈获得的消费额、订单实际不存在或被撤销等情形，可追加 `tierCorrection` 经 B5 审批
       流程降低。**不修改历史达成记录**，用户可见纠错原因并保留申诉入口；
-- [ ] 运营调整统一为四类来源：自然达成、运营提升、数据纠错、欺诈撤销。**不保留独立的
+  - **审批、历史与申诉证据**：`apps/web/src/services/vip/tiers.ts:743-834,889-925` 只接受 B-5 executor 绑定的
+    approval context 并追加纠错、原因和申诉；`operation-executors.ts:210-220` 是唯一降级领域入口。用例
+    `requires B-5 request, approval, cooldown and execution for a corrective downgrade`（integration `:970`）
+    逐门拒绝直接/未批/冷静期内执行；`never modifies the original achievement when a correction is appended`
+    （`:1045`）逐字段比较历史达成记录；用户可见原因和申诉见 `:1546`。
+- [x] 运营调整统一为四类来源：自然达成、运营提升、数据纠错、欺诈撤销。**不保留独立的
       `vipGranted` 或「VIP 身份」字段**；
-- [ ] 等级变更全部追加式记录，可从审计完整还原。
+  - **枚举与无平行身份字段证据**：`apps/web/src/collections/vip.ts:12-17` 固定四类 source；四个
+    `records <source> as an append-only event and matching audit fact` 用例位于 integration `:1222-1328`。
+    unit `contains no independent VIP identity field in collections or generated customer types`（`:54`）同时检查
+    全部 Collection 与生成 Customer 类型不存在 `vipGranted`、`isVip`、`vipLevel`。
+- [x] 等级变更全部追加式记录，可从审计完整还原。
+  - **追加式与全判定点证据**：`apps/web/src/collections/vip.ts:27-42,76,98,142,183,234` 对规则、累计、事件、
+    申诉逐 Collection 关闭通用写并以 update/delete Hook 双重拒绝原地改删；`insertTierEvent` 同事务追加
+    事件与审计。`docs/operations/d9e3-vip-tiers-mutation-matrix.md` 逐项列出 service/Collection/coupling
+    51/51、SQL/来源/顺序/互斥 35/35、migration/release/down 70/70，合计 156/156 行为变异，并逐行对照
+    A4 九档；聚焦单元与集成为 75/75。
 
 #### E3 邀请体系
 
@@ -2301,10 +2334,13 @@ concurrent execution`（`apps/web/tests/integration/d9b5-admin-approvals-notific
 
 **D9-E**
 
-- [ ] 米币赚取幂等；跨批次消费按最早过期优先且分配可重算；米币与余额不可互换；
-- [ ] VIP 为历史最高水位：重算结果一致；**普通退款不降级**；**经审批的数据纠错可降级**；
-- [ ] 提高门槛后已达成用户保留原等级；充值本身不计入累计消费；
-- [ ] 邀请奖励只在不可退成功订单后发放；自邀与刷量被拦截并告警，且不自动扣回已发放奖励。
+- [x] 米币赚取幂等；跨批次消费按最早过期优先且分配可重算；米币与余额不可互换；
+- [x] VIP 为历史最高水位：重算结果一致；**普通退款不降级**；**经审批的数据纠错可降级**；
+- [x] 提高门槛后已达成用户保留原等级；充值本身不计入累计消费；
+- [x] 邀请奖励只在不可退成功订单后发放；自邀与刷量被拦截并告警，且不自动扣回已发放奖励。
+
+D9-E 退出证据分别见 16.10 E1/E2/E3 的逐项实现、并发、来源、变异和完整门禁记录；E2 的 156/156
+判定点与 A4 对照集中在 `docs/operations/d9e3-vip-tiers-mutation-matrix.md`。
 
 **横向**
 

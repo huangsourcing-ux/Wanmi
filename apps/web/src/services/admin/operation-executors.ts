@@ -8,6 +8,7 @@ import { decideCustomerIdentityCollision } from '@/services/auth/customer-identi
 import { requestAutomaticRegistrationFailureRefund } from '@/services/commerce/refunds'
 import { loadWalletFundsPolicy } from '@/services/wallet/policy'
 import { postWalletCredit, recoverWalletBalance } from '@/services/wallet/ledger'
+import { applyApprovedVipTierCorrection } from '@/services/vip/tiers'
 
 import {
   executeAdminApprovalRequest,
@@ -199,6 +200,25 @@ export async function executeSupportedAdminOperation(
         },
       )
     case 'vip_fraud_correction':
+      return executeAdminApprovalRequest(
+        req,
+        { expectedOperationType: approval.operationType, requestId },
+        async (claimed) => {
+          const input = approvalInput(claimed)
+          if (input.operationType !== 'vip_fraud_correction') throw new Error('unreachable')
+          return withApprovalContext(req, `vip_fraud_correction:${claimed.id}`, () =>
+            applyApprovedVipTierCorrection(req, {
+              approvalRequestId: claimed.id,
+              correctionReference: input.correctionReference,
+              customerId: input.customerId,
+              reasonNote: input.reasonNote,
+              source: input.correctionSource,
+              spendReversalFen: input.spendReversalFen,
+              targetTierCode: input.targetTierCode,
+            }),
+          )
+        },
+      )
     case 'domain_management_credential_disposition':
     case 'bulk_customer_asset_operation':
       throw new AppError(

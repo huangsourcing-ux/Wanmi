@@ -240,9 +240,12 @@ function operationFixtures(customerId: number): Record<AdminHighRiskOperationTyp
     },
     vip_fraud_correction: {
       correctionReference: 'vip-correction-d9b5',
+      correctionSource: 'data_correction',
       customerId,
       operationType: 'vip_fraud_correction',
       reasonNote: 'D9-B-5 VIP correction test',
+      spendReversalFen: 0,
+      targetTierCode: null,
     },
   }
 }
