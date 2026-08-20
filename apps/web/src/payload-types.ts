@@ -86,6 +86,10 @@ export interface Config {
     smsRateLimits: SmsRateLimit;
     customerSessions: CustomerSession;
     stepUpGrants: StepUpGrant;
+    invitationRewardRuleVersions: InvitationRewardRuleVersion;
+    invitationRelationships: InvitationRelationship;
+    invitationRewardClaims: InvitationRewardClaim;
+    invitationRewardEvents: InvitationRewardEvent;
     articles: Article;
     topics: Topic;
     tldPages: TldPage;
@@ -190,6 +194,10 @@ export interface Config {
     smsRateLimits: SmsRateLimitsSelect<false> | SmsRateLimitsSelect<true>;
     customerSessions: CustomerSessionsSelect<false> | CustomerSessionsSelect<true>;
     stepUpGrants: StepUpGrantsSelect<false> | StepUpGrantsSelect<true>;
+    invitationRewardRuleVersions: InvitationRewardRuleVersionsSelect<false> | InvitationRewardRuleVersionsSelect<true>;
+    invitationRelationships: InvitationRelationshipsSelect<false> | InvitationRelationshipsSelect<true>;
+    invitationRewardClaims: InvitationRewardClaimsSelect<false> | InvitationRewardClaimsSelect<true>;
+    invitationRewardEvents: InvitationRewardEventsSelect<false> | InvitationRewardEventsSelect<true>;
     articles: ArticlesSelect<false> | ArticlesSelect<true>;
     topics: TopicsSelect<false> | TopicsSelect<true>;
     tldPages: TldPagesSelect<false> | TldPagesSelect<true>;
@@ -420,6 +428,7 @@ export interface Customer {
   registrationSource?: ('phone' | 'wechat_oauth' | 'wechat_qrcode' | 'legacy_unknown') | null;
   defaultCustomerProfileType?: ('individual' | 'organization') | null;
   inviteCode?: string | null;
+  inviteCodeDisabledAt?: string | null;
   invitedByCustomer?: (number | null) | Customer;
   identityRiskCooldownStartedAt?: string | null;
   status: 'pending_registration' | 'active' | 'restricted' | 'suspended' | 'closing' | 'closed';
@@ -615,6 +624,7 @@ export interface ManualReview {
   paymentNotification?: (number | null) | PaymentNotification;
   walletTopUpOrder?: (number | null) | WalletTopUpOrder;
   walletAccount?: (number | null) | WalletAccount;
+  invitationRewardClaim?: (number | null) | InvitationRewardClaim;
   reconciliation?: (number | null) | Reconciliation;
   domainAsset?: (number | null) | DomainAsset;
   nameserverChange?: (number | null) | NameserverChange;
@@ -876,6 +886,7 @@ export interface PaymentNotification {
   order?: (number | null) | Order;
   source: 'notification' | 'query';
   wechatTransactionId?: string | null;
+  payerIdentifierHash?: string | null;
   merchantOrderNumber?: string | null;
   signatureVerified: boolean;
   confirmationStatus: 'confirmed' | 'mismatch' | 'not_paid' | 'rejected' | 'unknown';
@@ -911,6 +922,7 @@ export interface WalletTopUpOrder {
     | 'closed'
     | 'unknown';
   wechatTransactionId?: string | null;
+  payerIdentifierHash?: string | null;
   ledgerTransactionKey: string;
   originalRefundNumber?: string | null;
   paymentExpiresAt?: string | null;
@@ -936,6 +948,59 @@ export interface WalletAccount {
   ledgerVersion: number;
   postedBalanceCacheFen: number;
   heldBalanceCacheFen: number;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "invitationRewardClaims".
+ */
+export interface InvitationRewardClaim {
+  id: number;
+  claimKey: string;
+  relationship: number | InvitationRelationship;
+  inviterCustomer: number | Customer;
+  inviteeCustomer: number | Customer;
+  sourceOrder: number | Order;
+  ruleVersion: number | InvitationRewardRuleVersion;
+  ruleVersionNumber: number;
+  points: number;
+  expiresAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "invitationRelationships".
+ */
+export interface InvitationRelationship {
+  id: number;
+  relationshipKey: string;
+  inviterCustomer: number | Customer;
+  inviteeCustomer: number | Customer;
+  bindSource: 'registration' | 'post_registration' | 'legacy_backfill';
+  inviteCodeHash?: string | null;
+  bindingDeviceHash?: string | null;
+  boundAt: string;
+  bindingWindowEndsAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "invitationRewardRuleVersions".
+ */
+export interface InvitationRewardRuleVersion {
+  id: number;
+  version: number;
+  schemaVersion: number;
+  enabled: boolean;
+  rewardPoints: number;
+  rewardExpiryDays: number;
+  bindingWindowHours: number;
+  effectiveAt: string;
+  changedBy: string;
+  changeNote: string;
   updatedAt: string;
   createdAt: string;
 }
@@ -1218,6 +1283,60 @@ export interface CustomerSession {
   expiresAt: string;
   revokedAt?: string | null;
   lastSeenAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "invitationRewardEvents".
+ */
+export interface InvitationRewardEvent {
+  id: number;
+  eventKey: string;
+  claim: number | InvitationRewardClaim;
+  inviterCustomer: number | Customer;
+  inviteeCustomer: number | Customer;
+  eventType: 'pending' | 'withheld' | 'available' | 'flagged_after_release';
+  signals?:
+    | (
+        | 'same_device_hash'
+        | 'same_realname_subject'
+        | 'same_phone_hash'
+        | 'same_payment_account_hash'
+        | 'abnormal_invitation_growth'
+      )[]
+    | null;
+  pointsBatch?: (number | null) | PointsBatch;
+  occurredAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pointsBatches".
+ */
+export interface PointsBatch {
+  id: number;
+  earningKey: string;
+  customer: number | Customer;
+  account: number | PointsAccount;
+  sourceType: 'order_reward' | 'invitation_reward';
+  sourceCustomer?: (number | null) | Customer;
+  sourceOrder: number | Order;
+  points: number;
+  expiresAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pointsAccounts".
+ */
+export interface PointsAccount {
+  id: number;
+  customer: number | Customer;
+  ledgerVersion: number;
+  quotaLedgerVersion: number;
   updatedAt: string;
   createdAt: string;
 }
@@ -1736,6 +1855,7 @@ export interface PaymentNotificationArchive {
   payloadDigest: string;
   merchantOrderNumber: string;
   wechatTransactionId: string;
+  payerIdentifierHash?: string | null;
   amountMinor: number;
   currency: 'CNY';
   paidAt: string;
@@ -1874,34 +1994,6 @@ export interface WalletPolicyVersion {
   changedBy: string;
   changeNote: string;
   effectiveAt: string;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "pointsAccounts".
- */
-export interface PointsAccount {
-  id: number;
-  customer: number | Customer;
-  ledgerVersion: number;
-  quotaLedgerVersion: number;
-  updatedAt: string;
-  createdAt: string;
-}
-/**
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "pointsBatches".
- */
-export interface PointsBatch {
-  id: number;
-  earningKey: string;
-  customer: number | Customer;
-  account: number | PointsAccount;
-  sourceType: 'order_reward';
-  sourceOrder: number | Order;
-  points: number;
-  expiresAt: string;
   updatedAt: string;
   createdAt: string;
 }
@@ -2389,6 +2481,7 @@ export interface NotificationOutboxEvent {
   notificationType:
     | 'admin_high_risk_operation_submitted'
     | 'admin_high_risk_operation_executed'
+    | 'invitation_reward_withheld'
     | 'product_updates'
     | 'promotions';
   customer: number | Customer;
@@ -3308,6 +3401,7 @@ export interface CustomersSelect<T extends boolean = true> {
   registrationSource?: T;
   defaultCustomerProfileType?: T;
   inviteCode?: T;
+  inviteCodeDisabledAt?: T;
   invitedByCustomer?: T;
   identityRiskCooldownStartedAt?: T;
   status?: T;
@@ -3548,6 +3642,72 @@ export interface StepUpGrantsSelect<T extends boolean = true> {
   consumedAt?: T;
   deviceHash?: T;
   ipHash?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "invitationRewardRuleVersions_select".
+ */
+export interface InvitationRewardRuleVersionsSelect<T extends boolean = true> {
+  version?: T;
+  schemaVersion?: T;
+  enabled?: T;
+  rewardPoints?: T;
+  rewardExpiryDays?: T;
+  bindingWindowHours?: T;
+  effectiveAt?: T;
+  changedBy?: T;
+  changeNote?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "invitationRelationships_select".
+ */
+export interface InvitationRelationshipsSelect<T extends boolean = true> {
+  relationshipKey?: T;
+  inviterCustomer?: T;
+  inviteeCustomer?: T;
+  bindSource?: T;
+  inviteCodeHash?: T;
+  bindingDeviceHash?: T;
+  boundAt?: T;
+  bindingWindowEndsAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "invitationRewardClaims_select".
+ */
+export interface InvitationRewardClaimsSelect<T extends boolean = true> {
+  claimKey?: T;
+  relationship?: T;
+  inviterCustomer?: T;
+  inviteeCustomer?: T;
+  sourceOrder?: T;
+  ruleVersion?: T;
+  ruleVersionNumber?: T;
+  points?: T;
+  expiresAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "invitationRewardEvents_select".
+ */
+export interface InvitationRewardEventsSelect<T extends boolean = true> {
+  eventKey?: T;
+  claim?: T;
+  inviterCustomer?: T;
+  inviteeCustomer?: T;
+  eventType?: T;
+  signals?: T;
+  pointsBatch?: T;
+  occurredAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -4029,6 +4189,7 @@ export interface PaymentNotificationsSelect<T extends boolean = true> {
   order?: T;
   source?: T;
   wechatTransactionId?: T;
+  payerIdentifierHash?: T;
   merchantOrderNumber?: T;
   signatureVerified?: T;
   confirmationStatus?: T;
@@ -4052,6 +4213,7 @@ export interface PaymentNotificationArchivesSelect<T extends boolean = true> {
   payloadDigest?: T;
   merchantOrderNumber?: T;
   wechatTransactionId?: T;
+  payerIdentifierHash?: T;
   amountMinor?: T;
   currency?: T;
   paidAt?: T;
@@ -4184,6 +4346,7 @@ export interface WalletTopUpOrdersSelect<T extends boolean = true> {
   paymentChannel?: T;
   status?: T;
   wechatTransactionId?: T;
+  payerIdentifierHash?: T;
   ledgerTransactionKey?: T;
   originalRefundNumber?: T;
   paymentExpiresAt?: T;
@@ -4240,6 +4403,7 @@ export interface PointsBatchesSelect<T extends boolean = true> {
   customer?: T;
   account?: T;
   sourceType?: T;
+  sourceCustomer?: T;
   sourceOrder?: T;
   points?: T;
   expiresAt?: T;
@@ -4601,6 +4765,7 @@ export interface ManualReviewsSelect<T extends boolean = true> {
   paymentNotification?: T;
   walletTopUpOrder?: T;
   walletAccount?: T;
+  invitationRewardClaim?: T;
   reconciliation?: T;
   domainAsset?: T;
   nameserverChange?: T;

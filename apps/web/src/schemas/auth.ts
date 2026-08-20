@@ -204,7 +204,11 @@ export const customerRegistrationSchema = z
     invitationCode: z
       .string()
       .trim()
-      .regex(/^[A-Z0-9]{12}$/u)
+      .refine(
+        (value) =>
+          /^[A-Z0-9]{12}$/u.test(value.toUpperCase()) || /^[A-Za-z0-9_-]{22}$/u.test(value),
+        '邀请码格式无效',
+      )
       .optional(),
     phoneRegistrationToken: z.string().min(32).max(128).optional(),
     registrationToken: z.string().min(32).max(128),
@@ -233,6 +237,33 @@ export const defaultCustomerProfileTypeSchema = z
 
 export const identityBindSchema = z
   .object({ registrationToken: z.string().min(32).max(128) })
+  .strict()
+
+export const invitationBindSchema = z
+  .object({
+    deviceId: z.string().min(16).max(128),
+    invitationCode: z
+      .string()
+      .trim()
+      .refine(
+        (value) =>
+          /^[A-Z0-9]{12}$/u.test(value.toUpperCase()) || /^[A-Za-z0-9_-]{22}$/u.test(value),
+        '邀请码格式无效',
+      ),
+  })
+  .strict()
+
+export const invitationBindResponseSchema = z
+  .object({
+    boundAt: z.iso.datetime(),
+    bindingWindowEndsAt: z.iso.datetime(),
+    inviterCustomerId: z.number().int().positive(),
+    relationshipId: z.union([z.number().int().positive(), z.string().min(1)]),
+  })
+  .strict()
+
+export const invitationCodeDisableResponseSchema = z
+  .object({ disabledAt: z.iso.datetime() })
   .strict()
 
 export const identityIdParamsSchema = z.object({ identityId: z.coerce.number().int().positive() })

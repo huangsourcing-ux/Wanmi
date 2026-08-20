@@ -12,6 +12,7 @@ import {
   createWechatPayFixture,
   SafetyFencedWechatPayProvider,
   resetWechatPayRuntimeForTests,
+  wechatPaymentPayerIdentifier,
 } from '@/providers/wechatpay'
 
 import {
@@ -28,6 +29,15 @@ afterEach(() => {
 })
 
 describe('Wechat Pay API v3 fixture adapter', () => {
+  it('extracts the payer only from the official nested openid field', () => {
+    expect(
+      wechatPaymentPayerIdentifier({
+        openid: 'openid-decoy',
+        payer: { openid: 'openid-authoritative' },
+      } as never),
+    ).toBe('openid-authoritative')
+  })
+
   it('verifies and decrypts the official API v3 payment-notification example shape', async () => {
     const officialNow = new Date('2018-06-08T02:34:56.000Z')
     const fixture = createWechatPayFixture({ now: () => officialNow })
@@ -97,6 +107,7 @@ describe('Wechat Pay API v3 fixture adapter', () => {
       amountMinor: 12_300,
       merchantOrderNumber: 'WMNATIVE0001',
       paidAt: now.toISOString(),
+      payerIdentifier: 'openid-fixture-query',
       state: 'paid',
       transactionId: '42000000000000000000000000000001',
     })
@@ -110,6 +121,7 @@ describe('Wechat Pay API v3 fixture adapter', () => {
         amountMinor: 12_300,
         currency: 'CNY',
         merchantOrderNumber: 'WMNATIVE0001',
+        payerIdentifier: 'openid-fixture-query',
         state: 'paid',
         transactionId: '42000000000000000000000000000001',
       },
@@ -148,6 +160,7 @@ describe('Wechat Pay API v3 fixture adapter', () => {
       merchantOrderNumber: 'WMNOTIFY0001',
       notificationId: 'EV-WANMI-FIXTURE-0001',
       paidAt: now.toISOString(),
+      payerIdentifier: 'openid-fixture-notification',
       transactionId: '42000000000000000000000000000002',
     })
     await expect(
@@ -161,6 +174,7 @@ describe('Wechat Pay API v3 fixture adapter', () => {
       merchantOrderNumber: 'WMNOTIFY0001',
       notificationId: 'EV-WANMI-FIXTURE-0001',
       paidAt: now.toISOString(),
+      payerIdentifier: 'openid-fixture-notification',
       transactionId: '42000000000000000000000000000002',
       verified: true,
     })

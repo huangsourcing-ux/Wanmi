@@ -62,6 +62,12 @@ import {
   WechatOAuthStates,
 } from './identity'
 import {
+  InvitationRelationships,
+  InvitationRewardClaims,
+  InvitationRewardEvents,
+  InvitationRewardRuleVersions,
+} from './invitations'
+import {
   AuditLogs,
   CustomerSecurityEvents,
   FirstPartyEvents,
@@ -113,6 +119,10 @@ export const collections: CollectionConfig[] = [
   SmsRateLimits,
   CustomerSessions,
   StepUpGrants,
+  InvitationRewardRuleVersions,
+  InvitationRelationships,
+  InvitationRewardClaims,
+  InvitationRewardEvents,
   Articles,
   Topics,
   TldPages,

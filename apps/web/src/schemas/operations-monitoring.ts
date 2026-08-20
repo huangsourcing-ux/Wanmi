@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 const countThreshold = z.number().int().min(1).max(1_000_000)
+const amountThreshold = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER)
 const ageThreshold = z
   .number()
   .int()
@@ -9,6 +10,22 @@ const ageThreshold = z
 
 export const operationsMonitoringThresholdsSchema = z
   .object({
+    abuse: z
+      .object({
+        invitationGrowthCount: countThreshold,
+        pointsEarned: amountThreshold,
+        registrationCount: countThreshold,
+        smsRequestCount: countThreshold,
+        walletAbsoluteChangeFen: amountThreshold,
+      })
+      .strict()
+      .default({
+        invitationGrowthCount: 20,
+        pointsEarned: 10_000,
+        registrationCount: 30,
+        smsRequestCount: 100,
+        walletAbsoluteChangeFen: 1_000_000,
+      }),
     balance: z
       .object({
         alertCount: countThreshold,
@@ -77,6 +94,13 @@ export const operationsMonitoringThresholdsSchema = z
 export type OperationsMonitoringThresholds = z.infer<typeof operationsMonitoringThresholdsSchema>
 
 export const DEFAULT_OPERATIONS_MONITORING_THRESHOLDS = operationsMonitoringThresholdsSchema.parse({
+  abuse: {
+    invitationGrowthCount: 20,
+    pointsEarned: 10_000,
+    registrationCount: 30,
+    smsRequestCount: 100,
+    walletAbsoluteChangeFen: 1_000_000,
+  },
   balance: { alertCount: 1, maximumObservationAgeMinutes: 15 },
   documents: { accessCount: 50, distinctDocumentCount: 20 },
   fulfillment: {

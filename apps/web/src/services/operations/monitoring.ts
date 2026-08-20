@@ -5,17 +5,21 @@ import { z } from 'zod'
 import { hasRole, isActiveAdminUser } from '@/access/roles'
 import { AppError } from '@/lib/errors'
 import {
-  DEFAULT_OPERATIONS_MONITORING_THRESHOLDS,
   operationsMonitoringThresholdsSchema,
   type OperationsMonitoringThresholds,
 } from '@/schemas/operations-monitoring'
 import { recordAuditEvent } from '@/services/audit/record-audit-event'
+import {
+  loadOperationsMonitoringThresholds,
+  OPERATIONS_MONITORING_THRESHOLDS_KEY,
+} from '@/services/operations/monitoring-thresholds'
+import { scanReleasedInvitationRewardsForAbuse } from '@/services/invitations/rewards'
 import { commerceWorkerHeartbeatAgeMinutes } from '@/services/operations/worker-heartbeat'
 
-export const OPERATIONS_MONITORING_THRESHOLDS_KEY = 'operations.monitoring.thresholds.v1'
 export const OPERATIONS_MONITORING_STATE_KEY = 'operations.monitoring.state.v1'
 
 export const OPERATIONS_MONITORING_CATEGORIES = [
+  'abuse',
   'tools',
   'sms',
   'payments',
@@ -41,6 +45,13 @@ const monitoringStateSchema = z
 type MonitoringState = z.infer<typeof monitoringStateSchema>
 
 export type MonitoringSnapshot = {
+  abuse: {
+    invitationGrowthCount: number
+    pointsEarned: number
+    registrationCount: number
+    smsRequestCount: number
+    walletAbsoluteChangeFen: number
+  }
   balance: { alertCount: number; observationAgeMinutes: null | number }
   documents: { accessCount: number; distinctDocumentCount: number }
   fulfillment: { failedOrUnknownCount: number; staleSubmittedCount: number }
@@ -127,6 +138,23 @@ export function evaluateOperationsMonitoring(
     observed: number | 'missing',
     threshold: number,
   ) => alerts.push({ category, condition, observed, threshold })
+
+  for (const condition of [
+    'smsRequestCount',
+    'registrationCount',
+    'invitationGrowthCount',
+    'pointsEarned',
+    'walletAbsoluteChangeFen',
+  ] as const) {
+    if (snapshot.abuse[condition] >= thresholds.abuse[condition]) {
+      add(
+        'abuse',
+        condition.replaceAll(/([A-Z])/gu, '_$1').toLowerCase(),
+        snapshot.abuse[condition],
+        thresholds.abuse[condition],
+      )
+    }
+  }
 
   const toolFailureRate = basisPoints(snapshot.tools.failureCount, snapshot.tools.requestCount)
   if (
@@ -280,21 +308,68 @@ export function evaluateOperationsMonitoring(
   return alerts
 }
 
-async function loadThresholds(req: PayloadRequest): Promise<OperationsMonitoringThresholds> {
-  const result = await req.payload.find({
-    collection: 'siteSettings',
-    depth: 0,
-    limit: 1,
-    overrideAccess: true,
-    req,
-    where: { key: { equals: OPERATIONS_MONITORING_THRESHOLDS_KEY } },
-  })
-  if (!result.docs[0]) return DEFAULT_OPERATIONS_MONITORING_THRESHOLDS
-  const parsed = operationsMonitoringThresholdsSchema.safeParse(result.docs[0].value)
-  if (!parsed.success) {
-    throw new AppError('OPERATIONS_MONITORING_THRESHOLDS_INVALID', '运营监控阈值配置无效', 503)
+export async function collectAbuseMonitoringSnapshot(
+  req: PayloadRequest,
+  start: string,
+  end: string,
+): Promise<MonitoringSnapshot['abuse']> {
+  const [smsChallenges, registrations, invitationRelationships, pointsBatches, walletEntries] =
+    await Promise.all([
+      req.payload.count({
+        collection: 'smsChallenges',
+        overrideAccess: true,
+        req,
+        where: timeRange('sentAt', start, end),
+      }),
+      req.payload.count({
+        collection: 'customerSecurityEvents',
+        overrideAccess: true,
+        req,
+        where: {
+          and: [
+            { event: { equals: 'registration_completed' } },
+            ...timeRange('occurredAt', start, end).and,
+          ],
+        },
+      }),
+      req.payload.count({
+        collection: 'invitationRelationships',
+        overrideAccess: true,
+        req,
+        where: timeRange('boundAt', start, end),
+      }),
+      req.payload.find({
+        collection: 'pointsBatches',
+        depth: 0,
+        overrideAccess: true,
+        pagination: false,
+        req,
+        select: { points: true },
+        where: timeRange('createdAt', start, end),
+      }),
+      req.payload.find({
+        collection: 'walletEntries',
+        depth: 0,
+        overrideAccess: true,
+        pagination: false,
+        req,
+        select: { amountFen: true, entryType: true },
+        where: {
+          and: [
+            { entryType: { in: ['credit', 'capture', 'recovery'] } },
+            ...timeRange('createdAt', start, end).and,
+          ],
+        },
+      }),
+    ])
+
+  return {
+    invitationGrowthCount: invitationRelationships.totalDocs,
+    pointsEarned: checkedSum(pointsBatches.docs.map((batch) => batch.points)),
+    registrationCount: registrations.totalDocs,
+    smsRequestCount: smsChallenges.totalDocs,
+    walletAbsoluteChangeFen: checkedSum(walletEntries.docs.map((entry) => entry.amountFen)),
   }
-  return parsed.data
 }
 
 async function collectSnapshot(
@@ -304,6 +379,7 @@ async function collectSnapshot(
   end: string,
 ): Promise<MonitoringSnapshot> {
   const [
+    abuse,
     toolBuckets,
     firstPartyFailures,
     smsChallenges,
@@ -315,6 +391,7 @@ async function collectSnapshot(
     accessLogs,
     balanceAlerts,
   ] = await Promise.all([
+    collectAbuseMonitoringSnapshot(req, start, end),
     req.payload.find({
       collection: 'toolObservabilityBuckets',
       depth: 0,
@@ -472,6 +549,7 @@ async function collectSnapshot(
   const commerceHeartbeatAgeMinutes = await commerceWorkerHeartbeatAgeMinutes(req, end)
 
   return {
+    abuse,
     balance: {
       alertCount: balanceAlerts.totalDocs,
       observationAgeMinutes: latestBalance?.periodEnd
@@ -619,7 +697,7 @@ export async function runOperationsMonitoring(
   options: { now?: Date; thresholds?: OperationsMonitoringThresholds } = {},
 ) {
   const thresholds = operationsMonitoringThresholdsSchema.parse(
-    options.thresholds ?? (await loadThresholds(req)),
+    options.thresholds ?? (await loadOperationsMonitoringThresholds(req)),
   )
   const now = options.now ?? new Date()
   const windowMs = thresholds.windowMinutes * 60_000
@@ -632,8 +710,18 @@ export async function runOperationsMonitoring(
   return transaction(req, async () => {
     const state = await loadState(req)
     if (!(await claimWindow(req, state, windowEnd))) {
-      return { alertCount: 0, idempotentReplay: true, snapshot, windowEnd, windowStart }
+      return {
+        alertCount: 0,
+        idempotentReplay: true,
+        invitationRewardScan: { flaggedCount: 0, scannedCount: 0 },
+        snapshot,
+        windowEnd,
+        windowStart,
+      }
     }
+    const invitationRewardScan = await scanReleasedInvitationRewardsForAbuse(req, {
+      traceId: `operations-monitoring:${windowEnd}:invitation-rewards`,
+    })
     for (const alert of alerts) {
       await recordAuditEvent(req, {
         action: 'operations.monitoring.alerted',
@@ -664,6 +752,7 @@ export async function runOperationsMonitoring(
     return {
       alertCount: alerts.length,
       idempotentReplay: false,
+      invitationRewardScan,
       snapshot,
       windowEnd,
       windowStart,

@@ -98,7 +98,18 @@ export const PointsBatches: CollectionConfig = {
       index: true,
       required: true,
     },
-    { name: 'sourceType', type: 'select', options: ['order_reward'], required: true },
+    {
+      name: 'sourceType',
+      type: 'select',
+      options: ['order_reward', 'invitation_reward'],
+      required: true,
+    },
+    {
+      name: 'sourceCustomer',
+      type: 'relationship',
+      relationTo: 'customers',
+      index: true,
+    },
     {
       name: 'sourceOrder',
       type: 'relationship',

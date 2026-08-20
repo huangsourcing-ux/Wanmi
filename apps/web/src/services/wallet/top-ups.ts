@@ -4,6 +4,8 @@ import { sql } from '@payloadcms/db-postgres'
 import { commitTransaction, initTransaction, killTransaction, type PayloadRequest } from 'payload'
 
 import { isCustomerUser } from '@/access/roles'
+import { hmac } from '@/lib/crypto'
+import { getEnv } from '@/lib/env'
 import { AppError } from '@/lib/errors'
 import type { PaymentOrder, PaymentProvider, VerifiedPaymentNotification } from '@/providers/types'
 import {
@@ -417,6 +419,9 @@ async function applyPaymentQuery(
         status = 'provider_confirmed',
         wechat_transaction_id = ${paid.transactionId},
         provider_paid_at = ${paid.paidAt},
+        payer_identifier_hash = ${
+          paid.payerIdentifier ? hmac(paid.payerIdentifier, getEnv().SESSION_PEPPER) : null
+        },
         provider_confirmed_at = NOW(),
         updated_at = NOW()
       WHERE top_up_order_number = ${paid.merchantOrderNumber}

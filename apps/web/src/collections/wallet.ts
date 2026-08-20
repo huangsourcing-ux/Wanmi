@@ -1,6 +1,12 @@
 import type { CollectionConfig, Field } from 'payload'
 
-import { deny, ownOrSystem, systemAdminHidden, systemAdminOnly } from '@/access/roles'
+import {
+  deny,
+  ownOrSystem,
+  sensitiveFieldRead,
+  systemAdminHidden,
+  systemAdminOnly,
+} from '@/access/roles'
 import { ADMIN_GROUPS } from '@/lib/admin-navigation'
 import { AppError } from '@/lib/errors'
 
@@ -228,6 +234,12 @@ export const WalletTopUpOrders: CollectionConfig = {
       type: 'text',
       index: true,
       unique: true,
+    },
+    {
+      name: 'payerIdentifierHash',
+      type: 'text',
+      access: { read: sensitiveFieldRead },
+      index: true,
     },
     { name: 'ledgerTransactionKey', type: 'text', index: true, required: true, unique: true },
     { name: 'originalRefundNumber', type: 'text', index: true, unique: true },

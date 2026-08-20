@@ -190,6 +190,7 @@ export const Customers: CollectionConfig = {
       options: ['individual', 'organization'],
     },
     { name: 'inviteCode', type: 'text', index: true, unique: true },
+    { name: 'inviteCodeDisabledAt', type: 'date', index: true },
     {
       name: 'invitedByCustomer',
       type: 'relationship',

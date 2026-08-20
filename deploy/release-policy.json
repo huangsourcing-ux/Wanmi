@@ -161,6 +161,13 @@
       "phase": "expand",
       "reason": "新增与钱包数据层隔离的米币批次、追加式账本、确定性消费分配、工具额度账本及过期工作流；旧代码可忽略新增结构，新代码必须在迁移完成后启用 D9-E-2 米币操作。",
       "rollback": "retain"
+    },
+    "20260820_051725_d9e1_invitations_abuse": {
+      "newCodeCompatibleBeforeUp": true,
+      "oldCodeCompatible": true,
+      "phase": "expand",
+      "reason": "新增版本化邀请规则、一次绑定、奖励认领与事件表，为米币来源、支付账户哈希及通知类型扩展结构；既有邀请码与邀请投影原位保留并回填，新代码必须在迁移完成后启用 D9-E-1。",
+      "rollback": "retain"
     }
   }
 }

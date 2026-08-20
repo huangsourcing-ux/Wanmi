@@ -5,6 +5,8 @@ import { createLocalReq, getPayload, type Payload, type PayloadRequest } from 'p
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { mockFailure } from '@/providers/mock'
+import { hmac } from '@/lib/crypto'
+import { getEnv } from '@/lib/env'
 import type { PaymentProvider } from '@/providers/types'
 import { createWechatPayFixture, paymentPayloadDigest } from '@/providers/wechatpay'
 import {
@@ -257,10 +259,12 @@ describe('D5-03 Wechat Pay confirmation', () => {
     const merchantOrderNumber = session.data.merchantOrderNumber
     const paidAt = new Date(now.getTime() + 60_000).toISOString()
     const transactionId = '42000000000000000000000000000011'
+    const payerIdentifier = `${prefix}-confirmed-payer`
     fixture.setOrder({
       amountMinor: setup.amountMinor,
       merchantOrderNumber,
       paidAt,
+      payerIdentifier,
       state: 'paid',
       transactionId,
     })
@@ -269,6 +273,7 @@ describe('D5-03 Wechat Pay confirmation', () => {
       merchantOrderNumber,
       notificationId: notificationId(),
       paidAt,
+      payerIdentifier,
       transactionId,
     })
     const first = await processWechatPaymentNotification(
@@ -307,10 +312,12 @@ describe('D5-03 Wechat Pay confirmation', () => {
       currency: 'CNY',
       merchantOrderNumber,
       paidAt,
+      payerIdentifierHash: hmac(payerIdentifier, getEnv().SESSION_PEPPER),
       signatureVerified: true,
       source: 'notification',
       wechatTransactionId: transactionId,
     })
+    expect(JSON.stringify(notifications.docs[0])).not.toContain(payerIdentifier)
     const events = await payload.find({
       collection: 'orderEvents',
       overrideAccess: true,

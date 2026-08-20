@@ -2096,14 +2096,54 @@ D9-D-3 证据（2026-08-18，仅本节第 4、5 项，至此 D9-D 完成）：
 
 #### E3 邀请体系
 
-- [ ] 邀请码/链接不可枚举、可停用；绑定时机为注册时携带或注册后限定窗口内绑定一次，**绑定不可
+- [x] 邀请码/链接不可枚举、可停用；绑定时机为注册时携带或注册后限定窗口内绑定一次，**绑定不可
       更改**并写审计；
-- [ ] 奖励规则可配置且版本化，**只发米币**；
-- [ ] **奖励延迟发放**：只在被邀请人产生不可退的成功订单后发放；发放幂等，同一被邀请人只计一次；
-- [ ] 反作弊信号：**同 `deviceHash`**（既有 `hmac(deviceId, pepper)`，是第一方标识而非浏览器
+  - **实现、并发与行为证据**：`apps/web/src/services/invitations/binding.ts:74-83` 新生成 16 bytes / 128-bit
+    base64url code，保留旧 12 位 code 只读兼容；`:248-314` 分开注册携码、登录后绑定和停用入口，
+    `:127-246` 只以 DB `NOW()`、customer `created_at`、active code 与 invitee 唯一索引判定并写审计。
+    `apps/web/tests/unit/d9e1-invitations.test.ts:30` 用例“encodes all 128 random bits and produces
+    non-enumerable invitation codes”逐 bit 反解 128-bit 熵，`:57` 拒绝客户端时间；
+    `apps/web/tests/integration/d9e1-invitations.integration.test.ts:468,512,575,602` 四条独立用例分别保护
+    停用码、二次绑定、窗口外绑定及并发恰好一次。注册携码和第一方 device HMAC 另由
+    `apps/web/tests/integration/d9a-identity-registration.integration.test.ts:128` 保护。
+- [x] 奖励规则可配置且版本化，**只发米币**；
+  - **实现与行为证据**：`apps/web/src/services/invitations/rules.ts:27-100` 只允许 active
+    `system_admin` 追加版本并审计；`apps/web/src/collections/invitations.ts:68-91` 关闭通用写和原地改删。
+    奖励唯一入口 `apps/web/src/services/points/ledger.ts:740-914` 复用 E-2 pending/available 生命周期，
+    source 固定 `invitation_reward`，没有 wallet/fen 路径。集成用例“does not create a reward claim while
+    the latest versioned rule is disabled”（`:616`）与“deterministically selects the highest version when
+    effective times tie”（`:1153`）分别保护 enabled 与同时间 version 兜底。
+- [x] **奖励延迟发放**：只在被邀请人产生不可退的成功订单后发放；发放幂等，同一被邀请人只计一次；
+  - **状态、幂等与并发证据**：`apps/web/src/services/invitations/rewards.ts:109-158,357-411` 以 invitee
+    唯一 claim 认领首个资格订单，paid/fulfilling 只建 pending，只有确切 `succeeded` order event 才调用
+    E-2 confirm；migration 同时固化 invitee、source order、claim key 唯一索引。用例“keeps a paid but not
+    succeeded order pending and does not expose available points”（`:658`）、“rewards one invitee only once
+    across multiple succeeded orders”（`:697`）和八路“concurrently triggering one invitee creates exactly
+    one pending reward”（`:791`）分别独立断言 available=0、多个成功订单仅一条 batch/available 及并发恰好
+    一次，全部计数带 customer/invitee/source type/entry type `where`。
+- [x] 反作弊信号：**同 `deviceHash`**（既有 `hmac(deviceId, pepper)`，是第一方标识而非浏览器
       指纹，与「不做设备指纹」不冲突）、同实名主体、同手机号、同支付账户、异常增长速率；
-- [ ] 命中拦截**只挂起未发放奖励，不自动扣回已发放**（避免误伤），并产生监控告警与人工复核；
-- [ ] 邀请关系与奖励追加式记录，可从审计还原。
+  - **权威来源与去相关证据**：`apps/web/src/services/invitations/rewards.ts:232-320` 分别读取绑定关系的
+    第一方 device HMAC、既有 approved 实名模板主体、`customerIdentities.identifierHash`、已验签/确认的
+    微信付款或充值 payer HMAC，以及目标 inviter 窗口内关系聚合；provider payer 只从官方嵌套字段取值
+    并在 `apps/web/src/providers/wechatpay.ts:246,436,554` 返回给调用方 HMAC 保存。四条参数化用例
+    “independently withholds pending reward for ...”（`:967`）与增长用例“withholds abnormal invitation
+    growth at the configured aggregate boundary”（`:1032`）各自只命中一个信号；全部来源替换与去相关表见
+    `docs/operations/d9e1-invitations-abuse-mutation-matrix.md` 第 4 节。
+- [x] 命中拦截**只挂起未发放奖励，不自动扣回已发放**（避免误伤），并产生监控告警与人工复核；
+  - **零扣回、零自动状态变更证据**：`apps/web/src/services/invitations/rewards.ts:323-354,394-405,413-436`
+    对未发放只追加 withheld，对已 available 只追加 `flagged_after_release`，复用 `manualReviews` 与 B-5
+    transactional outbox；没有 reversal 或 `transitionCustomerAccount` 路径。用例“flags newly detected abuse
+    after release without changing ledger or account state”（`:1062`）直接逐值断言命中前后账本条目数、可用
+    余额、A3 status 和 restrictions 均零变化，同时人工复核、告警 outbox 各一条。
+- [x] 邀请关系与奖励追加式记录，可从审计还原。
+  - **追加式与审计证据**：`apps/web/src/collections/invitations.ts:35-56,68-235` 对规则、关系、claim、event
+    全部关闭通用 create/update/delete，并在 overrideAccess 下仍以 `beforeChange`/`beforeDelete` 拒绝原地
+    改删；关系审计保存 inviter/source/window，奖励审计在
+    `apps/web/src/services/invitations/rewards.ts:205-230` 快照 invitee、inviter、relationship、order、规则版本、
+    points、expiry、batch 与 signals。用例“rejects generic mutations and both update/delete hook callpoints for
+    append-only records”（`apps/web/tests/unit/d9e1-invitations.test.ts:67`）逐 Collection/调用点执行；多订单
+    用例（集成 `:697`）限定 claim target 断言 pending/available 两条审计可追溯。
 
 ### 16.11 范围边界：付费增值产品应单列阶段
 
@@ -2142,8 +2182,18 @@ D9-D 的基础解析联调如证明必须先开通付费智能 DNS，应将对�
       失败后站内兜底；高风险安全事件向全部已验证渠道发送；消息正文不可变与已读状态分表；
 - [x] **交易类通知不可退订**，系统尽力发送、重试并记录投递结果；**外部渠道投递失败不得改变交易
       与资产状态**（不承诺必达）；微信服务号可作为后续通知渠道；
-- [ ] 反滥用监控：短信请求速率、注册速率、邀请增长速率、米币赚取速率、余额异常变动；沿用 D7-02
+- [x] 反滥用监控：短信请求速率、注册速率、邀请增长速率、米币赚取速率、余额异常变动；沿用 D7-02
       监控设施与 `siteSettings` 阈值方式，指标脱敏；
+  - **实现、脱敏与五阈值证据**：`apps/web/src/services/operations/monitoring.ts:311-373` 只从
+    `smsChallenges.sentAt`、registration security event/`occurredAt`、relationship `boundAt`、points batch
+    `points` 与 wallet credit/capture/recovery `amountFen` 聚合五个数值；`:695-759` 沿用 D7-02 window CAS、
+    audit/logger 及 `siteSettings` key，不保存 snapshot 或新增客户标识。单元用例“collects five de-correlated
+    abuse rates from their authoritative fields without identifiers”（
+    `apps/web/tests/unit/operations-monitoring.test.ts:39`）直接把手机号、deviceId、证件号放进未选字段并
+    断言输出不含；`:256-277` 五条 `<指标> 单独越限时产生独立脱敏告警` 可分别失败。PostgreSQL 用例
+    “uses a PostgreSQL CAS so five concurrent executions emit one alert for one closed window”（
+    `apps/web/tests/integration/operations-monitoring.integration.test.ts:294`）同时断言完整 snapshot/alert 不含
+    手机、deviceId、证件或 identifierHash。
 - [x] 后台列表与日志不得展示证件内容或完整手机号（沿用 D4 约束）。
 
 D9-B-5 通知证据（2026-08-19，仅本节第 1、2、4 项）：
