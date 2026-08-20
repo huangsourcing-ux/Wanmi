@@ -1,7 +1,17 @@
 import { randomInt, randomUUID } from 'node:crypto'
 
+import { sql } from '@payloadcms/db-postgres'
 import config from '@payload-config'
-import { createLocalReq, getPayload, type Payload, type PayloadRequest, type Where } from 'payload'
+import {
+  commitTransaction,
+  createLocalReq,
+  getPayload,
+  initTransaction,
+  killTransaction,
+  type Payload,
+  type PayloadRequest,
+  type Where,
+} from 'payload'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import type { Customer, Order } from '@/payload-types'
@@ -25,6 +35,10 @@ import { realnameTemplateFixture } from '../fixtures/realname'
 const fixturePrefix = `d9e2-points-${randomUUID()}`
 const customerIds: number[] = []
 let payload: Payload
+
+type TestPointsDatabase = {
+  execute(statement: ReturnType<typeof sql>): Promise<{ rows?: Array<Record<string, unknown>> }>
+}
 
 function phone(): string {
   return `+86195${randomInt(10_000_000, 100_000_000)}`
@@ -199,6 +213,154 @@ async function count(
     where: { and: [{ customer: { equals: customerId } }, where] },
   })
   return result.totalDocs
+}
+
+async function withDeterministicPlanner<T>(
+  req: PayloadRequest,
+  mode: 'index' | 'sequential',
+  work: (database: TestPointsDatabase) => Promise<T>,
+): Promise<T> {
+  const started = await initTransaction(req)
+  if (!started) throw new Error('Expected the test to own a new transaction')
+  try {
+    const transactionId = await req.transactionID
+    const session = transactionId ? req.payload.db.sessions?.[transactionId] : undefined
+    const database = session?.db as TestPointsDatabase | undefined
+    if (!database) throw new Error('Expected a transaction-bound test database')
+    if (mode === 'sequential') {
+      await database.execute(sql`SET LOCAL enable_indexscan = off`)
+      await database.execute(sql`SET LOCAL enable_indexonlyscan = off`)
+      await database.execute(sql`SET LOCAL enable_bitmapscan = off`)
+      await database.execute(sql`SET LOCAL enable_nestloop = off`)
+      await database.execute(sql`SET LOCAL enable_hashjoin = on`)
+      await database.execute(sql`SET LOCAL enable_mergejoin = off`)
+      await database.execute(sql`SET LOCAL join_collapse_limit = 1`)
+      await database.execute(sql`SET LOCAL from_collapse_limit = 1`)
+    } else {
+      await database.execute(sql`SET LOCAL enable_seqscan = off`)
+    }
+    const result = await work(database)
+    await commitTransaction(req)
+    return result
+  } catch (error) {
+    await killTransaction(req)
+    throw error
+  }
+}
+
+async function withPersistedAllocationOrderContract<T>(
+  req: PayloadRequest,
+  work: () => Promise<T>,
+): Promise<T> {
+  const started = await initTransaction(req)
+  if (!started) throw new Error('Expected the test to own a new transaction')
+  try {
+    const transactionId = await req.transactionID
+    const session = transactionId ? req.payload.db.sessions?.[transactionId] : undefined
+    const database = session?.db as TestPointsDatabase | undefined
+    if (!database) throw new Error('Expected a transaction-bound test database')
+    const originalExecute = database.execute.bind(database)
+    let observedQuery = ''
+    database.execute = async (statement) => {
+      const serialized = JSON.stringify(statement)
+      if (
+        serialized.includes('FROM points_consumption_allocations AS allocations') &&
+        serialized.includes('JOIN points_batches AS batches') &&
+        serialized.includes('allocations.points') &&
+        serialized.includes('WHERE allocations.redemption_id')
+      ) {
+        observedQuery = serialized
+      }
+      return originalExecute(statement)
+    }
+    const result = await work()
+    expect(
+      observedQuery,
+      'persisted allocation query must order equal expiries by ascending batch id',
+    ).toContain('ORDER BY batches.expires_at ASC, allocations.batch_id ASC')
+    await killTransaction(req)
+    return result
+  } catch (error) {
+    await killTransaction(req)
+    throw error
+  }
+}
+
+async function withExpirationCandidateOrderContract<T>(work: () => Promise<T>): Promise<T> {
+  const testPool = payload.db.pool as unknown as {
+    query: (...args: unknown[]) => Promise<unknown>
+  }
+  const originalQueryMethod = testPool.query
+  const originalQuery = originalQueryMethod.bind(testPool)
+  let observedQuery = ''
+  testPool.query = async (...args) => {
+    const [statement] = args
+    if (
+      typeof statement === 'string' &&
+      statement.includes('FROM points_batches AS batches') &&
+      statement.includes('LIMIT $2')
+    ) {
+      observedQuery = statement
+    }
+    return originalQuery(...args)
+  }
+  try {
+    const result = await work()
+    expect(
+      observedQuery,
+      'expiration candidate query must order equal expiries by ascending batch id',
+    ).toContain('ORDER BY batches.expires_at ASC, batches.id ASC')
+    return result
+  } finally {
+    testPool.query = originalQueryMethod
+  }
+}
+
+async function rewriteBatchExpiryInDescendingIdOrder(
+  batchIds: Array<number | string>,
+  expiresAt: string,
+): Promise<void> {
+  const descendingIds = [...batchIds].sort((left, right) => Number(right) - Number(left))
+  for (const batchId of descendingIds) {
+    await payload.db.pool.query(
+      `UPDATE points_batches
+       SET expires_at = $1, updated_at = NOW()
+       WHERE id = $2`,
+      [expiresAt, batchId],
+    )
+  }
+  const physical = await payload.db.pool.query<{ id: number }>(
+    `SELECT id
+     FROM points_batches
+     WHERE id = ANY($1::int[])
+     ORDER BY ctid ASC`,
+    [batchIds.map(Number)],
+  )
+  expect(physical.rows.map(({ id }) => id)).toEqual(descendingIds.map(Number))
+}
+
+async function rewriteAllocationsInDescendingBatchIdOrder(
+  redemptionId: number | string,
+  batchIds: Array<number | string>,
+): Promise<void> {
+  const descendingIds = [...batchIds].sort((left, right) => Number(right) - Number(left))
+  for (const batchId of descendingIds) {
+    await payload.db.pool.query(
+      `UPDATE points_consumption_allocations
+       SET allocation_key = allocation_key || ':r', updated_at = NOW()
+       WHERE redemption_id = $1
+         AND batch_id = $2`,
+      [redemptionId, batchId],
+    )
+  }
+  const physical = await payload.db.pool.query<{ batch_id: number }>(
+    `SELECT batch_id
+     FROM points_consumption_allocations
+     WHERE redemption_id = $1
+     ORDER BY ctid ASC`,
+    [redemptionId],
+  )
+  expect(physical.rows.map(({ batch_id }) => batch_id)).toEqual(descendingIds.map(Number))
 }
 
 beforeAll(async () => {
@@ -513,7 +675,7 @@ describe('D9-E-2 points ledger, expiry allocation, and tool quotas', () => {
     ).resolves.toMatchObject({ available: 55n, pending: 0n })
   })
 
-  it('allocates deterministically by earliest expiry and then ascending batch id on replay', async () => {
+  it('allocates equal-expiry spendable batches by ascending id and replays identically', async () => {
     const customer = await createCustomer()
     const tieExpiry = new Date(Date.now() + 10 * 86_400_000).toISOString()
     const late = await earnAvailable(
@@ -522,10 +684,21 @@ describe('D9-E-2 points ledger, expiry allocation, and tool quotas', () => {
       40,
       new Date(Date.now() + 20 * 86_400_000).toISOString(),
     )
-    const tieFirst = await earnAvailable(customer, 'deterministic-tie-first', 30, tieExpiry)
-    const tieSecond = await earnAvailable(customer, 'deterministic-tie-second', 30, tieExpiry)
+    const tieFirst = await earnAvailable(
+      customer,
+      'deterministic-tie-first',
+      30,
+      new Date(Date.now() + 11 * 86_400_000).toISOString(),
+    )
+    const tieSecond = await earnAvailable(
+      customer,
+      'deterministic-tie-second',
+      30,
+      new Date(Date.now() + 12 * 86_400_000).toISOString(),
+    )
     expect(Number(tieFirst.batchId)).toBeLessThan(Number(tieSecond.batchId))
     expect(Number(late.batchId)).toBeLessThan(Number(tieFirst.batchId))
+    await rewriteBatchExpiryInDescendingIdOrder([tieFirst.batchId, tieSecond.batchId], tieExpiry)
 
     const input = {
       customerId: customer.id,
@@ -534,15 +707,15 @@ describe('D9-E-2 points ledger, expiry allocation, and tool quotas', () => {
       redemptionKey: `${fixturePrefix}:deterministic-redemption`,
       target: 'bulk_query',
     }
-    const firstPromise = redeemPointsForToolQuota(
-      await customerRequest(customer, 'deterministic-first'),
-      input,
+    const firstRequest = await customerRequest(customer, 'deterministic-first')
+    const firstPromise = withDeterministicPlanner(firstRequest, 'sequential', () =>
+      redeemPointsForToolQuota(firstRequest, input),
     )
     await expect(firstPromise).resolves.toMatchObject({ applied: true })
     const first = await firstPromise
-    const replayPromise = redeemPointsForToolQuota(
-      await customerRequest(customer, 'deterministic-replay'),
-      input,
+    const replayRequest = await customerRequest(customer, 'deterministic-replay')
+    const replayPromise = withDeterministicPlanner(replayRequest, 'index', () =>
+      redeemPointsForToolQuota(replayRequest, input),
     )
     await expect(replayPromise).resolves.toMatchObject({ applied: false })
     const replay = await replayPromise
@@ -550,10 +723,47 @@ describe('D9-E-2 points ledger, expiry allocation, and tool quotas', () => {
       { batchId: tieFirst.batchId, expiresAt: tieExpiry, points: 30n },
       { batchId: tieSecond.batchId, expiresAt: tieExpiry, points: 20n },
     ]
-    expect(first.allocations).toEqual(expected)
+    expect(
+      first.allocations,
+      'spendable batch query must allocate equal expiries by ascending batch id',
+    ).toEqual(expected)
     expect(replay.allocations).toEqual(expected)
     expect(replay.allocations).toEqual(first.allocations)
     expect(replay.applied).toBe(false)
+  })
+
+  it('returns persisted equal-expiry allocations by ascending batch id', async () => {
+    const customer = await createCustomer()
+    const tieExpiry = new Date(Date.now() + 10 * 86_400_000).toISOString()
+    const first = await earnAvailable(customer, 'persisted-order-first', 20, tieExpiry)
+    const second = await earnAvailable(customer, 'persisted-order-second', 20, tieExpiry)
+    expect(Number(first.batchId)).toBeLessThan(Number(second.batchId))
+    const input = {
+      customerId: customer.id,
+      pointsCost: 40,
+      quotaUnits: 2,
+      redemptionKey: `${fixturePrefix}:persisted-order-redemption`,
+      target: 'bulk_query' as const,
+    }
+    const created = await redeemPointsForToolQuota(
+      await customerRequest(customer, 'persisted-order-create'),
+      input,
+    )
+    expect(created.applied).toBe(true)
+    await rewriteAllocationsInDescendingBatchIdOrder(created.redemptionId, [
+      first.batchId,
+      second.batchId,
+    ])
+
+    const replayRequest = await customerRequest(customer, 'persisted-order-replay')
+    const replay = await withPersistedAllocationOrderContract(replayRequest, () =>
+      redeemPointsForToolQuota(replayRequest, input),
+    )
+    expect(replay.applied).toBe(false)
+    expect(replay.allocations).toEqual([
+      { batchId: first.batchId, expiresAt: tieExpiry, points: 20n },
+      { batchId: second.batchId, expiresAt: tieExpiry, points: 20n },
+    ])
   })
 
   it('recomputes remaining expirable points from cross-batch allocations', async () => {
@@ -1670,8 +1880,18 @@ describe('D9-E-2 points ledger, expiry allocation, and tool quotas', () => {
   it('expires equal-time batches by ascending id and honors the exact batch limit', async () => {
     const customer = await createCustomer()
     const expiresAt = new Date(Date.now() + 1_000)
-    const first = await earnAvailable(customer, 'expiry-order-first', 11, expiresAt.toISOString())
-    const second = await earnAvailable(customer, 'expiry-order-second', 13, expiresAt.toISOString())
+    const first = await earnAvailable(
+      customer,
+      'expiry-order-first',
+      11,
+      new Date(expiresAt.getTime() + 1_000).toISOString(),
+    )
+    const second = await earnAvailable(
+      customer,
+      'expiry-order-second',
+      13,
+      new Date(expiresAt.getTime() + 2_000).toISOString(),
+    )
     const later = await earnAvailable(
       customer,
       'expiry-order-later',
@@ -1680,11 +1900,19 @@ describe('D9-E-2 points ledger, expiry allocation, and tool quotas', () => {
     )
     expect(Number(first.batchId)).toBeLessThan(Number(second.batchId))
     expect(Number(second.batchId)).toBeLessThan(Number(later.batchId))
+    await rewriteBatchExpiryInDescendingIdOrder(
+      [first.batchId, second.batchId],
+      expiresAt.toISOString(),
+    )
     const cutoff = new Date(expiresAt.getTime() + 1_000)
 
-    await expect(
-      runPointsExpiration(await systemRequest('expiry-order-one'), { cutoff, maxBatches: 1 }),
-    ).resolves.toEqual({ expiredBatches: 1, expiredPoints: 11n })
+    const firstExpiration = await withExpirationCandidateOrderContract(async () =>
+      runPointsExpiration(await systemRequest('expiry-order-one'), {
+        cutoff,
+        maxBatches: 1,
+      }),
+    )
+    expect(firstExpiration).toEqual({ expiredBatches: 1, expiredPoints: 11n })
     await expect(
       count('pointsLedger', customer.id, {
         and: [{ batch: { equals: first.batchId } }, { entryType: { equals: 'expired' } }],

@@ -8,6 +8,12 @@ const ledgerPath = `${webRoot}/src/services/points/ledger.ts`
 const testFile = 'tests/integration/d9e2-points-ledger.integration.test.ts'
 const mutations = []
 const add = (mutation) => mutations.push(mutation)
+const deterministicSortTests = [
+  'allocates equal-expiry spendable batches by ascending id and replays identically',
+  'returns persisted equal-expiry allocations by ascending batch id',
+  'expires equal-time batches by ascending id and honors the exact batch limit',
+]
+const deterministicSortSelector = deterministicSortTests.join('|')
 
 for (const mutation of [
   {
@@ -87,7 +93,7 @@ for (const mutation of [
     predicate: 'redemption idempotency lookup uses the requested global key',
     search: '    FROM points_redemptions\n    WHERE redemption_key = ${key}\n',
     replacement: '    FROM points_redemptions\n    WHERE redemption_key <> ${key}\n',
-    test: 'allocates deterministically by earliest expiry and then ascending batch id on replay',
+    test: 'allocates equal-expiry spendable batches by ascending id and replays identically',
   },
   {
     id: 'quota-usage-key-lookup',
@@ -290,21 +296,25 @@ for (const mutation of [
     predicate: 'allocation orders by earliest expiry',
     search: '    ORDER BY expires_at ASC, id ASC\n',
     replacement: '    ORDER BY expires_at DESC, id ASC\n',
-    test: 'allocates deterministically by earliest expiry and then ascending batch id on replay',
+    test: 'allocates equal-expiry spendable batches by ascending id and replays identically',
   },
   {
     id: 'spendable-order-id-tiebreak',
     predicate: 'allocation ties break by ascending batch id',
     search: '    ORDER BY expires_at ASC, id ASC\n',
-    replacement: '    ORDER BY expires_at ASC, id DESC\n',
-    test: 'allocates deterministically by earliest expiry and then ascending batch id on replay',
+    replacement: '    ORDER BY expires_at ASC\n',
+    test: 'allocates equal-expiry spendable batches by ascending id and replays identically',
+    testSelector: deterministicSortSelector,
+    exclusiveFailure: true,
   },
   {
     id: 'persisted-allocation-order',
     predicate: 'replayed allocations use expiry then batch id order',
     search: '    ORDER BY batches.expires_at ASC, allocations.batch_id ASC\n',
-    replacement: '    ORDER BY batches.expires_at ASC, allocations.batch_id DESC\n',
-    test: 'allocates deterministically by earliest expiry and then ascending batch id on replay',
+    replacement: '    ORDER BY batches.expires_at ASC\n',
+    test: 'returns persisted equal-expiry allocations by ascending batch id',
+    testSelector: deterministicSortSelector,
+    exclusiveFailure: true,
   },
   {
     id: 'redemption-reservation-account',
@@ -515,8 +525,10 @@ for (const mutation of [
     id: 'expiration-order-id-tiebreak',
     predicate: 'equal-expiry candidates order by ascending batch id',
     search: '     ORDER BY batches.expires_at ASC, batches.id ASC\n',
-    replacement: '     ORDER BY batches.expires_at ASC, batches.id DESC\n',
+    replacement: '     ORDER BY batches.expires_at ASC\n',
     test: 'expires equal-time batches by ascending id and honors the exact batch limit',
+    testSelector: deterministicSortSelector,
+    exclusiveFailure: true,
   },
   {
     id: 'expiration-limit',
@@ -631,7 +643,7 @@ for (const mutation of selected) {
         'vitest.config.mts',
         testFile,
         '-t',
-        mutation.test,
+        mutation.testSelector ?? mutation.test,
       ],
       { cwd: repositoryRoot, encoding: 'utf8', env: process.env },
     )
@@ -644,7 +656,13 @@ for (const mutation of selected) {
   process.stdout.write(
     `PREDICATE ${mutation.predicate}\nTEST ${mutation.test}\nRAW_FAILURE ${assertion}\n`,
   )
-  if (result?.status !== 0 && output.includes('AssertionError:')) {
+  const exclusiveFailurePassed =
+    !mutation.exclusiveFailure ||
+    (/Tests\s+1 failed \| 2 passed/u.test(output) && output.includes(`> ${mutation.test}\n`))
+  if (mutation.exclusiveFailure) {
+    process.stdout.write(`EXCLUSIVE_FAILURE ${exclusiveFailurePassed ? '1/3' : 'FAILED'}\n`)
+  }
+  if (result?.status !== 0 && output.includes('AssertionError:') && exclusiveFailurePassed) {
     killed += 1
     process.stdout.write('RESULT KILLED_BY_BEHAVIOR\n')
   } else {

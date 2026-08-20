@@ -410,7 +410,7 @@ add({
     '    const allocated = batch.remaining < remainingCost ? batch.remaining : remainingCost\n',
   replacement:
     '    const allocated = batch.remaining > remainingCost ? batch.remaining : remainingCost\n',
-  test: 'allocates deterministically by earliest expiry and then ascending batch id on replay',
+  test: 'allocates equal-expiry spendable batches by ascending id and replays identically',
 })
 
 for (const [id, occurrence, test] of [
