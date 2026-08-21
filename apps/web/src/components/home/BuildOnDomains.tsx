@@ -50,7 +50,6 @@ export function BuildOnDomains() {
                 onMouseEnter={() => setActive(i)}
                 onFocus={() => setActive(i)}
                 tabIndex={0}
-                aria-expanded={isActive}
                 data-build-card={i}
                 className={cn(
                   'inline-flex h-[500px] w-full flex-col items-center justify-between overflow-hidden rounded-2xl py-8 transition-[width] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] xl:h-[650px] xl:rounded-[20px] xl:py-12',
@@ -80,6 +79,8 @@ export function BuildOnDomains() {
                   <img
                     src={card.image}
                     alt={card.alt}
+                    loading="lazy"
+                    decoding="async"
                     className="h-full w-full select-none object-contain"
                   />
                 </div>
@@ -97,7 +98,7 @@ export function BuildOnDomains() {
                   <p className="text-[15px] leading-[24px] text-dyna-navy/80">{card.body}</p>
                   <a
                     href="#"
-                    className="mt-1 inline-flex items-center gap-2 text-base font-medium leading-[21.28px] text-[#0096F7] transition-[color,gap] duration-300 hover:gap-[2px] hover:text-[#006EF5]"
+                    className="mt-1 inline-flex items-center gap-2 text-base font-medium leading-[21.28px] text-[#006EF5] transition-[color,gap] duration-300 hover:gap-[2px] hover:text-[#005FCF]"
                   >
                     {card.cta}
                     <AngleRightIcon className="h-3.5 w-3.5 shrink-0" />

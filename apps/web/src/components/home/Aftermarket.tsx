@@ -44,6 +44,8 @@ export function Aftermarket() {
                     alt={card.alt}
                     width={40}
                     height={38}
+                    loading="lazy"
+                    decoding="async"
                     className="h-[38px] w-auto select-none"
                   />
                   <h3 className="font-heading text-[22px] leading-[1.3] text-white md:text-[26px]">

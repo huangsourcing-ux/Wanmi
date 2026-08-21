@@ -61,7 +61,7 @@ export function PillButton({
       className={cn(
         'inline-flex items-center justify-center gap-2 rounded-[60px] bg-transparent p-0 transition-[color,gap] duration-300 hover:gap-[2px]',
         variant === 'link'
-          ? 'text-[#0096F7] hover:text-[#006EF5]'
+          ? 'text-[#006EF5] hover:text-[#005FCF]'
           : 'text-white hover:text-white/75',
         className,
       )}

@@ -14,7 +14,8 @@ before production release.
 
 ## Swansea
 
-- Included file: `apps/web/public/home/fonts/SwanseaBold-D0ox.woff`
+- Included files: `apps/web/public/home/fonts/SwanseaBold-D0ox.woff` and the derived web subset
+  `apps/web/public/home/fonts/Swansea-site.woff2`
 - Typeface designer: Roger White
 - Author statement source: <https://www.1001freefonts.com/swansea.font>
 - Archived author site: <https://web.archive.org/web/20120416090521/https://www.rogersfonts.org.uk/>

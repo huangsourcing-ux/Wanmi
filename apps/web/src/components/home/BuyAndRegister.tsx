@@ -26,6 +26,8 @@ export function BuyAndRegister() {
                 alt={row.alt}
                 width={878}
                 height={557}
+                loading="lazy"
+                decoding="async"
                 className="h-auto w-full select-none"
               />
 

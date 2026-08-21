@@ -1,0 +1,15 @@
+@font-face {
+  font-family: 'Switzer';
+  src: url('/home/fonts/Switzer-Variable.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: optional;
+}
+
+@font-face {
+  font-family: 'Swansea';
+  src: url('/home/fonts/Swansea-site.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: optional;
+}

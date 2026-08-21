@@ -16,6 +16,8 @@ export function WhyDynadot() {
         src={`${ASSETS}/images/why-dynadot-pointer-star.svg`}
         alt=""
         aria-hidden="true"
+        loading="lazy"
+        decoding="async"
         className="pointer-events-none absolute right-[6%] top-[12%] hidden h-[72px] w-[72px] select-none lg:block"
       />
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -23,6 +25,8 @@ export function WhyDynadot() {
         src={`${ASSETS}/images/why-dynadot-pointer-arrow.svg`}
         alt=""
         aria-hidden="true"
+        loading="lazy"
+        decoding="async"
         className="pointer-events-none absolute left-[7%] top-[54%] hidden h-[28px] w-[28px] select-none lg:block"
       />
 
@@ -64,6 +68,8 @@ export function WhyDynadot() {
                 alt={block.alt}
                 width={570}
                 height={300}
+                loading="lazy"
+                decoding="async"
                 className="mt-auto h-auto w-full select-none"
               />
             </div>

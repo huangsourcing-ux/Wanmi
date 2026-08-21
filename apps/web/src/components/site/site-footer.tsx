@@ -1,14 +1,14 @@
 import { RegistrarDisclosure } from '@/components/compliance/registrar-disclosure'
-import { SiteFooter as HomeSiteFooter } from '@/components/home/SiteFooter'
 import type { PublicComplianceConfig } from '@/lib/public-compliance'
 
+import { DeferredHomeFooter } from './deferred-home-footer'
 import { FooterLegalLinks } from './site-footer-legal'
 import { FooterRegistration } from './site-footer-registration'
 
 export function SiteFooter({ compliance }: { compliance: PublicComplianceConfig }) {
   return (
     <>
-      <HomeSiteFooter />
+      <DeferredHomeFooter />
       <div
         className="border-t border-[#D4DCEC] bg-dyna-page text-dyna-navy/75"
         data-wanmi-compliance-footer

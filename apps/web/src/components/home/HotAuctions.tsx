@@ -56,7 +56,7 @@ function AuctionCard({ item }: { item: AuctionListing }) {
             >
               {item.price}
             </div>
-            <div className="text-xs leading-[14px] text-dyna-navy opacity-50">{item.bids} Bids</div>
+            <div className="text-xs leading-[14px] text-dyna-navy opacity-60">{item.bids} Bids</div>
           </div>
           {/* Same `.transform-bg-btn` treatment as the section CTAs:
               130x30, radius 40px, padding 6px 12px, gradient slides on hover. */}

@@ -6,7 +6,6 @@ import { Suspense } from 'react'
 import { PageViewTracker } from '@/components/analytics/page-view-tracker'
 import { ChatbotBubble } from '@/components/home/ChatbotBubble'
 import { OverlayProvider } from '@/components/home/shared/OverlayScrim'
-import { LocalToolLibraryProvider } from '@/components/local-library/local-tool-library-provider'
 import { RequestIdProvider } from '@/components/request-context'
 import { MainOffset } from '@/components/site/main-offset'
 import { SiteFooter } from '@/components/site/site-footer'
@@ -35,27 +34,25 @@ export default async function FrontendLayout({ children }: { children: ReactNode
   return (
     <html data-scroll-behavior="smooth" lang="zh-CN">
       <body>
-        <OverlayProvider>
-          <Suspense fallback={null}>
-            <PageViewTracker />
-          </Suspense>
-          <RequestIdProvider requestId={getTraceId(requestHeaders)}>
-            <LocalToolLibraryProvider>
-              <a
-                className="fixed top-2 left-2 z-[100] -translate-y-20 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground focus:translate-y-0 focus:outline-none"
-                href="#main-content"
-              >
-                跳到主要内容
-              </a>
-              <div className="dyna-content relative flex min-h-screen w-full flex-col">
-                <SiteHeader />
-                <MainOffset>{children}</MainOffset>
-                <ChatbotBubble />
-                <SiteFooter compliance={compliance} />
-              </div>
-            </LocalToolLibraryProvider>
-          </RequestIdProvider>
-        </OverlayProvider>
+        <Suspense fallback={null}>
+          <PageViewTracker />
+        </Suspense>
+        <RequestIdProvider requestId={getTraceId(requestHeaders)}>
+          <a
+            className="fixed top-2 left-2 z-[100] -translate-y-20 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground focus:translate-y-0 focus:outline-none"
+            href="#main-content"
+          >
+            跳到主要内容
+          </a>
+          <div className="dyna-content relative flex min-h-screen w-full flex-col">
+            <OverlayProvider>
+              <SiteHeader />
+            </OverlayProvider>
+            <MainOffset>{children}</MainOffset>
+            <ChatbotBubble />
+            <SiteFooter compliance={compliance} />
+          </div>
+        </RequestIdProvider>
       </body>
     </html>
   )

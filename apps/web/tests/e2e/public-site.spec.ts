@@ -209,6 +209,7 @@ test('pricing exposes 10 traceable fixture results, reuses snapshots and has no 
     })
     await route.continue()
   })
+  await page.setViewportSize({ height: 1600, width: 1440 })
   await page.goto('/pricing')
 
   await expect(page.getByRole('heading', { level: 2, name: '普通域名价格表' })).toBeVisible()

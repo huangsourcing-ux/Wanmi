@@ -1,6 +1,14 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+@source not '../../components/home';
+@source '../../components/home/MegaMenuPanel.tsx';
+@source '../../components/home/SiteFooter.tsx';
+@source '../../components/home/ChatbotBubble.tsx';
+@source '../../components/home/SiteHeader.tsx';
+@source '../../components/home/shared/AccountModal.tsx';
+@source '../../components/home/shared/OverlayScrim.tsx';
+
 @custom-variant dark (&:is(.dark *));
 
 @custom-variant data-open {
@@ -219,31 +227,53 @@
   }
 }
 
-/* ── Target site fonts: www.dynadot.com ───────────────────────────────── */
-@font-face {
-  font-family: 'Switzer';
-  src: url('/home/fonts/Switzer-Variable.woff2') format('woff2-variations');
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Swansea';
-  src: url('/home/fonts/SwanseaBold-D0ox.woff') format('woff');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
 .dyna-content {
   --font-heading: 'Swansea', 'Switzer', var(--font-heading-site);
   --font-sans: 'Switzer', var(--font-sans-site);
-  font-family: var(--font-sans);
 }
 
-.dyna-content .font-heading {
+.dyna-content > nav,
+.dyna-content > footer,
+.home-redesign-container {
+  font-family: var(--font-sans-site);
+}
+
+.dyna-content > footer {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 600px;
+}
+
+.dyna-deferred-footer {
+  min-height: 2100px;
+}
+
+@media (width >= 64rem) {
+  .dyna-deferred-footer {
+    min-height: 908px;
+  }
+}
+
+.dyna-main-offset {
+  padding-top: 111px;
+}
+
+.dyna-main-offset:has(> .home-redesign-container) {
+  padding-top: 0;
+}
+
+.dyna-content > nav .font-heading,
+.dyna-content > footer .font-heading,
+.home-redesign-container .font-heading {
   font-family: var(--font-heading);
+}
+
+.dyna-hero:has(.hero-search-box:focus-within),
+.dyna-hero:has(.hero-search-box:focus-within) .dyna-hero-content {
+  z-index: auto;
+}
+
+.dyna-hero:has(.hero-search-box:focus-within) .dyna-hero-search-scrim {
+  opacity: 1;
 }
 
 @theme inline {
@@ -265,11 +295,28 @@
      with a static transform of translate(-50%, -50%), so the keyframes must
      carry that centring themselves or the plate jumps out of place. */
   .dyna-hero-breathe {
-    animation: dyna-breathe 4s ease-in-out infinite;
+    opacity: 0.94;
+    transform: translate(-50%, -50%);
   }
 
   .dyna-hero-glow {
-    background-image: url('/home/images/hero-bg.webp');
+    background:
+      linear-gradient(
+          90deg,
+          rgba(31, 174, 255, 0.38),
+          rgba(145, 126, 255, 0.38) 34%,
+          rgba(240, 152, 255, 0.38) 50%,
+          rgba(255, 231, 78, 0.38) 72%,
+          rgba(99, 224, 213, 0.32)
+        )
+        center / 100% 13% no-repeat,
+      radial-gradient(
+        ellipse at center,
+        rgba(90, 173, 255, 0.16),
+        rgba(22, 138, 255, 0.14) 38%,
+        rgba(48, 74, 210, 0) 72%
+      );
+    filter: blur(18px);
   }
 
   .dyna-search-tab-indicator {

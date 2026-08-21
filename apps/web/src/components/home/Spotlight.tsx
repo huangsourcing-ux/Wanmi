@@ -21,6 +21,8 @@ export function Spotlight() {
         aria-hidden="true"
         width={358}
         height={326}
+        loading="lazy"
+        decoding="async"
         className="pointer-events-none absolute -left-3 bottom-0 hidden w-[358px] select-none lg:block"
       />
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -30,6 +32,8 @@ export function Spotlight() {
         aria-hidden="true"
         width={394}
         height={326}
+        loading="lazy"
+        decoding="async"
         className="pointer-events-none absolute -right-3 bottom-0 hidden w-[394px] select-none lg:block"
       />
 
@@ -52,6 +56,8 @@ export function Spotlight() {
         aria-hidden="true"
         width={804}
         height={115}
+        loading="lazy"
+        decoding="async"
         // Source rhythm from the section top: h2 80 · button 153 · strip 212,
         // and the strip's bottom edge IS the section bottom (327). So the strip
         // sits 10px under the button and cancels the 125px bottom padding.

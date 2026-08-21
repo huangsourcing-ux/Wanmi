@@ -27,6 +27,8 @@ export function StatsBar() {
             alt="Trustpilot rating stars"
             width={100}
             height={19}
+            loading="lazy"
+            decoding="async"
             className="h-[19px] w-auto"
           />
           <span className="text-base font-medium leading-6">Trustpilot</span>

@@ -11,6 +11,7 @@ import {
 } from '@/components/home/shared/icons'
 import { FOOTER_COLUMNS, FOOTER_LEGAL } from './site-data'
 
+
 const SOCIALS = [
   { label: 'Facebook', Icon: FacebookIcon },
   { label: 'LinkedIn', Icon: LinkedInIcon },

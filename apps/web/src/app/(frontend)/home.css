@@ -1,0 +1,22 @@
+@reference 'tailwindcss';
+
+@theme reference {
+  --font-heading:
+    'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', ui-sans-serif, system-ui, sans-serif;
+  --font-sans:
+    'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', ui-sans-serif, system-ui, sans-serif;
+  --color-dyna-navy: #031242;
+  --color-dyna-page: #ebf3ff;
+  --color-dyna-indigo-50: #eef2ff;
+  --color-dyna-banner: #3255c3;
+  --color-dyna-slate-900: #0f172a;
+  --color-dyna-blue-700: #1d4ed8;
+  --color-dyna-input: #141764;
+  --spacing-1440: 1440px;
+}
+
+@tailwind utilities source(none);
+@source '../../components/home';
+@source not '../../components/home/MegaMenuPanel.tsx';
+@source not '../../components/home/SiteFooter.tsx';
+@source not '../../components/home/shared/AccountModal.tsx';

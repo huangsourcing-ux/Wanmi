@@ -444,6 +444,8 @@ export function LogoIcon({ className }: IconProps) {
         aria-hidden="true"
         width={34}
         height={34}
+        loading="lazy"
+        decoding="async"
         className="h-[34px] w-[34px] shrink-0"
       />
       <span className="font-heading text-[28px] leading-none tracking-[-0.5px]">dynadot</span>

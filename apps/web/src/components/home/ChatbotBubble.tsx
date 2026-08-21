@@ -15,6 +15,8 @@ export function ChatbotBubble() {
         aria-hidden="true"
         width={28}
         height={26}
+        loading="lazy"
+        decoding="async"
         className="h-[26px] w-auto select-none"
       />
     </button>

@@ -1,6 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import dynamic from 'next/dynamic'
+import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import type { MegaPanel } from '@/types/home'
 import { cn } from '@/lib/utils'
 import {
   CartIcon,
@@ -10,10 +13,16 @@ import {
   MenuIcon,
   UserIcon,
 } from '@/components/home/shared/icons'
-import { AccountModal } from '@/components/home/shared/AccountModal'
 import { useOverlay } from '@/components/home/shared/OverlayScrim'
-import { MegaMenuPanel } from './MegaMenuPanel'
-import { ANNOUNCEMENT, MEGA_PANELS, PRIMARY_NAV } from './site-data'
+import { ANNOUNCEMENT, PRIMARY_NAV } from './navigation-data'
+
+const MegaMenuPanel = dynamic(() =>
+  import('./MegaMenuPanel').then((module) => module.MegaMenuPanel),
+)
+
+const AccountModal = dynamic(() =>
+  import('@/components/home/shared/AccountModal').then((module) => module.AccountModal),
+)
 
 /**
  * Header is `position: absolute; top: 0; z-index: 2000` on the source page —
@@ -21,14 +30,27 @@ import { ANNOUNCEMENT, MEGA_PANELS, PRIMARY_NAV } from './site-data'
  * scrollY 600: navbar viewport top = -561px, background unchanged.
  */
 export function SiteHeader() {
+  const isHome = usePathname() === '/'
   const [bannerOpen, setBannerOpen] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
+  const [megaPanels, setMegaPanels] = useState<MegaPanel[] | null>(null)
   /** Label of the nav item whose mega-menu is open, or null when closed. */
   const [openMenu, setOpenMenu] = useState<string | null>(null)
 
-  const activePanel = MEGA_PANELS.find((p) => p.label === openMenu) ?? null
+  const activePanel = megaPanels?.find((panel) => panel.label === openMenu) ?? null
   const { setActive: setScrim } = useOverlay()
+
+  useEffect(() => {
+    if (!openMenu || megaPanels) return
+    let active = true
+    void import('./site-data').then(({ MEGA_PANELS }) => {
+      if (active) setMegaPanels(MEGA_PANELS)
+    })
+    return () => {
+      active = false
+    }
+  }, [megaPanels, openMenu])
 
   /** The scrim is shared with the hero search focus — see OverlayScrim.tsx. */
   const openPanel = (label: string | null) => {
@@ -54,7 +76,12 @@ export function SiteHeader() {
         </div>
       ) : null}
 
-      <div className="absolute inset-x-0 top-full z-[1999] flex h-[72px] items-center justify-between gap-5 bg-[rgba(49,68,127,0.2)] px-6 transition-[background-color,color] duration-300 md:px-[45px]">
+      <div
+        className={cn(
+          'absolute inset-x-0 top-full z-[1999] flex h-[72px] items-center justify-between gap-5 px-6 transition-[background-color,color] duration-300 md:px-[45px]',
+          isHome ? 'bg-[rgba(49,68,127,0.2)]' : 'bg-dyna-navy',
+        )}
+      >
         {/* `.ctl-logo` slot. The mark stays 146x34, but the slot itself widens
             past the 1450px breakpoint (176 -> 236.9) because a second, visually
             empty child joins it. That widening is what pushes the link row from
@@ -163,7 +190,7 @@ export function SiteHeader() {
         </div>
       </div>
 
-      <AccountModal open={accountOpen} onClose={() => setAccountOpen(false)} />
+      {accountOpen ? <AccountModal open onClose={() => setAccountOpen(false)} /> : null}
     </nav>
   )
 }
