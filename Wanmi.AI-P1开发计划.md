@@ -2340,10 +2340,15 @@ concurrent execution`（`apps/web/tests/integration/d9b5-admin-approvals-notific
 
 - [x] **自动续费只能依据有效 `renewalMandate` 扣款**，超出用户设定最大金额时拒绝并通知；
 - [x] 多个域名争抢不足余额时结果具有确定性；余额不足只提醒不扣款；
-- [ ] NS、MX、解锁、管理密码操作未完成 step-up 时 fail-closed；
+- [x] NS、MX、解锁、管理密码操作未完成 step-up 时 fail-closed；
 - [x] 批量与离线任务不假设同步返回，任务标识可查询，部分失败可见，批量删除有 dry-run 预览；
-- [ ] 注册商不支持某能力时返回明确 capability 错误而非通用失败；
-- [ ] 域名已不属于当前上游账户时自动阻止操作。
+- [x] 注册商不支持某能力时返回明确 capability 错误而非通用失败；
+- [x] 域名已不属于当前上游账户时自动阻止操作。
+
+D9-C/D 剩余退出证据见
+`apps/web/tests/integration/d9-exit-conditions-part-two.acceptance.integration.test.ts:460-660` 三条原文命名的独立
+验收用例；对应 `D9-EXIT-02-01`～`03` 变异均只使自己的用例失败，文件、完整名称和报错原文见
+`docs/operations/d9-exit-conditions-part-two-acceptance.md`。
 
 **D9-E**
 
@@ -2352,14 +2357,24 @@ concurrent execution`（`apps/web/tests/integration/d9b5-admin-approvals-notific
 - [x] 提高门槛后已达成用户保留原等级；充值本身不计入累计消费；
 - [x] 邀请奖励只在不可退成功订单后发放；自邀与刷量被拦截并告警，且不自动扣回已发放奖励。
 
-D9-E 退出证据分别见 16.10 E1/E2/E3 的逐项实现、并发、来源、变异和完整门禁记录；E2 的 156/156
-判定点与 A4 对照集中在 `docs/operations/d9e3-vip-tiers-mutation-matrix.md`。
+D9-E 退出证据分别见 16.10 E1/E2/E3 的逐项实现、并发、来源、变异和完整门禁记录；跨切片统一验收位于
+`apps/web/tests/integration/d9-exit-conditions-part-two.acceptance.integration.test.ts:661-911`，四条均以原文命名；
+`D9-EXIT-02-04`～`07` 的失败集合只包含对应条件（门槛提高与 VIP 高水位共享属性时恰好失败两条），报错原文见
+`docs/operations/d9-exit-conditions-part-two-acceptance.md`。
 
 **横向**
 
-- [ ] 通知重复消费同一 outbox 事件只能发送一次；
-- [ ] 数据库备份恢复后，余额、积分、等级与域名任务状态可重新对账；
-- [ ] 外部 provider 超时或返回未知状态时不得盲目重复写操作。
+- [x] 通知重复消费同一 outbox 事件只能发送一次；
+- [x] 数据库备份恢复后，余额、积分、等级与域名任务状态可重新对账；
+- [x] 外部 provider 超时或返回未知状态时不得盲目重复写操作。
+
+横向退出证据见
+`apps/web/tests/integration/d9-exit-conditions-part-two.acceptance.integration.test.ts:912-1402` 三条原文命名用例。
+其中备份项真实执行 PostgreSQL 16 custom-format dump、恢复到唯一一次性库，再从恢复库运行钱包对账、米币/VIP
+重算和 unknown NS 任务查询，结果为钱包差异 100 分、米币 60、累计消费 1200 分/VIP 1 级、NS 写入 0；provider
+项逐一运行 13 种西部数码写 operation，并核对 17 类（19 个实际调用点）直接外部写路径。
+`D9-EXIT-02-08`～`10` 的精确失败集合、完整调用点表和变异报错原文见
+`docs/operations/d9-exit-conditions-part-two-acceptance.md`。
 
 ### 16.15 工程约束（沿用既有标准，不重复发明）
 
