@@ -74,7 +74,9 @@ test('all D3 public detail routes render only published content', async ({ page 
   for (const route of fixture.publishedRoutes) {
     const response = await page.goto(route)
     expect(response?.status(), route).toBe(200)
-    await expect(page.getByText('来源：Wanmi E2E 来源')).toBeVisible()
+    await expect(
+      page.locator('#main-content').getByText('来源：Wanmi E2E 来源').first(),
+    ).toBeVisible()
   }
 })
 

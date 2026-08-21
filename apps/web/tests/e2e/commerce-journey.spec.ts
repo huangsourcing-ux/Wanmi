@@ -222,7 +222,9 @@ test.describe.serial('D7 M01-M16 customer commerce journey', () => {
     const domainAscii = fixture.domain('mainline')
 
     await page.goto('/')
-    await expect(page.getByRole('heading', { level: 1, name: /查清域名状态/u })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { level: 1, name: /Empower Your Domains/u }),
+    ).toBeVisible()
     const publicQuery = await request.post('/api/v1/tools/domain-search', {
       data: { query: 'partial' },
       headers: { 'x-request-id': `${commerceFixturePrefix}-public-query` },
