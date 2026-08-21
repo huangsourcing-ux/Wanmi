@@ -52,7 +52,7 @@ test('homepage submits a noindex fixture domain query without leaking cookies or
   })
   await page.goto('/')
 
-  await expect(page.getByRole('heading', { level: 1, name: /查清域名状态/ })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 1, name: /先查清，再决定/ })).toBeVisible()
   const input = page.getByLabel('输入完整域名或关键词')
   await input.fill('  wanmi.net  ')
   await page.getByRole('button', { name: '查询域名' }).click()

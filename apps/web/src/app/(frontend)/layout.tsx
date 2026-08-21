@@ -6,8 +6,8 @@ import { Suspense } from 'react'
 import { PageViewTracker } from '@/components/analytics/page-view-tracker'
 import { LocalToolLibraryProvider } from '@/components/local-library/local-tool-library-provider'
 import { RequestIdProvider } from '@/components/request-context'
-import { SiteFooter } from '@/components/site/site-footer'
-import { SiteHeader } from '@/components/site/site-header'
+import { SiteFooter } from '@/components/site-shell/site-footer'
+import { SiteHeader } from '@/components/site-shell/site-header'
 import { getPublicSiteData } from '@/lib/public-site-data'
 import { getPublicComplianceConfig } from '@/lib/public-compliance'
 import { getTraceId } from '@/lib/request-id'
@@ -48,7 +48,7 @@ export default async function FrontendLayout({ children }: { children: ReactNode
             >
               跳到主要内容
             </a>
-            <div className="flex min-h-screen flex-col">
+            <div className="flex min-h-screen flex-col bg-[#f8fbff]">
               <SiteHeader items={data.navigation.items} />
               <main className="flex-1" id="main-content" tabIndex={-1}>
                 {children}
