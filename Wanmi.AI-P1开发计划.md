@@ -2274,17 +2274,30 @@ notification text and commits execution`（
 
 **D9-A**
 
-- [ ] 同一微信 `openid` 从网页授权与 PC 扫码解析为同一账号，不产生重复账号；
-- [ ] **扫码后未点击确认不得建立浏览器会话**；scene 一次性、过期失效、跨会话不可复用；未验签的服务
-      号事件不得建立会话；
-- [ ] 网页授权 `state` 重放、授权码复用、跨站请求均 fail-closed；
-- [ ] 验证码只在短信发送与二维码创建/刷新时校验，轮询不重复校验；校验失败 fail-closed；与四维限频
-      叠加后短信轰炸测试通过；
-- [ ] 解绑最后一个可登录身份被拒绝；手机号或微信换绑后**全部旧会话失效**；
-- [ ] 账户找回成功后高风险域名操作进入冷静期且被拒绝；
-- [ ] **历史账号不得生成伪造的条款同意时间**；未补条款的历史用户仍可处理到期域名；
-- [ ] 持有域名、处理中订单或资金差异时不能完成注销；
-- [ ] step-up 未完成时风险分级表中的动作全部 fail-closed；step-up 短信验证码发送频控与连续失败次数限制生效；
+- [x] 同一微信 `openid` 从网页授权与 PC 扫码解析为同一账号，不产生重复账号；证据：
+      `apps/web/tests/integration/d9a-exit-conditions.acceptance.integration.test.ts:728` 同名用例；隔离变异
+      `D9A-01` 仅使该用例失败，原文见 `docs/operations/d9a-exit-conditions-acceptance.md:19`。
+- [x] **扫码后未点击确认不得建立浏览器会话**；scene 一次性、过期失效、跨会话不可复用；未验签的服务
+      号事件不得建立会话；证据：验收测试 `:774` 同名用例与 `D9A-02` 唯一失败原文见
+      `docs/operations/d9a-exit-conditions-acceptance.md:20`；既有生产记录 `开发日志.md:831-832` 为未确认消费
+      HTTP 409、会话数 `0 → 0`，并覆盖确认后重复消费与 TTL 过期拒绝。
+- [x] 网页授权 `state` 重放、授权码复用、跨站请求均 fail-closed；证据：验收测试 `:830` 同名用例与
+      `D9A-03` 唯一失败原文见 `docs/operations/d9a-exit-conditions-acceptance.md:21`。
+- [x] 验证码只在短信发送与二维码创建/刷新时校验，轮询不重复校验；校验失败 fail-closed；与四维限频
+      叠加后短信轰炸测试通过；证据：验收测试 `:896` 同名用例与 `D9A-04` 唯一失败原文见
+      `docs/operations/d9a-exit-conditions-acceptance.md:22`。
+- [x] 解绑最后一个可登录身份被拒绝；手机号或微信换绑后**全部旧会话失效**；证据：验收测试 `:1026`
+      同名用例与 `D9A-05` 唯一失败原文见 `docs/operations/d9a-exit-conditions-acceptance.md:23`。
+- [x] 账户找回成功后高风险域名操作进入冷静期且被拒绝；证据：验收测试 `:1057` 同名用例与
+      `D9A-06` 唯一失败原文见 `docs/operations/d9a-exit-conditions-acceptance.md:24`。
+- [x] **历史账号不得生成伪造的条款同意时间**；未补条款的历史用户仍可处理到期域名；证据：验收测试
+      `:1088` 同名用例与 `D9A-07` 唯一失败原文见 `docs/operations/d9a-exit-conditions-acceptance.md:25`。
+- [x] 持有域名、处理中订单或资金差异时不能完成注销；证据：验收测试 `:1126` 同名用例与 `D9A-08`
+      唯一失败原文见 `docs/operations/d9a-exit-conditions-acceptance.md:26`。
+- [x] step-up 未完成时风险分级表中的动作全部 fail-closed；step-up 短信验证码发送频控与连续失败次数限制生效；
+      证据：验收测试 `:1188-1668` 按 A4 九行逐行独立用例，并在 `:1627` 以本条原文命名短信控制用例；
+      `D9A-09-A4-01`～`D9A-09-A4-09` 与 `D9A-09-SMS` 每次均严格为目标用例 1 failed、其余 17 passed，
+      各用例全名和变异报错原文见 `docs/operations/d9a-exit-conditions-acceptance.md:28-45`。
 - [x] **生产环境配置缺失或为 fixture 时启动失败**（扩展既有 `assertRuntimeEnvironment` 的 production
       profile 与 `PRODUCTION_PROVIDER_KEYS`，不新造机制）。
 
