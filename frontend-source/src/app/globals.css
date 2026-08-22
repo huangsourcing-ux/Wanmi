@@ -1,0 +1,309 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ── Target site fonts: www.dynadot.com ───────────────────────────────── */
+@font-face {
+  font-family: "Switzer";
+  src: url("/sites/www-dynadot-com-7f8c2392/root-8a5edab2/fonts/Switzer-Variable.woff2")
+    format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Swansea";
+  src: url("/sites/www-dynadot-com-7f8c2392/root-8a5edab2/fonts/SwanseaBold-D0ox.woff")
+    format("woff");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "Switzer", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+  --font-heading: "Swansea", "Switzer", sans-serif;
+
+  /* dynadot.com palette — exact values from getComputedStyle() */
+  --color-dyna-navy: #031242;
+  --color-dyna-page: #ebf3ff;
+  --color-dyna-indigo-50: #eef2ff;
+  --color-dyna-banner: #3255c3;
+  --color-dyna-slate-900: #0f172a;
+  --color-dyna-blue-700: #1d4ed8;
+  --color-dyna-input: #141764;
+
+  --spacing-1440: 1440px;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+    scroll-behavior: smooth;
+  }
+}
+
+/* ── Page-scoped behavior for the dynadot.com clone ───────────────────── */
+@layer components {
+  /* Hero glow plate. Source: `animation: 4s ease-in-out infinite hero-breathe`
+     with a static transform of translate(-50%, -50%), so the keyframes must
+     carry that centring themselves or the plate jumps out of place. */
+  .dyna-hero-breathe {
+    animation: dyna-breathe 4s ease-in-out infinite;
+  }
+
+  /* Infinite horizontal auction ticker. Track is duplicated in the DOM, so
+     translating by -50% lands exactly on the start of the second copy. */
+  .dyna-marquee-track {
+    animation: dyna-marquee var(--dyna-marquee-duration, 60s) linear infinite;
+    width: max-content;
+  }
+
+  .dyna-marquee:hover .dyna-marquee-track {
+    animation-play-state: paused;
+  }
+
+  /* Gradient-filled text used by the hero headline and section headings */
+  .dyna-gradient-text {
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+  }
+
+  /* Hairline gradient borders. The source draws these with a masked ::after
+     (mask-composite: exclude) so the gradient shows only in the padding ring. */
+  .dyna-gradient-border::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: var(--dyna-border-width, 1px);
+    background: var(--dyna-border-gradient);
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  /* .box-gradient-border — the hero search card */
+  .dyna-search-card {
+    --dyna-border-width: 0.5px;
+    --dyna-border-gradient: linear-gradient(
+        90deg,
+        rgba(175, 213, 235, 0),
+        rgba(175, 213, 235, 0.5),
+        rgba(175, 213, 235, 0.5),
+        rgba(175, 213, 235, 0)
+      ),
+      linear-gradient(
+        135deg,
+        rgba(175, 213, 235, 0),
+        rgba(175, 213, 235, 0.5),
+        rgba(175, 213, 235, 0),
+        rgba(175, 213, 235, 0.3)
+      ),
+      linear-gradient(
+        315deg,
+        rgba(175, 213, 235, 0),
+        rgba(175, 213, 235, 0.5),
+        rgba(175, 213, 235, 0),
+        rgba(175, 213, 235, 0.3)
+      );
+  }
+
+  /* .transform-bg-btn — the section-level CTA pill. The gradient is twice the
+     button width, so sliding background-position from 0 to 100% brings the
+     #1B48D9 end of the ramp into view. Written as a real class because
+     Tailwind does not emit an arbitrary `bg-[position:...]` utility. */
+  .dyna-cta-gradient {
+    background-image: linear-gradient(90deg, #031242 50%, #1b48d9 100%);
+    background-size: 200% 100%;
+    background-position: 0 0;
+    transition: background-position 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dyna-cta-gradient:hover {
+    background-position: 100% 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dyna-cta-gradient {
+      transition: none;
+    }
+  }
+
+  /* .footer-newsletter .join-btn — stacked-gradient swap on hover, 0.3s */
+  .dyna-join-btn {
+    background:
+      linear-gradient(94deg, #031242 38.72%, #2350df 106.02%),
+      radial-gradient(357.38% 100% at 100% 49.87%, #031242 0px, #031242 77.4%);
+    transition: 0.3s ease-in-out;
+  }
+
+  .dyna-join-btn:hover {
+    background:
+      linear-gradient(90deg, #00218c, #0036e4),
+      linear-gradient(90deg, #031242, #103ccb),
+      radial-gradient(357.38% 100% at 100% 49.87%, #031242 0px, #031242 77.4%);
+  }
+
+  /* .gradient-border — the hero eyebrow pill */
+  .dyna-eyebrow-border {
+    --dyna-border-width: 1px;
+    --dyna-border-gradient: linear-gradient(
+      90deg,
+      rgba(214, 206, 255, 0.5),
+      rgba(214, 206, 255, 0.1)
+    );
+  }
+}
+
+@keyframes dyna-breathe {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.88;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.045);
+    opacity: 1;
+  }
+}
+
+@keyframes dyna-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dyna-hero-breathe,
+  .dyna-marquee-track {
+    animation: none;
+  }
+}
