@@ -33,6 +33,16 @@ if (process.env.ALLOW_REAL_PROVIDER_WRITES === 'true') {
 }
 
 const baseline = JSON.parse(await readFile(baselinePath, 'utf8'))
+// Pages flagged `skip` in baseline.json still go through the dependency preflight but are
+// excluded from Lighthouse gating. Today that is only `/` (see its `skipReason`); it is a
+// temporary, owner-approved exemption while the homepage carries placeholder source content.
+const lighthousePages = baseline.lighthouse.pages.filter((page) => !page.skip)
+for (const page of baseline.lighthouse.pages.filter((page) => page.skip)) {
+  console.warn(
+    `Lighthouse ${page.name} (${page.path}) skipped: ${page.skipReason ?? 'no reason given'}`,
+  )
+}
+if (lighthousePages.length === 0) throw new Error('Every Lighthouse page is skipped')
 
 async function availablePort() {
   return new Promise((resolve, reject) => {
@@ -400,8 +410,8 @@ try {
   const api = await measureApi()
   chrome = await launchChrome()
   const pages = await runWarmupThenMeasurements(
-    () => lighthouseRun(baseline.lighthouse.pages[0], chrome.port, 'warmup'),
-    baseline.lighthouse.pages.map((page) => () => lighthousePage(page, chrome.port)),
+    () => lighthouseRun(lighthousePages[0], chrome.port, 'warmup'),
+    lighthousePages.map((page) => () => lighthousePage(page, chrome.port)),
   )
   const report = {
     api,

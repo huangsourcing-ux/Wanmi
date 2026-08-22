@@ -5,3 +5,7 @@ pnpm-lock.yaml
 apps/web/next-env.d.ts
 apps/web/src/payload-types.ts
 apps/web/src/app/(payload)/admin/importMap.js
+# Vendored frontend baseline and its byte-for-byte mirrors (verify:frontend-source)
+frontend-source
+apps/web/src/components/sites
+apps/web/src/types/dynadot.ts

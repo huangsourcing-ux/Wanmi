@@ -1,4 +1,4 @@
-.PHONY: bootstrap dev worker rebuild validate-rebuild-local generate verify-bootstrap verify-docs verify-generated verify-oss-real verify-migrations verify-nginx verify-operations verify-provider-write-policy verify-rebuild verify-release verify-validation-tiers fmt lint test test-integration test-e2e performance security security-secrets build smoke check-docs check-fast check-integration check down
+.PHONY: bootstrap dev worker rebuild validate-rebuild-local generate sync-frontend-source verify-bootstrap verify-docs verify-frontend-source verify-generated verify-oss-real verify-migrations verify-nginx verify-operations verify-provider-write-policy verify-rebuild verify-release verify-validation-tiers fmt lint test test-integration test-e2e performance security security-secrets build smoke check-docs check-fast check-integration check down
 
 bootstrap:
 	corepack enable
@@ -30,6 +30,12 @@ verify-docs:
 
 verify-generated:
 	pnpm verify-generated
+
+sync-frontend-source:
+	pnpm sync:frontend-source
+
+verify-frontend-source:
+	pnpm verify:frontend-source
 
 verify-oss-real:
 	pnpm verify:cloud:oss
@@ -98,11 +104,11 @@ smoke:
 
 check-docs: verify-docs security-secrets
 
-check-fast: verify-bootstrap verify-provider-write-policy verify-generated verify-validation-tiers lint test
+check-fast: verify-bootstrap verify-provider-write-policy verify-generated verify-frontend-source verify-validation-tiers lint test
 
 check-integration: verify-migrations test-integration
 
-check: verify-bootstrap verify-provider-write-policy verify-generated verify-migrations verify-nginx verify-operations verify-rebuild verify-release verify-validation-tiers lint test test-integration security build
+check: verify-bootstrap verify-provider-write-policy verify-generated verify-frontend-source verify-migrations verify-nginx verify-operations verify-rebuild verify-release verify-validation-tiers lint test test-integration security build
 
 down:
 	docker compose down
