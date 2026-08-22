@@ -53,7 +53,7 @@ test('homepage submits a noindex fixture domain query without leaking cookies or
   await page.goto('/')
 
   await expect(
-    page.getByRole('heading', { level: 1, name: /一个搜索框，看清域名状态与价格/ }),
+    page.getByRole('heading', { level: 1, name: /一个搜索框，看清\s*域名状态与价格/ }),
   ).toBeVisible()
   const input = page.getByLabel('输入完整域名或关键词')
   await input.fill('  wanmi.net  ')
@@ -596,14 +596,12 @@ test('WHOIS stays separate from availability and keeps result requests and analy
     'content',
     `${canonicalOrigin}/tools/whois`,
   )
-  await expect(page.getByRole('link', { name: 'DNS / NS 查询' })).toHaveAttribute(
-    'href',
-    '/tools/dns?q=xn--fsqu00a.xn--0zwm56d',
-  )
-  await expect(page.getByRole('link', { name: 'SSL / CAA 检查' })).toHaveAttribute(
-    'href',
-    '/tools/ssl-check?q=xn--fsqu00a.xn--0zwm56d',
-  )
+  await expect(
+    page.locator('#main-content').getByRole('link', { name: 'DNS / NS 查询' }),
+  ).toHaveAttribute('href', '/tools/dns?q=xn--fsqu00a.xn--0zwm56d')
+  await expect(
+    page.locator('#main-content').getByRole('link', { name: 'SSL / CAA 检查' }),
+  ).toHaveAttribute('href', '/tools/ssl-check?q=xn--fsqu00a.xn--0zwm56d')
 
   await page.getByRole('button', { name: '复制 Name Server：ns1.example.test' }).click()
   await expect
@@ -992,10 +990,9 @@ test('IDN converts locally on mobile, keeps Punycode public and marks parameter 
     'data-public-domain',
     'xn--fsqu00a.xn--fiqs8s',
   )
-  await expect(page.getByRole('link', { name: 'WHOIS / RDAP' })).toHaveAttribute(
-    'href',
-    '/tools/whois?q=xn--fsqu00a.xn--fiqs8s',
-  )
+  await expect(
+    page.locator('#main-content').getByRole('link', { name: 'WHOIS / RDAP' }),
+  ).toHaveAttribute('href', '/tools/whois?q=xn--fsqu00a.xn--fiqs8s')
   await page.getByRole('button', { name: '复制 Punycode' }).click()
   await expect(page.getByText('已复制 Punycode')).toBeVisible()
   await expect(page.getByRole('button', { name: '复制 Unicode' })).toHaveCount(0)

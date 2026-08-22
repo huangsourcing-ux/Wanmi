@@ -223,7 +223,7 @@ test.describe.serial('D7 M01-M16 customer commerce journey', () => {
 
     await page.goto('/')
     await expect(
-      page.getByRole('heading', { level: 1, name: /一个搜索框，看清域名状态与价格/u }),
+      page.getByRole('heading', { level: 1, name: /一个搜索框，看清\s*域名状态与价格/u }),
     ).toBeVisible()
     const publicQuery = await request.post('/api/v1/tools/domain-search', {
       data: { query: 'partial' },

@@ -57,7 +57,7 @@ test('content workflow keeps preview private and publishes only through audited 
 
   await page.goto(publicPath)
   await expect(page.getByRole('heading', { level: 1, name: 'D3 内容工作流文章' })).toBeVisible()
-  await expect(page.getByText('来源：Wanmi E2E 来源')).toBeVisible()
+  await expect(page.locator('#main-content').getByText('来源：Wanmi E2E 来源')).toBeVisible()
   const external = page.getByRole('link', { name: '外部安全来源' })
   await expect(external).toHaveAttribute('rel', 'nofollow noopener')
   await expect(external).not.toHaveAttribute('onmouseover', /.+/)
@@ -94,10 +94,9 @@ test('SEO, sitemap and bidirectional links expose only published related content
     'href',
     `http://127.0.0.1:3100${fixture.relationArticlePath}`,
   )
-  await expect(page.getByRole('link', { name: 'DNS / NS 查询' })).toHaveAttribute(
-    'href',
-    '/tools/dns',
-  )
+  await expect(
+    page.locator('#main-content').getByRole('link', { name: 'DNS / NS 查询' }),
+  ).toHaveAttribute('href', '/tools/dns')
   await expect(page.getByRole('link', { name: 'D3 公开 TLD' })).toHaveAttribute(
     'href',
     fixture.relationTldPath,
