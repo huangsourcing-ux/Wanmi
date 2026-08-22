@@ -15,8 +15,8 @@ export function MegaMenuPanel({ panel }: { panel: MegaPanel }) {
       <div className="flex px-[85px]">
         {/* Lead column */}
         <div
-          className="flex shrink-0 flex-col gap-[10px] px-[30px]"
-          style={{ width: panel.columnWidth }}
+          className="dyna-mega-column flex shrink-0 flex-col gap-[10px] px-[30px]"
+          data-column-width={panel.columnWidth}
         >
           <span className="text-[24px] font-medium leading-tight text-white">
             {panel.title}
@@ -54,9 +54,9 @@ export function MegaMenuPanel({ panel }: { panel: MegaPanel }) {
           <div
             key={col.heading}
             className={cn(
-              "flex shrink-0 flex-col gap-[10px] border-l border-white/20 px-[30px]",
+              "dyna-mega-column flex shrink-0 flex-col gap-[10px] border-l border-white/20 px-[30px]",
             )}
-            style={{ width: panel.columnWidth }}
+            data-column-width={panel.columnWidth}
           >
             <span className="text-[18px] font-medium leading-normal text-white opacity-40">
               {col.heading}

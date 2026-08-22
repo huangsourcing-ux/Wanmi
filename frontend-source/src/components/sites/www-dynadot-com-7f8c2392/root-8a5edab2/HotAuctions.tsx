@@ -23,8 +23,7 @@ import { HOT_AUCTIONS } from "./site-data";
  *   .ending-soon     -> badge #0072BC, price #AE1DF9
  */
 function AuctionCard({ item }: { item: AuctionListing }) {
-  const badgeColor = item.endingSoon ? "#0072BC" : "#0262C7";
-  const priceColor = item.endingSoon ? "#AE1DF9" : "#0262C7";
+  const auctionTone = item.endingSoon ? "ending-soon" : "not-ending-soon";
 
   // Resting inset glow, tinted per variant — there is no hover lift on these
   // cards (they are not `.dyna-card-hoverable`).
@@ -42,8 +41,8 @@ function AuctionCard({ item }: { item: AuctionListing }) {
       >
         <div className="flex flex-col gap-3">
           <div
-            className="flex w-fit items-center gap-[3.2px] text-xs font-medium"
-            style={{ color: badgeColor }}
+            className="dyna-auction-badge flex w-fit items-center gap-[3.2px] text-xs font-medium"
+            data-auction-tone={auctionTone}
           >
             <AlarmClockIcon className="h-2.5 w-2.5" />
             {item.endsIn}
@@ -56,8 +55,8 @@ function AuctionCard({ item }: { item: AuctionListing }) {
         <div className="flex flex-col gap-[6px]">
           <div className="flex flex-col">
             <div
-              className="text-base font-semibold leading-6"
-              style={{ color: priceColor }}
+              className="dyna-auction-price text-base font-semibold leading-6"
+              data-auction-tone={auctionTone}
             >
               {item.price}
             </div>

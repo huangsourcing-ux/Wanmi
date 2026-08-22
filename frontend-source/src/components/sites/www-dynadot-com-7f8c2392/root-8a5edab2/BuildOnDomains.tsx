@@ -56,7 +56,7 @@ export function BuildOnDomains() {
                   "inline-flex h-[500px] w-full flex-col items-center justify-between overflow-hidden rounded-2xl py-8 transition-[width] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] xl:h-[650px] xl:rounded-[20px] xl:py-12",
                   isActive ? "xl:w-[450px]" : "xl:w-[225px]",
                 )}
-                style={{ backgroundImage: card.gradient }}
+                data-build-card={i}
               >
                 {/* Collapsed title — xl only, and only while collapsed */}
                 <div
