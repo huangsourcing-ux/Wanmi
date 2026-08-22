@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import {
+  ASSETS,
   BENTO_CARDS,
   MEGA_PANELS,
   SEARCH_TABS,
@@ -32,6 +33,21 @@ function indexRange(length: number): string[] {
   return Array.from({ length }, (_, index) => String(index))
 }
 
+/** First `property` declaration of the rule whose selector list contains `selector`. */
+function declaration(selector: string, property: string): string | undefined {
+  const pattern = new RegExp(`${selector}[^{]*\\{[^}]*?${property}:\\s*([^;]+);`, 'u')
+  return stylesheet.match(pattern)?.[1]
+}
+
+/** Whitespace and hex case are not semantic in CSS gradient values; everything else is. */
+function normalizeCssValue(value: string): string {
+  return value
+    .replace(/\s+/gu, ' ')
+    .replace(/\s*([(),])\s*/gu, '$1')
+    .replace(/#[0-9a-f]{3,8}\b/giu, (hex) => hex.toLowerCase())
+    .trim()
+}
+
 describe('vendored site CSS enumerations cover site-data.ts', () => {
   it('has exactly one tab indicator rule per SEARCH_TABS entry and divides the track by that count', () => {
     const indices = attributeValues('\\.dyna-search-tab-indicator', 'data-active-index')
@@ -58,5 +74,19 @@ describe('vendored site CSS enumerations cover site-data.ts', () => {
       const ruled = attributeValues(`\\.dyna-auction-${element}`, 'data-auction-tone')
       expect([...new Set(ruled)].sort()).toEqual(['ending-soon', 'not-ending-soon'])
     }
+  })
+
+  it('keeps every [data-build-card] background-image equal to BENTO_CARDS[i].gradient', () => {
+    for (const [index, card] of BENTO_CARDS.entries()) {
+      const ruled = declaration(`\\[data-build-card=["']${index}["']\\]`, 'background-image')
+      expect(ruled, `rule for data-build-card=${index}`).toBeDefined()
+      expect(normalizeCssValue(ruled!)).toBe(normalizeCssValue(card.gradient))
+    }
+  })
+
+  it('points .dyna-hero-glow at the hero background under ASSETS', () => {
+    const ruled = declaration('\\.dyna-hero-glow', 'background-image')
+    expect(ruled).toBeDefined()
+    expect(ruled!.match(/url\(["']?([^"')]+)["']?\)/u)?.[1]).toBe(`${ASSETS}/images/hero-bg.webp`)
   })
 })
