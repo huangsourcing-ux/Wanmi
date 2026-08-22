@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useOverlay } from "../shared/OverlayScrim";
 import { SearchIcon } from "../shared/icons";
-import { ASSETS, SEARCH_TABS } from "./site-data";
+import { SEARCH_TABS } from "./site-data";
 
 /**
  * INTERACTION MODEL: click-driven tabs. Scrolling changes nothing here.
@@ -85,8 +85,7 @@ export function Hero({ footer }: { footer?: ReactNode }) {
               behind the input. Hero `overflow-hidden` clips the overhang. */}
           <div
             aria-hidden="true"
-            className="dyna-hero-breathe pointer-events-none absolute left-1/2 top-[76px] h-[644px] w-[760px] max-w-none bg-cover bg-center bg-no-repeat md:top-[78px] md:w-[1181px] lg:w-[1476px]"
-            style={{ backgroundImage: `url(${ASSETS}/images/hero-bg.webp)` }}
+            className="dyna-hero-breathe dyna-hero-glow pointer-events-none absolute left-1/2 top-[76px] h-[644px] w-[760px] max-w-none bg-cover bg-center bg-no-repeat md:top-[78px] md:w-[1181px] lg:w-[1476px]"
           />
 
           {/* Tab row — self-stretch inside the card at md+, so the group is
@@ -96,12 +95,8 @@ export function Hero({ footer }: { footer?: ReactNode }) {
               {/* Sliding active pill */}
               <div
                 aria-hidden="true"
-                className="pointer-events-none absolute bottom-1 top-1 rounded-[10px] bg-[#031242] shadow-[0_0_10px_0_#FFF] transition-transform duration-300 ease-out"
-                style={{
-                  left: "4px",
-                  width: "calc((100% - 8px) / 4)",
-                  transform: `translateX(${active * 100}%)`,
-                }}
+                className="dyna-search-tab-indicator pointer-events-none absolute bottom-1 top-1 rounded-[10px] bg-[#031242] shadow-[0_0_10px_0_#FFF] transition-transform duration-300 ease-out"
+                data-active-index={active}
               />
               {SEARCH_TABS.map((tab, i) => (
                 <button
