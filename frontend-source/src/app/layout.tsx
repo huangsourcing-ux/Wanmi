@@ -4,9 +4,9 @@ import "./globals.css";
 const ASSETS = "/sites/www-dynadot-com-7f8c2392/root-8a5edab2";
 
 export const metadata: Metadata = {
-  title: "Register, Buy & Manage Domain Names Online | Dynadot",
+  title: "Wanmi.net｜中文域名工具与服务入口",
   description:
-    "Search 800+ domain extensions, register names at transparent prices, and manage DNS, privacy, email, transfers, renewals, and domain portfolios in Dynadot.",
+    "面向中文用户的域名查询、WHOIS、DNS、SSL、IDN 与 TLD 价格工具入口。",
   icons: {
     icon: [
       { url: `${ASSETS}/seo/favicon.svg`, type: "image/svg+xml" },
@@ -22,7 +22,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full antialiased">
+    <html lang="zh-CN" className="h-full antialiased">
       <body className="flex min-h-full flex-col bg-dyna-page font-sans text-dyna-navy">
         {children}
       </body>

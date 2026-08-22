@@ -22,7 +22,7 @@ test('database redirect returns a canonical 301 with query parameters and a requ
   expect((await request.get('/d1-redirect-e2e-unknown')).status()).toBe(404)
 })
 
-test('domain-search page submits a noindex fixture query without leaking cookies or full referrers', async ({
+test('homepage submits a noindex fixture domain query without leaking cookies or full referrers', async ({
   page,
 }) => {
   const analyticsRequests: Array<{
@@ -50,9 +50,11 @@ test('domain-search page submits a noindex fixture query without leaking cookies
     })
     await route.continue()
   })
-  await page.goto('/tools/domain-search')
+  await page.goto('/')
 
-  await expect(page.getByRole('heading', { level: 1, name: '域名可注册查询' })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { level: 1, name: /一个搜索框，看清域名状态与价格/ }),
+  ).toBeVisible()
   const input = page.getByLabel('输入完整域名或关键词')
   await input.fill('  wanmi.net  ')
   await page.getByRole('button', { name: '查询域名' }).click()
@@ -275,7 +277,7 @@ test('the first-party endpoint and client honor DNT/GPC without blocking tools',
     eventRequests += 1
     await route.fulfill({ json: { accepted: true }, status: 202 })
   })
-  await page.goto('/tools/domain-search')
+  await page.goto('/')
   await page.getByLabel('输入完整域名或关键词').fill('wanmi.net')
   await page.getByRole('button', { name: '查询域名' }).click()
   await expect(page).toHaveURL(/\/tools\/domain-search\?q=.*wanmi\.net/)
@@ -283,18 +285,23 @@ test('the first-party endpoint and client honor DNT/GPC without blocking tools',
   expect(eventRequests).toBe(0)
 })
 
-test('mobile navigation is keyboard-accessible and exposes the source menu', async ({ page }) => {
+test('mobile navigation is keyboard-accessible and keeps primary routes reachable', async ({
+  page,
+}) => {
   await page.setViewportSize({ height: 844, width: 390 })
   await page.goto('/')
 
-  const openNavigation = page.getByRole('button', { name: 'Menu' })
+  const openNavigation = page.getByRole('button', { name: '菜单' })
   await openNavigation.focus()
   await expect(openNavigation).toBeFocused()
   await openNavigation.press('Enter')
   await expect(openNavigation).toHaveAttribute('aria-expanded', 'true')
-  const toolsLink = page.getByRole('navigation').getByRole('link', { exact: true, name: 'Tools' })
+  const toolsLink = page.getByRole('navigation').getByRole('link', { exact: true, name: '工具' })
   await expect(toolsLink).toBeVisible()
-  await expect(toolsLink).toHaveAttribute('href', '#')
+  await expect(toolsLink).toHaveAttribute('href', '/tools')
+  await toolsLink.click()
+  await expect(page).toHaveURL(/\/tools$/)
+  await expect(page.getByRole('heading', { level: 1, name: '域名工具中心' })).toBeVisible()
 })
 
 test('planned public skeleton routes are available and unknown slugs return 404', async ({
@@ -1048,7 +1055,7 @@ test('local history and favorites stay browser-only, rerun safely, and clear eve
     await page.evaluate((key) => window.localStorage.getItem(key), localHistoryStorageKey),
   ).toBeNull()
 
-  await page.goto('/tools/domain-search')
+  await page.goto('/')
   await page.getByLabel('输入完整域名或关键词').fill('wanmi.net')
   await page.getByRole('button', { name: '查询域名' }).click()
   await expect(page).toHaveURL(/\/tools\/domain-search\?q=.*wanmi\.net/)
@@ -1141,7 +1148,7 @@ test('DNT and GPC stop automatic local history but allow explicit local favorite
       }
     }, signal)
     const privacyPage = await context.newPage()
-    await privacyPage.goto('/tools/domain-search')
+    await privacyPage.goto('/')
     await privacyPage.getByLabel('输入完整域名或关键词').fill(`${signal}.example`)
     await privacyPage.getByRole('button', { name: '查询域名' }).click()
     await expect(privacyPage).toHaveURL(/\/tools\/domain-search\?q=/)

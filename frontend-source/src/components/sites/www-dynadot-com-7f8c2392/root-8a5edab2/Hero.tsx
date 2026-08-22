@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useOverlay } from "../shared/OverlayScrim";
 import { SearchIcon } from "../shared/icons";
-import { SEARCH_TABS } from "./site-data";
+import { HERO, SEARCH_FORM, SEARCH_TABS } from "./site-data";
 
 /**
  * INTERACTION MODEL: click-driven tabs. Scrolling changes nothing here.
@@ -12,8 +12,14 @@ import { SEARCH_TABS } from "./site-data";
  * between the four grid cells (bg-slate-950, radius 10px,
  * box-shadow 0 0 10px 0 rgba(255,255,255,.25)).
  *
- * `footer` is a slot under the search card, which the homepage fills with the
- * ad rail. Left unset, the hero renders exactly as measured on the source.
+ * The search card is a real GET form to the availability tool, with the same
+ * parameter name, label, placeholder and privacy note as that page's own query
+ * form; the server normalises the value. `data-wanmi-tool` lets the host app
+ * record local history and analytics for the submission without this file
+ * depending on it.
+ *
+ * `footer` is an optional slot under the search card. Left unset, the hero
+ * renders exactly as measured on the source.
  */
 export function Hero({ footer }: { footer?: ReactNode }) {
   const [active, setActive] = useState(0);
@@ -56,15 +62,16 @@ export function Hero({ footer }: { footer?: ReactNode }) {
           {/* 18px/27px — measured 345px wide on the source, which is what
               makes the pill 404.5x39 rather than the 16px default. */}
           <div className="dyna-gradient-text bg-[linear-gradient(90deg,#63C2FF_0%,#F098FF_50%,#FFF75F_100%)] text-center text-[18px] font-medium leading-[27px]">
-            Your Super-Powered Domain Marketplace
+            {HERO.eyebrow}
           </div>
         </div>
 
         <h1 className="mt-10 font-heading text-[40px] leading-[1.1] tracking-[-0.72px] text-white md:text-[60px] md:leading-[66px]">
-          Empower Your{" "}
-          <span className="dyna-gradient-text inline-block bg-[linear-gradient(90deg,#63C2FF_0%,#F098FF_50%,#FFF75F_100%)] capitalize">
-            Domains
+          {HERO.titleLead}
+          <span className="dyna-gradient-text inline-block bg-[linear-gradient(90deg,#63C2FF_0%,#F098FF_50%,#FFF75F_100%)]">
+            {HERO.titleHighlight}
           </span>
+          {HERO.titleTail}
         </h1>
 
         {/* Glass card wrapping the tabs + input (`box-gradient-border` on the
@@ -91,7 +98,7 @@ export function Hero({ footer }: { footer?: ReactNode }) {
           {/* Tab row — self-stretch inside the card at md+, so the group is
               left-aligned against the card padding rather than centred. */}
           <div className="z-10 inline-flex w-full min-w-0 max-w-[315px] items-center justify-between md:max-w-none md:self-stretch">
-            <div className="search-tabs relative grid w-full min-w-0 max-w-[315px] grid-cols-4 items-stretch overflow-hidden rounded-[9.6px] p-[3.2px] outline outline-1 -outline-offset-1 outline-white/30 md:w-auto md:max-w-[520px] lg:max-w-[600px]">
+            <div className="search-tabs relative grid w-full min-w-0 max-w-[315px] grid-cols-1 items-stretch overflow-hidden rounded-[9.6px] p-[3.2px] outline outline-1 -outline-offset-1 outline-white/30 md:w-auto md:max-w-[520px] lg:max-w-[600px]">
               {/* Sliding active pill */}
               <div
                 aria-hidden="true"
@@ -118,23 +125,42 @@ export function Hero({ footer }: { footer?: ReactNode }) {
           </div>
 
           {/* Search field — the card's 16px gap supplies the spacing */}
-          <div className="relative w-full">
+          <form
+            action={SEARCH_FORM.action}
+            method="get"
+            data-wanmi-tool={SEARCH_FORM.tool}
+            className="relative w-full"
+          >
             <input
               type="text"
-              placeholder="Find your next domain"
-              aria-label="Find your next domain"
+              name="q"
+              placeholder={SEARCH_FORM.placeholder}
+              aria-label={SEARCH_FORM.label}
+              aria-describedby="hero-search-description"
+              required
+              maxLength={253}
+              autoCapitalize="none"
+              autoComplete="off"
+              spellCheck={false}
               onFocus={() => onSearchFocus(true)}
               onBlur={() => onSearchFocus(false)}
               className="h-[64px] w-full rounded-[50px] bg-dyna-input px-9 py-2 text-lg text-white placeholder:text-white/60 shadow-[inset_0_-4px_15px_0_rgba(22,138,255,0.3),inset_0_4px_15px_0_rgba(22,138,255,0.3)] outline-none md:h-[80px] md:text-2xl md:leading-[28.8px]"
             />
             <button
-              type="button"
-              aria-label="Search domains"
+              type="submit"
+              aria-label={SEARCH_FORM.buttonLabel}
               className="group absolute right-2 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full text-white transition-colors hover:bg-white/10 md:h-16 md:w-16"
             >
               <SearchIcon className="h-6 w-6 transition-transform group-hover:scale-110" />
             </button>
-          </div>
+          </form>
+
+          <p
+            id="hero-search-description"
+            className="relative z-10 w-full text-left text-sm leading-6 text-white/70"
+          >
+            {SEARCH_FORM.description}
+          </p>
         </div>
 
         {footer}

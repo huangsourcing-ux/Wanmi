@@ -23,7 +23,7 @@ describe('frontend-source gate scope', () => {
   it('compares the full current mirror set and all five stylesheet blocks', () => {
     const result = verifyFrontendSource()
     expect(result.problems).toEqual([])
-    expect(result.compared).toBe(51)
+    expect(result.compared).toBe(29)
     expect(result.cssBlocks).toBe(5)
   })
 })

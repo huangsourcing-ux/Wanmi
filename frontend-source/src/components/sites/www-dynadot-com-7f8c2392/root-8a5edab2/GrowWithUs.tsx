@@ -1,6 +1,6 @@
 import { PillButton } from "../shared/PillButton";
 import { BlogIcon, ForumIcon, HelpFilesIcon } from "../shared/icons";
-import { RESOURCE_CARDS } from "./site-data";
+import { RESOURCE_CARDS, SECTION_CTAS } from "./site-data";
 
 const ICONS = [HelpFilesIcon, BlogIcon, ForumIcon];
 
@@ -9,11 +9,10 @@ export function GrowWithUs() {
     <div className="inline-flex w-full flex-col items-center justify-center gap-10 bg-dyna-indigo-50 px-[30px] py-20 md:gap-14 md:px-[58px] md:py-[90px] xl:gap-[60px] xl:p-[120px]">
       <div className="flex max-w-[820px] flex-col items-center gap-5 text-center">
         <h2 className="font-heading text-[32px] leading-[1.2] tracking-[-0.4px] text-dyna-navy md:text-[48px] md:leading-[52.8px]">
-          Grow With Us
+          内容与帮助
         </h2>
         <p className="text-base leading-[26px] text-dyna-navy/80 md:text-lg">
-          Learn how to register, manage, and grow your online presence with our
-          expert resources.
+          教程、评测、专题与真实实践。少一点概念，多一点能用的工具。
         </p>
       </div>
 
@@ -36,7 +35,7 @@ export function GrowWithUs() {
                 {card.body}
               </p>
               <div className="group mt-auto pt-2">
-                <PillButton variant="link">
+                <PillButton variant="link" href={card.href}>
                   {card.cta}
                 </PillButton>
               </div>
@@ -46,7 +45,9 @@ export function GrowWithUs() {
       </div>
 
       <div className="group">
-        <PillButton>Discover Our Resources</PillButton>
+        <PillButton href={SECTION_CTAS.resources.href}>
+          {SECTION_CTAS.resources.label}
+        </PillButton>
       </div>
     </div>
   );

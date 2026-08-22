@@ -1,5 +1,5 @@
 import { PillButton } from "../shared/PillButton";
-import { FEATURE_ROWS } from "./site-data";
+import { FEATURE_ROWS, SECTION_CTAS } from "./site-data";
 
 /**
  * Two `buy-domain-card` panels side by side — each 581px wide, 714px tall,
@@ -11,7 +11,7 @@ export function BuyAndRegister() {
     <section className="flex w-full items-center justify-center bg-dyna-page">
       <div className="flex w-full max-w-1440 flex-col items-center gap-10 px-7 py-20 md:px-14 md:py-[90px] lg:gap-[60px] lg:p-[120px]">
         <h2 className="max-w-[820px] text-center font-heading text-[32px] leading-[1.2] tracking-[-0.4px] text-dyna-navy md:text-[48px] md:leading-[52.8px]">
-          Buy &amp; Register Your Domain Names
+          先查状态，再看价格
         </h2>
 
         <div className="grid w-full grid-cols-1 gap-10 lg:grid-cols-2 lg:gap-[38px]">
@@ -37,7 +37,9 @@ export function BuyAndRegister() {
                   {row.body}
                 </p>
                 <div className="group mt-auto pt-2">
-                  <PillButton variant="link">{row.cta}</PillButton>
+                  <PillButton variant="link" href={row.href}>
+                    {row.cta}
+                  </PillButton>
                 </div>
               </div>
             </div>
@@ -45,7 +47,9 @@ export function BuyAndRegister() {
         </div>
 
         <div className="group">
-          <PillButton>Discover Your Next Domain</PillButton>
+          <PillButton href={SECTION_CTAS.features.href}>
+            {SECTION_CTAS.features.label}
+          </PillButton>
         </div>
       </div>
     </section>

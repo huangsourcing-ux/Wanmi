@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readdirSync, rmdirSync, rmSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 import {
@@ -23,7 +23,7 @@ function removeEmptyDirectories(directory, stopAt) {
       return
     }
     if (entries.length > 0) return
-    rmSync(current, { recursive: false })
+    rmdirSync(current)
     current = path.dirname(current)
   }
 }

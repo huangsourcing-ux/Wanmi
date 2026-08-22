@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 
 import {
   ASSETS,
-  BENTO_CARDS,
   MEGA_PANELS,
   SEARCH_TABS,
 } from '@/components/sites/www-dynadot-com-7f8c2392/root-8a5edab2/site-data'
@@ -13,16 +12,10 @@ import {
 /**
  * The CSP-safe patch replaced dynamic inline styles with CSS keyed by data attributes over the
  * finite value sets in site-data.ts. Those enumerations must stay in step with the data: a new
- * tab, card, column width or tone added to the data without a matching rule renders unstyled.
+ * tab or column width added to the data without a matching rule renders unstyled. The build-card
+ * and auction-tone enumerations left with the blocks that used them in frontend merge two.
  */
 const stylesheet = readFileSync(resolve(process.cwd(), 'src/app/(frontend)/styles.css'), 'utf8')
-const hotAuctions = readFileSync(
-  resolve(
-    process.cwd(),
-    'src/components/sites/www-dynadot-com-7f8c2392/root-8a5edab2/HotAuctions.tsx',
-  ),
-  'utf8',
-)
 
 function attributeValues(selector: string, attribute: string): string[] {
   const pattern = new RegExp(`${selector}\\[${attribute}=["']([^"']+)["']\\]`, 'gu')
@@ -39,15 +32,6 @@ function declaration(selector: string, property: string): string | undefined {
   return stylesheet.match(pattern)?.[1]
 }
 
-/** Whitespace and hex case are not semantic in CSS gradient values; everything else is. */
-function normalizeCssValue(value: string): string {
-  return value
-    .replace(/\s+/gu, ' ')
-    .replace(/\s*([(),])\s*/gu, '$1')
-    .replace(/#[0-9a-f]{3,8}\b/giu, (hex) => hex.toLowerCase())
-    .trim()
-}
-
 describe('vendored site CSS enumerations cover site-data.ts', () => {
   it('has exactly one tab indicator rule per SEARCH_TABS entry and divides the track by that count', () => {
     const indices = attributeValues('\\.dyna-search-tab-indicator', 'data-active-index')
@@ -55,33 +39,11 @@ describe('vendored site CSS enumerations cover site-data.ts', () => {
     expect(stylesheet).toContain(`width: calc((100% - 8px) / ${SEARCH_TABS.length});`)
   })
 
-  it('has exactly one build-card rule per BENTO_CARDS entry', () => {
-    const indices = attributeValues('', 'data-build-card')
-    expect(indices).toEqual(indexRange(BENTO_CARDS.length))
-  })
-
   it('has a mega-column width rule for every columnWidth used by MEGA_PANELS', () => {
     const widths = new Set(attributeValues('\\.dyna-mega-column', 'data-column-width'))
     const used = [...new Set(MEGA_PANELS.map((panel) => String(panel.columnWidth)))]
     expect(used.length).toBeGreaterThan(0)
     expect(used.filter((width) => !widths.has(width))).toEqual([])
-  })
-
-  it('styles both auction tones for badge and price regardless of the current data', () => {
-    const tones = hotAuctions.match(/endingSoon \? "([a-z-]+)" : "([a-z-]+)"/u)
-    expect(tones?.slice(1).sort()).toEqual(['ending-soon', 'not-ending-soon'])
-    for (const element of ['badge', 'price']) {
-      const ruled = attributeValues(`\\.dyna-auction-${element}`, 'data-auction-tone')
-      expect([...new Set(ruled)].sort()).toEqual(['ending-soon', 'not-ending-soon'])
-    }
-  })
-
-  it('keeps every [data-build-card] background-image equal to BENTO_CARDS[i].gradient', () => {
-    for (const [index, card] of BENTO_CARDS.entries()) {
-      const ruled = declaration(`\\[data-build-card=["']${index}["']\\]`, 'background-image')
-      expect(ruled, `rule for data-build-card=${index}`).toBeDefined()
-      expect(normalizeCssValue(ruled!)).toBe(normalizeCssValue(card.gradient))
-    }
   })
 
   it('points .dyna-hero-glow at the hero background under ASSETS', () => {

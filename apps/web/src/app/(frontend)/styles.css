@@ -260,6 +260,13 @@
   --font-sans: 'Switzer', var(--font-sans-site);
 }
 
+/* Swansea ships a single bold face, so Latin headings render bold at any requested weight;
+   the Chinese glyphs fall back to Noto Sans SC and would come out Regular. Ask for 700 so
+   both scripts carry the same heading weight the design was measured with. */
+.dyna-content .font-heading {
+  font-weight: 700;
+}
+
 /* The source header is absolutely positioned over the hero (39px banner + 72px
    navbar). Routes without the hero get that offset; the homepage gets none. */
 .dyna-content > main {
@@ -295,40 +302,16 @@
     background-image: url("/sites/www-dynadot-com-7f8c2392/root-8a5edab2/images/hero-bg.webp");
   }
 
+  /* SEARCH_TABS has a single tab (availability lookup only) */
   .dyna-search-tab-indicator {
     left: 4px;
-    width: calc((100% - 8px) / 4);
+    width: calc((100% - 8px) / 1);
   }
   .dyna-search-tab-indicator[data-active-index="0"] { transform: translateX(0%); }
-  .dyna-search-tab-indicator[data-active-index="1"] { transform: translateX(100%); }
-  .dyna-search-tab-indicator[data-active-index="2"] { transform: translateX(200%); }
-  .dyna-search-tab-indicator[data-active-index="3"] { transform: translateX(300%); }
-
-  /* BENTO_CARDS[i].gradient, in array order */
-  [data-build-card="0"] {
-    background-image: radial-gradient(158.64% 140.35% at 0.11% 0px, #0096F7 14.22%, #34AFFF 42.51%, #FFFFFF 80%);
-  }
-  [data-build-card="1"] {
-    background-image:
-      radial-gradient(188.95% 141.42% at 0px 0px, #D36EFF 16.89%, #E099FF 52.38%, #FFFFFF 73%),
-      radial-gradient(143.21% 141.42% at 0px 0px, #D36EFF 0px, rgba(211, 110, 255, 0.5));
-  }
-  [data-build-card="2"] {
-    background-image: radial-gradient(201.15% 141.42% at 0px 0px, #FFCA2B 23.63%, #FFD351 50.14%, #FFFFFF 73%);
-  }
-  [data-build-card="3"] {
-    background-image: radial-gradient(201.03% 137.95% at 4.89% 0.08%, #031242 14.89%, #355BD3 37.89%, #CBD4F3 57.48%, #FFFFFF 68%);
-  }
 
   /* MEGA_PANELS[].columnWidth — only 345 and 290 exist */
   .dyna-mega-column[data-column-width="345"] { width: 345px; }
   .dyna-mega-column[data-column-width="290"] { width: 290px; }
-
-  /* HotAuctions badge / price colours by endingSoon */
-  .dyna-auction-badge[data-auction-tone="not-ending-soon"],
-  .dyna-auction-price[data-auction-tone="not-ending-soon"] { color: #0262C7; }
-  .dyna-auction-badge[data-auction-tone="ending-soon"] { color: #0072BC; }
-  .dyna-auction-price[data-auction-tone="ending-soon"] { color: #AE1DF9; }
 
   /* Infinite horizontal auction ticker. Track is duplicated in the DOM, so
      translating by -50% lands exactly on the start of the second copy. */

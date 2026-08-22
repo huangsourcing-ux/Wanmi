@@ -18,7 +18,7 @@ import { AngleRightIcon } from "./icons";
  * property — the live hover probe would not register in the preview pane.)
  *
  * `link` = the card-level CTA: no background, no border, no padding.
- *   color #0096F7, hover #006EF5; gap 8px; label 16px/500 (line-height 21.28px);
+ *   color #006EF5 (was #0096F7 on the source: 3.1:1 on white, below AA), hover #005FCF; gap 8px; label 16px/500 (line-height 21.28px);
  *   chevron 14px. `link-light` is the same on dark surfaces.
  */
 type Variant = "solid" | "link" | "link-light";
@@ -28,50 +28,67 @@ export function PillButton({
   variant = "solid",
   className,
   withArrow = true,
+  href,
 }: {
   children: ReactNode;
   variant?: Variant;
   className?: string;
   withArrow?: boolean;
+  /** With a route the pill renders as a link; without one it stays a button. */
+  href?: string;
 }) {
   if (variant === "solid") {
-    return (
-      <button
-        type="button"
-        className={cn(
-          "dyna-cta-gradient inline-flex items-center justify-center gap-3.5 rounded-[60px] py-2.5 pl-6 pr-5 text-white",
-          "lg:gap-2.5 lg:px-[30px]",
-          className,
-        )}
-      >
+    const solidClassName = cn(
+      "dyna-cta-gradient inline-flex items-center justify-center gap-3.5 rounded-[60px] py-2.5 pl-6 pr-5 text-white",
+      "lg:gap-2.5 lg:px-[30px]",
+      className,
+    );
+    const solidContent = (
+      <>
         <span className="justify-center text-lg font-medium leading-[1.2] lg:text-2xl lg:leading-[28.8px]">
           {children}
         </span>
         {withArrow ? <AngleRightIcon className="h-5 w-5 shrink-0" /> : null}
+      </>
+    );
+    return href ? (
+      <a href={href} className={solidClassName}>
+        {solidContent}
+      </a>
+    ) : (
+      <button type="button" className={solidClassName}>
+        {solidContent}
       </button>
     );
   }
 
   // Source hover on these CTAs is a gap collapse, not an arrow translate:
   // `.group:hover .group-hover:gap-[2px] { gap: 2px }` — 8px closes to 2px,
-  // pulling the chevron toward the label. Colour goes #0096F7 -> #006EF5.
-  return (
-    <button
-      type="button"
-      className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-[60px] bg-transparent p-0 transition-[color,gap] duration-300 hover:gap-[2px]",
-        variant === "link"
-          ? "text-[#0096F7] hover:text-[#006EF5]"
-          : "text-white hover:text-white/75",
-        className,
-      )}
-    >
+  // pulling the chevron toward the label. Colour goes #006EF5 -> #005FCF.
+  const linkClassName = cn(
+    "inline-flex items-center justify-center gap-2 rounded-[60px] bg-transparent p-0 transition-[color,gap] duration-300 hover:gap-[2px]",
+    variant === "link"
+      ? "text-[#006EF5] hover:text-[#005FCF]"
+      : "text-white hover:text-white/75",
+    className,
+  );
+  const linkContent = (
+    <>
       <span className="justify-center text-base font-medium leading-[21.28px]">
         {children}
       </span>
       {withArrow ? (
         <AngleRightIcon className="h-3.5 w-3.5 shrink-0" />
       ) : null}
+    </>
+  );
+  return href ? (
+    <a href={href} className={linkClassName}>
+      {linkContent}
+    </a>
+  ) : (
+    <button type="button" className={linkClassName}>
+      {linkContent}
     </button>
   );
 }

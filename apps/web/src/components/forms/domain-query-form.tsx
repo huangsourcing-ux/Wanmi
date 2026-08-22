@@ -7,7 +7,7 @@ import { FormField } from '@/components/forms/form-field'
 import { useLocalToolLibrary } from '@/components/local-library/local-tool-library-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { emitFirstPartyEvent, inferToolInput } from '@/lib/analytics'
+import { reportToolSubmission } from '@/lib/tool-submission'
 import { cn } from '@/lib/utils'
 
 export function DomainQueryForm({
@@ -32,17 +32,7 @@ export function DomainQueryForm({
   const { recordHistory } = useLocalToolLibrary()
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    const query = new FormData(event.currentTarget).get('q')
-    const value = typeof query === 'string' ? query : ''
-    recordHistory({ query: value, tool })
-    const dimensions = inferToolInput(value)
-    emitFirstPartyEvent({
-      event: 'tool_submitted',
-      fromLocalHistory: false,
-      ...dimensions,
-      schemaVersion: 1,
-      tool,
-    })
+    reportToolSubmission(event.currentTarget, tool, recordHistory)
   }
 
   return (

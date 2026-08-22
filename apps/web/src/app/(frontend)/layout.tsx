@@ -6,7 +6,7 @@ import { PageViewTracker } from '@/components/analytics/page-view-tracker'
 import { LocalToolLibraryProvider } from '@/components/local-library/local-tool-library-provider'
 import { RequestIdProvider } from '@/components/request-context'
 import { SiteFooter } from '@/components/site/site-footer'
-import { ChatbotBubble } from '@/components/sites/www-dynadot-com-7f8c2392/root-8a5edab2/ChatbotBubble'
+import { HeroSearchTracking } from '@/components/home/hero-search-tracking'
 import { SiteHeader } from '@/components/sites/www-dynadot-com-7f8c2392/root-8a5edab2/SiteHeader'
 import { OverlayProvider } from '@/components/sites/www-dynadot-com-7f8c2392/shared/OverlayScrim'
 import { getPublicComplianceConfig } from '@/lib/public-compliance'
@@ -37,6 +37,7 @@ export default async function FrontendLayout({ children }: { children: ReactNode
         </Suspense>
         <RequestIdProvider requestId={getTraceId(requestHeaders)}>
           <LocalToolLibraryProvider>
+            <HeroSearchTracking />
             <a className={skipLinkClassName} href="#main-content">
               跳到主要内容
             </a>
@@ -47,7 +48,6 @@ export default async function FrontendLayout({ children }: { children: ReactNode
                   {children}
                 </main>
                 <SiteFooter compliance={compliance} />
-                <ChatbotBubble />
               </div>
             </OverlayProvider>
           </LocalToolLibraryProvider>

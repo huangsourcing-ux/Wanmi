@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { PillButton } from "../shared/PillButton";
-import { ASSETS, WHY_BLOCKS } from "./site-data";
+import { ASSETS, SECTION_CTAS, WHY_BLOCKS } from "./site-data";
 
 /**
  * Asymmetric 2x2 card bento on `bg-indigo-50`. Measured on the source: cards
@@ -29,11 +29,10 @@ export function WhyDynadot() {
       <div className="flex w-full max-w-1440 flex-col items-center gap-10 lg:gap-[45px]">
         <div className="flex max-w-[820px] flex-col items-center gap-5 text-center">
           <h2 className="font-heading text-[32px] leading-[1.33] tracking-[-0.4px] text-dyna-navy md:text-[48px] md:leading-[63.84px]">
-            Why Buy Domains with Dynadot
+            数据从哪里来，页面就说明到哪里
           </h2>
           <p className="text-base leading-[26px] text-dyna-navy/80 md:text-lg">
-            Buy and manage your domain names with a platform built on
-            affordability, reliability, transparency, and expert support.
+            每个结果旁边都标注数据来源、查询时间和缓存状态，不用模糊结论代替不确定性。
           </p>
         </div>
 
@@ -56,7 +55,7 @@ export function WhyDynadot() {
                   {block.body}
                 </p>
                 <div className="group">
-                  <PillButton variant="link">
+                  <PillButton variant="link" href={block.href}>
                     {block.cta}
                   </PillButton>
                 </div>
@@ -75,7 +74,9 @@ export function WhyDynadot() {
         </div>
 
         <div className="group">
-          <PillButton>Discover How We Support You</PillButton>
+          <PillButton href={SECTION_CTAS.why.href}>
+            {SECTION_CTAS.why.label}
+          </PillButton>
         </div>
       </div>
     </div>

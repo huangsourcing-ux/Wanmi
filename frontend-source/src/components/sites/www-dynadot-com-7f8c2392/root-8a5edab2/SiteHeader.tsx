@@ -1,19 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import {
-  CartIcon,
   ChevronDownIcon,
   CloseIcon,
   LogoIcon,
   MenuIcon,
   UserIcon,
 } from "../shared/icons";
-import { AccountModal } from "../shared/AccountModal";
 import { useOverlay } from "../shared/OverlayScrim";
 import { MegaMenuPanel } from "./MegaMenuPanel";
-import { ANNOUNCEMENT, MEGA_PANELS, PRIMARY_NAV } from "./site-data";
+import { ACCOUNT_LINK, ANNOUNCEMENT, MEGA_PANELS, PRIMARY_NAV } from "./site-data";
 
 /**
  * Header is `position: absolute; top: 0; z-index: 2000` on the source page —
@@ -23,7 +22,6 @@ import { ANNOUNCEMENT, MEGA_PANELS, PRIMARY_NAV } from "./site-data";
 export function SiteHeader() {
   const [bannerOpen, setBannerOpen] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [accountOpen, setAccountOpen] = useState(false);
   /** Label of the nav item whose mega-menu is open, or null when closed. */
   const [openMenu, setOpenMenu] = useState<string | null>(null);
 
@@ -45,7 +43,7 @@ export function SiteHeader() {
           <span className="truncate">{ANNOUNCEMENT}</span>
           <button
             type="button"
-            aria-label="Dismiss announcement"
+            aria-label="关闭公告"
             onClick={() => setBannerOpen(false)}
             className="absolute right-[30px] top-1/2 -translate-y-1/2 text-white/80 transition-colors hover:text-white"
           >
@@ -59,13 +57,13 @@ export function SiteHeader() {
             past the 1450px breakpoint (176 -> 236.9) because a second, visually
             empty child joins it. That widening is what pushes the link row from
             x=241 to x=302: 45 + 236.9 + 20 = 301.9. */}
-        <a
-          href="#"
-          aria-label="Dynadot home"
+        <Link
+          href="/"
+          aria-label="Wanmi.net 首页"
           className="flex h-[34px] w-[176px] shrink-0 items-center min-[1450px]:w-[237px]"
         >
           <LogoIcon />
-        </a>
+        </Link>
 
         {/* `.navbar-left-dropdown`. The link row steps up at a custom 1450px
             breakpoint (measured: 1444 -> 15px/gap 35, 1450 -> 18px/gap 50):
@@ -94,34 +92,20 @@ export function SiteHeader() {
         </div>
 
         {/* `.nav-right`: gap 10px; every control is 34px tall with
-            padding 0 10px, radius 100px, border 1px rgb(117,129,159). */}
+            padding 0 10px, radius 100px, border 1px rgb(117,129,159).
+            The language/currency switch and the cart are gone — neither
+            exists on this site; the account entry is a plain link. */}
         <div className="flex shrink-0 items-center gap-[10px]">
-          <button
-            type="button"
-            className="hidden h-[34px] items-center gap-[5px] rounded-[100px] border border-[#EBF3FF] px-[10px] text-sm text-[#EBF3FF] transition-colors hover:bg-white/10 md:inline-flex"
-          >
-            EN - USD ($)
-            <ChevronDownIcon className="h-[15px] w-[13px]" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setAccountOpen(true)}
+          <a
+            href={ACCOUNT_LINK.href}
             className="inline-flex h-[34px] items-center gap-[5px] rounded-[100px] border border-[#EBF3FF] bg-transparent px-[10px] text-sm text-[#EBF3FF] transition-colors hover:bg-white/10"
           >
             <UserIcon className="h-[14px] w-[14px]" />
-            Login
-          </button>
+            {ACCOUNT_LINK.label}
+          </a>
           <button
             type="button"
-            aria-label="Cart"
-            className="inline-flex h-[34px] w-[62px] items-center justify-center gap-1.5 rounded-[100px] border border-[#EBF3FF] bg-transparent text-sm text-[#EBF3FF] transition-colors hover:bg-white/10"
-          >
-            <CartIcon className="h-[18px] w-[18px]" />
-            <ChevronDownIcon className="h-[13px] w-[11px]" />
-          </button>
-          <button
-            type="button"
-            aria-label="Menu"
+            aria-label="菜单"
             aria-expanded={mobileOpen}
             onClick={() => setMobileOpen((v) => !v)}
             className="text-[#EBF3FF] lg:hidden"
@@ -162,11 +146,6 @@ export function SiteHeader() {
           ))}
         </div>
       </div>
-
-      <AccountModal
-        open={accountOpen}
-        onClose={() => setAccountOpen(false)}
-      />
     </nav>
   );
 }

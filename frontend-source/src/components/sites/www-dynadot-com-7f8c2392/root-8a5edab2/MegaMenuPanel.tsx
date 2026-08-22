@@ -1,6 +1,6 @@
 import type { MegaPanel } from "@/types/dynadot";
 import { cn } from "@/lib/utils";
-import { AngleRightIcon, ArrowRightIcon } from "../shared/icons";
+import { AngleRightIcon } from "../shared/icons";
 
 /**
  * One hover-triggered mega-menu panel. Measured on the source:
@@ -21,29 +21,15 @@ export function MegaMenuPanel({ panel }: { panel: MegaPanel }) {
           <span className="text-[24px] font-medium leading-tight text-white">
             {panel.title}
           </span>
-          {panel.lead ? (
+          {panel.lead && panel.leadHref ? (
             <a
-              href="#"
+              href={panel.leadHref}
               className="text-base text-white/80 transition-opacity hover:opacity-100"
             >
               {panel.lead}
             </a>
-          ) : null}
-
-          {panel.promo ? (
-            <div className="mt-4 flex flex-col gap-1 rounded-2xl border border-white/15 bg-white/5 p-4">
-              <span className="text-[18px] font-medium text-white">
-                {panel.promo.title}
-              </span>
-              <span className="text-sm text-white/70">{panel.promo.body}</span>
-              <a
-                href="#"
-                className="group mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-[#63C2FF]"
-              >
-                {panel.promo.cta}
-                <ArrowRightIcon className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
-              </a>
-            </div>
+          ) : panel.lead ? (
+            <span className="text-base text-white/80">{panel.lead}</span>
           ) : null}
         </div>
 

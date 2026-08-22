@@ -35,7 +35,7 @@ export function FaqSection() {
           to the measured 1118px. */}
       <div className="relative flex w-full max-w-1440 flex-col px-7 py-20 md:px-14 xl:flex-row xl:px-[120px] xl:pb-8 xl:pt-20">
         <h2 className="w-full justify-start p-0 font-heading text-[32px] font-bold leading-[1.33] text-white xl:absolute xl:left-[120px] xl:top-[200px] xl:min-w-[325px] xl:max-w-[325px] xl:text-5xl xl:leading-[63.84px]">
-          Domain Name FAQs
+          常见问题
         </h2>
 
         <div className="relative mt-8 inline-flex w-full flex-col items-start justify-start rounded-[20px] xl:ml-auto xl:mt-0 xl:min-w-[600px] xl:max-w-[600px]">
