@@ -26,7 +26,7 @@
     "maximumTbtMs": 150,
     "minimumAccessibilityScore": 0.98,
     "minimumBestPracticesScore": 0.9,
-    "minimumPerformanceScore": 0.78,
+    "minimumPerformanceScore": 0.72,
     "minimumSeoScore": 0.98,
     "pages": [
       {
@@ -56,7 +56,8 @@
         "path": "/legal/payment"
       }
     ],
-    "runs": 5
+    "runs": 5,
+    "minimumPerformanceScoreNote": "Temporarily lowered from 0.78 to 0.72 on 2026-08-21 by the project owner (vendored site shell on every route). Restore 0.78 when frontend merge two replaces the placeholder source-site content with Chinese content. No other threshold changed."
   },
   "schemaVersion": 2
 }
